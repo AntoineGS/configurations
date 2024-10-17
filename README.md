@@ -13,6 +13,8 @@
 ## IntelliJ
 - Install IdeaVim
 - .ideavimrc is located in user directory root
+## VSCode
+- Copy the files to the right location
 
 # Windows
 - Use Winget whenever possible

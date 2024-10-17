@@ -1,0 +1,23 @@
+{
+    "remote.SSH.remotePlatform": {
+        "server": "linux"
+    },
+    "remote.SSH.defaultForwardedPorts": [
+
+    ],
+    "sshfs.configs": [
+        {
+            "root": "/var/lib/docker/volumes",
+            "host": "server.home",
+            "port": 22,
+            "username": "antoinegs",
+            "name": "server",
+            "agent": "//./pipe/openssh-ssh-agent"
+        }
+    ],
+    "editor.lineNumbers": "relative",
+    "extensions.experimental.affinity": {
+        "asvetliakov.vscode-neovim": 1
+    },
+    "editor.fontFamily": "JetBrainsMono Nerd Font",
+}

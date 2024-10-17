@@ -3,6 +3,7 @@ $paths = @{
     Profile = @{ Source = $PROFILE; Destination = ".\Windows\PowerShell" }
     Neovim = @{ Source = "~\AppData\Local\nvim\"; Destination = ".\Both\Neovim\" }
     IdeaVim = @{ Source = "~\.ideavimrc"; Destination = ".\Both\IntelliJ\" }
+    VSCode = @{ Source = "~\AppData\Roaming\Code\User\"; Destination = ".\Both\VSCode\" }
 }
 
 foreach ($path in $paths.Values) {
