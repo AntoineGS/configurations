@@ -26,6 +26,8 @@ M.mason = {
 		"ltex-ls",
 		"spectral-language-server",
 		"sonarlint-language-server",
+		"shfmt",
+		"sqlfmt",
 	}
 }
 
