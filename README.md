@@ -1,4 +1,11 @@
 # Both
+## Requirements
+- Python
+- NodeJS
+  - `npm install -g shelljs`
+- Go
+  - `winget install GoLang.Go`
+
 ## Neovim
 - Using Chad config
 - Requirements:
