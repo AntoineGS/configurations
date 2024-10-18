@@ -5,6 +5,7 @@ return {
     -- change default options here
   },
   lazy = false,
+  cond = not vim.g.vscode,
   config = function()
     require("cinnamon").setup({
         keymaps = {
