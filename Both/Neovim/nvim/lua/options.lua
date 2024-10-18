@@ -7,3 +7,4 @@ end
 local o = vim.o
 o.icm = 'split'
 -- o.cursorlineopt ='both' -- to enable cursorline!
+vim.opt.clipboard = ""
