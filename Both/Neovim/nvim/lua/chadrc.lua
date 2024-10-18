@@ -14,4 +14,19 @@ M.base46 = {
 	-- },
 }
 
+M.mason = {
+	pkgs = {
+		"eslint-lsp",
+		"prettierd",
+		"powershell-editor-services",
+		"pyright",
+		"sqls",
+		"docker-compose-language-service",
+		"bash-language-server",
+		"ltex-ls",
+		"spectral-language-server",
+		"sonarlint-language-server",
+	}
+}
+
 return M
