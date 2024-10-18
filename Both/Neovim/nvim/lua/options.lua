@@ -1,10 +1,7 @@
-if not vim.g.vscode then
-  require "nvchad.options"
-end
-
--- add yours here!
+require "nvchad.options"
 
 local o = vim.o
 o.icm = 'split'
--- o.cursorlineopt ='both' -- to enable cursorline!
+o.cursorlineopt ='both'
 vim.opt.clipboard = ""
+vim.opt.relativenumber = true

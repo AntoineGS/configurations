@@ -13,26 +13,20 @@ vim.opt.rtp:prepend(lazypath)
 
 local lazy_config = require "configs.lazy"
 
-if vim.g.vscode then
-  require("lazy").setup({
-    { import = "plugins" },
-  }, lazy_config)
-else
-  -- load plugins
-  require("lazy").setup({
-    {
-      "NvChad/NvChad",
-      lazy = false,
-      branch = "v2.5",
-      import = "nvchad.plugins",
-    },
+-- load plugins
+require("lazy").setup({
+  {
+    "NvChad/NvChad",
+    lazy = false,
+    branch = "v2.5",
+    import = "nvchad.plugins",
+  },
 
-    { import = "plugins" },
-  }, lazy_config)
+  { import = "plugins" },
+}, lazy_config)
 
-  require "options"
-  require "nvchad.autocmds"
-end
+require "options"
+require "nvchad.autocmds"
 
 vim.schedule(function()
   require "mappings"
@@ -41,4 +35,3 @@ end)
 -- load theme
 dofile(vim.g.base46_cache .. "defaults")
 dofile(vim.g.base46_cache .. "statusline")
-vim.opt.relativenumber = true
