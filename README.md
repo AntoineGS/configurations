@@ -3,6 +3,7 @@
 - Python
 - NodeJS
   - `npm install -g shelljs`
+  - `npm install --global typescript`
 - Go
   - `winget install GoLang.Go`
 
@@ -12,7 +13,6 @@
   - NodeJS (use nvm)
   - GCC (build-essentials on Linux and mingw using Choco on Windows)
   - Python
-- LSP need to be installed (probably)
 - On Windows: `C:\Users\antoi\AppData\Local\nvim\`
 - On Linux: `~/.config/nvim` 
 ## VSCode
