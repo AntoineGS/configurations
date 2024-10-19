@@ -15,10 +15,12 @@ $profileFile = Split-Path -Path $PROFILE -Leaf
 # Define source and destination paths
 $paths = @{
     Profile = @{ Data = $PROFILE; Backup = ".\Windows\PowerShell\$profileFile" }
-    Neovim = @{ Data = "~\AppData\Local\nvim\"; Backup = ".\Both\Neovim\" }
+    Neovim = @{ Data = "~\AppData\Local\nvim\"; Backup = ".\Both\Neovim\nvim" }
     IdeaVim = @{ Data = "~\.ideavimrc"; Backup = ".\Both\IntelliJ\.ideavimrc" }
     VSCodeSettings = @{ Data = "~\AppData\Roaming\Code\User\settings.json"; Backup = ".\Both\VSCode\User\settings.json" }
     VSCodeKeybindings = @{ Data = "~\AppData\Roaming\Code\User\keybindings.json"; Backup = ".\Both\VSCode\User\keybindings.json" }
+    WindowsTerminal = @{ Data = "~\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"; 
+        Backup = ".\Windows\WindowsTerminal\settings.json" }
 }
 
 if ($action -eq "backup") {
@@ -26,7 +28,10 @@ if ($action -eq "backup") {
     foreach ($path in $paths.Values) {
         $actualPath = Split-Path -Path $path.Backup
         New-Item -ItemType Directory -Force -Path $actualPath
-        Get-ChildItem -Path $path.Backup | Remove-Item -Force -Recurse
+
+        if ( Test-Path $path.Backup ) {
+            Remove-Item $path.Backup -Force -Recurse
+        }
     }
 
     foreach ($path in $paths.Values) {
@@ -35,7 +40,7 @@ if ($action -eq "backup") {
 }
 elseif ($action -eq "restore") {
     foreach ($path in $paths.Values) {
-        if (Test-Path -Path $path.Data) {
+        if ($path.Data -like "*\") {
             $actualPath = $path.Data
             Remove-Item -Path $path.Data -Force -Recurse 
             $actualPath = Split-Path -Path $path.Data
@@ -44,6 +49,6 @@ elseif ($action -eq "restore") {
             $actualPath = Split-Path -Path $path.Data
         }
 
-        Get-ChildItem -Path $path.Backup | Copy-Item -Destination $actualPath -Recurse -Force -Verbose
+        Copy-Item $path.Backup -Destination $actualPath -Recurse -Force -Verbose
     }
 }
