@@ -1,9 +1,9 @@
 # Both
 ## Requirements
+- `sudo apt install golang python3 python3-venv`
 - Python
 - NodeJS
-  - `npm install -g shelljs`
-  - `npm install --global typescript`
+  - `npm install -g shelljs typescript`
 - Go
   - `winget install GoLang.Go`
 
