@@ -1,6 +1,12 @@
-Invoke-Expression (&starship init powershell)
 Import-Module PSReadLine
 Set-PSReadLineOption -EditMode Vi 
+
+function Invoke-Starship-TransientFunction {
+  &starship module character
+}
+
+Invoke-Expression (&starship init powershell)
+Enable-TransientPrompt
 # Import the Chocolatey Profile that contains the necessary code to enable
 # tab-completions to function for `choco`.
 # Be aware that if you are missing these lines from your profile, tab completion
