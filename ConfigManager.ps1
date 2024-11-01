@@ -14,13 +14,17 @@ $profileFile = Split-Path -Path $PROFILE -Leaf
 
 # Define source and destination paths
 $paths = @{
-    Profile = @{ Data = $PROFILE; Backup = ".\Windows\PowerShell\$profileFile" }
-    Neovim = @{ Data = "~\AppData\Local\nvim\"; Backup = ".\Both\Neovim\nvim" }
-    IdeaVim = @{ Data = "~\.ideavimrc"; Backup = ".\Both\IntelliJ\.ideavimrc" }
-    VSCodeSettings = @{ Data = "~\AppData\Roaming\Code\User\settings.json"; Backup = ".\Both\VSCode\User\settings.json" }
+    Profile           = @{ Data = $PROFILE; Backup = ".\Windows\PowerShell\$profileFile" }
+    Neovim            = @{ Data = "~\AppData\Local\nvim\"; Backup = ".\Both\Neovim\nvim" }
+    IdeaVim           = @{ Data = "~\.ideavimrc"; Backup = ".\Both\IntelliJ\.ideavimrc" }
+    VSCodeSettings    = @{ Data = "~\AppData\Roaming\Code\User\settings.json"; Backup = ".\Both\VSCode\User\settings.json" }
     VSCodeKeybindings = @{ Data = "~\AppData\Roaming\Code\User\keybindings.json"; Backup = ".\Both\VSCode\User\keybindings.json" }
-    WindowsTerminal = @{ Data = "~\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"; 
-        Backup = ".\Windows\WindowsTerminal\settings.json" }
+    WindowsTerminal   = @{ Data = "~\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"; 
+        Backup                = ".\Windows\WindowsTerminal\settings.json" 
+    }
+    Bashrc            = @{ Data = "\\wsl.localhost\Ubuntu\home\antoinegs\.bashrc"; Backup = ".\Linux\Bash\.bashrc" }
+    Starship          = @{ Data = "~\.config\starship.toml"; Backup = ".\Both\Starship\starship.toml" }
+    Warp              = @{ Data = "\\wsl.localhost\Ubuntu\home\antoinegs\.config\warp-terminal\user_preferences.json"; Backup = ".\Linux\Warp\user_preferences.json" }
 }
 
 if ($action -eq "backup") {
