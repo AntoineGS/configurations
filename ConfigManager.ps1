@@ -1,7 +1,7 @@
 param (
     [switch]$restore,
     [string]$wslInstanceName = "Ubuntu",
-    [string]$wslUser = "antoine"
+    [string]$wslUser = "antoinegs"
 )
 
 $profileFile = Split-Path -Path $PROFILE -Leaf
