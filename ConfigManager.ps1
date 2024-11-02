@@ -47,6 +47,18 @@ $paths = @{
 }
 
 if ($restore) {
+    $paths += @{
+        StarshipLinux = @{ 
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\starship.toml"; 
+            Backup = ".\Both\Starship\starship.toml" 
+        }    
+    
+        NeovimLinux   = @{ 
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nvim\"; 
+            Backup = ".\Both\Neovim\nvim" 
+        }
+    }
+
     foreach ($path in $paths.Values) {
         if ($path.Data -like "*\") {
             $actualPath = $path.Data
