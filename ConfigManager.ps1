@@ -47,6 +47,20 @@ $paths = @{
 }
 
 if ($restore) {
+    foreach ($path in $paths.Values) {
+        if ($path.Data -like "*\") {
+            $actualPath = $path.Data
+            Remove-Item -Path $path.Data -Force -Recurse 
+            $actualPath = Split-Path -Path $path.Data
+        }
+        else {
+            $actualPath = Split-Path -Path $path.Data
+        }
+
+        Copy-Item $path.Backup -Destination $actualPath -Recurse -Force -Verbose
+    }
+}
+else {
     # Some paths may share the same destination so to prevent deleting a previously copied file we do this in two passes
     foreach ($path in $paths.Values) {
         $actualPath = Split-Path -Path $path.Backup
@@ -59,19 +73,5 @@ if ($restore) {
 
     foreach ($path in $paths.Values) {
         Copy-Item -Path $path.Data -Destination $path.Backup -Recurse -Force
-    }
-}
-else {
-    foreach ($path in $paths.Values) {
-        if ($path.Data -like "*\") {
-            $actualPath = $path.Data
-            Remove-Item -Path $path.Data -Force -Recurse 
-            $actualPath = Split-Path -Path $path.Data
-        }
-        else {
-            $actualPath = Split-Path -Path $path.Data
-        }
-
-        Copy-Item $path.Backup -Destination $actualPath -Recurse -Force -Verbose
     }
 }
