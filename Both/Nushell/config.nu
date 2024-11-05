@@ -896,4 +896,6 @@ $env.config = {
         }
     ]
 }
+source ~/.zoxide.nu
+source ~/.cache/carapace/init.nu
 use ~/.cache/starship/init.nu

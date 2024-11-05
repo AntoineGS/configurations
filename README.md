@@ -55,6 +55,18 @@ Use Winget whenever possible
 - `plugin add ~\.cargo\bin\nu_plugin_regex.exe`
 - `plugin add ~\.cargo\bin\nu_plugin_semver.exe`
 
+## Zoxide
+
+- `winget install ajeetdsouza.zoxide`
+
+## eza
+
+`cargo install eza`
+
+## carapace
+
+`winget install -e --id rsteube.Carapace`
+
 # Linux
 
 Use Homebrew whenever possible
@@ -119,6 +131,18 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
   From Nushell:
 - `plugin add ~\.cargo\bin\nu_plugin_regex`
 - `plugin add ~\.cargo\bin\nu_plugin_semver`
+
+## Zoxide
+
+- `brew install zoxide`
+
+## eza
+
+- `cargo install eza`
+
+## carapace
+
+- `brew install carapace`
 
 # TODO
 

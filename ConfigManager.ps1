@@ -56,6 +56,14 @@ $paths = @{
       Data = "~/.wezterm.lua";
       Backup = "./Both/Wezterm/.wezterm.lua"
     }
+    Zoxide = @{
+      Data = "~/.zoxide.nu";
+      Backup = "./Both/Zoxide/.zoxide.nu"
+    }
+    Carapace = @{
+      Data = "~/.cache/carapace/init.nu"
+      Backup = "./Both/Carapace/init.nu"
+    }
 }
 
 if ($restore) {
@@ -72,6 +80,8 @@ if ($restore) {
 
         #WeztermLinux
         #NushellLinux
+        #ZoxideLinux
+        #CarapaceLinux
     }
 
     foreach ($path in $paths.Values) {
