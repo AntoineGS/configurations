@@ -44,6 +44,18 @@ $paths = @{
         Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\warp-terminal\user_preferences.json"; 
         Backup = ".\Linux\Warp\user_preferences.json" 
     }
+    NushellEnv = @{
+      Data = "~\AppData\Roaming\nushell\env.nu";
+      Backup = ".\Both\Nushell\env.nu"
+    }
+    NushellConfig = @{
+      Data = "~\AppData\Roaming\nushell\config.nu";
+      Backup = ".\Both\Nushell\config.nu"
+    }
+    Wezterm = @{
+      Data = "~/.wezterm.lua";
+      Backup = "./Both/Wezterm/.wezterm.lua"
+    }
 }
 
 if ($restore) {
@@ -57,6 +69,9 @@ if ($restore) {
             Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nvim\"; 
             Backup = ".\Both\Neovim\nvim" 
         }
+
+        #WeztermLinux
+        #NushellLinux
     }
 
     foreach ($path in $paths.Values) {

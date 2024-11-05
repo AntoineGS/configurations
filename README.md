@@ -24,7 +24,14 @@ Use Winget whenever possible
   - `winget install GoLang.Go`
 - Nerdfonts
   - `wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip`
-  - Download and install with right click..
+  - Download and install with right click.
+- Java
+  - `winget install Microsoft.OpenJDF.21`
+- Rust / Cargo
+
+## WezTerm
+
+- `winget install wez.wezterm`
 
 ## Neovim
 
@@ -40,9 +47,17 @@ Use Winget whenever possible
 - To get the path to the PowerShell configuration file, type `$PROFILE` in pwsh
 - Set JetBrains Mono Nerd Font Bold as default font
 
+## Nushell
+
+- `winget install nushell`
+- `cargo install nu_plugin_semver nu_plugin_regex`
+  From Nushell:
+- `plugin add ~\.cargo\bin\nu_plugin_regex.exe`
+- `plugin add ~\.cargo\bin\nu_plugin_semver.exe`
+
 # Linux
 
-Use Hombrew whenever possible
+Use Homebrew whenever possible
 
 ## Requirements
 
@@ -59,12 +74,21 @@ Use Hombrew whenever possible
   - `rm JetBrainsMono.zip`
   - `sudo mv JetBrainsMono* /usr/share/fonts/`
   - `fc-cache -f -v`
+- Rust / Cargo
 
 ## Homebrew
 
-- `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
-- `echo >> /home/a_simard/.bashrc`
-- `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/a_simard/.bashrc`
+- Bash
+  - `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
+  - `echo >> /home/a_simard/.bashrc`
+  - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/a_simard/.bashrc`
+- Nushell
+  - `$env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')`
+
+## WezTerm
+
+- `brew tap wez/wezterm-linuxbrew`
+- `brew install wezterm`
 
 ## Neovim
 
@@ -87,6 +111,14 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 - `https://www.warp.dev/download`
 - Font to JetBrainsMono and 16pt on WSL
+
+## Nushell
+
+- `brew install nushell`
+- `cargo install nu_plugin_semver nu_plugin_regex`
+  From Nushell:
+- `plugin add ~\.cargo\bin\nu_plugin_regex`
+- `plugin add ~\.cargo\bin\nu_plugin_semver`
 
 # TODO
 
