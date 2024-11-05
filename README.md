@@ -67,6 +67,11 @@ Use Winget whenever possible
 
 `winget install -e --id rsteube.Carapace`
 
+## Yazi
+
+`winget install sxyazi.yazi`
+`winget install 7zip.7zip jqlang.jq sharkdp.fd BurntSushi.ripgrep.MSVC junegunn.fzf ajeetdsouza.zoxide ImageMagick.ImageMagick`
+
 # Linux
 
 Use Homebrew whenever possible
@@ -143,6 +148,10 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 ## carapace
 
 - `brew install carapace`
+
+## Yazi
+
+- `brew install yazi ffmpegthumbnailer sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font`
 
 # TODO
 
