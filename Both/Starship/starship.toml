@@ -167,9 +167,9 @@ disabled = false
 
 [character]
 disabled = false
-success_symbol = '[](bold fg:color_purple)[I](bold bg:color_purple fg:color_fg0)[](fg:color_purple)'
-error_symbol = '[](bold fg:color_red)[I](bold bg:color_red fg:color_fg0)[](fg:color_red)'
-vimcmd_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
-vimcmd_replace_one_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
-vimcmd_replace_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
-vimcmd_visual_symbol = '[](bold fg:color_yellow)[N](bold bg:color_yellow fg:color_fg0)[](fg:color_yellow)'
+#success_symbol = '[](bold fg:color_purple)[I](bold bg:color_purple fg:color_fg0)[](fg:color_purple)'
+#error_symbol = '[](bold fg:color_red)[I](bold bg:color_red fg:color_fg0)[](fg:color_red)'
+#vimcmd_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
+#vimcmd_replace_one_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
+#vimcmd_replace_symbol = '[](bold fg:color_blue)[N](bold bg:color_blue fg:color_fg0)[](fg:color_blue)'
+#vimcmd_visual_symbol = '[](bold fg:color_yellow)[N](bold bg:color_yellow fg:color_fg0)[](fg:color_yellow)'
