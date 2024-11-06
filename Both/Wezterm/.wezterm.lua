@@ -3,19 +3,28 @@ local mux = wezterm.mux
 local act = wezterm.action
 local config = wezterm.config_builder()
 local launch_menu = {}
+local tabline = wezterm.plugin.require("https://github.com/michaelbrusegard/tabline.wez")
 
 wezterm.on("gui-startup", function()
 	local tab, pane, window = mux.spawn_window({})
 	window:gui_window():maximize()
 end)
 
----config.color_scheme = "Hardcode"
+config.inactive_pane_hsb = {
+	saturation = 0.8,
+	brightness = 0.7,
+}
+
+---config.tab_bar_at_bottom = true
+config.window_background_opacity = 0.98
+config.color_scheme = "Gruvbox dark, hard (base16)"
 config.font = wezterm.font("JetBrainsMono Nerd Font")
 config.font_size = 14
 config.use_dead_keys = false
 config.scrollback_lines = 5000
 config.adjust_window_size_when_changing_font_size = false
-config.hide_tab_bar_if_only_one_tab = true
+---config.hide_tab_bar_if_only_one_tab = true
+config.window_decorations = "RESIZE"
 config.window_frame = {
 	font = wezterm.font({ family = "Noto Sans", weight = "Regular" }),
 }
@@ -34,6 +43,20 @@ config.keys = {
 	{ key = "l", mods = "CTRL|SHIFT|ALT", action = act.AdjustPaneSize({ "Right", 5 }) },
 	{ key = "s", mods = "LEADER", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
 	{ key = "v", mods = "LEADER", action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
+	{
+		key = "_",
+		mods = "CTRL|SHIFT",
+		action = wezterm.action_callback(function(window, pane)
+			window:restore()
+		end),
+	},
+	{
+		key = "+",
+		mods = "CTRL|SHIFT",
+		action = wezterm.action_callback(function(window, pane)
+			window:maximize()
+		end),
+	},
 
 	--- Ignores
 	{ key = "LeftArrow", mods = "CTRL|SHIFT|ALT", action = act.DisableDefaultAssignment },
@@ -48,12 +71,6 @@ config.keys = {
 
 if wezterm.target_triple == "x86_64-pc-windows-msvc" then
 	config.default_prog = { "nu", "" }
-	config.window_decorations = "RESIZE"
-
-	table.insert(launch_menu, {
-		label = "PowerShell",
-		args = { "powershell.exe", "-NoLogo" },
-	})
 
 	table.insert(launch_menu, {
 		label = "Pwsh",
@@ -64,13 +81,49 @@ if wezterm.target_triple == "x86_64-pc-windows-msvc" then
 		label = "Ubuntu",
 		args = { "ubuntu.exe", "" },
 	})
----config.inactive_pane_hsb = {
----saturation = 0.8
----brightness = 0.7
----}
 else
 end
+
 table.insert(launch_menu, config.launch_menu)
+
+tabline.setup({
+	options = {
+		icons_enabled = true,
+		theme = "GruvboxDark",
+		color_overrides = {},
+		section_separators = {
+			left = wezterm.nerdfonts.pl_left_hard_divider,
+			right = wezterm.nerdfonts.pl_right_hard_divider,
+		},
+		component_separators = {
+			left = wezterm.nerdfonts.pl_left_soft_divider,
+			right = wezterm.nerdfonts.pl_right_soft_divider,
+		},
+		tab_separators = {
+			left = wezterm.nerdfonts.pl_left_hard_divider,
+			right = wezterm.nerdfonts.pl_right_hard_divider,
+		},
+	},
+	sections = {
+		tabline_a = { "mode" },
+		tabline_b = { "workspace" },
+		tabline_c = { " " },
+		tab_active = {
+			"index",
+			{ "parent", padding = 0 },
+			"/",
+			{ "cwd", padding = { left = 0, right = 1 } },
+			{ "zoomed", padding = 0 },
+		},
+		tab_inactive = { "index", { "process", padding = { left = 0, right = 1 } } },
+		tabline_x = { "ram", "cpu" },
+		tabline_y = { "datetime", "battery" },
+		tabline_z = { "hostname" },
+	},
+	extensions = {},
+})
+
 config.launch_menu = launch_menu
+tabline.apply_to_config(config)
 
 return config
