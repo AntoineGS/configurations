@@ -40,6 +40,10 @@ $paths = @{
         Data   = "~\.config\starship.toml"; 
         Backup = ".\Both\Starship\starship.toml" 
     }
+    StarshipNushell          = @{ 
+        Data   = "~\.cache\starship\init.nu"; 
+        Backup = ".\Both\Starship\init.nu" 
+    }
     Warp              = @{ 
         Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\warp-terminal\user_preferences.json"; 
         Backup = ".\Linux\Warp\user_preferences.json" 
