@@ -156,3 +156,9 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 # TODO
 
 - .bashrc, but need restore option for wgpu
+
+# Notes
+
+- On Work computer:
+
+  - `./ConfigManager.ps1 -restore -wslUser a_simard`
