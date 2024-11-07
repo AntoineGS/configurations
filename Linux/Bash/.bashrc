@@ -129,3 +129,6 @@ export WGPU_BACKEND=nvidia
 
 eval "$(starship init bash)"
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+# Created by `pipx` on 2024-11-06 18:08:41
+export PATH="$PATH:/home/antoinegs/.local/bin"
