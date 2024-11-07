@@ -2,6 +2,8 @@
 #
 # version = "0.99.1"
 
+let os = sys host | get name
+
 def create_left_prompt [] {
     let dir = match (do --ignore-shell-errors { $env.PWD | path relative-to $nu.home-path }) {
         null => $env.PWD
@@ -100,3 +102,6 @@ $env.NU_PLUGIN_DIRS = [
 # To load from a custom file you can use:
 # source ($nu.default-config-dir | path join 'custom.nu')
 $env.CARAPACE_BRIDGES = 'zsh,fish,bash,inshellisense'
+if ($os != "Windows") {
+  $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')
+}
