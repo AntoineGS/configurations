@@ -54,6 +54,7 @@ $env.PROMPT_MULTILINE_INDICATOR = {|| "::: " }
 # because every command entered takes up 2 lines instead of 1. You can then uncomment
 # the line below so that previously entered commands show with a single `🚀`.
 $env.TRANSIENT_PROMPT_COMMAND = {|| "🚀 " }
+$env.TRANSIENT_PROMPT_COMMAND_RIGHT = {|| date now | format date '%X' }
 # $env.TRANSIENT_PROMPT_INDICATOR = {|| "" }
 # $env.TRANSIENT_PROMPT_INDICATOR_VI_INSERT = {|| "" }
 # $env.TRANSIENT_PROMPT_INDICATOR_VI_NORMAL = {|| "" }
