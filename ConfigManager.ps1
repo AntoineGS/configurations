@@ -76,16 +76,31 @@ if ($restore) {
             Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\starship.toml"; 
             Backup = ".\Both\Starship\starship.toml" 
         }    
-    
+        StarshipNushellLinux          = @{ 
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.cache\starship\init.nu"; 
+            Backup = ".\Both\Starship\init.nu" 
+        }
         NeovimLinux   = @{ 
             Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nvim\"; 
             Backup = ".\Both\Neovim\nvim" 
         }
-
-        #WeztermLinux
-        #NushellLinux
-        #ZoxideLinux
-        #CarapaceLinux
+        NushellEnvLinux = @{
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nushell\env.nu"; 
+            Backup = ".\Both\Nushell\env.nu"
+        }
+        NushellConfigLinux = @{
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nushell\config.nu"; 
+            Backup = ".\Both\Nushell\config.nu"
+        }
+        # Wezterm
+        ZoxideLinux = @{
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.zoxide.nu"; 
+            Backup = ".\Both\Zoxide\.zoxide.nu"
+        }
+        CarapaceLinux = @{
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.cache\carapace\init.nu"; 
+            Backup = ".\Both\Carapace\init.nu"
+        }
     }
 
     foreach ($path in $paths.Values) {
