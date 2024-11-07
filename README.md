@@ -99,8 +99,6 @@ Use Homebrew whenever possible
   - `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
   - `echo >> /home/a_simard/.bashrc`
   - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/a_simard/.bashrc`
-- Nushell
-  - `$env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')`
 
 ## WezTerm
 
@@ -112,7 +110,6 @@ Use Homebrew whenever possible
 - `brew install neovim`
 - `sudo update-alternatives --install /usr/bin/editor editor /home/linuxbrew/.linuxbrew/bin/nvim 1 && \
 sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
-- `~/.config/nvim`
 - If error when copying to "+ then:
   - `sudo apt install xclip`
   - Through ssh it is said to install lemonade
@@ -121,8 +118,6 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 - Install NerdFont (JetBrains Mono Nerd Font)
 - `brew install starship`
-- restore to `\\wsl.localhost\Ubuntu\home\antoinegs\.config\starship.toml` or
-  `\\wsl.localhost\Ubuntu\home\antoi\.config\starship.toml`
 
 ## Warp Terminal
 
@@ -131,9 +126,10 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 ## Nushell
 
+- `apt install pkg-config libssl-dev build-essential`
 - `brew install nushell`
 - `cargo install nu_plugin_semver nu_plugin_regex`
-  From Nushell:
+  From Nushell, most likely not needed:
 - `plugin add ~\.cargo\bin\nu_plugin_regex`
 - `plugin add ~\.cargo\bin\nu_plugin_semver`
 
