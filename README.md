@@ -126,9 +126,11 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 ## Nushell
 
-- `apt install pkg-config libssl-dev build-essential`
+- `sudo apt install pkg-config libssl-dev build-essential`
 - `brew install nushell`
 - `cargo install nu_plugin_semver nu_plugin_regex`
+- `which nu | sudo tee -a /etc/shells`
+- `chsh -s "$(which nu)"`
   From Nushell, most likely not needed:
 - `plugin add ~\.cargo\bin\nu_plugin_regex`
 - `plugin add ~\.cargo\bin\nu_plugin_semver`
@@ -152,6 +154,8 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 # TODO
 
 - .bashrc, but need restore option for wgpu
+- Add nushell LSP/Formatter
+- Add pwsh Formatter
 
 # Notes
 
