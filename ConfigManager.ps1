@@ -49,24 +49,24 @@ $paths = @{
         Backup = ".\Linux\Warp\user_preferences.json" 
     }
     NushellEnv = @{
-      Data = "~\AppData\Roaming\nushell\env.nu";
-      Backup = ".\Both\Nushell\env.nu"
+        Data = "~\AppData\Roaming\nushell\env.nu";
+        Backup = ".\Both\Nushell\env.nu"
     }
     NushellConfig = @{
-      Data = "~\AppData\Roaming\nushell\config.nu";
-      Backup = ".\Both\Nushell\config.nu"
+        Data = "~\AppData\Roaming\nushell\config.nu";
+        Backup = ".\Both\Nushell\config.nu"
     }
     Wezterm = @{
-      Data = "~/.wezterm.lua";
-      Backup = "./Both/Wezterm/.wezterm.lua"
+        Data = "~/.wezterm.lua";
+        Backup = "./Both/Wezterm/.wezterm.lua"
     }
     Zoxide = @{
-      Data = "~/.zoxide.nu";
-      Backup = "./Both/Zoxide/.zoxide.nu"
+        Data = "~/.zoxide.nu";
+        Backup = "./Both/Zoxide/.zoxide.nu"
     }
     Carapace = @{
-      Data = "~/.cache/carapace/init.nu"
-      Backup = "./Both/Carapace/init.nu"
+        Data = "~/.cache/carapace/init.nu"
+        Backup = "./Both/Carapace/init.nu"
     }
 }
 
