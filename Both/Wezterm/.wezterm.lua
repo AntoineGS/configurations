@@ -17,9 +17,9 @@ config.inactive_pane_hsb = {
 
 ---config.tab_bar_at_bottom = true
 config.window_background_opacity = 0.98
-config.color_scheme = "Gruvbox dark, hard (base16)"
+config.color_scheme = "One Dark (Gogh)"
 config.font = wezterm.font("JetBrainsMono Nerd Font")
-config.font_size = 14
+config.font_size = 13
 config.use_dead_keys = false
 config.scrollback_lines = 5000
 config.adjust_window_size_when_changing_font_size = false
@@ -89,7 +89,7 @@ table.insert(launch_menu, config.launch_menu)
 tabline.setup({
 	options = {
 		icons_enabled = true,
-		theme = "GruvboxDark",
+		theme = "One Dark (Gogh)",
 		color_overrides = {},
 		section_separators = {
 			left = wezterm.nerdfonts.pl_left_hard_divider,
@@ -105,7 +105,7 @@ tabline.setup({
 		},
 	},
 	sections = {
-		tabline_a = { "mode" },
+		---tabline_a = { "mode" },
 		tabline_b = { "workspace" },
 		tabline_c = { " " },
 		tab_active = {

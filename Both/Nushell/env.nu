@@ -106,3 +106,4 @@ $env.CARAPACE_BRIDGES = 'zsh,fish,bash,inshellisense'
 if ($os != "Windows") {
   $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')
 }
+source ./themes/one-dark.nu

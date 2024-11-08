@@ -56,6 +56,10 @@ $paths = @{
         Data = "~\AppData\Roaming\nushell\config.nu";
         Backup = ".\Both\Nushell\config.nu"
     }
+    NushellThemes = @{
+        Data = "~\AppData\Roaming\nushell\themes\";
+        Backup = ".\Both\Nushell\themes"
+    }
     Wezterm = @{
         Data = "~/.wezterm.lua";
         Backup = "./Both/Wezterm/.wezterm.lua"
@@ -91,6 +95,10 @@ if ($restore) {
         NushellConfigLinux = @{
             Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nushell\config.nu"; 
             Backup = ".\Both\Nushell\config.nu"
+        }
+        NushellThemesLinux = @{
+            Data   = "\\wsl.localhost\$wslInstanceName\home\$wslUser\.config\nushell\themes\"; 
+            Backup = ".\Both\Nushell\themes"
         }
         # Wezterm
         ZoxideLinux = @{
