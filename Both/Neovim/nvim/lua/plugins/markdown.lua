@@ -28,6 +28,8 @@ return {
     vim.cmd(string.format([[highlight RenderMarkdownH5 cterm=bold gui=bold guifg=%s]], color5_bg))
     vim.cmd(string.format([[highlight RenderMarkdownH6 cterm=bold gui=bold guifg=%s]], color6_bg))
   end,
-  opts = {},
-  ft = "markdown",
+  opts = {
+    file_types = { "markdown", "Avante" },
+  },
+  ft = { "markdown", "Avante" },
 }
