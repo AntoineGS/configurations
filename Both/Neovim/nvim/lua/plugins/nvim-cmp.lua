@@ -48,5 +48,8 @@ return {
       { name = "copilot", priority = 600 },
       { name = "path", priority = 500 },
     },
+    experimental = {
+      ghost_text = true,
+    },
   },
 }
