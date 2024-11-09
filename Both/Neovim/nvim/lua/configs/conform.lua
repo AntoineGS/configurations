@@ -20,6 +20,7 @@ return {
     zsh = { "shfmt" },
     sql = { "sqlfmt" },
     toml = { "prettierd" },
+    nu = { "prettierd" },
   },
 
   format_on_save = {
