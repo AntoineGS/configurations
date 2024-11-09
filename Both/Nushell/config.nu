@@ -905,6 +905,9 @@ def --env y [...args] {
 	}
 	rm -fp $tmp
 }
+
+alias ll = ls -l
+
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
 use ~/.cache/starship/init.nu
