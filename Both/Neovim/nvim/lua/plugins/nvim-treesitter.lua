@@ -11,6 +11,13 @@ return {
       "json",
       "yaml",
       "toml",
+      "nu",
+      "ini",
+      "dockerfile",
     },
+  },
+  -- might be optional
+  dependencies = {
+    { "nushell/tree-sitter-nu", build = ":TSUpdate" },
   },
 }

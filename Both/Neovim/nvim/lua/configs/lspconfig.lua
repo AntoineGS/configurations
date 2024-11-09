@@ -1,19 +1,19 @@
 -- load defaults i.e lua_lsp
 require("nvchad.configs.lspconfig").defaults()
+require("lspconfig").nushell.setup {}
 
 local lspconfig = require "lspconfig"
 
--- EXAMPLE
 local servers = {
   "html",
   "cssls",
   "powershell_es",
   "pyright",
-  "sqls",
   "docker_compose_language_service",
   "bashls",
-  "ltex",
+  -- "ltex",
   "spectral",
+  "marksman",
 }
 local nvlsp = require "nvchad.configs.lspconfig"
 
