@@ -4,6 +4,7 @@ local act = wezterm.action
 local config = wezterm.config_builder()
 local launch_menu = {}
 local tabline = wezterm.plugin.require("https://github.com/michaelbrusegard/tabline.wez")
+local is_windows = wezterm.target_triple == "x86_64-pc-windows-msvc"
 
 wezterm.on("gui-startup", function()
 	local tab, pane, window = mux.spawn_window({})
@@ -15,8 +16,14 @@ config.inactive_pane_hsb = {
 	brightness = 0.7,
 }
 
+if is_windows then
+	config.window_background_opacity = 0.5
+	config.win32_system_backdrop = "Mica"
+else
+	config.window_background_opacity = 0.98
+end
+
 ---config.tab_bar_at_bottom = true
-config.window_background_opacity = 0.98
 config.color_scheme = "One Dark (Gogh)"
 config.font = wezterm.font("JetBrainsMono Nerd Font")
 config.font_size = 13
@@ -69,7 +76,7 @@ config.keys = {
 	{ key = "DownArrow", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
 }
 
-if wezterm.target_triple == "x86_64-pc-windows-msvc" then
+if is_windows then
 	config.default_prog = { "nu", "" }
 
 	table.insert(launch_menu, {
