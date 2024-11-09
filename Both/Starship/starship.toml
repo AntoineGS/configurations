@@ -324,7 +324,7 @@ symbol = ""
 style = "bg:color_four"
 format = '[[ $symbol( $version) ](fg:color_fg bg:color_four)]($style)'
 
-[jolidity]
+[solidity]
 style = "bg:color_four"
 format = '[[ $symbol( $version) ](fg:color_fg bg:color_four)]($style)'
 
