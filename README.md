@@ -161,4 +161,4 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 - On Work computer:
 
-  - `./ConfigManager.ps1 -restore -wslUser a_simard`
+  - `nu backup-manager.nu restore -wslUser a_simard`
