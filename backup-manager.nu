@@ -1,4 +1,5 @@
-# Todo: add linux-only support
+let is_windows = ($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows"
+let is_wsl = ($env | get --ignore-errors WSL_DISTRO_NAME) != ""
 
 def main [] {
   error make {msg: "You must either use `backup` or `restore` sub commands", }
@@ -46,6 +47,7 @@ def is_a_folder [filenames] {
   $filenames == []
 }
 
+# todo: add support for linux here
 def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
   
@@ -59,7 +61,7 @@ def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
     }
 
     # we prioritize the windows path
-    mut source = if ($path.windows_path == "") { $path.wsl_path } else { $path.windows_path }
+    mut source = if ($path.windows_path == "") { $path.linux_path } else { $path.windows_path }
     copy_data $path.filenames $source $path.backup_path
   }
 }
@@ -76,35 +78,37 @@ def restore_files [filenames, source, destination] {
 def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
 
-  # need to restore both windows and wsl files
   for $path in $paths {
-    restore_files $path.filenames $path.backup_path $path.windows_path
-    restore_files $path.filenames $path.backup_path $path.wsl_path
+    if ($is_windows) {
+      restore_files $path.filenames $path.backup_path $path.windows_path
+    }
+    restore_files $path.filenames $path.backup_path $path.linux_path
   }
 }
 
 def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
-  let pwsh_profile = pwsh -c "echo $PROFILE"
+  let pwsh_profile = if ($is_windows) {pwsh -c "echo $PROFILE"} else {""}
   let pwsh_file = $pwsh_profile | path basename 
   let pwsh_path = $pwsh_profile | path dirname
   let wsl_user_path = $"//wsl.localhost/($wsl_instance_name)/home/($wsl_user)"
+  let linux_user_path = if ($is_wsl) { $wsl_user_path } else { "~" }
    
   [
-    [filenames, windows_path, wsl_path, backup_path]; 
+    [filenames, windows_path, linux_path, backup_path]; 
     [[$pwsh_file], $pwsh_path, "", $"./Windows/PowerShell"]
-    [[], "~/AppData/Local/nvim", $"($wsl_user_path).config", "./Both/Neovim/nvim"] 
+    [[], "~/AppData/Local/nvim", $"($linux_user_path)/.config", "./Both/Neovim/nvim"] 
     [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
     [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
     [["settings.json"], "~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState", "", "./Windows/WindowsTerminal"]
-    [[".bashrc"], "", $"($wsl_user_path)", "./Linux/Bash"]
-    [["starship.toml"], "~/.config", $"($wsl_user_path)/.config", "./Both/Starship"]
-    [["init.nu"], "~/.cache/starship", $"($wsl_user_path)/.cache/starship", "./Both/Starship"]
-    [["user_preferences.json"], "", $"($wsl_user_path)/.config/warp-terminal", "./Linux/Warp"]
-    [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", $"($wsl_user_path)/.config/nushell", "./Both/Nushell"]
-    [[], "~/AppData/Roaming/nushell/themes", $"($wsl_user_path)/.config/nushell/themes", "./Both/Nushell/themes"]
-    [[".wezterm.lua"], "~", "", "./Both/Wezterm"]
-    [[".zoxide.nu"], "~", $"($wsl_user_path)", "./Both/Zoxide"]
-    [["init.nu"], "~/.cache/carapace", $"($wsl_user_path)/.cache/carapace" "./Both/Carapace"]
+    [[".bashrc"], "", $"($linux_user_path)", "./Linux/Bash"]
+    [["starship.toml"], "~/.config", $"($linux_user_path)/.config", "./Both/Starship"]
+    [["init.nu"], "~/.cache/starship", $"($linux_user_path)/.cache/starship", "./Both/Starship"]
+    [["user_preferences.json"], "", $"($linux_user_path)/.config/warp-terminal", "./Linux/Warp"]
+    [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", $"($linux_user_path)/.config/nushell", "./Both/Nushell"]
+    [[], "~/AppData/Roaming/nushell/themes", $"($linux_user_path)/.config/nushell/themes", "./Both/Nushell/themes"]
+    [[".wezterm.lua"], "~", $"($linux_user_path)", "./Both/Wezterm"]
+    [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
+    [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
   ]
 }
 
@@ -112,7 +116,7 @@ def "main list" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
 
   for $path in $paths {
-    print $"path: ($path.filenames) -> ($path.windows_path) -> ($path.wsl_path) -> ($path.backup_path)"
+    print $"path: ($path.filenames) -> ($path.windows_path) -> ($path.linux_path) -> ($path.backup_path)"
   }
 }
 
