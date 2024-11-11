@@ -50,20 +50,20 @@ config.keys = {
 	{ key = "l", mods = "CTRL|SHIFT|ALT", action = act.AdjustPaneSize({ "Right", 5 }) },
 	{ key = "s", mods = "LEADER", action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
 	{ key = "v", mods = "LEADER", action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
-	{
-		key = "_",
-		mods = "CTRL|SHIFT",
-		action = wezterm.action_callback(function(window, pane)
-			window:restore()
-		end),
-	},
-	{
-		key = "+",
-		mods = "CTRL|SHIFT",
-		action = wezterm.action_callback(function(window, pane)
-			window:maximize()
-		end),
-	},
+	-- {
+	-- 	key = "_",
+	-- 	mods = "CTRL|SHIFT",
+	-- 	action = wezterm.action_callback(function(window, pane)
+	-- 		window:restore()
+	-- 	end),
+	-- },
+	-- {
+	-- 	key = "+",
+	-- 	mods = "CTRL|SHIFT",
+	-- 	action = wezterm.action_callback(function(window, pane)
+	-- 		window:maximize()
+	-- 	end),
+	-- },
 
 	--- Ignores
 	{ key = "LeftArrow", mods = "CTRL|SHIFT|ALT", action = act.DisableDefaultAssignment },
@@ -86,7 +86,7 @@ if is_windows then
 
 	table.insert(launch_menu, {
 		label = "Ubuntu",
-		args = { "ubuntu.exe", "" },
+		args = { "nu.exe", "-c ubuntu.exe" },
 	})
 else
 end
