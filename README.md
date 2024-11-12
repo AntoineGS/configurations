@@ -92,13 +92,14 @@ Use Homebrew whenever possible
   - `sudo mv JetBrainsMono* /usr/share/fonts/`
   - `fc-cache -f -v`
 - Rust / Cargo
+  - `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 ## Homebrew
 
 - Bash
   - `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
-  - `echo >> /home/a_simard/.bashrc`
-  - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/a_simard/.bashrc`
+  - `echo >> ~/.bashrc`
+  - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc`
 
 ## WezTerm
 
@@ -149,7 +150,7 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 ## Yazi
 
-- `brew install yazi ffmpegthumbnailer sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font`
+- `brew install yazi ffmpegthumbnailer sevenzip jq poppler fd ripgrep fzf zoxide imagemagick`
 
 # TODO
 
