@@ -1,5 +1,17 @@
-let is_windows = ($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows"
-let is_wsl = ($env | get --ignore-errors WSL_DISTRO_NAME) != ""
+#!/usr/bin/env nu
+const env_types = {windows: "windows", wsl: "wsl", linux: "linux"}
+# we assume linux if its neither windows nor wsl, this means SSH is also assumed linux, which is pretty much true
+mut curr_env = $env_types.linux
+
+if (($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows") {
+  $curr_env = $env_types.windows
+} else if (($env | get --ignore-errors WSL_DISTRO_NAME) != "") {
+  $curr_env = $env_types.wsl
+}
+
+let curr_env = $curr_env
+
+print $"Detected OS: $($curr_env)"
 
 def main [] {
   error make {msg: "You must either use `backup` or `restore` sub commands", }
@@ -21,6 +33,7 @@ def remove_files [filenames, _path] {
   }
 }
 
+# todo this should test if the folder exists and create if not
 def copy_data [filenames, _source, _destination] {
   # script does not like the ~, it sees it as a folder when used in a command
   let source = $_source | path expand
@@ -29,15 +42,21 @@ def copy_data [filenames, _source, _destination] {
   if (is_a_folder $filenames) {
     if ($source | path exists) {
       print $"copying folder ($source) to ($destination)"
-      cp -r $source ($destination | path dirname)
+
+      if not ($destination | path exists) {
+        mkdir $destination
+      }
+
+      cp -r $source $destination
     }
   } else {
     for $src_filename in $filenames {
       let src_filepath = $source | path join $src_filename
 
       if ($src_filepath | path exists) {
+        let destination = ($destination | path join $src_filename)
         print $"copying file ($src_filepath) to ($destination)"
-        cp $src_filepath ($destination | path join $src_filename)
+        cp $src_filepath $destination
       }
     }
   }
@@ -47,7 +66,6 @@ def is_a_folder [filenames] {
   $filenames == []
 }
 
-# todo: add support for linux here
 def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
   
@@ -79,7 +97,7 @@ def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
 
   for $path in $paths {
-    if ($is_windows) {
+    if ($curr_env == $env_types.windows) {
       restore_files $path.filenames $path.backup_path $path.windows_path
     }
     restore_files $path.filenames $path.backup_path $path.linux_path
@@ -87,11 +105,11 @@ def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
 }
 
 def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
-  let pwsh_profile = if ($is_windows) {pwsh -c "echo $PROFILE"} else {""}
+  let pwsh_profile = if ($curr_env == $env_types.windows) {pwsh -c "echo $PROFILE"} else {""}
   let pwsh_file = $pwsh_profile | path basename 
   let pwsh_path = $pwsh_profile | path dirname
   let wsl_user_path = $"//wsl.localhost/($wsl_instance_name)/home/($wsl_user)"
-  let linux_user_path = if ($is_wsl) { $wsl_user_path } else { "~" }
+  let linux_user_path = if ($curr_env == $env_types.windows) { $wsl_user_path } else { "~" }
    
   [
     [filenames, windows_path, linux_path, backup_path]; 
