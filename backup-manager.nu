@@ -127,6 +127,7 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
     [[".wezterm.lua"], "~", $"($linux_user_path)", "./Both/Wezterm"]
     [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
     [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
+    [["keymap.c"], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS/", "./Linux/QMK"]
   ]
 }
 
