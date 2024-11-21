@@ -6,8 +6,8 @@ local launch_menu = {}
 local tabline = wezterm.plugin.require("https://github.com/michaelbrusegard/tabline.wez")
 local is_windows = wezterm.target_triple == "x86_64-pc-windows-msvc"
 
-wezterm.on("gui-startup", function()
-	local tab, pane, window = mux.spawn_window({})
+wezterm.on("gui-startup", function(cmd)
+	local _, _, window = mux.spawn_window(cmd or {})
 	window:gui_window():maximize()
 end)
 
