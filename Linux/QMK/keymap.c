@@ -4,6 +4,7 @@
 #include QMK_KEYBOARD_H
 #include "keymap_us_international.h"
 // https://github.com/qmk/qmk_firmware/blob/master/quantum/keymap_extras/keymap_us_international.h
+//#define QUICK_TAP_TERM 0 // used to allow repeating of character with mod taps, 0 disables it
 
 enum custom_keycodes {
     C_CIRC = SAFE_RANGE,
@@ -17,22 +18,27 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         // might need some work with modifiers like SHIFT for C_QUOT to get double quotes
         case C_CIRC:
             if (record->event.pressed) {
-                SEND_STRING("ˆ"); // might have to be SEND_STRING(SS_TAP(US_DCIR) SS_TAP(KC_SPC))
+                SEND_STRING("^ ");
             }
             break;
         case C_QUOT:
             if (record->event.pressed) {
-                SEND_STRING("´"); // might have to be SEND_STRING(SS_TAP(US_ACUT) SS_TAP(KC_SPC))
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    SEND_STRING("\" ");
+                    return false;
+                } else {
+                    SEND_STRING("' "); // might have to be SEND_STRING(SS_TAP(US_ACUT) SS_TAP(KC_SPC))
+                }
             }
             break;
         case C_DGRV:
                 if (record->event.pressed) {
-                    SEND_STRING("`"); // might have to be SEND_STRING(SS_TAP(US_DGRV) SS_TAP(KC_SPC))
+                    SEND_STRING("` "); // might have to be SEND_STRING(SS_TAP(US_DGRV) SS_TAP(KC_SPC))
                 }
             break;
         case C_DTIL:
             if (record->event.pressed) {
-                SEND_STRING("~"); // might have to be SEND_STRING(SS_TAP(US_TILD) SS_TAP(KC_SPC))
+                SEND_STRING("~ "); // might have to be SEND_STRING(SS_TAP(US_TILD) SS_TAP(KC_SPC))
             }
             break;
     }
@@ -45,11 +51,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         KC_TAB,        US_Q,         US_W,         US_E,         US_R,         US_T,                     US_Y,         US_U,        US_I,         US_O,         US_P,       KC_BSPC,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_ESC,     LAlt(US_A),  LGui_T(US_S), LSft_T(US_D),  LCtl_T(US_F),    US_G,                     US_H,    LCtl_T(US_J), LSft_T(US_K), LGui_T(US_L),LAlt_T(US_SCLN), C_QUOT,
+        KC_ESC,        US_A,     ALT_T(US_S),   GUI_T(US_D),  CTL_T(US_F),     US_G,                     US_H,     CTL_T(US_J),  GUI_T(US_K),  ALT_T(US_L),    US_SCLN,      C_QUOT,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,       US_Z,         KC_X,         US_C,         US_V,         US_B,                     US_N,         US_M,       US_COMM,      US_DOT,       US_SLSH,     XXXXXXX,
+        XXXXXXX,       US_Z,         KC_X,         US_C,         US_V,         US_B,                     US_N,         US_M,       US_COMM,      US_DOT,       US_SLSH,      KC_DEL,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,       MO(1),        KC_SPC,    KC_ENT,       MO(2),       XXXXXXX
+                                                   SFT_T(OSM(MOD_LSFT)),   KC_ENT,     MO(1),  MO(2),         KC_SPC,       XXXXXXX
                                                      //`------------------------------------'  `--------------------------------------'
 
   ),
@@ -58,11 +64,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         XXXXXXX,      US_EXLM,       US_AT,       US_HASH,      US_DLR,       US_PERC,                 C_CIRC,       US_AMPR,      US_ASTR,      XXXXXXX,      XXXXXXX,      KC_BSPC,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_ESC,  LAlt(US_LCBR),LGui_T(US_LABK),LSft_T(US_LBRC),LCtl_T(US_LPRN), US_PLUS,              US_MINS, LCtl_T(US_RPRN),LSft_T(US_RBRC),LGui_T(US_RABK),LAlt_T(US_RCBR),US_COLN,
+        KC_ESC,       US_LCBR,      US_LABK,      US_LBRC,      US_LPRN,      US_EQL,                  US_UNDS,      US_RPRN,      US_RBRC,      US_RABK,      US_RCBR,      US_COLN,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,      XXXXXXX,       C_DGRV,       C_TILD,      US_SLSH,      US_EQL,                  US_UNDS,      US_BSLS,       XXXXXXX,      XXXXXXX,     US_PIPE,      XXXXXXX,
+        XXXXXXX,      XXXXXXX,       C_DTIL,       C_DGRV,      US_SLSH,      US_PLUS,                 US_MINS,      US_BSLS,      XXXXXXX,      US_NDAC,      US_PIPE,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,       MO(3),       KC_SPC,   KC_ENT,        _______,       XXXXXXX
+                                                   SFT_T(OSM(MOD_LSFT)),   KC_ENT,   _______,  MO(3),         KC_SPC,       XXXXXXX
                                                      //`------------------------------------'  `--------------------------------------'
 
   ),
@@ -71,11 +77,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         XXXXXXX,       US_1,         US_2,         US_3,         US_4,         US_5,                     US_6,         US_7,        US_8,         US_9,         US_0,        KC_BSPC,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_ESC, LAlt(US_DIAE),LGui_T(US_DCIR),LSft_T(US_DGRV),LCtl_T(US_ACUT),  US_CCED,               KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     XXXXXXX,      XXXXXXX,
+        KC_ESC,       XXXXXXX,  ALT_T(XXXXXXX),GUI_T(XXXXXXX),CTL_T(XXXXXXX), XXXXXXX,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     XXXXXXX,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      XXXXXXX,      XXXXXXX,
+        XXXXXXX,      US_DIAE,      US_DCIR,      US_DGRV,      US_ACUT,      US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      XXXXXXX,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,      _______,       KC_SPC,   KC_ENT,        MO(3),       XXXXXXX
+                                                   SFT_T(OSM(MOD_LSFT)),    KC_ENT,    MO(3),  _______,       KC_SPC,       XXXXXXX
                                                      //`------------------------------------'  `--------------------------------------'
 
   ),
@@ -85,11 +91,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         KC_F1,         KC_F2,        KC_F3,        KC_F4,        KC_F5,        KC_F6,                   KC_F7,        KC_F8,         KC_F9,       KC_F10,      KC_F11,       KC_F12,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_ESC,       LAlt(),      LGui_T(),      LSft_T(),    LCtl_T(),      XXXXXXX,                 XXXXXXX,     LCtl_T(),      LSft_T(),    LGui_T(),     LAlt_T(),      XXXXXXX,
+        KC_ESC,   ALT_T(XXXXXXX),GUI_T(XXXXXXX),  XXXXXXX,  CTL_T(XXXXXXX),   XXXXXXX,                 XXXXXXX,  CTL_T(XXXXXXX),   XXXXXXX,  GUI_T(XXXXXXX),ALT_T(XXXXXXX),  XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
         XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,       _______,      KC_SPC,   KC_ENT,        _______,       MO(4)
+                                                   SFT_T(OSM(MOD_LSFT)),    KC_ENT,      _______,  _______,        KC_SPC,       MO(4)
                                                      //`------------------------------------'  `--------------------------------------'
   ),
 
@@ -102,7 +108,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
         XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,       _______,      KC_SPC,   KC_ENT,        _______,       _______
+                                                         XXXXXXX,       KC_ENT,      _______,  _______,        KC_SPC,      _______
                                                      //`------------------------------------'  `--------------------------------------'
   )
 };
