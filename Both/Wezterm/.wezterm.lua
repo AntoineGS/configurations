@@ -27,7 +27,7 @@ end
 config.color_scheme = "One Dark (Gogh)"
 config.font = wezterm.font("JetBrainsMono Nerd Font")
 config.font_size = 13
-config.use_dead_keys = false
+config.use_dead_keys = true
 config.scrollback_lines = 5000
 config.adjust_window_size_when_changing_font_size = false
 ---config.hide_tab_bar_if_only_one_tab = true
