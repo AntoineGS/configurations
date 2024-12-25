@@ -3,47 +3,9 @@
 
 #include QMK_KEYBOARD_H
 #include "keymap_us_international.h"
-#include "oneshot.h"
-#include "swapper.h"
+#include "keymap.h"
 // https://github.com/qmk/qmk_firmware/blob/master/quantum/keymap_extras/keymap_us_international.h
 //#define QUICK_TAP_TERM 0 // used to allow repeating of character with mod taps, 0 disables it
-
-#define HOME G(KC_LEFT)
-#define END G(KC_RGHT)
-#define FWD G(KC_RBRC)
-#define BACK G(KC_LBRC)
-#define TAB_L G(S(KC_LBRC))
-#define TAB_R G(S(KC_RBRC))
-#define SPACE_L A(G(KC_LEFT))
-#define SPACE_R A(G(KC_RGHT))
-#define LA_SYM MO(SYM)
-#define LA_NAV MO(NAV)
-
-enum custom_keycodes {
-    C_CIRC = SAFE_RANGE,
-    C_QUOT, // '
-    C_DGRV, // `
-    C_DTIL, // ~
-    C_EAIG, // É
-    C_ECIR, // Ê
-    C_EGRV, // È
-    C_ETRE, // Ë
-    C_AGRV, // À
-    C_UGRV, // Ù
-    OS_SHFT,
-    OS_CTRL,
-    OS_ALT,
-    OS_CMD,
-    SW_WIN,  // Switch to next window         (cmd-tab)
-    SW_LANG
-};
-
-enum layers {
-    DEF,
-    SYM,
-    NAV,
-    NUM,
-};
 
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [DEF] = LAYOUT_split_3x6_3(
@@ -51,24 +13,24 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         KC_ESC,        US_Q,         US_W,         US_E,         US_R,         US_T,                     US_Y,         US_U,        US_I,         US_O,         US_P,       KC_BSPC,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_TAB,        US_A,         US_S,         US_D,         US_F,         US_G,                     US_H,         US_J,        US_K,         US_L,        US_SCLN,      C_QUOT,
+        KC_TAB,        C_A,          C_S,          C_D,          C_F,          US_G,                     US_H,         C_J,         C_K,          C_L,         C_SCLN,       C_QUOT,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
         XXXXXXX,       US_Z,         KC_X,         US_C,         US_V,         US_B,                     US_N,         US_M,       US_COMM,      US_DOT,       US_SLSH,      KC_DEL,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                          KC_LSFT,      KC_ENT,       LA_NAV,  LA_SYM,         KC_SPC,      XXXXXXX
+                                                         KC_LSFT,       KC_ENT,       LA_NAV,  LA_SYM,         KC_SPC,        MS_BTN1
                                                      //`------------------------------------'  `--------------------------------------'
   ),
 
     [NAV] = LAYOUT_split_3x6_3(
         // French and Navigation
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
-        XXXXXXX,      US_DIAE,      US_DCIR,      US_DGRV,      US_ACUT,      C_UGRV,                  KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
+        XXXXXXX,      US_DIAE,      US_DCIR,      US_DGRV,      US_ACUT,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_TAB,       OS_SHFT,      OS_CTRL,      OS_CMD,       OS_ALT,       C_AGRV,                  KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
+        KC_TAB,       C_ETRE,       C_ECIR,       C_EGRV,       C_EAIG,       C_AGRV,                  KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,      C_ETRE,       C_ECIR,       C_EGRV,       C_EAIG,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
+        XXXXXXX,      XXXXXXX,      C_OCIR,       C_UGRV,       C_UCIR,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,      XXXXXXX,      _______,  _______,       XXXXXXX,     XXXXXXX
+                                                         XXXXXXX,      XXXXXXX,      _______,  LA_NUM,        XXXXXXX,      _______
                                                      //`------------------------------------'  `--------------------------------------'
   ),
 
@@ -77,88 +39,32 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         XXXXXXX,      US_EXLM,       US_AT,       US_HASH,      US_DLR,       US_PERC,                 C_CIRC,       US_AMPR,      US_ASTR,      XXXXXXX,      XXXXXXX,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,      XXXXXXX,      C_DGRV,       US_PIPE,      C_DTIL,       KC_PPLS,                 KC_PMNS,      OS_ALT,       OS_CMD,       OS_CTRL,      OS_SHFT,      XXXXXXX,
+        XXXXXXX,      KC_LSFT,      C_LCBR,       C_LBRC,       C_LPRN,       KC_PPLS,                 KC_PMNS,      C_RPRN,       C_RBRC,       C_RCBR,       KC_LSFT,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,      XXXXXXX,      US_LCBR,      US_LBRC,      US_LPRN,      US_EQL,                  US_UNDS,      US_RPRN,      US_RBRC,      US_RCBR,      US_BSLS,      XXXXXXX,
+        QK_BOOT,      XXXXXXX,      C_DGRV,       US_PIPE,      C_DTIL,       US_EQL,                  US_UNDS,      XXXXXXX,      XXXXXXX,      XXXXXXX,      US_BSLS,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                          XXXXXXX,     XXXXXXX,      _______,  _______,       XXXXXXX,      XXXXXXX
+                                                          XXXXXXX,     XXXXXXX,       LA_NUM,  _______,       XXXXXXX,       _______
                                                      //`------------------------------------'  `--------------------------------------'
   ),
 
     [NUM] = LAYOUT_split_3x6_3(
         // Function Keys
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
-        XXXXXXX,       US_1,         US_2,         US_3,         US_4,         US_5,                     US_6,        US_7,         US_8,        US_9,         US_0,         _______,
+        XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,       OS_SHFT,      OS_CTRL,      OS_CMD,       OS_ALT,      XXXXXXX,                 XXXXXXX,       OS_ALT,       OS_CMD,      OS_CTRL,      OS_SHFT,      XXXXXXX,
+        XXXXXXX,       C_1,          C_2,          C_3,          C_4,          US_5,                     US_6,        C_7,          C_8,          C_9,          C_0,         XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_F12,        KC_F1,        KC_F2,        KC_F3,        KC_F4,        KC_F5,                    KC_F6,       KC_F7,        KC_F8,        KC_F9,       KC_F10,       KC_F11,
+        KC_F12,        KC_F1,        KC_F2,        KC_F3,        KC_F4,        KC_F5,                    KC_F6,       KC_F7,        KC_F8,        KC_F9,        KC_F10,       KC_F11,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         XXXXXXX,      XXXXXXX,      _______,  _______,       XXXXXXX,       QK_BOOT
+                                                         QK_BOOT,      XXXXXXX,      _______,  _______,       XXXXXXX,      _______
                                                      //`------------------------------------'  `--------------------------------------'
   )
 };
 
-
-bool is_oneshot_cancel_key(uint16_t keycode) {
-    switch (keycode) {
-    case LA_SYM:
-    case LA_NAV:
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool is_oneshot_ignored_key(uint16_t keycode) {
-    switch (keycode) {
-    case LA_SYM:
-    case LA_NAV:
-    case KC_LSFT:
-    case OS_SHFT:
-    case OS_CTRL:
-    case OS_ALT:
-    case OS_CMD:
-        return true;
-    default:
-        return false;
-    }
-}
-
-bool sw_win_active = false;
-bool sw_lang_active = false;
-
-oneshot_state os_shft_state = os_up_unqueued;
-oneshot_state os_ctrl_state = os_up_unqueued;
-oneshot_state os_alt_state = os_up_unqueued;
-oneshot_state os_cmd_state = os_up_unqueued;
-
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    update_swapper(
-        &sw_win_active, KC_LGUI, KC_TAB, SW_WIN,
-        keycode, record
-    );
-    update_swapper(
-        &sw_lang_active, KC_LCTL, KC_SPC, SW_LANG,
-        keycode, record
-    );
-
-    update_oneshot(
-        &os_shft_state, KC_LSFT, OS_SHFT,
-        keycode, record
-    );
-    update_oneshot(
-        &os_ctrl_state, KC_LCTL, OS_CTRL,
-        keycode, record
-    );
-    update_oneshot(
-        &os_alt_state, KC_LALT, OS_ALT,
-        keycode, record
-    );
-    update_oneshot(
-        &os_cmd_state, KC_LCMD, OS_CMD,
-        keycode, record
-    );
+    if (!process_smtd(keycode, record)) {
+        return false;
+    }
 
     switch (keycode) {
         // might need some work with modifiers like SHIFT for C_QUOT to get double quotes
@@ -188,54 +94,6 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 SEND_STRING("~ "); // might have to be SEND_STRING(SS_TAP(US_TILD) SS_TAP(KC_SPC))
             }
             break;
-        case C_EAIG:
-            if (record->event.pressed) {
-                if (get_mods() & MOD_MASK_SHIFT) {
-                    unregister_code(KC_LSFT);
-                    SEND_STRING("'E");
-                    register_code(KC_LSFT);
-                    return false;
-                } else {
-                    SEND_STRING("'e");
-                }
-            }
-            break;
-        case C_ECIR:
-            if (record->event.pressed) {
-                if (get_mods() & MOD_MASK_SHIFT) {
-                    unregister_code(KC_LSFT);
-                    SEND_STRING("^E");
-                    register_code(KC_LSFT);
-                    return false;
-                } else {
-                    SEND_STRING("^e");
-                }
-            }
-            break;
-        case C_EGRV:
-            if (record->event.pressed) {
-                if (get_mods() & MOD_MASK_SHIFT) {
-                    unregister_code(KC_LSFT);
-                    SEND_STRING("`E");
-                    register_code(KC_LSFT);
-                    return false;
-                } else {
-                    SEND_STRING("`e");
-                }
-            }
-            break;
-        case C_ETRE:
-            if (record->event.pressed) {
-                if (get_mods() & MOD_MASK_SHIFT) {
-                    unregister_code(KC_LSFT);
-                    SEND_STRING("\"E");
-                    register_code(KC_LSFT);
-                    return false;
-                } else {
-                    SEND_STRING("\"e");
-                }
-            }
-            break;
         case C_AGRV:
             if (record->event.pressed) {
                 if (get_mods() & MOD_MASK_SHIFT) {
@@ -260,11 +118,109 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                 }
             }
             break;
+        case C_OCIR:
+            if (record->event.pressed) {
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("^O");
+                    register_code(KC_LSFT);
+                    return false;
+                } else {
+                    SEND_STRING("^o");
+                }
+            }
+            break;
+        case C_UCIR:
+            if (record->event.pressed) {
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("^U");
+                    register_code(KC_LSFT);
+                    return false;
+                } else {
+                    SEND_STRING("^u");
+                }
+            }
+            break;
     }
 
     return true;
 }
 
-layer_state_t layer_state_set_user(layer_state_t state) {
-    return update_tri_layer_state(state, SYM, NAV, NUM);
+//layer_state_t layer_state_set_user(layer_state_t state) {
+//    return update_tri_layer_state(state, SYM, NAV, NUM);
+//}
+
+void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
+    if (action == SMTD_ACTION_TAP) {
+        switch (keycode) {
+            case C_ETRE:
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("\"E");
+                    register_code(KC_LSFT);
+                } else {
+                    SEND_STRING("\"e");
+                }
+                return;
+            case C_EAIG:
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("'E");
+                    register_code(KC_LSFT);
+                } else {
+                    SEND_STRING("'e");
+                }
+                return;
+            case C_ECIR:
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("^E");
+                    register_code(KC_LSFT);
+                } else {
+                    SEND_STRING("^e");
+                }
+                return;
+
+            case C_EGRV:
+                if (get_mods() & MOD_MASK_SHIFT) {
+                    unregister_code(KC_LSFT);
+                    SEND_STRING("`E");
+                    register_code(KC_LSFT);
+                } else {
+                    SEND_STRING("`e");
+                }
+                return;
+
+        }
+    }
+
+    switch (keycode) {
+        SMTD_MT(C_A, US_A, KC_LSFT)
+        SMTD_MT(C_S, US_S, KC_LEFT_GUI)
+        SMTD_MT(C_D, US_D, KC_LEFT_ALT)
+        SMTD_MT(C_F, US_F, KC_LEFT_CTRL)
+        SMTD_MT(C_SCLN, US_SCLN, KC_LSFT)
+        SMTD_MT(C_L, US_L, KC_LEFT_GUI)
+        SMTD_MT(C_K, US_K, KC_LEFT_ALT)
+        SMTD_MT(C_J, US_J, KC_LEFT_CTRL)
+        SMTD_MT(C_ETRE, C_ETRE, KC_LSFT)
+        SMTD_MT(C_ECIR, C_ECIR, KC_LEFT_GUI)
+        SMTD_MT(C_EGRV, C_EGRV, KC_LEFT_ALT)
+        SMTD_MT(C_EAIG, C_EAIG, KC_LEFT_CTRL)
+        SMTD_MT(C_LCBR, US_LCBR, KC_LEFT_GUI)
+        SMTD_MT(C_LBRC, US_LBRC, KC_LEFT_ALT)
+        SMTD_MT(C_LPRN, US_LPRN, KC_LEFT_CTRL)
+        SMTD_MT(C_RPRN, US_RPRN, KC_LEFT_CTRL)
+        SMTD_MT(C_RBRC, US_RBRC, KC_LEFT_ALT)
+        SMTD_MT(C_RCBR, US_RCBR, KC_LEFT_GUI)
+        SMTD_MT(C_1, US_1, KC_LSFT)
+        SMTD_MT(C_2, US_2, KC_LEFT_GUI)
+        SMTD_MT(C_3, US_3, KC_LEFT_ALT)
+        SMTD_MT(C_4, US_4, KC_LEFT_CTRL)
+        SMTD_MT(C_7, US_7, KC_LEFT_CTRL)
+        SMTD_MT(C_8, US_8, KC_LEFT_ALT)
+        SMTD_MT(C_9, US_9, KC_LEFT_GUI)
+        SMTD_MT(C_0, US_0, KC_LSFT)
+    }
 }
