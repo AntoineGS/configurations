@@ -70,17 +70,19 @@ def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
   
   for $path in $paths {
-    if not ($path.backup_path | path exists) {
-      mkdir $path.backup_path
+    let backup_path = if (is_a_folder $path.filenames) {$path.backup_path | path dirname} else {$path.backup_path}
+
+    if not ($backup_path | path exists) {
+      mkdir $backup_path
     }
 
-    if ($path.backup_path | path exists) {
-      remove_files $path.filenames $path.backup_path
+    if ($backup_path | path exists) {
+      remove_files $path.filenames $backup_path
     }
 
     # we prioritize the windows path
     mut source = if ($path.windows_path == "") { $path.linux_path } else { $path.windows_path }
-    copy_data $path.filenames $source $path.backup_path
+    copy_data $path.filenames $source $backup_path
   }
 }
 
@@ -98,7 +100,7 @@ def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
 
   for $path in $paths {
     if ($curr_env == $env_types.windows) {
-      restore_files $path.filenames $path.backup_path $path.windows_path
+      restore_files $path.filenames $path.backup_path ($path.windows_path | path dirname) 
     }
     restore_files $path.filenames $path.backup_path $path.linux_path
   }
@@ -112,6 +114,7 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let linux_user_path = if ($curr_env == $env_types.windows) { $wsl_user_path } else { "~" }
    
   [
+    # Note: The Windows path must include the folder for folder backups, but not the Linux path
     [filenames, windows_path, linux_path, backup_path]; 
     [[$pwsh_file], $pwsh_path, "", $"./Windows/PowerShell"]
     [[], "~/AppData/Local/nvim", $"($linux_user_path)/.config", "./Both/Neovim/nvim"] 
@@ -127,7 +130,7 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
     [[".wezterm.lua"], "~", $"($linux_user_path)", "./Both/Wezterm"]
     [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
     [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
-    [["keymap.c"], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS/", "./Linux/QMK"]
+    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/AntoineGS"]
   ]
 }
 
