@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 const env_types = {windows: "windows", wsl: "wsl", linux: "linux"}
-# we assume linux if its neither windows nor wsl, this means SSH is also assumed linux, which is pretty much true
+# we assume Linux if its neither Windows nor WSL, this means SSH is also assumed Linux
 mut curr_env = $env_types.linux
 
 if (($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows") {
@@ -18,22 +18,25 @@ def main [] {
 }
 
 def remove_files [filenames, _path] {
-  let $path = $_path | path expand
+  let $path = $_path | path expand --no-symlink
 
-  if (is_a_folder $path) {
-    rm -r $path
+  if (is_a_folder $filenames) {
+    if (($path | path exists) and ($path | path type) != "symlink") {
+      print $"removing folder ($path)"
+      rm -r $path
+    }
   } else {
     for $filename in $filenames {
       let filepath = $path | path join $filename
 
-      if ($filepath | path exists) {
+      if (($filepath | path exists) and ($filepath | path type) != "symlink") {
+        print $"removing file ($filepath), type: ($filepath | path type)"
         rm $filepath
       }
     }
   }
 }
 
-# todo this should test if the folder exists and create if not
 def copy_data [filenames, _source, _destination] {
   # script does not like the ~, it sees it as a folder when used in a command
   let source = $_source | path expand
@@ -54,7 +57,6 @@ def copy_data [filenames, _source, _destination] {
       let src_filepath = $source | path join $src_filename
 
       if ($src_filepath | path exists) {
-        let destination = ($destination | path join $src_filename)
         print $"copying file ($src_filepath) to ($destination)"
         cp $src_filepath $destination
       }
@@ -86,13 +88,51 @@ def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   }
 }
 
-def restore_files [filenames, source, destination] {
-  if ($destination == "") {
+def restore_files [filenames, _source, _destination, is_windows] {
+  if ($_destination == "") {
     return
   }
+  
+  remove_files $filenames $_destination
 
-  remove_files $filenames $destination
-  copy_data $filenames $source $destination
+  if ($is_windows) {
+    if (is_a_folder $filenames) {
+      let source = $_source | path expand
+      let destination = $_destination | path expand --no-symlink
+
+      if (($destination | path type) == "symlink") {
+        return 
+      }
+           
+      print $"creating symlink from ($source) to ($destination)"
+      mklink /J $destination $source
+      return
+    } else {
+      for $src_filename in $filenames {
+        let src_filepath = $_source | path join $src_filename
+
+        if ($src_filepath | path exists) {
+          let source = $src_filepath | path expand
+          let destination = ($_destination | path join $src_filename) | path expand --no-symlink
+          
+          if (($destination | path type) == "symlink") {
+            return 
+          }
+
+          print $"creating symlink from ($source) to ($destination)"
+          mklink $destination $source
+        }
+      }
+    }
+  } else {
+
+    if (is_a_folder $filenames) {
+      let destination = $_destination | path dirname
+      copy_data $filenames $_source $destination
+    } else {
+      copy_data $filenames $_source $_destination
+    }
+  }
 }
 
 def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
@@ -100,9 +140,9 @@ def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
 
   for $path in $paths {
     if ($curr_env == $env_types.windows) {
-      restore_files $path.filenames $path.backup_path ($path.windows_path | path dirname) 
+      restore_files $path.filenames $path.backup_path $path.windows_path true 
     }
-    restore_files $path.filenames $path.backup_path $path.linux_path
+    restore_files $path.filenames $path.backup_path $path.linux_path false
   }
 }
 
@@ -114,10 +154,9 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let linux_user_path = if ($curr_env == $env_types.windows) { $wsl_user_path } else { "~" }
    
   [
-    # Note: The Windows path must include the folder for folder backups, but not the Linux path
     [filenames, windows_path, linux_path, backup_path]; 
     [[$pwsh_file], $pwsh_path, "", $"./Windows/PowerShell"]
-    [[], "~/AppData/Local/nvim", $"($linux_user_path)/.config", "./Both/Neovim/nvim"] 
+    [[], "~/AppData/Local/nvim", $"($linux_user_path)/.config/nvim", "./Both/Neovim/nvim"] 
     [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
     [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
     [["settings.json"], "~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState", "", "./Windows/WindowsTerminal"]
