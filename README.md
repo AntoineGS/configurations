@@ -2,6 +2,8 @@
 
 ## Requirements
 
+- See requirements under Windows and Linux sections
+
 ## VSCode
 
 - Install NeoVim plugin
