@@ -27,7 +27,7 @@ M.mason = {
     "spectral-language-server",
     "sonarlint-language-server",
     "shfmt",
-    "sqlfmt",
+    --    "sqlfmt",
     "markdownlint-cli2",
     "markdown-toc",
     "marksman",
