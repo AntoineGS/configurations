@@ -105,5 +105,6 @@ $env.NU_PLUGIN_DIRS = [
 $env.CARAPACE_BRIDGES = 'zsh,fish,bash,inshellisense'
 if ($os != "Windows") {
   $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')
+  $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/antoinegs/.local/bin')
 }
 source ./themes/one-dark.nu
