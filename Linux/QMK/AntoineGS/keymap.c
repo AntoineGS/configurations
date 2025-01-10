@@ -61,6 +61,8 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   )
 };
 
+#include "sm_td.h"
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     if (!process_smtd(keycode, record)) {
         return false;
@@ -151,7 +153,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
 //    return update_tri_layer_state(state, SYM, NAV, NUM);
 //}
 
-void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
+smtd_resolution on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
     if (action == SMTD_ACTION_TAP) {
         switch (keycode) {
             case C_ETRE:
@@ -162,7 +164,7 @@ void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
                 } else {
                     SEND_STRING("\"e");
                 }
-                return;
+                return SMTD_RESOLUTION_UNHANDLED;
             case C_EAIG:
                 if (get_mods() & MOD_MASK_SHIFT) {
                     unregister_code(KC_LSFT);
@@ -171,7 +173,7 @@ void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
                 } else {
                     SEND_STRING("'e");
                 }
-                return;
+                return SMTD_RESOLUTION_UNHANDLED;
             case C_ECIR:
                 if (get_mods() & MOD_MASK_SHIFT) {
                     unregister_code(KC_LSFT);
@@ -180,7 +182,7 @@ void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
                 } else {
                     SEND_STRING("^e");
                 }
-                return;
+                return SMTD_RESOLUTION_UNHANDLED;
 
             case C_EGRV:
                 if (get_mods() & MOD_MASK_SHIFT) {
@@ -190,7 +192,7 @@ void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
                 } else {
                     SEND_STRING("`e");
                 }
-                return;
+                return SMTD_RESOLUTION_UNHANDLED;
 
         }
     }
@@ -223,4 +225,6 @@ void on_smtd_action(uint16_t keycode, smtd_action action, uint8_t tap_count) {
         SMTD_MT(C_9, US_9, KC_LEFT_GUI)
         SMTD_MT(C_0, US_0, KC_LSFT)
     }
+
+    return SMTD_RESOLUTION_UNHANDLED;
 }
