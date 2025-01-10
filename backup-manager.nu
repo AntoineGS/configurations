@@ -170,6 +170,7 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
     [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
     [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
     [[], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/AntoineGS"]
+    [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
   ]
 }
 
