@@ -127,6 +127,9 @@ window_rules:
         window_class: { regex: "HwndWrapper" }
 
       - window_process: { equals: "mstsc" }
+      - window_process: { equals: "msrdc" } # WSL applications
+      - window_process: { equals: "SFClient2" }
+      - window_process: { equals: "ChainDrive SF" }
 
 binding_modes:
   # When enabled, the focused window can be resized via arrow keys or HJKL.
