@@ -1,4 +1,5 @@
 #!/usr/bin/env nu
+# add ploopyco
 const env_types = {windows: "windows", wsl: "wsl", linux: "linux"}
 # we assume Linux if its neither Windows nor WSL, this means SSH is also assumed Linux
 mut curr_env = $env_types.linux
@@ -70,8 +71,16 @@ def is_a_folder [filenames] {
 
 def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
   let paths = init_paths $wsl_instance_name $wsl_user
-  
+
   for $path in $paths {
+    # Using symlinks on Windows
+    if ($path.windows_path != "") {
+      continue
+    }
+
+    # we prioritize the windows path
+    mut source = if ($path.windows_path == "") { $path.linux_path } else { $path.windows_path }
+
     let backup_path = if (is_a_folder $path.filenames) {$path.backup_path | path dirname} else {$path.backup_path}
 
     if not ($backup_path | path exists) {
@@ -82,8 +91,6 @@ def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
       remove_files $path.filenames $backup_path
     }
 
-    # we prioritize the windows path
-    mut source = if ($path.windows_path == "") { $path.linux_path } else { $path.windows_path }
     copy_data $path.filenames $source $backup_path
   }
 }
@@ -125,7 +132,6 @@ def restore_files [filenames, _source, _destination, is_windows] {
       }
     }
   } else {
-
     if (is_a_folder $filenames) {
       let destination = $_destination | path dirname
       copy_data $filenames $_source $destination
@@ -169,7 +175,9 @@ def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
     [[".wezterm.lua"], "~", $"($linux_user_path)", "./Both/Wezterm"]
     [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
     [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
-    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/AntoineGS"]
+    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/piantor_pro/AntoineGS"]
+    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
+    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
     [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
   ]
 }
