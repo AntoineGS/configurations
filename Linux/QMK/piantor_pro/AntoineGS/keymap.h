@@ -1,8 +1,12 @@
-//#define SMTD_GLOBAL_TAP_TERM 500
 #define LA_SYM MO(SYM)
 #define LA_NAV MO(NAV)
 #define LA_NUM MO(NUM)
 #define MAX_DEFERRED_EXECUTORS 10
+#define CHORDAL_HOLD
+#undef TAPPING_TERM
+#define TAPPING_TERM 1000
+//#define RETRO_TAPPING
+//#define QUICK_TAP_TERM 0 // used to allow repeating of character with mod taps, 0 disables it
 
 enum custom_keycodes {
     C_CIRC = SAFE_RANGE,
@@ -14,13 +18,6 @@ enum custom_keycodes {
     C_UCIR, // Û
     C_OCIR, // Ô
     SW_WIN, // Switch to next window         (cmd-tab)
-    C_A, // reads as C(ustom) + KC_A, but you may give any name here
-    C_S,
-    C_D,
-    C_F,
-    C_J,
-    C_K,
-    C_L,
     C_SCLN,
     C_EAIG, // É
     C_ECIR, // Ê
@@ -32,14 +29,6 @@ enum custom_keycodes {
     C_RPRN, // )
     C_RBRC, // ]
     C_RCBR, // }
-    C_1,
-    C_2,
-    C_3,
-    C_4,
-    C_7,
-    C_8,
-    C_9,
-    C_0,
 };
 
 enum layers {
