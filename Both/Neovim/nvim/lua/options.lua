@@ -8,5 +8,5 @@ opt.clipboard = ""
 opt.relativenumber = true
 opt.foldmethod = "expr"
 opt.foldexpr = "nvim_treesitter#foldexpr()"
-opt.foldlevelstart = 1
+opt.foldlevelstart = 2
 --opt.foldtext = "getline(v:foldstart) .. v:lua.nvim_treesitter#foldtext()"
