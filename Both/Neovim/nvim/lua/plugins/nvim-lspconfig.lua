@@ -12,6 +12,7 @@ return {
       bashls = {},
       spectral = {},
       marksman = {},
+      clangd = {},
     },
   },
   config = function(_, opts)

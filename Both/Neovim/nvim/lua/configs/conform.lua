@@ -21,6 +21,7 @@ return {
     sql = { "sqlfmt" },
     toml = { "prettierd" },
     nu = { "prettierd" },
+    clang = { "clang-format" },
   },
 
   format_on_save = {
