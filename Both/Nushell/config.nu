@@ -891,6 +891,7 @@ $env.config = {
         }
     ]
 }
+
 def --env y [...args] {
 	let tmp = (mktemp -t "yazi-cwd.XXXXXX")
 	yazi ...$args --cwd-file $tmp
@@ -901,7 +902,7 @@ def --env y [...args] {
 	rm -fp $tmp
 }
 
-alias ll = ls -l
+alias ll = ls -al
 
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
