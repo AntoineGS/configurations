@@ -1,3 +1,10 @@
+local wk = require "which-key"
+wk.add {
+  { "<leader>cc", group = "Code Companion" },
+  { "<leader>ccc", "<cmd>CodeCompanionChat<CR>", desc = "Chat" },
+  { "<leader>cct", "<cmd>CodeCompanionChat Toggle<CR>", desc = "Toggle Chat" },
+}
+
 return {
   adapters = {
     copilot = function()
