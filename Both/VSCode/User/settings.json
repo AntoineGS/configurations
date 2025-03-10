@@ -19,9 +19,8 @@
   },
   "editor.fontFamily": "JetBrainsMono Nerd Font",
   "editor.formatOnSave": true,
-"git.openRepositoryInParentFolders": "never",
-"security.allowedUNCHosts": [
-  "wsl.localhost"
-],
-  "security.workspace.trust.untrustedFiles": "open"
+  "git.openRepositoryInParentFolders": "never",
+  "security.allowedUNCHosts": ["wsl.localhost"],
+  "security.workspace.trust.untrustedFiles": "open",
+  "security.workspace.trust.enabled": false
 }
