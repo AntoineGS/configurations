@@ -1,5 +1,4 @@
 #!/usr/bin/env nu
-# add ploopyco
 const env_types = {windows: "windows", wsl: "wsl", linux: "linux"}
 # we assume Linux if its neither Windows nor WSL, this means SSH is also assumed Linux
 mut curr_env = $env_types.linux
@@ -69,121 +68,101 @@ def is_a_folder [filenames] {
   $filenames == []
 }
 
-def "main backup" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
-  let paths = init_paths $wsl_instance_name $wsl_user
-
-  for $path in $paths {
-    # Using symlinks on Windows
-    if ($path.windows_path != "") {
-      continue
-    }
-
-    # we prioritize the windows path
-    mut source = if ($path.windows_path == "") { $path.linux_path } else { $path.windows_path }
-
-    let backup_path = if (is_a_folder $path.filenames) {$path.backup_path | path dirname} else {$path.backup_path}
-
-    if not ($backup_path | path exists) {
-      mkdir $backup_path
-    }
-
-    if ($backup_path | path exists) {
-      remove_files $path.filenames $backup_path
-    }
-
-    copy_data $path.filenames $source $backup_path
-  }
-}
-
-def restore_files [filenames, _source, _destination, is_windows] {
+def restore_files [filenames, _source, _destination] {
   if ($_destination == "") {
     return
   }
   
   remove_files $filenames $_destination
 
-  if ($is_windows) {
-    if (is_a_folder $filenames) {
-      let source = $_source | path expand
-      let destination = $_destination | path expand --no-symlink
+  if (is_a_folder $filenames) {
+    let source = $_source | path expand
+    let destination = $_destination | path expand --no-symlink
 
-      if (($destination | path type) == "symlink") {
-        return 
-      }
-           
-      print $"creating symlink from ($source) to ($destination)"
-      mklink /J $destination $source
-      return
-    } else {
-      for $src_filename in $filenames {
-        let src_filepath = $_source | path join $src_filename
-
-        if ($src_filepath | path exists) {
-          let source = $src_filepath | path expand
-          let destination = ($_destination | path join $src_filename) | path expand --no-symlink
-          
-          if (($destination | path type) == "symlink") {
-            return 
-          }
-
-          print $"creating symlink from ($source) to ($destination)"
-          mklink $destination $source
-        }
-      }
+    if (($destination | path type) == "symlink") {
+      return 
     }
+         
+    print $"creating symlink from ($source) to ($destination)"
+
+    if ($curr_env == $env_types.windows) {
+      mklink /J $destination $source
+    } else { 
+      ln -s $source $destination
+    } 
+    
+    return
   } else {
-    if (is_a_folder $filenames) {
-      let destination = $_destination | path dirname
-      copy_data $filenames $_source $destination
-    } else {
-      copy_data $filenames $_source $_destination
+    for $src_filename in $filenames {
+      let src_filepath = $_source | path join $src_filename
+
+      if ($src_filepath | path exists) {
+        let source = $src_filepath | path expand
+        let destination = ($_destination | path join $src_filename) | path expand --no-symlink
+        
+        if (($destination | path type) == "symlink") {
+          return 
+        }
+
+        print $"creating symlink from ($source) to ($destination)"    
+        if ($curr_env == $env_types.windows) {
+          mklink $destination $source
+        } else { 
+          ln -s $source $destination
+        } 
+      }
     }
   }
 }
 
-def "main restore" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
-  let paths = init_paths $wsl_instance_name $wsl_user
+def "main restore" [windows_repo_path_from_wsl = "/mnt/c/Gits/configurations/"] {
+  let paths = init_paths
 
   for $path in $paths {
     if ($curr_env == $env_types.windows) {
-      restore_files $path.filenames $path.backup_path $path.windows_path true 
+      restore_files $path.filenames $path.backup_path $path.windows_path
+    } else {
+      mut $linux_path = $path.linux_path
+
+      if ($curr_env == $env_types.wsl) {
+        let $linux_path = $windows_repo_path_from_wsl | path join $path.backup_path
+      }
+
+      restore_files $path.filenames $path.backup_path $linux_path
     }
-    restore_files $path.filenames $path.backup_path $path.linux_path false
   }
 }
 
-def init_paths [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
+def init_paths [] {
   let pwsh_profile = if ($curr_env == $env_types.windows) {pwsh -c "echo $PROFILE"} else {""}
   let pwsh_file = $pwsh_profile | path basename 
   let pwsh_path = $pwsh_profile | path dirname
-  let wsl_user_path = $"//wsl.localhost/($wsl_instance_name)/home/($wsl_user)"
-  let linux_user_path = if ($curr_env == $env_types.windows) { $wsl_user_path } else { "~" }
    
   [
     [filenames, windows_path, linux_path, backup_path]; 
-    [[$pwsh_file], $pwsh_path, "", $"./Windows/PowerShell"]
-    [[], "~/AppData/Local/nvim", $"($linux_user_path)/.config/nvim", "./Both/Neovim/nvim"] 
+    [[$pwsh_file], $pwsh_path, "", "./Windows/PowerShell"]
+    [[], "~/AppData/Local/nvim", "~/.config/nvim", "./Both/Neovim/nvim"] 
     [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
     [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
     [["settings.json"], "~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState", "", "./Windows/WindowsTerminal"]
-    [[".bashrc"], "", $"($linux_user_path)", "./Linux/Bash"]
-    [["starship.toml"], "~/.config", $"($linux_user_path)/.config", "./Both/Starship"]
-    [["init.nu"], "~/.cache/starship", $"($linux_user_path)/.cache/starship", "./Both/Starship"]
-    [["user_preferences.json"], "", $"($linux_user_path)/.config/warp-terminal", "./Linux/Warp"]
-    [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", $"($linux_user_path)/.config/nushell", "./Both/Nushell"]
-    [[], "~/AppData/Roaming/nushell/themes", $"($linux_user_path)/.config/nushell/themes", "./Both/Nushell/themes"]
-    [[".wezterm.lua"], "~", $"($linux_user_path)", "./Both/Wezterm"]
-    [[".zoxide.nu"], "~", $"($linux_user_path)", "./Both/Zoxide"]
-    [["init.nu"], "~/.cache/carapace", $"($linux_user_path)/.cache/carapace" "./Both/Carapace"]
-    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/piantor_pro/AntoineGS"]
-    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
-    [[], "", $"($linux_user_path)/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
+    [[".bashrc"], "", "~", "./Linux/Bash"]
+    [["starship.toml"], "~/.config", "~/.config", "./Both/Starship"]
+    [["init.nu"], "~/.cache/starship", "~/.cache/starship", "./Both/Starship"]
+    [["user_preferences.json"], "", "~/.config/warp-terminal", "./Linux/Warp"]
+    [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", "~/.config/nushell", "./Both/Nushell"]
+    [[], "~/AppData/Roaming/nushell/themes", "~/.config/nushell/themes", "./Both/Nushell/themes"]
+    [[".wezterm.lua"], "~", "~", "./Both/Wezterm"]
+    [[".zoxide.nu"], "~", "~", "./Both/Zoxide"]
+    [["init.nu"], "~/.cache/carapace", "~/.cache/carapace" "./Both/Carapace"]
+    [[], "", "~/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/piantor_pro/AntoineGS"]
+    [[], "", "~/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
+    [[], "", "~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
     [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
   ]
 }
 
-def "main list" [wsl_instance_name = "Ubuntu", wsl_user = "antoinegs"] {
-  let paths = init_paths $wsl_instance_name $wsl_user
+def "main list" [] {
+  let paths = init_paths
 
   for $path in $paths {
     print $"path: ($path.filenames) -> ($path.windows_path) -> ($path.linux_path) -> ($path.backup_path)"
