@@ -124,6 +124,8 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 ## Warp Terminal
 
+Not currently in use
+
 - `https://www.warp.dev/download`
 - Font to JetBrainsMono and 16pt on WSL
 
@@ -131,6 +133,7 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 - `sudo apt install pkg-config libssl-dev build-essential`
 - `brew install nushell`
+  Very long to install, currently optional
 - `cargo install nu_plugin_semver nu_plugin_regex`
 - `which nu | sudo tee -a /etc/shells`
 - `chsh -s "$(which nu)"`
@@ -140,13 +143,19 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 
 ## Zoxide
 
+Modern `cd` replacement
+
 - `brew install zoxide`
 
 ## eza
 
-- `cargo install eza`
+Modern `ls` replacement
+
+- `brew install eza`
 
 ## carapace
+
+Cross-shell auto-completion
 
 - `brew install carapace`
 
@@ -159,9 +168,3 @@ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 - .bashrc, but need restore option for wgpu
 - Add nushell LSP/Formatter
 - Add pwsh Formatter
-
-# Notes
-
-- On Work computer:
-
-  - `nu backup-manager.nu restore Ubuntu a_simard`
