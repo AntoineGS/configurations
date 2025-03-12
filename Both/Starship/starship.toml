@@ -5,6 +5,7 @@ format = """
 $os\
 $username\
 $hostname\
+$shell\
 [](bg:color_two fg:color_one)\
 $directory\
 [](fg:color_two bg:color_three)\
@@ -378,3 +379,11 @@ disabled = false
 #vimcmd_replace_one_symbol = '[](bold fg:color_four)[N](bold bg:color_four fg:color_fg)[](fg:color_four)'
 #vimcmd_replace_symbol = '[](bold fg:color_four)[N](bold bg:color_four fg:color_fg)[](fg:color_four)'
 #vimcmd_visual_symbol = '[](bold fg:color_two)[N](bold bg:color_two fg:color_fg)[](fg:color_two)'
+
+[shell]
+nu_indicator = '>'
+powershell_indicator = ' '
+bash_indicator = ' '
+style = "bg:color_one fg:color_fg"
+format = '[$indicator]($style)'
+disabled = false
