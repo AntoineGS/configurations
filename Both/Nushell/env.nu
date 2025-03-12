@@ -36,6 +36,13 @@ def create_right_prompt [] {
     ([$last_exit_code, (char space), $time_segment] | str join)
 }
 
+def attach_to_container [name_substring] {
+  let container = docker ps | from ssv -a | where IMAGE =~ $name_substring
+  let container_id = $container | get 'CONTAINER ID'.0
+  print $"Attaching to ($container | get NAMES.0) \(($container | get IMAGE.0)\)"
+  docker exec -it $"($container_id)" bash
+}
+
 # Use nushell functions to define your right and left prompt
 #$env.PROMPT_COMMAND = {|| create_left_prompt }
 # FIXME: This default is not implemented in rust code as of 2023-09-08.
