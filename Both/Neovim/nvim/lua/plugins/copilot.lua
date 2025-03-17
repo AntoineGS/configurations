@@ -1,7 +1,7 @@
 return {
   -- "zbirenbaum/copilot.lua",
   "AntoineGS/copilot.lua",
-  branch = "gpt4o",
+  branch = "master",
   cmd = "Copilot",
   event = "InsertEnter",
   config = function()
