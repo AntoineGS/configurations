@@ -1,12 +1,9 @@
 #!/usr/bin/env nu
-const env_types = {windows: "windows", wsl: "wsl", linux: "linux"}
-# we assume Linux if its neither Windows nor WSL, this means SSH is also assumed Linux
+const env_types = {windows: "windows", linux: "linux"}
 mut curr_env = $env_types.linux
 
 if (($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows") {
   $curr_env = $env_types.windows
-} else if (($env | get --ignore-errors WSL_DISTRO_NAME) != "") {
-  $curr_env = $env_types.wsl
 }
 
 let curr_env = $curr_env
@@ -115,7 +112,7 @@ def restore_files [filenames, _source, _destination] {
   }
 }
 
-def "main restore" [windows_repo_path_from_wsl = "/mnt/c/Gits/configurations/"] {
+def "main restore" [] {
   let paths = init_paths
 
   for $path in $paths {
@@ -123,11 +120,6 @@ def "main restore" [windows_repo_path_from_wsl = "/mnt/c/Gits/configurations/"] 
       restore_files $path.filenames $path.backup_path $path.windows_path
     } else {
       mut $linux_path = $path.linux_path
-
-      if ($curr_env == $env_types.wsl) {
-        let $linux_path = $windows_repo_path_from_wsl | path join $path.backup_path
-      }
-
       restore_files $path.filenames $path.backup_path $linux_path
     }
   }
