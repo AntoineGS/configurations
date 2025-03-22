@@ -19,7 +19,25 @@ return {
     -- C-k: Toggle signature help
     --
     -- See the full "keymap" documentation for information on defining your own keymap.
-    keymap = { preset = "default" },
+    keymap = {
+      preset = "none",
+      ["<C-space>"] = { "show", "show_documentation", "hide_documentation" },
+      ["<C-e>"] = { "hide" },
+      ["<C-p>"] = { "select_and_accept" },
+
+      ["<Up>"] = { "select_prev", "fallback" },
+      ["<Down>"] = { "select_next", "fallback" },
+      -- ["<C-p>"] = { "select_prev", "fallback_to_mappings" },
+      -- ["<C-n>"] = { "select_next", "fallback_to_mappings" },
+
+      ["<C-b>"] = { "scroll_documentation_up", "fallback" },
+      ["<C-f>"] = { "scroll_documentation_down", "fallback" },
+
+      ["<Tab>"] = { "snippet_forward", "fallback" },
+      ["<S-Tab>"] = { "snippet_backward", "fallback" },
+
+      ["<C-k>"] = { "show_signature", "hide_signature", "fallback" },
+    },
 
     appearance = {
       -- Sets the fallback highlight groups to nvim-cmp's highlight groups
@@ -44,8 +62,17 @@ return {
         },
       },
     },
-
     fuzzy = { implementation = "prefer_rust_with_warning" },
+    completion = {
+      menu = {
+        direction_priority = { "n", "s" },
+      },
+      list = {
+        selection = {
+          preselect = false,
+        },
+      },
+    },
   },
   opts_extend = { "sources.default" },
 }

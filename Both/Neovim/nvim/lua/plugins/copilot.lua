@@ -27,11 +27,12 @@ return {
       logger = {
         file_log_level = vim.log.levels.TRACE,
         print_log_level = vim.log.levels.WARN,
-        log_to_file = true,
         trace_lsp = "verbose",
+        log_lsp_messages = true,
+        trace_lsp_progress = false,
       },
       panel = {
-        enabled = true,
+        enabled = false,
         keymap = {
           open = "<M-p>",
         },
@@ -40,10 +41,11 @@ return {
         enabled = true,
         auto_trigger = true,
         keymap = {
-          accept = "<M-}>",
+          accept = "<M-p>",
+          -- accept = "<TAB>",
           next = "<M-]>",
           prev = "<M-[>",
-          dismiss = "<C-c>",
+          -- dismiss = "<C-c>",
         },
       },
       filetypes = {
