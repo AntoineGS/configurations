@@ -4,7 +4,7 @@ return {
     "mfussenegger/nvim-dap",
   },
   opts = {}, -- for default options, refer to the configuration section for custom setup.
-  config = function(_, opts) end,
+  config = function(_, _) end,
   keys = {
     {
       "<leader>dll",
