@@ -2,7 +2,7 @@ return {
   "saghen/blink.cmp",
   dependencies = {
     "rafamadriz/friendly-snippets",
-    "fang2hou/blink-copilot",
+    -- "fang2hou/blink-copilot",
   },
   version = "*",
 
@@ -51,16 +51,19 @@ return {
 
     -- Default list of enabled providers defined so that you can extend it
     -- elsewhere in your config, without redefining it, due to `opts_extend`
+    -- sources = {
+    --   default = { "copilot", "lsp", "path", "snippets", "buffer" },
+    --   providers = {
+    --     copilot = {
+    --       name = "copilot",
+    --       module = "blink-copilot",
+    --       score_offset = 100,
+    --       async = true,
+    --     },
+    --   },
+    -- },
     sources = {
-      default = { "copilot", "lsp", "path", "snippets", "buffer" },
-      providers = {
-        copilot = {
-          name = "copilot",
-          module = "blink-copilot",
-          score_offset = -1000,
-          async = true,
-        },
-      },
+      default = { "lsp", "path", "snippets", "buffer" },
     },
     fuzzy = { implementation = "prefer_rust_with_warning" },
     completion = {
