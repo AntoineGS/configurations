@@ -3,7 +3,7 @@ require "nvchad.mappings"
 local wk = require "which-key"
 wk.add {
   { "<leader><space>", "<cmd>lua Snacks.picker.smart()<CR>", desc = "Smart Find Files" },
-  { "<leader>,", "<cmd>lua Snacks.picker.buffers()<CR>", desc = "Buffers" },
+  { '<leader>"', "<cmd>lua Snacks.picker.buffers()<CR>", desc = "Buffers" },
   { "<leader>/", "<cmd>lua Snacks.picker.grep()<CR>", desc = "Grep" },
   { "<leader>:", "<cmd>lua Snacks.picker.command_history()<CR>", desc = "Command History" },
   { "<leader>n", "<cmd>lua Snacks.picker.notifications()<CR>", desc = "Notification History" },
