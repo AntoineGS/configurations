@@ -10,6 +10,13 @@ if not vim.g.vscode then
   end)
 end
 
+local wk = require "which-key"
+wk.add {
+  { "<leader>y", '"+y', desc = "Yank to +" },
+  { "<leader>y", '"+y', desc = "Yank to +", mode = "v" },
+  { "<leader>Y", '"+Y', desc = "Yank to +" },
+}
+
 --[[ local map = vim.keymap.set
 map("n", "<leader>y", '"+y')
 map("v", "<leader>y", '"+y')
