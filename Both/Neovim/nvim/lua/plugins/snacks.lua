@@ -64,10 +64,14 @@ return {
   "folke/snacks.nvim",
   lazy = false,
   opts = {
-    explorer = {},
+    explorer = {
+      replace_netrw = true,
+    },
     picker = {
       sources = {
-        explorer = {},
+        explorer = {
+          hidden = true,
+        },
       },
     },
   },
