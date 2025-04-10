@@ -47,5 +47,9 @@ return {
     { "<leader>ds", function() require("dap").session() end, desc = "Session" },
     { "<leader>dt", function() require("dap").terminate() end, desc = "Terminate" },
     { "<leader>dw", function() require("dap.ui.widgets").hover() end, desc = "Widgets" },
+    { "<leader>dd", function ()
+      _G.attach_debugger = not _G.attach_debugger
+      print("Debugger: " .. (_G.attach_debugger and "ON" or "OFF"))
+    end, desc = "Toggle Attach Debugger"},
   },
 }
