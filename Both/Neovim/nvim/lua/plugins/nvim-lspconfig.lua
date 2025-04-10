@@ -16,9 +16,13 @@ return {
                 vim.fn.stdpath "data" .. "/lazy/ui/nvchad_types",
                 vim.fn.stdpath "data" .. "/lazy/lazy.nvim/lua/lazy",
                 "${3rd}/luv/library",
+                "./deps",
               },
               maxPreload = 100000,
               preloadFileSize = 10000,
+            },
+            runtime = {
+              version = "LuaJIT",
             },
           },
         },
