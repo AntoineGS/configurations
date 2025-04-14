@@ -1,8 +1,9 @@
 #include QMK_KEYBOARD_H
-#include "keymap_us_international.h"
 #include "keymap.h"
+#include "keymap_us_international.h"
 // https://github.com/qmk/qmk_firmware/blob/master/quantum/keymap_extras/keymap_us_international.h
 
+// clang-format off
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [DEF] = LAYOUT_split_3x6_3(
         // Base for writing text
@@ -46,122 +47,135 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [NUM] = LAYOUT_split_3x6_3(
         // Function Keys
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
-        XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      _______,
+        XXXXXXX,       KC_F9,       KC_F10,       KC_F11,       KC_F12,       XXXXXXX,                 XXXXXXX,      US_7,          US_8,         US_9,       XXXXXXX,       _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,    SFT_T(KC_1),  GUI_T(KC_2),  ALT_T(KC_3),  CTL_T(KC_4),     US_5,                      US_6,    CTL_T(US_7), ALT_T(KC_8),  GUI_T(KC_9),   SFT_T(KC_0),    XXXXXXX,
+        XXXXXXX,   SFT_T(KC_F5), GUI_T(KC_F6),  ALT_T(KC_F7), CTL_T(KC_F8),   XXXXXXX,                 XXXXXXX,    CTL_T(KC_4), ALT_T(KC_5),  GUI_T(KC_6),   SFT_T(KC_0),    XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        KC_F12,        KC_F1,        KC_F2,        KC_F3,        KC_F4,        KC_F5,                    KC_F6,       KC_F7,        KC_F8,        KC_F9,        KC_F10,       KC_F11,
+        XXXXXXX,       KC_F1,       KC_F2,        KC_F3,        KC_F4,        XXXXXXX,                 XXXXXXX,       US_1,         US_2,         US_3,       XXXXXXX,       XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
                                                          QK_BOOT,      XXXXXXX,      _______,  _______,       XXXXXXX,      _______
                                                      //`------------------------------------'  `--------------------------------------'
   )
 };
 
-bool send_accented_letter(keyrecord_t *record, uint16_t accent_keycode, uint16_t letter_keycode) {
-    if (!record->event.pressed) {
-        return true;
-    }
+// clang-format on
 
-    const uint8_t saved_mods = get_mods();
-    unregister_mods(MOD_MASK_SHIFT);
-    tap_code16(accent_keycode);
-    register_mods(saved_mods);
-    tap_code16(letter_keycode);
-    return false;
+bool send_accented_letter(keyrecord_t *record, uint16_t accent_keycode,
+                          uint16_t letter_keycode) {
+  if (!record->event.pressed) {
+    return true;
+  }
+
+  const uint8_t saved_mods = get_mods();
+  unregister_mods(MOD_MASK_SHIFT);
+  tap_code16(accent_keycode);
+  register_mods(saved_mods);
+  tap_code16(letter_keycode);
+  return false;
+}
+
+// unline send_accented_letter, this will apply shift to the symbol_keycode
+bool send_symbol(keyrecord_t *record, uint16_t symbol_keycode) {
+  if (!record->event.pressed) {
+    return true;
+  }
+
+  tap_code16(symbol_keycode);
+  tap_code16(KC_SPC);
+  return false;
 }
 
 bool process_advanced_mt_keycode(uint16_t keycode, keyrecord_t *record) {
-    if (record->tap.count && record->event.pressed) {
-        process_record_user(keycode, record);
-        return false;
-    }
+  if (record->tap.count && record->event.pressed) {
+    process_record_user(keycode, record);
+    return false;
+  }
 
-    return true;
+  return true;
 }
 
 bool tap_code16_advanced_mt_keycode(uint16_t keycode, keyrecord_t *record) {
-    if (record->tap.count && record->event.pressed) {
-        tap_code16(keycode);
-        return false;
-    }
+  if (record->tap.count && record->event.pressed) {
+    tap_code16(keycode);
+    return false;
+  }
 
-    return true;
+  return true;
 }
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
-    switch (keycode) {
-        case SFT_T(C_ETRE):
-            return process_advanced_mt_keycode(C_ETRE, record);
-            break;
-        case GUI_T(C_ECIR):
-            return process_advanced_mt_keycode(C_ECIR, record);
-            break;
-        case ALT_T(C_EGRV):
-            return process_advanced_mt_keycode(C_EGRV, record);
-            break;
-        case CTL_T(C_EAIG):
-            return process_advanced_mt_keycode(C_EAIG, record);
-            break;
-        case GUI_T(KC_LCBR):
-            return tap_code16_advanced_mt_keycode(KC_LCBR, record);
-            break;
-        case ALT_T(KC_LBRC):
-            return tap_code16_advanced_mt_keycode(KC_LBRC, record);
-            break;
-        case CTL_T(KC_LPRN):
-            return tap_code16_advanced_mt_keycode(KC_LPRN, record);
-            break;
-        case CTL_T(KC_RPRN):
-            return tap_code16_advanced_mt_keycode(KC_RPRN, record);
-            break;
-        case ALT_T(KC_RBRC):
-            return tap_code16_advanced_mt_keycode(KC_RBRC, record);
-            break;
-        case GUI_T(KC_RCBR):
-            return tap_code16_advanced_mt_keycode(KC_RCBR, record);
-            break;
-        case C_CIRC:
-            return send_accented_letter(record, US_DCIR, KC_SPC);
-            break;
-        case C_QUOT:
-            return send_accented_letter(record, US_ACUT, KC_SPC);
-            break;
-        case C_DGRV:
-            return send_accented_letter(record, US_DGRV, KC_SPC);
-            break;
-        case C_DTIL:
-            return send_accented_letter(record, US_DTIL, KC_SPC);
-            break;
-        case C_AGRV:
-            return send_accented_letter(record, US_DGRV, US_A);
-            break;
-        case C_UGRV:
-            return send_accented_letter(record, US_DGRV, US_U);
-            break;
-        case C_OCIR:
-            return send_accented_letter(record, US_DCIR, US_O);
-            break;
-        case C_UCIR:
-            return send_accented_letter(record, US_DCIR, US_U);
-            break;
-        case C_ETRE:
-            return send_accented_letter(record, US_DIAE, US_E);
-            break;
-        case C_EAIG:
-            return send_accented_letter(record, US_ACUT, US_E);
-            break;
-        case C_ECIR:
-            return send_accented_letter(record, US_DCIR, US_E);
-            break;
-        case C_EGRV:
-            return send_accented_letter(record, US_DGRV, US_E);
-            break;
-    }
+  switch (keycode) {
+  case SFT_T(C_ETRE):
+    return process_advanced_mt_keycode(C_ETRE, record);
+    break;
+  case GUI_T(C_ECIR):
+    return process_advanced_mt_keycode(C_ECIR, record);
+    break;
+  case ALT_T(C_EGRV):
+    return process_advanced_mt_keycode(C_EGRV, record);
+    break;
+  case CTL_T(C_EAIG):
+    return process_advanced_mt_keycode(C_EAIG, record);
+    break;
+  case GUI_T(KC_LCBR):
+    return tap_code16_advanced_mt_keycode(KC_LCBR, record);
+    break;
+  case ALT_T(KC_LBRC):
+    return tap_code16_advanced_mt_keycode(KC_LBRC, record);
+    break;
+  case CTL_T(KC_LPRN):
+    return tap_code16_advanced_mt_keycode(KC_LPRN, record);
+    break;
+  case CTL_T(KC_RPRN):
+    return tap_code16_advanced_mt_keycode(KC_RPRN, record);
+    break;
+  case ALT_T(KC_RBRC):
+    return tap_code16_advanced_mt_keycode(KC_RBRC, record);
+    break;
+  case GUI_T(KC_RCBR):
+    return tap_code16_advanced_mt_keycode(KC_RCBR, record);
+    break;
+  case C_CIRC:
+    return send_accented_letter(record, US_DCIR, KC_SPC);
+    break;
+  case C_QUOT:
+    return send_symbol(record, US_ACUT);
+    break;
+  case C_DGRV:
+    return send_accented_letter(record, US_DGRV, KC_SPC);
+    break;
+  case C_DTIL:
+    return send_accented_letter(record, US_DTIL, KC_SPC);
+    break;
+  case C_AGRV:
+    return send_accented_letter(record, US_DGRV, US_A);
+    break;
+  case C_UGRV:
+    return send_accented_letter(record, US_DGRV, US_U);
+    break;
+  case C_OCIR:
+    return send_accented_letter(record, US_DCIR, US_O);
+    break;
+  case C_UCIR:
+    return send_accented_letter(record, US_DCIR, US_U);
+    break;
+  case C_ETRE:
+    return send_accented_letter(record, US_DIAE, US_E);
+    break;
+  case C_EAIG:
+    return send_accented_letter(record, US_ACUT, US_E);
+    break;
+  case C_ECIR:
+    return send_accented_letter(record, US_DCIR, US_E);
+    break;
+  case C_EGRV:
+    return send_accented_letter(record, US_DGRV, US_E);
+    break;
+  }
 
-    return true;
+  return true;
 }
 
 layer_state_t layer_state_set_user(layer_state_t state) {
-    return update_tri_layer_state(state, SYM, NAV, NUM);
+  return update_tri_layer_state(state, SYM, NAV, NUM);
 }
-
