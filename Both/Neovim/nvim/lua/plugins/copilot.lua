@@ -24,7 +24,7 @@ return {
         enabled = true,
         auto_trigger = true,
         keymap = {
-          accept = "<M-p>",
+          accept = "<C-p>",
           -- accept = "<TAB>",
           next = "<M-]>",
           prev = "<M-[>",
