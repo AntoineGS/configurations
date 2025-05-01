@@ -28,6 +28,7 @@ require("lazy").setup({
 
 require "options"
 require "nvchad.autocmds"
+require "marks"
 
 vim.schedule(function()
   require "mappings"
