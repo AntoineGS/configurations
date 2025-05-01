@@ -769,6 +769,7 @@ def --env y [...args] {
 }
 
 alias ll = ls -al
+alias :q = exit
 
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
