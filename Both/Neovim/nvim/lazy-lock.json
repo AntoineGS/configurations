@@ -28,7 +28,7 @@
   "output-panel.nvim": { "branch": "main", "commit": "9979f9988acb35fd8e699d8b1fbc7aa17c9d8148" },
   "plenary.nvim": { "branch": "master", "commit": "857c5ac632080dba10aae49dba902ce3abf91b35" },
   "render-markdown.nvim": { "branch": "main", "commit": "24aacee83544ca113055564ed22be7852067c342" },
-  "smear-cursor.nvim": { "branch": "main", "commit": "aff844fc1483fd673f721a41affcd7e2fcb885f5" },
+  "smear-cursor.nvim": { "branch": "main", "commit": "ac5c4a8496e678ce68c1cb36df7c19e7d8c76282" },
   "snacks.nvim": { "branch": "main", "commit": "bc0630e43be5699bb94dadc302c0d21615421d93" },
   "tree-sitter-nu": { "branch": "main", "commit": "b64f0d1c93a76d167fabb01271905f0d18c5f10c" },
   "trouble.nvim": { "branch": "main", "commit": "85bedb7eb7fa331a2ccbecb9202d8abba64d37b3" },
