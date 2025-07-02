@@ -150,6 +150,8 @@ def init_paths [] {
     [[], "", "~/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
     [[], "", "~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
     [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
+    [[wincmd.ini], "~/AppData/Roaming/GHISLER", "", "./Windows/TotalCommander"]
+    [[Everything-1.5a.ini], "~/AppData/Roaming/Everything", "", "./Windows/TotalCommander"]
   ]
 }
 

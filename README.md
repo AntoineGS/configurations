@@ -1,3 +1,5 @@
+!! Add Everything config and MultiCommander config
+
 # Both
 
 ## Requirements
@@ -73,6 +75,18 @@ Use Winget whenever possible
 
 `winget install sxyazi.yazi`
 `winget install 7zip.7zip jqlang.jq sharkdp.fd BurntSushi.ripgrep.MSVC junegunn.fzf ajeetdsouza.zoxide ImageMagick.ImageMagick`
+
+## Everything
+
+- Install Everything as a service: 
+    - `https://www.voidtools.com/`
+- Install the toolbar:
+    - `winget install stnkl.everythingtoolbar`
+
+## Total Commander
+`https://www.ghisler.com/download.htm`
+- Plugins:
+    `https://www.ghisler.ch/board/viewtopic.php?t=33740`
 
 # Linux
 
