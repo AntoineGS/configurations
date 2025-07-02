@@ -188,8 +188,8 @@ keybindings:
   # As an alternative to the resize keybindings above, resize mode enables
   # resizing via arrow keys or HJKL. The binding mode is defined above with
   # the name 'resize'.
-  - commands: ["wm-enable-binding-mode --name resize"]
-    bindings: ["alt+r"]
+  # - commands: ["wm-enable-binding-mode --name resize"]
+  # bindings: ["alt+r"]
 
   # Disables all keybindings until alt+shift+p is pressed again.
   - commands: ["wm-enable-binding-mode --name pause"]
@@ -225,12 +225,12 @@ keybindings:
     bindings: ["alt+shift+q"]
 
   # Kill GlazeWM process safely.
-  - commands: ["wm-exit"]
-    bindings: ["alt+shift+e"]
+  # - commands: ["wm-exit"]
+  # bindings: ["alt+shift+e"]
 
   # Re-evaluate configuration file.
-  - commands: ["wm-reload-config"]
-    bindings: ["alt+shift+r"]
+  # - commands: ["wm-reload-config"]
+  # bindings: ["alt+shift+r"]
 
   # Redraw all windows.
   - commands: ["wm-redraw"]
@@ -239,8 +239,8 @@ keybindings:
   # Launch CMD terminal. Alternatively, use `shell-exec wt` or
   # `shell-exec %ProgramFiles%/Git/git-bash.exe` to start Windows
   # Terminal and Git Bash respectively.
-  - commands: ["shell-exec cmd"]
-    bindings: ["alt+enter"]
+  # - commands: ["shell-exec wezterm"]
+  # bindings: ["ctrl+alt+t"]
 
   # Focus the next/previous workspace defined in `workspaces` config.
   - commands: ["focus --next-workspace"]
