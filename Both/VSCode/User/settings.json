@@ -22,5 +22,17 @@
   "git.openRepositoryInParentFolders": "never",
   "security.allowedUNCHosts": ["wsl.localhost"],
   "security.workspace.trust.untrustedFiles": "open",
-  "security.workspace.trust.enabled": false
+  "security.workspace.trust.enabled": false,
+  "github.copilot.selectedCompletionModel": "gpt-4o-copilot",
+  "github.copilot.enable": {
+    "*": true,
+    "plaintext": true,
+    "markdown": false,
+    "scminput": false
+  },
+  "github.copilot.advanced": {
+    
+
+  },
+  "github.copilot.nextEditSuggestions.enabled": true
 }
