@@ -31,6 +31,7 @@ M.mason = {
     "markdownlint-cli2",
     "markdown-toc",
     "marksman",
+    "mdformat",
     "clangd",
     "clang-format",
     "cpplint",
