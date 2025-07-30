@@ -76,17 +76,19 @@ Use Winget whenever possible
 `winget install sxyazi.yazi`
 `winget install 7zip.7zip jqlang.jq sharkdp.fd BurntSushi.ripgrep.MSVC junegunn.fzf ajeetdsouza.zoxide ImageMagick.ImageMagick`
 
-## Everything
+## File Indexing
 
-- Install Everything as a service: 
-    - `https://www.voidtools.com/`
-- Install the toolbar:
-    - `winget install stnkl.everythingtoolbar`
+- Install Everything as a service:
+  - `https://www.voidtools.com/`
+- Install AnyTxt Searcher:
+  - `https://anytxt.net/`
 
 ## Total Commander
+
 `https://www.ghisler.com/download.htm`
+
 - Plugins:
-    `https://www.ghisler.ch/board/viewtopic.php?t=33740`
+  `https://www.ghisler.ch/board/viewtopic.php?t=33740`
 
 # Linux
 
@@ -125,8 +127,7 @@ Use Homebrew whenever possible
 ## Neovim
 
 - `brew install neovim`
-- `sudo update-alternatives --install /usr/bin/editor editor /home/linuxbrew/.linuxbrew/bin/nvim 1 && \
-sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
+- `sudo update-alternatives --install /usr/bin/editor editor /home/linuxbrew/.linuxbrew/bin/nvim 1 && \ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 - If error when copying to "+ then:
   - `sudo apt install xclip`
   - Through ssh it is said to install lemonade
