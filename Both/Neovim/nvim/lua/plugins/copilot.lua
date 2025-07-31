@@ -51,7 +51,7 @@ return {
         end
 
         if not vim.bo.buflisted then
-          logger.debug "not attaching, bugger is not 'buflisted'"
+          logger.debug "not attaching, buffer is not 'buflisted'"
           return false
         end
 
