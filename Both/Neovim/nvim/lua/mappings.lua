@@ -1,15 +1,3 @@
-if not vim.g.vscode then
-  require "nvchad.mappings"
-
-  local cinnamon = require "cinnamon"
-  vim.keymap.set("n", "<C-U>", function()
-    cinnamon.scroll "<C-U>zz"
-  end)
-  vim.keymap.set("n", "<C-D>", function()
-    cinnamon.scroll "<C-D>zz"
-  end)
-end
-
 local wk = require "which-key"
 wk.add {
   { "<leader>y", '"+y', desc = "Yank to +" },
