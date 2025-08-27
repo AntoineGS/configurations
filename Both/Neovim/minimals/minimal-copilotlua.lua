@@ -4,7 +4,7 @@ load(vim.fn.system("curl -s https://raw.githubusercontent.com/folke/lazy.nvim/ma
 local plugins = {
 	{
 		"zbirenbaum/copilot.lua",
-		branch = "dev",
+		event = "InsertEnter",
 		opts = {
 			logger = {
 				file_log_level = vim.log.levels.TRACE,
