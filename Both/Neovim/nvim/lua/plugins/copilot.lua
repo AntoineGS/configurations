@@ -1,3 +1,15 @@
+local logger_conf = {}
+
+if vim.fn.hostname() == "DESKTOP-E07VTRN" then
+  logger_conf = {
+    file_log_level = vim.log.levels.TRACE,
+    print_log_level = vim.log.levels.WARN,
+    trace_lsp = "verbose",
+    log_lsp_messages = true,
+    trace_lsp_progress = true,
+  }
+end
+
 return {
   "zbirenbaum/copilot.lua",
   cmd = "Copilot",
@@ -6,13 +18,7 @@ return {
     require("copilot").setup {
       trace = "verbose",
       -- copilot_model = "gpt-4o-copilot",
-      logger = {
-        file_log_level = vim.log.levels.TRACE,
-        print_log_level = vim.log.levels.WARN,
-        trace_lsp = "verbose",
-        log_lsp_messages = true,
-        trace_lsp_progress = true,
-      },
+      logger = logger_conf,
       -- panel = {
       --   enabled = true,
       --   auto_refresh = true,
