@@ -30,6 +30,8 @@ return {
   end,
   opts = {
     file_types = { "markdown", "Avante" },
+    render_modes = { "n", "i", "c", "t" },
+    preset = "lazy",
   },
   ft = { "markdown", "Avante" },
 }
