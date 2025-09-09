@@ -18,7 +18,7 @@ return {
       "markdown_inline",
       "cpp",
       "go",
-      "latex",
+      -- "latex",
       "pascal",
       "php",
       "rust",
