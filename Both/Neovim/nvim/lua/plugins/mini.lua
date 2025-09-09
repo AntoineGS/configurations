@@ -66,7 +66,7 @@ end
 wk.add(mappings)
 
 return {
-  "echasnovski/mini.nvim",
+  "nvim-mini/mini.nvim",
   version = false,
   require("mini.test").setup(),
   require("mini.ai").setup(),
