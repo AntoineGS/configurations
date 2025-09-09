@@ -11,7 +11,12 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
 end
 
 return {
-  "zbirenbaum/copilot.lua",
+  -- "zbirenbaum/copilot.lua",
+  dir = "C:/Gits/copilot.lua",
+  dependencies = {
+    -- "copilotlsp-nvim/copilot-lsp",
+    dir = "C:/Gits/copilot-lsp",
+  },
   cmd = "Copilot",
   event = "InsertEnter",
   config = function()
@@ -37,6 +42,15 @@ return {
           next = "<M-]>",
           prev = "<M-[>",
           -- dismiss = "<C-c>",
+        },
+      },
+      nes = {
+        enabled = true,
+        auto_trigger = true,
+        keymap = {
+          accept_and_goto = "<leader>p",
+          accept = false,
+          dismiss = "<Esc>",
         },
       },
       filetypes = {
