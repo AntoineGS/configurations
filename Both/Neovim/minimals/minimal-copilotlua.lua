@@ -1,15 +1,21 @@
-vim.env.LAZY_STDPATH = ".repro"
+vim.env.LAZY_STDPATH = ".repro_copilotlua"
 load(vim.fn.system("curl -s https://raw.githubusercontent.com/folke/lazy.nvim/main/bootstrap.lua"))()
 
 local plugins = {
 	{
-		"zbirenbaum/copilot.lua",
-		event = "InsertEnter",
-		opts = {
-			logger = {
-				file_log_level = vim.log.levels.TRACE,
-			},
-		},
+		dir = "~/AppData/Local/nvim-data/lazy/copilot.lua",
+		config = function()
+			require("copilot").setup({
+				suggestion = {
+					enabled = true,
+					auto_trigger = true,
+				},
+				panel = { enabled = false },
+				filetypes = {
+					["*"] = true,
+				},
+			})
+		end,
 	},
 }
 
