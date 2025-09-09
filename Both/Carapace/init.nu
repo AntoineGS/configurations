@@ -1,4 +1,5 @@
 $env.Path = ($env.Path | split row (char esep) | prepend "C:/Users/antoi/AppData/Roaming/carapace/bin")
+$env.PATH = ($env.PATH | split row (char esep) | prepend "/home/a_simard/.config/carapace/bin")
 
 def --env get-env [name] { $env | get $name }
 def --env set-env [name, value] { load-env { $name: $value } }
@@ -13,7 +14,7 @@ let carapace_completer = {|spans|
     # put the first word of the expanded alias first in the span
     $spans | skip 1 | prepend ($expanded_alias | split row " " | take 1)
   } else {
-    $spans
+    $spans | skip 1 | prepend ($spans.0)
   })
 
   carapace $spans.0 nushell ...$spans
