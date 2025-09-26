@@ -48,6 +48,8 @@ return {
         enabled = true,
         auto_trigger = true,
         keymap = {
+          -- accept_and_goto = false,
+          -- accept = "<leader>p",
           accept_and_goto = "<leader>p",
           accept = false,
           dismiss = "<Esc>",

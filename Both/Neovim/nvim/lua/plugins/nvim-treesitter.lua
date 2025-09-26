@@ -1,6 +1,27 @@
+pcall(function()
+  dofile(vim.g.base46_cache .. "syntax")
+  dofile(vim.g.base46_cache .. "treesitter")
+end)
+
 return {
   "nvim-treesitter/nvim-treesitter",
+  dependencies = {
+    { "nushell/tree-sitter-nu", build = ":TSUpdate" },
+  },
+  event = { "BufReadPost", "BufNewFile" },
+  cmd = { "TSInstall", "TSBufEnable", "TSBufDisable", "TSModuleInfo" },
+  build = ":TSUpdate",
   opts = {
+    ensure_installed = { "lua", "luadoc", "printf", "vim", "vimdoc" },
+
+    highlight = {
+      enable = true,
+      use_languagetree = true,
+    },
+
+    indent = { enable = true },
+  },
+  config = {
     ensure_installed = {
       "vim",
       "lua",
@@ -33,9 +54,5 @@ return {
       "c_sharp",
       "comment",
     },
-  },
-  -- might be optional
-  dependencies = {
-    { "nushell/tree-sitter-nu", build = ":TSUpdate" },
   },
 }
