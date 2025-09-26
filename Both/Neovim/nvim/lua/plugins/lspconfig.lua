@@ -20,19 +20,6 @@ M.on_attach = function(_, bufnr)
   map("n", "<leader>ra", require "nvchad.lsp.renamer", opts "NvRenamer")
 end
 
--- disable semanticTokens
-M.on_init = function(client, _)
-  if vim.fn.has "nvim-0.11" ~= 1 then
-    if client.supports_method "textDocument/semanticTokens" then
-      client.server_capabilities.semanticTokensProvider = nil
-    end
-  else
-    if client:supports_method "textDocument/semanticTokens" then
-      client.server_capabilities.semanticTokensProvider = nil
-    end
-  end
-end
-
 M.capabilities = vim.lsp.protocol.make_client_capabilities()
 
 M.capabilities.textDocument.completion.completionItem = {
@@ -55,7 +42,14 @@ M.capabilities.textDocument.completion.completionItem = {
 
 M.defaults = function()
   dofile(vim.g.base46_cache .. "lsp")
-  require("nvchad.lsp").diagnostic_config()
+  local x = vim.diagnostic.severity
+
+  vim.diagnostic.config {
+    virtual_text = { prefix = "" },
+    signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
+    underline = true,
+    float = { border = "single" },
+  }
 
   vim.api.nvim_create_autocmd("LspAttach", {
     callback = function(args)
@@ -85,7 +79,7 @@ M.defaults = function()
   }
 
   -- vim.lsp.config("*", { capabilities = M.capabilities, on_init = M.on_init })
-  vim.lsp.config("*", { capabilities = M.capabilities, on_init = M.on_init })
+  vim.lsp.config("*", { capabilities = M.capabilities })
   vim.lsp.config("lua_ls", { settings = lua_lsp_settings })
   vim.lsp.enable "lua_ls"
   --
