@@ -1,4 +1,6 @@
 local logger_conf = {}
+local src = {}
+local os = vim.loop.os_uname()
 
 if vim.fn.hostname() == "DESKTOP-E07VTRN" then
   logger_conf = {
@@ -10,13 +12,23 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
   }
 end
 
-return {
-  -- "zbirenbaum/copilot.lua",
-  dir = "C:/Gits/copilot.lua",
-  dependencies = {
-    -- "copilotlsp-nvim/copilot-lsp",
-    dir = "C:/Gits/copilot-lsp",
-  },
+if os.sysname == "Windows_NT" then
+  src = {
+    dir = "C:/Gits/copilot.lua",
+    dependencies = {
+      dir = "C:/Gits/copilot-lsp",
+    },
+  }
+else
+  src = {
+    "zbirenbaum/copilot.lua",
+    dependencies = {
+      "copilotlsp-nvim/copilot-lsp",
+    },
+  }
+end
+
+return vim.tbl_deep_extend("force", src, {
   cmd = "Copilot",
   event = "InsertEnter",
   config = function()
@@ -90,4 +102,4 @@ return {
 
   -- stylua: ignore
   keys = { { "<leader>cp", function() require("copilot.panel").toggle() end, mode = "n", desc = "Toggle the Copilot panel", }, },
-}
+})
