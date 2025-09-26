@@ -1,5 +1,3 @@
-require "nvchad.mappings"
-
 local wk = require "which-key"
 wk.add {
   { "<leader><space>", "<cmd>lua Snacks.picker.smart()<CR>", desc = "Smart Find Files" },
