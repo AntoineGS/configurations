@@ -53,7 +53,7 @@ return vim.tbl_deep_extend("force", src, {
           -- accept = "<TAB>",
           next = "<M-]>",
           prev = "<M-[>",
-          -- dismiss = "<C-c>",
+          -- dismiss = "<Esc>",
         },
       },
       nes = {

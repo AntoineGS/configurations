@@ -1,5 +1,3 @@
-!! Add Everything config and MultiCommander config
-
 # Both
 
 ## Requirements
@@ -32,6 +30,9 @@ Use Winget whenever possible
 - Java
   - `winget install Microsoft.OpenJDF.21`
 - Rust / Cargo
+
+## RipGrep
+- `winget install BurntSushi.ripgrep.MSVC`
 
 ## WezTerm
 
@@ -80,8 +81,6 @@ Use Winget whenever possible
 
 - Install Everything as a service:
   - `https://www.voidtools.com/`
-- Install AnyTxt Searcher:
-  - `https://anytxt.net/`
 
 ## Total Commander
 
@@ -89,6 +88,12 @@ Use Winget whenever possible
 
 - Plugins:
   `https://www.ghisler.ch/board/viewtopic.php?t=33740`
+
+## Winaero Tweaker
+
+## ContextMenuManager
+
+`https://github.com/BluePointLilac/ContextMenuManager/releases`
 
 # Linux
 
@@ -126,6 +131,9 @@ Use Homebrew whenever possible
   - `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
   - `echo >> ~/.bashrc`
   - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc`
+
+## RipGrep
+- `brew install ripgrep`
 
 ## WezTerm
 
