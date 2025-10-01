@@ -78,9 +78,9 @@ config.keys = {
 	{ key = "DownArrow", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
 }
 
-if is_windows then
-	config.default_prog = { "nu", "" }
+config.default_prog = { "nu", "" }
 
+if is_windows then
 	table.insert(launch_menu, {
 		label = "Pwsh",
 		args = { "pwsh.exe", "-NoLogo" },
