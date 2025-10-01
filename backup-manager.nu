@@ -2,7 +2,7 @@
 const env_types = {windows: "windows", linux: "linux"}
 mut curr_env = $env_types.linux
 
-if (($env | get --ignore-errors OS) | default "" | str contains --ignore-case "windows") {
+if (($env | get -o OS) | default "" | str contains --ignore-case "windows") {
   $curr_env = $env_types.windows
 }
 
