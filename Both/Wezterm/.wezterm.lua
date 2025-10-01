@@ -16,6 +16,8 @@ config.inactive_pane_hsb = {
 	brightness = 0.7,
 }
 
+config.enable_wayland = false
+
 if is_windows then
 	config.window_background_opacity = 0.5
 	config.win32_system_backdrop = "Mica"
