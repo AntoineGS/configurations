@@ -152,6 +152,11 @@ def init_paths [] {
     [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
     [[wincmd.ini], "~/AppData/Roaming/GHISLER", "", "./Windows/TotalCommander"]
     [[Everything-1.5a.ini], "~/AppData/Roaming/Everything", "", "./Windows/TotalCommander"]
+    [[], "", "~/.config/hypr", "./Linux/hypr"]
+    [[], "", "~/.config/walker", "./Linux/walker"]
+    [[], "", "~/.config/waybar", "./Linux/waybar"]
+    [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
+    [[".Xcompose"], "~", "~", "./Linux/Xcompose"]
   ]
 }
 
