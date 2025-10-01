@@ -94,6 +94,10 @@ Use Winget whenever possible
 
 Use Homebrew whenever possible
 
+## 1Password
+
+- `echo "export SSH_AUTH_SOCK=~/.1password/agent.sock" | sudo tee /etc/profile.d/1password-ssh-auth-sock.sh` 
+
 ## Requirements
 
 - Go, Python
