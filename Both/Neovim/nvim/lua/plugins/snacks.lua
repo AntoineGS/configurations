@@ -66,9 +66,14 @@ return {
       replace_netrw = true,
     },
     picker = {
+      explorer = {
+        hidden = true,
+        ignored = true,
+      },
       sources = {
         explorer = {
           hidden = true,
+          ignored = true,
         },
       },
     },
