@@ -4,38 +4,34 @@
   "position": "top",
   "spacing": 0,
   "height": 26,
-  "modules-left": ["custom/omarchy", "hyprland/workspaces"],
+  "modules-left": ["hyprland/workspaces"],
   "modules-center": ["clock", "custom/update", "custom/screenrecording-indicator"],
   "modules-right": [
-    "group/tray-expander",
-    "bluetooth",
+    "tray",
     "network",
     "pulseaudio",
-    "cpu",
-    "battery"
+    "cpu"
   ],
   "hyprland/workspaces": {
     "on-click": "activate",
     "format": "{icon}",
     "format-icons": {
       "default": "",
-      "1": "1",
-      "2": "2",
-      "3": "3",
-      "4": "4",
-      "5": "5",
-      "6": "6",
-      "7": "7",
-      "8": "8",
-      "9": "9",
-      "active": "󱓻"
+      "1": "chat",
+      "2": "main",
+      "3": "secondary",
+      "4": "obsidian",
+      "5": "shell",
+      "6": "git",
+      "7": "browser",
+      "8": "work",
+      "9": "additional",
+      "10": "explorer"
     },
     "persistent-workspaces": {
-      "1": [],
-      "2": [],
-      "3": [],
-      "4": [],
-      "5": []
+      "DVI-D-1": [1, 4, 7],
+      "HDMI-A-1": [2, 5, 8],
+      "DP-2": [3, 6, 9, 10]
     }
   },
   "custom/omarchy": {
