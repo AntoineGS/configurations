@@ -5,6 +5,8 @@ end)
 
 return {
   "nvim-treesitter/nvim-treesitter",
+  branch = "main",
+  lazy = false,
   dependencies = {
     { "nushell/tree-sitter-nu", build = ":TSUpdate" },
   },
