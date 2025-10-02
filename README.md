@@ -94,18 +94,22 @@ Use Winget whenever possible
 
 Use Homebrew whenever possible
 
+## Hyperland
+
 ## 1Password
 
-- `echo "export SSH_AUTH_SOCK=~/.1password/agent.sock" | sudo tee /etc/profile.d/1password-ssh-auth-sock.sh` 
+- `echo "export SSH_AUTH_SOCK=~/.1password/agent.sock" | sudo tee /etc/profile.d/1password-ssh-auth-sock.sh`
 
 ## Requirements
 
 - Go, Python
   - `sudo apt install golang python3 python3-venv build-essential`
+  - sudo pacman -S go python3
 - NodeJS
   - `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash`
   - `nvm install 22`
-  - `npm install -g shelljs typescript`
+  - `sudo npm install -g shelljs typescript`
+  - `sudo pacman -S nodejs npm`
 - Nerdfonts
   - Go in a temp directory
   - `wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip`
