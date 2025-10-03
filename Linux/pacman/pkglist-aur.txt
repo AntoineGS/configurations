@@ -1,0 +1,7 @@
+brave-bin
+caffeine-ng
+carapace
+fsearch-git
+gitkraken
+jetbrains-toolbox
+teams-for-linux-bin

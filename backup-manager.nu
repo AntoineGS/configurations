@@ -129,37 +129,45 @@ def init_paths [] {
   let pwsh_profile = if ($curr_env == $env_types.windows) {pwsh -c "echo $PROFILE"} else {""}
   let pwsh_file = $pwsh_profile | path basename 
   let pwsh_path = $pwsh_profile | path dirname
-   
-  [
-    [filenames, windows_path, linux_path, backup_path]; 
-    [[$pwsh_file], $pwsh_path, "", "./Windows/PowerShell"]
-    [[], "~/AppData/Local/nvim", "~/.config/nvim", "./Both/Neovim/nvim"] 
-    [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
-    [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
-    [["settings.json"], "~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState", "", "./Windows/WindowsTerminal"]
-    [[".bashrc"], "", "~", "./Linux/Bash"]
-    [["starship.toml"], "~/.config", "~/.config", "./Both/Starship"]
-    [["init.nu"], "~/.cache/starship", "~/.cache/starship", "./Both/Starship"]
-    [["user_preferences.json"], "", "~/.config/warp-terminal", "./Linux/Warp"]
-    [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", "~/.config/nushell", "./Both/Nushell"]
-    [[], "~/AppData/Roaming/nushell/themes", "~/.config/nushell/themes", "./Both/Nushell/themes"]
-    [[".wezterm.lua"], "~", "~", "./Both/Wezterm"]
-    [[".zoxide.nu"], "~", "~", "./Both/Zoxide"]
-    [["init.nu"], "~/.cache/carapace", "~/.cache/carapace" "./Both/Carapace"]
-    [[], "", "~/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/piantor_pro/AntoineGS"]
-    [[], "", "~/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
-    [[], "", "~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
-    [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
-    [[wincmd.ini], "~/AppData/Roaming/GHISLER", "", "./Windows/TotalCommander"]
-    [[Everything-1.5a.ini], "~/AppData/Roaming/Everything", "", "./Windows/TotalCommander"]
-    [[], "", "~/.config/hypr", "./Linux/hypr"]
-    [[], "", "~/.config/walker", "./Linux/walker"]
-    [[], "", "~/.config/waybar", "./Linux/waybar"]
-    [[], "", "~/.config/fsearch", "./Linux/fsearch"]
-    [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
-    [[], "~AppData/yazi/config", "~/.config/yazi", "./Both/Yazi"]
-    [[".Xcompose"], "~", "~", "./Linux/Xcompose"]
-  ]
+  let is_root = (id -u | str trim) == "0"
+
+  if $is_root {
+    [
+      [filenames, windows_path, linux_path, backup_path]; 
+      [[pkg-backup-aur.hook,pkg-backup-pacman.hook], "", "/usr/share/libalpm/hooks", "./Linux/pacman"]
+    ]
+  } else { 
+    [
+      [filenames, windows_path, linux_path, backup_path]; 
+      [[$pwsh_file], $pwsh_path, "", "./Windows/PowerShell"]
+      [[], "~/AppData/Local/nvim", "~/.config/nvim", "./Both/Neovim/nvim"] 
+      [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
+      [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
+      [["settings.json"], "~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState", "", "./Windows/WindowsTerminal"]
+      [[".bashrc"], "", "~", "./Linux/Bash"]
+      [["starship.toml"], "~/.config", "~/.config", "./Both/Starship"]
+      [["init.nu"], "~/.cache/starship", "~/.cache/starship", "./Both/Starship"]
+      [["user_preferences.json"], "", "~/.config/warp-terminal", "./Linux/Warp"]
+      [["env.nu", "config.nu"], "~/AppData/Roaming/nushell", "~/.config/nushell", "./Both/Nushell"]
+      [[], "~/AppData/Roaming/nushell/themes", "~/.config/nushell/themes", "./Both/Nushell/themes"]
+      [[".wezterm.lua"], "~", "~", "./Both/Wezterm"]
+      [[".zoxide.nu"], "~", "~", "./Both/Zoxide"]
+      [["init.nu"], "~/.cache/carapace", "~/.cache/carapace" "./Both/Carapace"]
+      [[], "", "~/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS", "./Linux/QMK/piantor_pro/AntoineGS"]
+      [[], "", "~/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS", "./Linux/QMK/trackball_nano/AntoineGS"]
+      [[], "", "~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS", "./Linux/QMK/sofle_choc/AntoineGS"]
+      [["config.yaml"], "~/.glzr/glazewm", "", "./Both/GlazeWM"]
+      [[wincmd.ini], "~/AppData/Roaming/GHISLER", "", "./Windows/TotalCommander"]
+      [[Everything-1.5a.ini], "~/AppData/Roaming/Everything", "", "./Windows/TotalCommander"]
+      [[], "", "~/.config/hypr", "./Linux/hypr"]
+      [[], "", "~/.config/walker", "./Linux/walker"]
+      [[], "", "~/.config/waybar", "./Linux/waybar"]
+      [[], "", "~/.config/fsearch", "./Linux/fsearch"]
+      [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
+      [[], "~AppData/yazi/config", "~/.config/yazi", "./Both/Yazi"]
+      [[".Xcompose"], "~", "~", "./Linux/Xcompose"]
+    ]
+  }
 }
 
 def "main list" [] {
