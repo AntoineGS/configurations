@@ -45,7 +45,8 @@ M.defaults = function()
   local x = vim.diagnostic.severity
 
   vim.diagnostic.config {
-    virtual_text = { prefix = "" },
+    virtual_text = false,
+    virtual_lines = true,
     signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
     underline = true,
     float = { border = "single" },
@@ -82,29 +83,15 @@ M.defaults = function()
   vim.lsp.config("*", { capabilities = M.capabilities })
   vim.lsp.config("lua_ls", { settings = lua_lsp_settings })
   vim.lsp.enable "lua_ls"
-  --
-  -- local servers = {
-  --   html = {},
-  --   cssls = {},
-  --   powershell_es = {},
-  --   pyright = {},
-  --   docker_compose_language_service = {},
-  --   bashls = {},
-  --   spectral = {},
-  --   marksman = {},
-  --   clangd = {},
-  -- }
-  --
-  -- -- local lspconfig = require "lspconfig"
-  -- for server, config in pairs(servers) do
-  --   -- passing config.capabilities to blink.cmp merges with the capabilities in your
-  --   -- `opts[server].capabilities, if you've defined it
-  --   -- config.capabilities = require("blink.cmp").get_lsp_capabilities(config.capabilities)
-  --   config.capabilities = require("blink.cmp").get_lsp_capabilities()
-  --   -- lspconfig[server].setup(config)
-  --   -- vim.lsp.config(server, config)
-  --   vim.lsp.enable(server)
-  -- end
+  vim.lsp.enable "pyright"
+  vim.lsp.enable "html"
+  vim.lsp.enable "cssls"
+  vim.lsp.enable "powershell_es"
+  vim.lsp.enable "docker_compose_language_service"
+  vim.lsp.enable "bashls"
+  vim.lsp.enable "spectral"
+  vim.lsp.enable "marksman"
+  vim.lsp.enable "clangd"
 end
 
 return {
