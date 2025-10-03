@@ -155,6 +155,7 @@ def init_paths [] {
     [[], "", "~/.config/hypr", "./Linux/hypr"]
     [[], "", "~/.config/walker", "./Linux/walker"]
     [[], "", "~/.config/waybar", "./Linux/waybar"]
+    [[], "", "~/.config/fsearch", "./Linux/fsearch"]
     [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
     [[], "~AppData/yazi/config", "~/.config/yazi", "./Both/Yazi"]
     [[".Xcompose"], "~", "~", "./Linux/Xcompose"]
