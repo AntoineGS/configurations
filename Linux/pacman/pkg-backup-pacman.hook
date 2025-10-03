@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Install
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+When = PostTransaction
+Exec = /bin/nu -c 'pacman -Qqent | save -f /home/antoinegs/gits/configurations/Linux/pacman/pkglist-pacman.txt'
