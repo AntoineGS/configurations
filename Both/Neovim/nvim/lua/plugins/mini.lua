@@ -70,4 +70,27 @@ return {
   version = false,
   require("mini.test").setup(),
   require("mini.ai").setup(),
+  require("mini.indentscope").setup {
+    draw = {
+      delay = 50,
+    },
+    symbol = "│",
+    options = { try_as_border = true },
+  },
+  require("mini.align").setup(),
+  require("mini.operators").setup { -- TODO: add to which-key
+    replace = {
+      prefix = "gR",
+    },
+  },
+  require("mini.pairs").setup(),
+  require("mini.splitjoin").setup(),
+  require("mini.surround").setup(), -- not sure if it can be added to which-key, sa, sd, sf, sF, sh, sr then to search l (prev) and n
+  require("mini.sessions").setup(), -- not sure how to use this but I want it
+  require("mini.cursorword").setup(),
+  require("mini.basics").setup {
+    mappings = {
+      basic = false,
+    },
+  },
 }
