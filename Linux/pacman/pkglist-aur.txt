@@ -3,5 +3,6 @@ caffeine-ng
 carapace
 fsearch-git
 gitkraken
+insync
 jetbrains-toolbox
 teams-for-linux-bin
