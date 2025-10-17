@@ -129,7 +129,11 @@ def init_paths [] {
   let pwsh_profile = if ($curr_env == $env_types.windows) {pwsh -c "echo $PROFILE"} else {""}
   let pwsh_file = $pwsh_profile | path basename 
   let pwsh_path = $pwsh_profile | path dirname
-  let is_root = (id -u | str trim) == "0"
+  mut is_root = false
+
+  if ($curr_env != $env_types.windows) {
+    $is_root = (id -u | str trim) == "0"
+  } 
 
   if $is_root {
     [
@@ -140,6 +144,9 @@ def init_paths [] {
     [
       [filenames, windows_path, linux_path, backup_path]; 
       [[$pwsh_file], $pwsh_path, "", "./Windows/PowerShell"]
+      [[komorebi.json], "~", "", "./Windows/Komorebi"]
+      [[whkdrc], "~/.config", "", "./Windows/Komorebi"]
+      [["config.yaml", "styles.css"], "~/.config/yasb", "", "./Windows/Yasb"]
       [[], "~/AppData/Local/nvim", "~/.config/nvim", "./Both/Neovim/nvim"] 
       [[".ideavimrc"], "~", "", "./Both/IntelliJ"]
       [["settings.json", "keybindings.json"], "~/AppData/Roaming/Code/User", "", "./Both/VSCode/User"]
@@ -164,7 +171,7 @@ def init_paths [] {
       [[], "", "~/.config/waybar", "./Linux/waybar"]
       [[], "", "~/.config/fsearch", "./Linux/fsearch"]
       [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
-      [[], "~AppData/yazi/config", "~/.config/yazi", "./Both/Yazi"]
+      [[], "~/AppData/Roaming/yazi/config", "~/.config/yazi", "./Both/Yazi"]
       [[".Xcompose"], "~", "~", "./Linux/Xcompose"]
     ]
   }
