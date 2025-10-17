@@ -1,0 +1,84 @@
+.shell powershell
+
+# Reload whkd configuration
+# alt + o                 : taskkill /f /im whkd.exe && start /b whkd # if shell is cmd
+win + o                 : taskkill /f /im whkd.exe; Start-Process whkd -WindowStyle hidden # if shell is pwsh / powershell
+win + shift + o         : komorebic reload-configuration
+
+win + i                 : komorebic toggle-shortcuts
+
+# App shortcuts - these require shell to be pwsh / powershell
+# The apps will be focused if open, or launched if not open
+# alt + f                 : if ($wshell.AppActivate('Firefox') -eq $False) { start firefox }
+# alt + b                 : if ($wshell.AppActivate('Chrome') -eq $False) { start chrome }
+win + alt + b           : if ($wshell.AppActivate('Chrome') -eq $False) { start chrome }
+win + return            : start wezterm-gui.exe
+
+win + w                 : komorebic close
+win + m                 : komorebic minimize
+win + f                 : komorebic toggle-maximize
+
+# win + h                 : komorebic cycle-workspace previous 
+# win + l                 : komorebic cycle-workspace next
+
+# Focus windows
+win + h                 : komorebic focus left
+win + j                 : komorebic focus down
+win + k                 : komorebic focus up
+win + l                 : komorebic focus right
+# alt + shift + oem_4     : komorebic cycle-focus previous # oem_4 is [
+# alt + shift + oem_6     : komorebic cycle-focus next # oem_6 is ]
+
+# Move windows
+win + shift + h         : komorebic move left
+win + shift + j         : komorebic move down
+win + shift + k         : komorebic move up
+win + shift + l         : komorebic move right
+win + shift + return    : komorebic promote
+
+# Stack windows
+alt + left              : komorebic stack left
+alt + down              : komorebic stack down
+alt + up                : komorebic stack up
+alt + right             : komorebic stack right
+alt + oem_1             : komorebic unstack # oem_1 is ;
+alt + oem_4             : komorebic cycle-stack previous # oem_4 is [
+alt + oem_6             : komorebic cycle-stack next # oem_6 is ]
+
+# Resize
+alt + oem_plus          : komorebic resize-axis horizontal increase
+alt + oem_minus         : komorebic resize-axis horizontal decrease
+alt + shift + oem_plus  : komorebic resize-axis vertical increase
+alt + shift + oem_minus : komorebic resize-axis vertical decrease
+
+# Manipulate windows
+alt + t                 : komorebic toggle-float
+alt + shift + f         : komorebic toggle-monocle
+
+# Window manager options
+alt + shift + r         : komorebic retile
+alt + p                 : komorebic toggle-pause
+
+# Layouts
+alt + x                 : komorebic flip-layout horizontal
+alt + y                 : komorebic flip-layout vertical
+
+# Workspaces
+win + 2                 : komorebic focus-named-workspace "main"
+win + 5                 : komorebic focus-named-workspace "terminal"
+win + 8                 : komorebic focus-named-workspace "browser"
+win + 3                 : komorebic focus-named-workspace "secondary"
+win + 6                 : komorebic focus-named-workspace "git"
+win + 9                 : komorebic focus-named-workspace "md explorer"
+win + 0                 : komorebic focus-named-workspace "commander"
+
+# Move windows across workspaces
+win + shift + 2         : komorebic move-to-named-workspace "main"
+win + shift + 5         : komorebic move-to-named-workspace "terminal"
+win + shift + 8         : komorebic move-to-named-workspace "browser"
+win + shift + 3         : komorebic move-to-named-workspace "secondary"
+win + shift + 6         : komorebic move-to-named-workspace "git"
+win + shift + 9         : komorebic move-to-named-workspace "md explorer"
+win + shift + 0         : komorebic move-to-named-workspace "commander"
+
+win + p                 : komorebic move-to-named-workspace "terminal" exe "wezterm.exe"
