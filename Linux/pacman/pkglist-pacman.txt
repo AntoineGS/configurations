@@ -18,14 +18,13 @@ fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
 fprintd
+gimp
 github-cli
 gnome-calculator
-gnome-themes-extra
 go
 gum
 htop
 hypridle
-hyprland
 hyprlock
 hyprshot
 hyprsunset
@@ -66,6 +65,7 @@ satty
 signal-desktop
 sof-firmware
 starship
+steam
 sushi
 swaybg
 swayosd
@@ -76,7 +76,6 @@ ttf-ia-writer
 typora
 tzupdate
 ufw-docker
-usbutils
 walker-bin
 waybar
 wezterm
