@@ -4,12 +4,12 @@
   font-size: 14px;
   font-weight: bold;
   border-radius: 0 0 5px 5px;
-  background: transparent;
   color: #1e2127;
+  background: transparent;
   opacity: 0.96;
   padding-top: 0;
   padding-bottom: 0;
-  margin-bottom: 1px;
+  margin-bottom: 0;
 }
 
 .modules-left {
@@ -33,20 +33,17 @@
   color: #9aedfe;
 }
 
-#workspaces button:hover {
-  box-shadow: inherit;
-  text-shadow: inherit;
-  color: #ff79c6;
-}
-
 #workspaces button.empty {
   opacity: 0.6;
 }
 
 #workspaces button.visible {
-  border-top: 2px solid #abb2bf;
   opacity: 1;
-  /* text-decoration: underline; */
+  box-shadow: 0 0 4px #3b4048;
+}
+
+#workspaces button:hover {
+  box-shadow: 0 0 8px #3b4048;
 }
 
 #clock {
@@ -71,6 +68,18 @@
   padding: 0 16px;
 }
 
+#tray .popup {
+  background: #d19a66;
+}
+
+.popup .item:hover,
+.popup li:hover,
+.popup .menuitem:hover,
+.popup button:hover,
+.popup .item:active {
+  box-shadow: 0 0 8px #3b4048;
+}
+
 #network {
   min-width: 38px;
   padding-left: 3px;
@@ -93,7 +102,7 @@
 }
 
 #memory {
-  padding: 0 2px;
+  padding: 0 6px;
 }
 
 #disk {
@@ -126,6 +135,8 @@
 
 tooltip {
   padding: 2px;
+  background: #56b6c2;
+  font-weight: normal;
 }
 
 #custom-update {

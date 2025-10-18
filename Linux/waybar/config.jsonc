@@ -55,12 +55,13 @@
     "on-click": "$TERMINAL -e btop"
   },
   "clock": {
-    "format": "{:L%A %H:%M - %B %d %Y}",
+    "format": "{:L%A %B %d %Y - %H:%M:%S}",
     "format_": "{:L%A %H:%M}",
     "format-alt_": "{:L%d %B W%V %Y}",
     "tooltip": false,
     "on-click": "omarchy-launch-or-focus-webapp GMail \"https://calendar.google.com/calendar/u/0/r\"",
-    "on-click-right": "omarchy-cmd-tzupdate"
+    "on-click-right": "omarchy-cmd-tzupdate",
+    "interval": 1
   },
   "network": {
     "format-icons": ["󰤯", "󰤟", "󰤢", "󰤥", "󰤨"],
