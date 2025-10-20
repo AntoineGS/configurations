@@ -167,6 +167,7 @@ def init_paths [] {
       [[wincmd.ini], "~/AppData/Roaming/GHISLER", "", "./Windows/TotalCommander"]
       [[Everything-1.5a.ini], "~/AppData/Roaming/Everything", "", "./Windows/TotalCommander"]
       [[], "", "~/.config/hypr", "./Linux/hypr"]
+      [[watch-rustdesk-submap.service], "", "~/.config/systemd/user", "./Linux/hypr"]
       [[], "", "~/.config/walker", "./Linux/walker"]
       [[], "", "~/.config/waybar", "./Linux/waybar"]
       [[], "", "~/.config/fsearch", "./Linux/fsearch"]

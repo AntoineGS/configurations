@@ -96,6 +96,9 @@ Use Homebrew whenever possible
 
 ## Hyperland
 
+- `systemctl --user daemon-reload; systemctl --user enable --now watch-rustdesk-submap.service`
+- `sudo chmod +x ~/.config/hypr/rustdesk-submap-watch.sh`
+
 ## 1Password
 
 - `echo "export SSH_AUTH_SOCK=~/.1password/agent.sock" | sudo tee /etc/profile.d/1password-ssh-auth-sock.sh`
