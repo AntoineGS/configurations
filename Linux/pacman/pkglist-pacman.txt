@@ -1,5 +1,6 @@
 1password-beta
 1password-cli
+aether
 alacritty
 asdcontrol-git
 base
@@ -12,6 +13,16 @@ cups-pdf
 docker
 docker-compose
 dust
+elephant-bluetooth
+elephant-calc
+elephant-clipboard
+elephant-files
+elephant-menus
+elephant-runner
+elephant-symbols
+elephant-todo
+elephant-unicode
+elephant-websearch
 eza
 fastfetch
 fcitx5-gtk
@@ -22,6 +33,7 @@ gimp
 github-cli
 gnome-calculator
 go
+gpu-screen-recorder
 gum
 htop
 hypridle
@@ -38,7 +50,6 @@ kdenlive
 lazydocker
 lazygit
 libva-nvidia-driver
-libyaml
 limine-snapper-sync
 localsend-bin
 luarocks
@@ -50,7 +61,7 @@ nushell
 nvidia-dkms
 obs-studio
 obsidian
-omarchy-lazyvim
+omarchy-nvim
 pamixer
 pinta
 plocate
@@ -62,6 +73,7 @@ python-terminaltexteffects
 remmina
 rust
 satty
+sddm
 signal-desktop
 sof-firmware
 starship
@@ -76,15 +88,14 @@ ttf-ia-writer
 typora
 tzupdate
 ufw-docker
-walker-bin
+walker
 waybar
+wayfreeze-git
 wezterm
-wf-recorder
 wget
 whois
 wiremix
 wl-clip-persist
-wl-screenrec
 woff2-font-awesome
 xmlstarlet
 xournalpp
