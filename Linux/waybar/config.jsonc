@@ -61,6 +61,7 @@
     "tooltip": false,
     "on-click": "omarchy-launch-or-focus-webapp GMail \"https://calendar.google.com/calendar/u/0/r\"",
     "on-click-right": "omarchy-cmd-tzupdate",
+    "on-click-right_": "omarchy-launch-floating-terminal-with-presentation omarchy-tz-select",
     "interval": 1
   },
   "network": {
