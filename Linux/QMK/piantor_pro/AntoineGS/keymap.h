@@ -5,6 +5,7 @@
 #define CHORDAL_HOLD
 #undef TAPPING_TERM
 #define TAPPING_TERM 1000
+#define FLOW_TAP_TERM 150
 // #define RETRO_TAPPING
 // #define QUICK_TAP_TERM 0 // used to allow repeating of character with mod
 // taps, 0 disables it
@@ -24,6 +25,8 @@ enum custom_keycodes {
   C_ECIR, // Ê
   C_EGRV, // È
   C_ETRE, // Ë
+  C_DIAE, // ¨
+  C_DCIR, // ^
   C_LCBR, // {
   C_LBRC, // [
   C_LPRN, // (
