@@ -21,11 +21,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [NAV] = LAYOUT_split_3x6_3(
         // French and Navigation
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
-        _______,      US_DIAE,      US_DCIR,      US_DGRV,      US_ACUT,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
+        _______,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,  SFT_T(C_ETRE),GUI_T(C_ECIR), ALT_T(C_EGRV),CTL_T(C_EAIG),    C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
+        XXXXXXX,  SFT_T(US_DIAE),GUI_T(US_DCIR),ALT_T(US_DGRV),CTL_T(US_ACUT), C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        MS_BTN2,      C_TNUM,       C_OCIR,       C_UGRV,       C_UCIR,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
+        MS_BTN2,      C_TNUM,       C_ECIR,       C_EGRV,       C_EAIG,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
                                                          _______,      _______,      _______,  _______,        _______,      _______
                                                      //`------------------------------------'  `--------------------------------------'
@@ -105,17 +105,11 @@ bool tap_code16_advanced_mt_keycode(uint16_t keycode, keyrecord_t *record) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
   switch (keycode) {
-  case SFT_T(C_ETRE):
-    return process_advanced_mt_keycode(C_ETRE, record);
+  case SFT_T(US_DIAE):
+    return tap_code16_advanced_mt_keycode(US_DIAE, record);
     break;
-  case GUI_T(C_ECIR):
-    return process_advanced_mt_keycode(C_ECIR, record);
-    break;
-  case ALT_T(C_EGRV):
-    return process_advanced_mt_keycode(C_EGRV, record);
-    break;
-  case CTL_T(C_EAIG):
-    return process_advanced_mt_keycode(C_EAIG, record);
+  case GUI_T(US_DCIR):
+    return tap_code16_advanced_mt_keycode(US_DCIR, record);
     break;
   case GUI_T(KC_LCBR):
     return tap_code16_advanced_mt_keycode(KC_LCBR, record);
