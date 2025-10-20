@@ -1,0 +1,12 @@
+[Unit]
+Description=Hyprland active window -> RustDesk submap event watcher
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/hypr/watch-rustdesk-submap.sh
+Restart=on-failure
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
