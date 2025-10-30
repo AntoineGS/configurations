@@ -1,5 +1,6 @@
 local wk = require "which-key"
 
+-- stylua: ignore
 wk.add {
   { "<leader>mt", group = "MiniTest" },
   { "<leader>mtr", "<cmd>lua MiniTest.run()<CR>", desc = "Run" },
@@ -83,14 +84,15 @@ return {
       prefix = "gR",
     },
   },
-  require("mini.pairs").setup(),
   require("mini.splitjoin").setup(),
   require("mini.surround").setup(), -- not sure if it can be added to which-key, sa, sd, sf, sF, sh, sr then to search l (prev) and n
-  require("mini.sessions").setup(), -- not sure how to use this but I want it
   require("mini.cursorword").setup(),
   require("mini.basics").setup {
     mappings = {
       basic = false,
     },
+  },
+  require("mini.diff").setup {
+    autoread = true,
   },
 }
