@@ -1,8 +1,16 @@
+adbmanager
 brave-bin
 caffeine-ng
 carapace
-fsearch-git
+fzf-tab-completion-git
 gitkraken
 insync
 jetbrains-toolbox
+oh-my-zsh-git
+qmk-git
+rustdesk-bin
 teams-for-linux-bin
+tmux-plugin-manager
+vicinae-bin
+wol-systemd
+zsh-vi-mode
