@@ -1,0 +1,3 @@
+[providers.symbols]
+# Copy the emoji to clipboard (wl-copy) and then type it into the focused client (wtype).
+command =  "wl-copy && wtype -M ctrl -M shift v"
