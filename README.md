@@ -33,6 +33,10 @@ Use Winget whenever possible
   - `winget install Microsoft.OpenJDF.21`
 - Rust / Cargo
 
+## RipGrep
+
+- `winget install BurntSushi.ripgrep.MSVC`
+
 ## WezTerm
 
 - `winget install wez.wezterm`
@@ -80,8 +84,6 @@ Use Winget whenever possible
 
 - Install Everything as a service:
   - `https://www.voidtools.com/`
-- Install AnyTxt Searcher:
-  - `https://anytxt.net/`
 
 ## Total Commander
 
@@ -89,6 +91,12 @@ Use Winget whenever possible
 
 - Plugins:
   `https://www.ghisler.ch/board/viewtopic.php?t=33740`
+
+## Winaero Tweaker
+
+## ContextMenuManager
+
+`https://github.com/BluePointLilac/ContextMenuManager/releases`
 
 # Linux
 
