@@ -57,7 +57,7 @@ return vim.tbl_deep_extend("force", src, {
         },
       },
       nes = {
-        enabled = true,
+        enabled = false,
         auto_trigger = true,
         keymap = {
           -- accept_and_goto = false,
