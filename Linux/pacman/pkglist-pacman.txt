@@ -70,6 +70,7 @@ nvidia-dkms
 nwg-hello
 obs-studio
 obsidian
+omarchy-keyring
 omarchy-nvim
 opencode
 pamixer
