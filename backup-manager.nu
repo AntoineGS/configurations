@@ -175,6 +175,7 @@ def init_paths [] {
       [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
       [[.zshenv, .zshrc], "", "~", "./Linux/zsh"]
       [[.tmux.conf], "", "~", "./Linux/tmux"]
+      [[mimeapps.list], "", "~/.config", "./Linux/os"]
       [[], "", "~/.config/fzf", "./Linux/fzf"]
       [[], "", "~/.config/ghostty", "./Linux/ghostty"]
       [[], "~/AppData/Roaming/yazi/config", "~/.config/yazi", "./Both/Yazi"]
