@@ -1,0 +1,4 @@
+[providers.clipboard]
+# Copy the emoji to clipboard (wl-copy) and then type it into the focused client (wtype).
+# command =  "wl-copy && wtype -M ctrl -M shift v"
+command =  "wl-copy && hyprctl dispatch sendshortcut CONTROL,V,activewindow"
