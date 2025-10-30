@@ -23,7 +23,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
         _______,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,  SFT_T(US_DIAE),GUI_T(US_DCIR),ALT_T(US_DGRV),CTL_T(US_ACUT), C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
+        XXXXXXX,  SFT_T(US_DIAE),GUI_T(C_DCIR),ALT_T(US_DGRV),CTL_T(US_ACUT), C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
         MS_BTN2,      C_TNUM,       C_ECIR,       C_EGRV,       C_EAIG,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
@@ -108,7 +108,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
   case SFT_T(US_DIAE):
     return tap_code16_advanced_mt_keycode(US_DIAE, record);
     break;
-  case GUI_T(US_DCIR):
+  case GUI_T(C_DCIR):
     return tap_code16_advanced_mt_keycode(US_DCIR, record);
     break;
   case GUI_T(KC_LCBR):
