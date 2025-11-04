@@ -13,4 +13,5 @@ teams-for-linux-bin
 tmux-plugin-manager
 vicinae-bin
 wol-systemd
+zsh-autosuggestions-git
 zsh-vi-mode
