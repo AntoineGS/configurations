@@ -7,11 +7,13 @@ autoload -U compinit && compinit
 # Oh My Zsh
 source "$ZSH/oh-my-zsh.sh"
 source /usr/share/zsh/plugins/zsh-vi-mode/zsh-vi-mode.plugin.zsh
+source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
 
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
   bindkey '^I' fzf_completion
+  bindkey '^P' autosuggest-accept
 }
 
 # Carapace
