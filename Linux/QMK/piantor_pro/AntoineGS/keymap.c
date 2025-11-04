@@ -171,12 +171,14 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     } else {
       tap_code(KC_NUM);
     }
+    break;
   case C_TMUX:
     if (record->event.pressed) {
       register_code(KC_LCTL);
       tap_code(KC_B);
       unregister_code(KC_LCTL);
     }
+    break;
   }
 
   return true;
