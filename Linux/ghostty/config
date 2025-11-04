@@ -21,4 +21,4 @@ confirm-close-surface=false
 # keybind = f11=toggle_fullscreen
 # keybind = shift+insert=paste_from_clipboard
 # keybind = control+insert=copy_to_clipboard
-command="nu"
+command="zsh"
