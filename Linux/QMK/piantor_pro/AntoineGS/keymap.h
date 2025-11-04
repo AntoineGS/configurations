@@ -34,6 +34,7 @@ enum custom_keycodes {
   C_RBRC, // ]
   C_RCBR, // }
   C_TNUM, // numlock only while pressed
+  C_TMUX, // tmux prefix
 };
 
 enum layers {

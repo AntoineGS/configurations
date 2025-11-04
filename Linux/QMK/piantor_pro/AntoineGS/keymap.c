@@ -14,7 +14,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
         MS_BTN1,       US_Z,         KC_X,         US_C,         US_V,         US_B,                     US_N,         US_M,       US_COMM,      US_DOT,       US_SLSH,      KC_DEL,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
-                                                         KC_LSFT,       KC_ENT,       LA_NAV,  LA_SYM,         KC_SPC,        XXXXXXX
+                                                         KC_LSFT,       KC_ENT,       LA_NAV,  LA_SYM,         KC_SPC,        C_TMUX
                                                      //`------------------------------------'  `--------------------------------------'
   ),
 
@@ -170,6 +170,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
       tap_code(KC_NUM);
     } else {
       tap_code(KC_NUM);
+    }
+  case C_TMUX:
+    if (record->event.pressed) {
+      register_code(KC_LCTL);
+      tap_code(KC_B);
+      unregister_code(KC_LCTL);
     }
   }
 
