@@ -16,6 +16,13 @@ end)
 
 M.base46 = {
   theme = "onedark",
+  transparency = true,
+}
+
+M.ui = {
+  tabufline = {
+    enabled = false,
+  },
 }
 
 M.mason = {
