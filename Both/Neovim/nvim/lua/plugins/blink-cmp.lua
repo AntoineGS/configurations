@@ -5,6 +5,7 @@ return {
     -- "fang2hou/blink-copilot",
   },
   version = "*",
+  event = "InsertEnter",
 
   ---@module 'blink.cmp'
   ---@type blink.cmp.Config
