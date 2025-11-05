@@ -7,8 +7,8 @@ font-style = Bold
 font-size = 11
 
 # Window
-window-padding-x = 14
-window-padding-y = 14
+window-padding-x = 10
+window-padding-y = 10
 confirm-close-surface=false
 # resize-overlay = never
 #
@@ -22,3 +22,5 @@ confirm-close-surface=false
 # keybind = shift+insert=paste_from_clipboard
 # keybind = control+insert=copy_to_clipboard
 command="zsh"
+custom-shader = shaders/sonic_boom_cursor.glsl
+custom-shader-animation = always
