@@ -174,6 +174,7 @@ def init_paths [] {
       [[], "", "~/.config/elephant", "./Linux/elephant"]
       [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
       [[], "", "~/.config/qmk", "./Linux/qmk"]
+      [[], "", "~/.config/posting", "./Both/posting"]
       [[.zshenv, .zshrc], "", "~", "./Linux/zsh"]
       [[.tmux.conf], "", "~", "./Linux/tmux"]
       [[mimeapps.list], "", "~/.config", "./Linux/os"]
