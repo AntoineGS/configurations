@@ -123,6 +123,86 @@ def "main restore" [] {
       restore_files $path.filenames $path.backup_path $linux_path
     }
   }
+
+  # Clone zsh plugins if not on Arch Linux
+  if ($curr_env == $env_types.linux) {
+    setup_zsh_plugins
+  }
+}
+
+def is_arch_linux [] {
+  if not ("/etc/os-release" | path exists) {
+    return false
+  }
+  
+  let os_info = open /etc/os-release | lines | split column "=" key value
+  let id = $os_info | where key == "ID" | get value.0 | str trim --char '"'
+  
+  $id == "arch"
+}
+
+def setup_zsh_plugins [] {
+  if (is_arch_linux) {
+    print "Detected Arch Linux - skipping zsh plugin cloning (managed by pacman)"
+    return
+  }
+
+  print "Non-Arch Linux detected - cloning zsh plugins..."
+
+  let plugins = [
+    {
+      name: "zsh-vi-mode",
+      repo: "https://github.com/jeffreytse/zsh-vi-mode.git",
+      path: "/usr/share/zsh/plugins/zsh-vi-mode"
+    },
+    {
+      name: "zsh-autosuggestions",
+      repo: "https://github.com/zsh-users/zsh-autosuggestions.git",
+      path: "/usr/share/zsh/plugins/zsh-autosuggestions"
+    },
+    {
+      name: "fzf-tab-completion",
+      repo: "https://github.com/lincheney/fzf-tab-completion.git",
+      path: "/usr/share/fzf-tab-completion"
+    },
+    {
+      name: "zsh-transient-prompt",
+      repo: "https://github.com/romkatv/zsh-transient-prompt.git",
+      path: "/usr/share/zsh/plugins/zsh-transient-prompt"
+    }
+  ]
+
+  for $plugin in $plugins {
+    if ($plugin.path | path exists) {
+      print $"($plugin.name) already exists at ($plugin.path) - updating..."
+      
+      # Update the repository
+      try {
+        cd $plugin.path
+        sudo git pull
+        print $"✓ ($plugin.name) updated successfully"
+      } catch {
+        print $"✗ Failed to update ($plugin.name)"
+      }
+    } else {
+      print $"Cloning ($plugin.name) to ($plugin.path)..."
+      
+      # Create parent directory if it doesn't exist
+      let parent_dir = $plugin.path | path dirname
+      if not ($parent_dir | path exists) {
+        print $"Creating directory ($parent_dir)"
+        sudo mkdir -p $parent_dir
+      }
+      
+      # Clone the repository
+      try {
+        sudo git clone $plugin.repo $plugin.path
+        print $"✓ ($plugin.name) cloned successfully"
+      } catch {
+        print $"✗ Failed to clone ($plugin.name)"
+      }
+    }
+  }
 }
 
 def init_paths [] {
