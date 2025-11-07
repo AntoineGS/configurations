@@ -17,6 +17,7 @@ cups-pdf
 docker
 docker-compose
 dust
+electron
 expac
 fastfetch
 fcitx5-gtk
@@ -54,6 +55,7 @@ mako
 mise
 mold
 mpv
+mqttui
 nautilus
 nushell
 nvidia-dkms
