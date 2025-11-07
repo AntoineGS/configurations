@@ -1,5 +1,9 @@
 # ZSH_THEME=...
 # plugins=(...)
+TRANSIENT_PROMPT_PROMPT='$(starship prompt --terminal-width="$COLUMNS" --keymap="${KEYMAP:-}" --status="$STARSHIP_CMD_STATUS" --pipestatus="${STARSHIP_PIPE_STATUS[*]}" --cmd-duration="${STARSHIP_DURATION:-}" --jobs="$STARSHIP_JOBS_COUNT")'
+TRANSIENT_PROMPT_RPROMPT='$(starship prompt --right --terminal-width="$COLUMNS" --keymap="${KEYMAP:-}" --status="$STARSHIP_CMD_STATUS" --pipestatus="${STARSHIP_PIPE_STATUS[*]}" --cmd-duration="${STARSHIP_DURATION:-}" --jobs="$STARSHIP_JOBS_COUNT")'
+TRANSIENT_PROMPT_TRANSIENT_PROMPT='$(starship module shell)'
+TRANSIENT_PROMPT_TRANSIENT_RPROMPT='%*'
 
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
@@ -8,8 +12,9 @@ autoload -U compinit && compinit
 source "$ZSH/oh-my-zsh.sh"
 source /usr/share/zsh/plugins/zsh-vi-mode/zsh-vi-mode.plugin.zsh
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
-
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
+source /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh
+
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
   bindkey '^I' fzf_completion
