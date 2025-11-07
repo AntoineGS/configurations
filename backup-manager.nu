@@ -181,6 +181,11 @@ def setup_zsh_plugins [] {
       name: "zsh-transient-prompt",
       repo: "https://github.com/olets/zsh-transient-prompt.git",
       path: "/usr/share/zsh/plugins/zsh-transient-prompt"
+    },
+    {
+      name: "tmux-plugin-manager",
+      repo: "https://github.com/tmux-plugins/tpm.git",
+      path: "/usr/share/tmux-plugin-manager"
     }
   ]
 
