@@ -27,19 +27,20 @@ end
 ---config.tab_bar_at_bottom = true
 config.window_decorations = "RESIZE"
 config.color_scheme = "One Dark (Gogh)"
-config.font = wezterm.font("JetBrainsMono Nerd Font")
-config.font_size = 13
+config.font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Bold" })
+config.font_size = 11
 config.use_dead_keys = true
 config.scrollback_lines = 5000
 config.adjust_window_size_when_changing_font_size = false
 config.hide_tab_bar_if_only_one_tab = true
 config.tab_max_width = 100
 config.window_frame = {
-	font = wezterm.font({ family = "JetBrainsMono Nerd Font", weight = "Regular" }),
+	font = wezterm.font({ family = "JetBrainsMono Nerd Font", weight = "Bold" }),
 }
 -- config.leader = { key = "a", mods = "CTRL", timeout_milliseconds = 1000 }
 config.keys = {
 	{ key = "d", mods = "CTRL|SHIFT", action = act.ShowDebugOverlay },
+	-- { key = "Enter", mods="SHIFT", action=wezterm.action{SendString="\x1b\r"}},},
 	{ key = "l", mods = "ALT", action = act.ShowLauncher },
 	{ key = "w", mods = "CTRL|SHIFT", action = act.CloseCurrentPane({ confirm = false }) },
 	-- { key = "h", mods = "CTRL|SHIFT", action = act.ActivatePaneDirection("Left") },
