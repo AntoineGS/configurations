@@ -4,6 +4,9 @@ TRANSIENT_PROMPT_PROMPT='$(starship prompt --terminal-width="$COLUMNS" --keymap=
 TRANSIENT_PROMPT_RPROMPT='$(starship prompt --right --terminal-width="$COLUMNS" --keymap="${KEYMAP:-}" --status="$STARSHIP_CMD_STATUS" --pipestatus="${STARSHIP_PIPE_STATUS[*]}" --cmd-duration="${STARSHIP_DURATION:-}" --jobs="$STARSHIP_JOBS_COUNT")'
 TRANSIENT_PROMPT_TRANSIENT_PROMPT='$(starship module shell)'
 TRANSIENT_PROMPT_TRANSIENT_RPROMPT='%*'
+export PATH="/opt/homebrew/bin:$PATH"
+export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+export PATH="~/.local/bin:$PATH"
 
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
