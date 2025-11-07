@@ -45,9 +45,8 @@ map("n", "<tab>", "<cmd>BufferLineCycleNext<CR>", { desc = "buffer goto next" })
 
 map("n", "<S-tab>", "<cmd>BufferLineCyclePrev<CR>", { desc = "buffer goto prev" })
 
-map("n", "<leader>x", function()
-  require("nvchad.tabufline").close_buffer()
-end, { desc = "buffer close" })
+map("n", "<leader>X", "<cmd>BufferLineCloseOthers<CR>", { desc = "buffer close others" })
+map("n", "<leader>x", "<cmd>bdelete<CR>", { desc = "buffer close" })
 
 map("n", "<leader>th", function()
   require("nvchad.themes").open()
