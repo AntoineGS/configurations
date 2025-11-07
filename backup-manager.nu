@@ -70,6 +70,18 @@ def restore_files [filenames, _source, _destination] {
     return
   }
   
+  # Create destination directory if it doesn't exist
+  let destination_dir = if (is_a_folder $filenames) {
+    $_destination | path expand --no-symlink | path dirname
+  } else {
+    $_destination | path expand --no-symlink
+  }
+  
+  if not ($destination_dir | path exists) {
+    print $"Creating destination directory ($destination_dir)"
+    mkdir $destination_dir
+  }
+  
   remove_files $filenames $_destination
 
   if (is_a_folder $filenames) {
