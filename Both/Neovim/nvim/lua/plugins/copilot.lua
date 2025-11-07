@@ -1,6 +1,5 @@
 local logger_conf = {}
 local src = {}
-local os = vim.loop.os_uname()
 
 if vim.fn.hostname() == "DESKTOP-E07VTRN" then
   logger_conf = {
@@ -10,13 +9,11 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
     log_lsp_messages = true,
     trace_lsp_progress = true,
   }
-end
 
-if os.sysname == "Windows_NT" then
   src = {
-    dir = "C:/Gits/copilot.lua",
+    dir = "~/gits/copilot.lua",
     dependencies = {
-      dir = "C:/Gits/copilot-lsp",
+      dir = "~/gits/copilot-lsp",
     },
   }
 else
