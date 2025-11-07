@@ -20,10 +20,13 @@ For more information about configuration options, please visit the Wiki https://
   color: var(--text1);
   font-weight: bold;
   font-family: "JetBrainsMono NF";
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
 }
 .yasb-bar {
   background-color: var(--bg-color1);
-  border-radius: 8px;
+  margin-left: 8px;
+  margin-right: 8px;
 }
 /* Global styles for ToolTip */
 .tooltip {
@@ -119,10 +122,11 @@ For more information about configuration options, please visit the Wiki https://
 .systray {
   background-color: var(--col3);
   color: var(--col3);
-  /* padding: 10px 10px; */
 }
 .systray .button {
   background-color: var(--col3);
+  margin-right: 2px;
+  margin-left: 2px;
 }
 .systray .button:hover {
   background-color: var(--col4);
@@ -155,6 +159,7 @@ For more information about configuration options, please visit the Wiki https://
 }
 .komorebi-workspaces .ws-btn.active {
   border-top: 2px solid #abb2bf;
+  /* box-shadow: 0 0 4px #3b4048; */
   /* width: 36px; */
 }
 .power-menu-widget .label {
@@ -454,14 +459,14 @@ For more information about configuration options, please visit the Wiki https://
   background-color: var(--col2);
 }
 .calendar {
-  background-color: var(--col1);
+  background-color: var(--col2);
   border-radius: 8px;
-  border: 1px solid var(--col1);
+  border: 1px solid var(--col2);
 }
 .calendar .calendar-table,
 .calendar .calendar-table::item {
-  background-color: rgba(17, 17, 27, 0);
-  color: rgba(162, 177, 196, 0.85);
+  background-color: transparent;
+  color: #000000;
   font-family: "Segoe UI";
   margin: 0;
   padding: 0;
@@ -470,7 +475,7 @@ For more information about configuration options, please visit the Wiki https://
 }
 .calendar .calendar-table::item:selected {
   color: #000000;
-  background-color: var(--blue);
+  background-color: var(--col4);
   border-radius: 10px;
 }
 .calendar .day-label {
