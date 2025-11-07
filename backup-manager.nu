@@ -175,6 +175,7 @@ def init_paths [] {
       [[], "", "~/.config/uwsm/default", "./Linux/uwsm/default"]
       [[], "", "~/.config/qmk", "./Linux/qmk"]
       [[], "", "~/.config/posting", "./Both/posting"]
+      [["config.json"], "", "~/.config/teams-for-linux", "./Linux/teams-for-linux"]
       [[.zshenv, .zshrc], "", "~", "./Linux/zsh"]
       [[.tmux.conf], "", "~", "./Linux/tmux"]
       [[mimeapps.list], "", "~/.config", "./Linux/os"]
