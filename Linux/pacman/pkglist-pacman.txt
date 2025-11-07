@@ -97,6 +97,7 @@ waybar
 wayfreeze
 wezterm
 whois
+winetricks
 wiremix
 wl-clip-persist
 woff2-font-awesome
