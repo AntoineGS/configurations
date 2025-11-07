@@ -65,6 +65,23 @@ return {
         offset_separator = {
           bg = "NONE",
         },
+        -- Fix indicator backgrounds
+        indicator_selected = {
+          bg = "#434256",
+        },
+        indicator_visible = {
+          bg = "NONE",
+        },
+        -- Fix duplicate prefix backgrounds
+        duplicate_selected = {
+          bg = "#434256",
+        },
+        duplicate_visible = {
+          bg = "NONE",
+        },
+        duplicate = {
+          bg = "NONE",
+        },
       },
     }
   end,
