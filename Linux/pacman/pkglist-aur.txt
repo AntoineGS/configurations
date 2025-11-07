@@ -15,4 +15,5 @@ tmux-plugin-manager
 vicinae-bin
 wol-systemd
 zsh-autosuggestions-git
+zsh-transient-prompt-git
 zsh-vi-mode
