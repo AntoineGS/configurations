@@ -179,7 +179,7 @@ def setup_zsh_plugins [] {
     },
     {
       name: "zsh-transient-prompt",
-      repo: "https://github.com/romkatv/zsh-transient-prompt.git",
+      repo: "https://github.com/olets/zsh-transient-prompt.git",
       path: "/usr/share/zsh/plugins/zsh-transient-prompt"
     }
   ]
