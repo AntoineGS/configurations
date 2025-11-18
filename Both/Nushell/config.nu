@@ -775,3 +775,5 @@ source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
 source $"($nu.default-config-dir)/themes/one-dark.nu"
 use ~/.cache/starship/init.nu
+
+alias cd = z
