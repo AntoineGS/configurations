@@ -21,11 +21,11 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     [NAV] = LAYOUT_split_3x6_3(
         // French and Navigation
   //,-----------------------------------------------------------------------------------.          ,-----------------------------------------------------------------------------------.
-        _______,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
+        _______,      US_DIAE,      US_DGRV,       C_DCIR,      US_ACUT,      XXXXXXX,                 KC_WHOM,      KC_PSCR,      XXXXXXX,      XXXXXXX,      KC_VOLU,      _______,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        XXXXXXX,  SFT_T(US_DIAE),GUI_T(C_DCIR),ALT_T(US_DGRV),CTL_T(US_ACUT), C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
+        XXXXXXX,  SFT_T(XXXXXXX),GUI_T(C_EGRV),ALT_T(C_ECIR),CTL_T(C_EAIG),    C_AGRV,                 KC_LEFT,      KC_DOWN,       KC_UP,       KC_RIGHT,     KC_VOLD,      XXXXXXX,
   //|-------------+-------------+-------------+-------------+-------------+-------------|          |-------------+-------------+-------------+-------------+-------------+-------------|
-        MS_BTN2,      C_TNUM,       C_ECIR,       C_EGRV,       C_EAIG,       US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
+        MS_BTN2,      C_TNUM,       XXXXXXX,      XXXXXXX,      XXXXXXX,      US_CCED,                 KC_HOME,      KC_PGDN,       KC_PGUP,      KC_END,      KC_MUTE,      KC_CALC,
   //|-------------+-------------+-------------+-------------+-------------+-------------+---|  |---+-------------+-------------+-------------+-------------+-------------+-------------|
                                                          _______,      _______,      _______,  _______,        _______,      _______
                                                      //`------------------------------------'  `--------------------------------------'
@@ -128,6 +128,15 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     break;
   case GUI_T(KC_RCBR):
     return tap_code16_advanced_mt_keycode(KC_RCBR, record);
+    break;
+  case GUI_T(C_EGRV):
+    return process_advanced_mt_keycode(C_EGRV, record);
+    break;
+  case ALT_T(C_ECIR):
+    return process_advanced_mt_keycode(C_ECIR, record);
+    break;
+  case CTL_T(C_EAIG):
+    return process_advanced_mt_keycode(C_EAIG, record);
     break;
   case C_CIRC:
     return send_accented_letter(record, US_DCIR, KC_SPC);
