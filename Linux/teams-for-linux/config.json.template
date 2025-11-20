@@ -1,0 +1,14 @@
+{
+  "disableAutogain": true,
+
+  "mqtt": {
+    "enabled": true,
+    "brokerUrl": "mqtt://server.home:1883",
+    "username": "mosquitto",
+    "password": "${TEAMS_MQTT_PASSWORD}",
+    "clientId": "teams-for-linux",
+    "topicPrefix": "teams-for-linux",
+    "statusTopic": "status",
+    "statusCheckInterval": 10000
+  }
+}
