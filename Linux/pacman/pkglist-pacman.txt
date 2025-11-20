@@ -57,6 +57,7 @@ mold
 mpv
 mqttui
 nautilus
+ncdu
 nushell
 nvidia-dkms
 nwg-hello
