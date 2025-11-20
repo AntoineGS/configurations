@@ -1,14 +1,6 @@
 #define LA_SYM MO(SYM)
 #define LA_NAV MO(NAV)
 #define LA_NUM MO(NUM)
-#define MAX_DEFERRED_EXECUTORS 10
-#define CHORDAL_HOLD
-#undef TAPPING_TERM
-#define TAPPING_TERM 1000
-#define FLOW_TAP_TERM 150
-// #define RETRO_TAPPING
-// #define QUICK_TAP_TERM 0 // used to allow repeating of character with mod
-// taps, 0 disables it
 
 enum custom_keycodes {
   C_CIRC = SAFE_RANGE,
