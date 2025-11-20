@@ -1,0 +1,5 @@
+# Local environment variables (not tracked in git)
+# Copy this file to .zshenv.local and add your secrets
+
+# MQTT password for teams-for-linux
+export TEAMS_MQTT_PASSWORD="your-password-here"
