@@ -7,6 +7,8 @@ TRANSIENT_PROMPT_TRANSIENT_RPROMPT='%*'
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
 export PATH="~/.local/bin:$PATH"
+export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
+export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first {} | head -200'"
 
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
@@ -17,11 +19,13 @@ source /usr/share/zsh/plugins/zsh-vi-mode/zsh-vi-mode.plugin.zsh
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
 source /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh
+source /usr/share/fzf/completion.zsh
 
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
   bindkey '^I' fzf_completion
   bindkey '^P' autosuggest-accept
+  source /usr/share/fzf/key-bindings.zsh
 }
 
 # Carapace
