@@ -6,7 +6,7 @@ appstream-glib
 asdcontrol
 base
 bat-extras
-blueberry
+bluetui
 brightnessctl
 btop
 catch2
@@ -42,7 +42,6 @@ intel-ucode
 intltool
 inxi
 itstool
-iwd
 kdenlive
 kitty
 lazydocker
@@ -77,6 +76,7 @@ power-profiles-daemon
 python-pillow
 python-poetry-core
 python-terminaltexteffects
+python-virtualenv
 rapidfuzz-cpp
 remmina
 satty
@@ -91,6 +91,7 @@ swaybg
 swayosd
 system-config-printer
 tldr
+tobi-try
 tree-sitter-cli
 ttf-ia-writer
 typora
@@ -107,6 +108,7 @@ woff2-font-awesome
 wtype
 xdg-terminal-exec
 xmlstarlet
+xorg-xhost
 xournalpp
 yaru-icon-theme
 yay
