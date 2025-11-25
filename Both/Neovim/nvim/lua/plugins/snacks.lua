@@ -49,11 +49,11 @@ wk.add {
   { "<leader>su", "<cmd>lua Snacks.picker.undo()<CR>", desc = "Undo History" },
   { "<leader>uC", "<cmd>lua Snacks.picker.colorschemes()<CR>", desc = "Colorschemes" },
   -- LSP
-  { "gd", "<cmd>lua Snacks.picker.lsp_definitions()<CR>", desc = "Goto Definition" },
-  { "gD", "<cmd>lua Snacks.picker.lsp_declarations()<CR>", desc = "Goto Declaration" },
-  { "gR", "<cmd>lua Snacks.picker.lsp_references()<CR>", nowait = true, desc = "References" },
-  { "gI", "<cmd>lua Snacks.picker.lsp_implementations()<CR>", desc = "Goto Implementation" },
-  { "gy", "<cmd>lua Snacks.picker.lsp_type_definitions()<CR>", desc = "Goto T[y]pe Definition" },
+  -- { "gd", "<cmd>lua Snacks.picker.lsp_definitions()<CR>", desc = "Goto Definition" },
+  -- { "gD", "<cmd>lua Snacks.picker.lsp_declarations()<CR>", desc = "Goto Declaration" },
+  -- { "gR", "<cmd>lua Snacks.picker.lsp_references()<CR>", nowait = true, desc = "References" },
+  -- { "gI", "<cmd>lua Snacks.picker.lsp_implementations()<CR>", desc = "Goto Implementation" },
+  -- { "gy", "<cmd>lua Snacks.picker.lsp_type_definitions()<CR>", desc = "Goto T[y]pe Definition" },
   { "<leader>ss", "<cmd>lua Snacks.picker.lsp_symbols()<CR>", desc = "LSP Symbols" },
   { "<leader>sS", "<cmd>lua Snacks.picker.lsp_workspace_symbols()<CR>", desc = "LSP Workspace Symbols" },
 }
