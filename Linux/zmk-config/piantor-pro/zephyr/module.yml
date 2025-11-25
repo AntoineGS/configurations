@@ -1,0 +1,5 @@
+name: zmk-keyboard-piantor
+
+build:
+  settings:
+    board_root: .
