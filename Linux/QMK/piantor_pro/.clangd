@@ -1,0 +1,5 @@
+CompilationDatabase: /home/antoinegs/qmk_firmware
+CompileFlags:
+  Remove: [-mno-direct-extern-access, -mno-thumb-interwork]
+Diagnostics:
+  Suppress: [drv_unknown_argument]
