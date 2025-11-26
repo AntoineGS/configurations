@@ -80,6 +80,76 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 - Custom keycode handling requirements for mod-tap functions
 - French accented character implementation using US International dead keys
 
+## ZMK Keyboard Firmware
+
+**Location:** `Linux/zmk-config/keyball44/config/`
+
+**Keyboards using ZMK:**
+- `keyball44/` - Keyball 44 (44-key split with PMW3610 trackball)
+
+**Build Environment:**
+- ZMK firmware repository: `~/gits/zmk`
+- Python virtual environment: `~/gits/zmk/.venv`
+- Build system: West (Zephyr meta-tool)
+
+**Build Commands:**
+
+```bash
+# Build left side
+cd ~/gits/zmk
+source .venv/bin/activate
+cd app
+west build -d build/left -b nice_nano_v2 -p -- \
+  -DSHIELD=keyball44_left \
+  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44/config
+
+# Build right side (with PMW3610 trackball driver)
+west build -d build/right -b nice_nano_v2 -p -- \
+  -DSHIELD=keyball44_right \
+  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44/config
+```
+
+**Firmware Output:**
+- Left: `~/gits/zmk/app/build/left/zephyr/zmk.uf2` (~544 KB)
+- Right: `~/gits/zmk/app/build/right/zephyr/zmk.uf2` (~698 KB)
+
+**Flashing:**
+1. Double-tap reset button on Nice Nano to enter bootloader mode
+2. Copy the `.uf2` file to the mounted USB drive
+3. Board will automatically reboot with new firmware
+
+**Important Notes:**
+- The `-p` flag does a pristine build (clean rebuild)
+- Remove `-p` for incremental builds after making small changes
+- The right side is larger due to the PMW3610 trackball driver
+- PMW3610 driver is fetched via West from kumamuk-git/zmk-pmw3610-driver
+
+**Dependencies:**
+- Zephyr SDK 0.16.3 installed at `~/zephyr-sdk-0.16.3`
+- Python packages in venv: setuptools, protobuf, west
+- CMake, dtc (device tree compiler), ninja-build
+
+**Configuration Files:**
+- `keyball44.keymap` - Main keymap with layers, behaviors, and macros
+- `keyball44.conf` - Keyboard-level configuration (BLE, display, behaviors)
+- `boards/shields/keyball_nano/keyball44_left.overlay` - Left side hardware definition
+- `boards/shields/keyball_nano/keyball44_right.overlay` - Right side hardware definition
+- `boards/shields/keyball_nano/keyball44_right.conf` - PMW3610 trackball configuration
+
+**Architecture details:**
+See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
+- Timeless homerow mods implementation (urob's pattern)
+- 4-layer system (DEF/NAV/SYM/NUM with tri-layer)
+- French character macros using US International dead keys
+- PMW3610 trackball driver configuration
+- Key position definitions for positional hold-tap
+- Testing checklist and migration notes from QMK
+
+**Troubleshooting:**
+- If build fails with "unknown symbol PMW3610": Run `west update` to fetch driver modules
+- If Python errors occur: Ensure `setuptools` and `protobuf` are installed in venv
+- Devicetree errors: Check syntax in `.overlay` and `.keymap` files (use `,` between binding items)
+
 ## Hyprland Window Manager
 
 **Location:** `Linux/hypr/`
