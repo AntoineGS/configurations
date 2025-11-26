@@ -62,9 +62,7 @@
         egrv: egrv_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp GRAVE>
+            bindings = <&macro_tap &kp GRAVE>
                      , <&macro_tap &kp E>;
         };
 
@@ -72,9 +70,7 @@
         eacu: eacu_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp SQT>
+            bindings = <&macro_tap &kp SQT>
                      , <&macro_tap &kp E>;
         };
 
@@ -82,9 +78,9 @@
         ecir: ecir_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp LS(N6)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp N6>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp E>;
         };
 
@@ -92,9 +88,9 @@
         edia: edia_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp LS(SQT)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp SQT>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp E>;
         };
 
@@ -102,9 +98,7 @@
         agrv: agrv_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp GRAVE>
+            bindings = <&macro_tap &kp GRAVE>
                      , <&macro_tap &kp A>;
         };
 
@@ -112,9 +106,7 @@
         ugrv: ugrv_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp GRAVE>
+            bindings = <&macro_tap &kp GRAVE>
                      , <&macro_tap &kp U>;
         };
 
@@ -122,9 +114,9 @@
         ocir: ocir_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp LS(N6)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp N6>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp O>;
         };
 
@@ -132,9 +124,9 @@
         ucir: ucir_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_press &kp LSFT>
-                     , <&macro_release &kp LSFT>
-                     , <&macro_tap &kp LS(N6)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp N6>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp U>;
         };
 
@@ -161,7 +153,9 @@
         dcir: dcir_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_tap &kp LS(N6)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp N6>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp SPACE>;
         };
 
@@ -169,7 +163,9 @@
         dtil: dtil_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_tap &kp LS(GRAVE)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp GRAVE>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp SPACE>;
         };
 
@@ -185,7 +181,9 @@
         ddia: ddia_macro {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_tap &kp LS(SQT)>
+            bindings = <&macro_press &kp LSHFT>
+                     , <&macro_tap &kp SQT>
+                     , <&macro_release &kp LSHFT>
                      , <&macro_tap &kp SPACE>;
         };
 
@@ -213,7 +211,6 @@
 
         // DEF Layer - Base QWERTY with timeless homerow mods
         default_layer {
-            label = "DEF";
             bindings = <
 &kp ESC        &kp Q        &kp W        &kp E        &kp R         &kp T                    &kp Y         &kp U         &kp I         &kp O         &kp P            &kp BSPC
 &kp TAB        &hml LSFT A  &hml LGUI S  &hml LALT D  &hml LCTRL F  &kp G                    &kp H         &hmr RCTRL J  &hmr RALT K   &hmr RGUI L   &hmr RSFT SEMI   &dacu
@@ -224,18 +221,16 @@
 
         // NAV Layer - French accented characters (left) + Navigation (right)
         nav_layer {
-            label = "NAV";
             bindings = <
-&trans         &ddia        &dgrv        &dcir        &dacu         &none                    &kp K_WWW_HOME  &kp PSCRN     &none         &none         &kp C_VOL_UP   &trans
-&none          &none        &hml LGUI egrv &hml LALT ecir &hml LCTRL eacu &agrv               &kp LEFT      &kp DOWN      &kp UP        &kp RIGHT     &kp C_VOL_DN   &none
-&mkp MCLK      &kp KP_NUM   &none        &none        &none         &cced                    &kp HOME      &kp PG_DN     &kp PG_UP     &kp END       &kp C_MUTE     &kp K_CALC
+&trans         &ddia        &dgrv        &dcir        &dacu         &none                    &kp C_AC_HOME &kp PSCRN     &none         &none         &kp C_VOL_UP   &trans
+&none          &none        &egrv        &ecir        &eacu         &agrv                    &kp LEFT      &kp DOWN      &kp UP        &kp RIGHT     &kp C_VOL_DN   &none
+&mkp MCLK      &kp KP_NUM   &none        &none        &none         &cced                    &kp HOME      &kp PG_DN     &kp PG_UP     &kp END       &kp C_MUTE     &kp C_AL_CALC
 &none          &none        &trans       &trans       &trans                       &trans    &trans        &trans        &trans        &none
             >;
         };
 
         // SYM Layer - Symbols and brackets with timeless homerow mods
         symbol_layer {
-            label = "SYM";
             bindings = <
 &trans         &kp EXCL     &kp AT       &kp HASH     &kp DLLR      &kp PRCNT                &dcir         &kp AMPS      &kp STAR      &none         &none          &trans
 &none          &none        &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS              &kp MINUS     &hmr RCTRL RPAR &hmr RALT RBKT &hmr RGUI RBRC &none       &none
@@ -246,7 +241,6 @@
 
         // NUM Layer - Function keys (left) + Numpad (right) with timeless homerow mods
         num_layer {
-            label = "NUM";
             bindings = <
 &trans         &kp F9       &kp F10      &kp F11      &kp F12       &none                    &none         &kp N7        &kp N8        &kp N9        &none          &trans
 &none          &hml LSFT F5 &hml LGUI F6 &hml LALT F7 &hml LCTRL F8 &none                    &kp MINUS     &hmr RCTRL N4 &hmr RALT N5  &hmr RGUI N6  &hmr RSFT N0   &none
