@@ -1,10 +1,12 @@
 // Keyball 44 ZMK Keymap - Migrated from Piantor Pro QMK
-// Preserves home row mods, 4-layer system, and French accented character support
+// Preserves home row mods, 5-layer system, and French accented character support
+// Added: Scroll mode layer for trackball scrolling
 
 #define DEF 0
 #define NAV 1
 #define SYM 2
 #define NUM 3
+#define SCR 5  // Scroll mode layer (layer 5 matches overlay config)
 
 #include <behaviors/mouse_keys.dtsi>
 #include <behaviors.dtsi>
@@ -224,7 +226,7 @@
             bindings = <
 &trans         &ddia        &dgrv        &dcir        &dacu         &none                    &kp C_AC_HOME &kp PSCRN     &none         &none         &kp C_VOL_UP   &trans
 &none          &none        &egrv        &ecir        &eacu         &agrv                    &kp LEFT      &kp DOWN      &kp UP        &kp RIGHT     &kp C_VOL_DN   &none
-&mkp MCLK      &kp KP_NUM   &none        &none        &none         &cced                    &kp HOME      &kp PG_DN     &kp PG_UP     &kp END       &kp C_MUTE     &kp C_AL_CALC
+&mkp MCLK      &tog SCR     &none        &none        &none         &cced                    &kp HOME      &kp PG_DN     &kp PG_UP     &kp END       &kp C_MUTE     &kp C_AL_CALC
 &none          &none        &trans       &trans       &trans                       &trans    &trans        &trans        &trans        &none
             >;
         };
@@ -246,6 +248,18 @@
 &none          &hml LSFT F5 &hml LGUI F6 &hml LALT F7 &hml LCTRL F8 &none                    &kp MINUS     &hmr RCTRL N4 &hmr RALT N5  &hmr RGUI N6  &hmr RSFT N0   &none
 &none          &kp F1       &kp F2       &kp F3       &kp F4        &none                    &none         &kp N1        &kp N2        &kp N3        &none          &none
 &none          &none        &bootloader  &trans       &trans                       &trans    &trans        &trans        &trans        &none
+            >;
+        };
+
+        // SCR Layer (5) - Scroll mode for trackball
+        // When this layer is active, trackball movement becomes scrolling
+        // This mimics QMK's NumLock scroll behavior
+        scroll_layer {
+            bindings = <
+&trans         &trans       &trans       &trans       &trans        &trans                   &trans        &trans        &trans        &trans        &trans         &trans
+&trans         &trans       &trans       &trans       &trans        &trans                   &trans        &trans        &trans        &trans        &trans         &trans
+&trans         &trans       &trans       &trans       &trans        &trans                   &trans        &trans        &trans        &trans        &trans         &trans
+&trans         &trans       &trans       &trans       &trans                       &trans    &trans        &trans        &trans        &trans
             >;
         };
     };
