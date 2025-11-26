@@ -82,7 +82,7 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 
 ## ZMK Keyboard Firmware
 
-**Location:** `Linux/zmk-config/keyball44/config/`
+**Location:** `Linux/zmk-config/keyball44/`
 
 **Keyboards using ZMK:**
 - `keyball44/` - Keyball 44 (44-key split with PMW3610 trackball)
@@ -91,6 +91,7 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 - ZMK firmware repository: `~/gits/zmk`
 - Python virtual environment: `~/gits/zmk/.venv`
 - Build system: West (Zephyr meta-tool)
+- Module structure: Uses ZMK module pattern with `zephyr/module.yml`
 
 **Build Commands:**
 
@@ -101,12 +102,12 @@ source .venv/bin/activate
 cd app
 west build -d build/left -b nice_nano_v2 -p -- \
   -DSHIELD=keyball44_left \
-  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44/config
+  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
 
 # Build right side (with PMW3610 trackball driver)
 west build -d build/right -b nice_nano_v2 -p -- \
   -DSHIELD=keyball44_right \
-  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44/config
+  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
 ```
 
 **Firmware Output:**
@@ -130,11 +131,13 @@ west build -d build/right -b nice_nano_v2 -p -- \
 - CMake, dtc (device tree compiler), ninja-build
 
 **Configuration Files:**
-- `keyball44.keymap` - Main keymap with layers, behaviors, and macros
-- `keyball44.conf` - Keyboard-level configuration (BLE, display, behaviors)
-- `boards/shields/keyball_nano/keyball44_left.overlay` - Left side hardware definition
-- `boards/shields/keyball_nano/keyball44_right.overlay` - Right side hardware definition
-- `boards/shields/keyball_nano/keyball44_right.conf` - PMW3610 trackball configuration
+- `boards/shields/keyball44/keyball44.keymap` - Main keymap with layers, behaviors, and macros
+- `boards/shields/keyball44/keyball44.conf` - Keyboard-level configuration (BLE, display, behaviors)
+- `boards/shields/keyball44/keyball44_left.overlay` - Left side hardware definition
+- `boards/shields/keyball44/keyball44_right.overlay` - Right side hardware definition
+- `boards/shields/keyball44/keyball44_right.conf` - PMW3610 trackball configuration
+- `config/west.yml` - West manifest for dependencies
+- `zephyr/module.yml` - ZMK module definition
 
 **Architecture details:**
 See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
