@@ -1,0 +1,20 @@
+CompilationDatabase: /home/antoinegs/qmk_firmware
+CompileFlags:
+  Add:
+    [
+      -I/home/antoinegs/qmk_firmware/.build/obj_sofle_choc_AntoineGS/src,
+      -I/home/antoinegs/qmk_firmware,
+      -I/home/antoinegs/qmk_firmware/quantum,
+      -I/home/antoinegs/qmk_firmware/keyboards/sofle_choc,
+      -DQMK_KEYBOARD_H="/home/antoinegs/qmk_firmware/.build/obj_sofle_choc_AntoineGS/src/default_keyboard.h",
+    ]
+  Remove:
+    [
+      -mno-direct-extern-access,
+      -mno-thumb-interwork,
+    ]
+Diagnostics:
+  Suppress:
+    [
+      drv_unknown_argument,
+    ]
