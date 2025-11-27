@@ -1,3 +1,5 @@
+// cd ~/qmk_firmware &&
+// qmk compile --compiledb -kb beekeeb/piantor_pro -km AntoineGS
 #include QMK_KEYBOARD_H
 #include "keymap.h"
 #include "keymap_us_international.h"
