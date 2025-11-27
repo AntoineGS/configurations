@@ -1,3 +1,5 @@
+// cd ~/qmk_firmware &&
+// qmk compile --compiledb -kb sofle_choc -km AntoineGS
 #include QMK_KEYBOARD_H
 #include "keymap.h"
 #include "features/socd_cleaner.h"
