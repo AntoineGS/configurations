@@ -3,34 +3,20 @@
   font-family: "JetBrainsMono Nerd Font";
   font-size: 14px;
   font-weight: bold;
-  border-radius: 0 0 5px 5px;
-  color: #1e2127;
-  background: transparent;
+}
+
+window#waybar {
+  color: #e4e4cd;
+  background: rgba(40, 42, 54, 0.75);
   opacity: 0.96;
-  padding-top: 0;
-  padding-bottom: 0;
-  margin-bottom: 0;
 }
 
 .modules-left {
-  margin-left: 8px;
+  padding-left: 8px;
 }
 
 .modules-right {
-  margin-right: 8px;
-}
-
-#workspaces {
-  padding: 0 16px;
-  background: #c678dd;
-}
-
-#workspaces button {
-  color: #f8f8f2;
-}
-
-#workspaces button.focused {
-  color: #9aedfe;
+  padding-right: 8px;
 }
 
 #workspaces button.empty {
@@ -38,89 +24,49 @@
 }
 
 #workspaces button.visible {
+  color: rgba(217, 165, 233, 1);
   opacity: 1;
-  box-shadow: 0 0 4px #3b4048;
+  background: rgba(40, 42, 54, 75);
 }
 
 #workspaces button:hover {
-  box-shadow: 0 0 8px #3b4048;
-}
-
-#clock {
-  padding: 0 16px;
-  background: #e06c75;
+  opacity: 1;
+  box-shadow: 0 0 8px 8px #3b4048;
 }
 
 #tray,
 #network,
-#pulseaudio,
-#temperature,
-#cpu,
-#memory,
-#disk {
-  margin-left: 8px;
-  min-width: 40px;
+#bluetooth,
+#pulseaudio {
+  margin-left: 6px;
+  margin-right: 6px;
   font-size: 16px;
 }
 
-#tray {
-  background: #d19a66;
-  padding: 0 16px;
+#bluetooth {
+  opacity: 0.6;
+  margin-left: 0;
 }
 
-#tray .popup {
-  background: #d19a66;
-}
-
-.popup .item:hover,
-.popup li:hover,
-.popup .menuitem:hover,
-.popup button:hover,
-.popup .item:active {
-  box-shadow: 0 0 8px #3b4048;
-}
-
-#network {
-  min-width: 38px;
-  padding-left: 3px;
-  padding-right: 6px;
-  background: #98c379;
-}
-
-#pulseaudio {
-  background: #61afef;
-  padding: 0 4px;
-}
-
-#memory,
-#disk,
-#cpu {
-  background: #56b6c2;
-  font-size: 14px;
-  margin: 0;
-  border-radius: 0;
-}
-
-#memory {
-  padding: 0 6px;
+#bluetooth.connected {
+  opacity: 1;
+  color: #a5d6ff;
 }
 
 #disk {
-  border-radius: 0 0 0 5px;
+  margin-right: 0;
   margin-left: 8px;
-  padding-left: 12px;
+}
+
+#memory {
+  margin-left: 8px;
+  margin-right: 6px;
 }
 
 #cpu {
-  padding-right: 12px;
-  border-radius: 0 0 5px 0;
+  margin-left: 0px;
+  margin-right: 12px;
 }
-
-/*   font-size: 14px; */
-/*   padding-left: 16px; */
-/*   padding-right: 16px; */
-/*   background: #abb2bf; */
-/* } */
 
 #custom-omarchy,
 #custom-screenrecording-indicator,
@@ -133,9 +79,10 @@
   margin-right: 7px;
 }
 
+#tray menu,
 tooltip {
   padding: 2px;
-  background: #56b6c2;
+  background: rgba(40, 42, 54, 0.9);
   font-weight: normal;
 }
 

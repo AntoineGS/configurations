@@ -7,9 +7,10 @@
   "modules-left": ["hyprland/workspaces"],
   "modules-center": ["clock", "custom/update", "custom/screenrecording-indicator"],
   "modules-right": [
-    "tray",
+    "group/tray-expander",
     "network",
     "pulseaudio",
+    "bluetooth",
     "disk",
     "memory",
     "cpu"
@@ -27,7 +28,7 @@
       "6": "git",
       "7": "browser",
       "8": "work",
-      "9": "additional",
+      "9": "work",
       "10": "explorer"
     },
     "persistent-workspaces": {
@@ -52,7 +53,14 @@
   },
   "cpu": {
     "interval": 5,
-    "format": " {usage}%",
+    "format": "{icon}{usage}%",
+    "format-icons": [
+         "<span> </span>",
+         "<span> </span>",
+         "<span> </span>",
+         "<span> </span>",
+         "<span color='#985265'> </span>"
+    ],
     "on-click": "omarchy-launch-or-focus-tui btop"
   },
   "clock": {
@@ -137,7 +145,8 @@
   },
   "tray": {
     "icon-size": 18,
-    "spacing": 12
+    "spacing": 12,
+    "show-passive-items": true
   },
   "disk": {
     "interval": 30,
@@ -146,7 +155,14 @@
   },
   "memory": {
     "interval": 30,
-    "format": " {percentage}%",
+    "format": "{icon}{percentage}%",
+    "format-icons": [
+         "<span> </span>",
+         "<span> </span>",
+         "<span> </span>",
+         "<span> </span>",
+         "<span color='#985265'> </span>"
+    ],
     "on-click": "omarchy-launch-or-focus-tui btop"
   }
 }
