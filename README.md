@@ -138,10 +138,13 @@ Use Homebrew whenever possible
   - `echo >> ~/.bashrc`
   - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc`
 
-## WezTerm
+## RipGrep
 
-- `brew tap wez/wezterm-linuxbrew`
-- `brew install wezterm`
+- `brew install ripgrep`
+
+## Ghostty
+
+- `xdg-mime default com.mitchellh.ghostty.desktop x-scheme-handler/terminal`
 
 ## Neovim
 
