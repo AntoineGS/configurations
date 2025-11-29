@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a cross-platform dotfiles/configuration repository for Linux (Arch Linux with Hyprland) and Windows systems. Configurations are organized by platform with shared configs in `Both/`.
 
 **Directory Structure:**
+
 - `Both/` - Cross-platform configurations (Neovim, WezTerm, Nushell, Starship, VSCode, IntelliJ, Yazi)
 - `Linux/` - Linux-specific configs (Hyprland, Bash, Zsh, Pacman hooks, QMK keyboard firmware)
 - `Windows/` - Windows-specific configs (Komorebi, GlazeWM, Yasb, PowerShell, Total Commander)
@@ -19,10 +20,12 @@ This is a cross-platform dotfiles/configuration repository for Linux (Arch Linux
 The repository uses Pacman hooks to automatically update package lists on install/remove operations.
 
 Hooks located in `Linux/pacman/`:
+
 - `pkg-backup-pacman.hook` - Tracks explicitly installed pacman packages to `pkglist-pacman.txt`
 - `pkg-backup-aur.hook` - Tracks AUR packages to `pkglist-aur.txt`
 
 These hooks execute Nushell commands post-transaction:
+
 ```bash
 # Pacman packages (explicitly installed)
 pacman -Qqent | save -f /home/antoinegs/gits/configurations/Linux/pacman/pkglist-pacman.txt
@@ -32,6 +35,7 @@ pacman -Qqemt | save -f /home/antoinegs/gits/configurations/Linux/pacman/pkglist
 ```
 
 **Install hooks:**
+
 ```bash
 sudo cp Linux/pacman/*.hook /etc/pacman.d/hooks/
 ```
@@ -41,6 +45,7 @@ sudo cp Linux/pacman/*.hook /etc/pacman.d/hooks/
 **Location:** `Both/Neovim/nvim/`
 
 **Architecture:**
+
 - Uses lazy.nvim plugin manager
 - NvChad-based configuration with base46 theming
 - Plugin files in `lua/plugins/` (each plugin gets its own file)
@@ -48,6 +53,7 @@ sudo cp Linux/pacman/*.hook /etc/pacman.d/hooks/
 - Custom options in `lua/options.lua`, autocmds in `lua/autocmds.lua`, keymaps in `lua/mappings.lua`
 
 **Key features:**
+
 - Home row mods pattern awareness (for consistency with QMK keyboards)
 - Transparency settings applied to base46 theme
 - AI assistants: Avante, CodeCompanion, Copilot
@@ -59,11 +65,13 @@ sudo cp Linux/pacman/*.hook /etc/pacman.d/hooks/
 ## QMK Keyboard Firmware
 
 **Location:** `Linux/QMK/` contains keymaps for multiple keyboards:
+
 - `piantor_pro/AntoineGS/` - Beekeeb Piantor Pro (36-key split)
 - `sofle_choc/AntoineGS/` - Sofle Choc variant
 - `trackball_nano/AntoineGS/` - Trackball Nano
 
 **Build commands (from QMK firmware repo):**
+
 ```bash
 # Compile firmware
 qmk compile -kb beekeeb/piantor_pro -km AntoineGS
@@ -75,6 +83,7 @@ qmk flash -kb beekeeb/piantor_pro -km AntoineGS
 
 **Architecture details:**
 See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
+
 - Layer system (DEF/NAV/SYM/NUM with tri-layer activation)
 - Home row mods pattern
 - Custom keycode handling requirements for mod-tap functions
@@ -85,9 +94,11 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 **Location:** `Linux/zmk-config/keyball44/`
 
 **Keyboards using ZMK:**
+
 - `keyball44/` - Keyball 44 (44-key split with PMW3610 trackball)
 
 **Build Environment:**
+
 - ZMK firmware repository: `~/gits/zmk`
 - Python virtual environment: `~/gits/zmk/.venv`
 - Build system: West (Zephyr meta-tool)
@@ -100,37 +111,38 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 cd ~/gits/zmk
 source .venv/bin/activate
 cd app
-west build -d build/left -b nice_nano_v2 -p -- \
-  -DSHIELD=keyball44_left \
-  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
+west build -d build/left -b nice_nano_v2 -- -DSHIELD="keyball44_left nice_view_adapter nice_view" -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
 
 # Build right side (with PMW3610 trackball driver)
-west build -d build/right -b nice_nano_v2 -p -- \
-  -DSHIELD=keyball44_right \
-  -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
+west build -d build/right -b nice_nano_v2 -- -DSHIELD="keyball44_right nice_view_adapter nice_view" -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
 ```
 
 **Firmware Output:**
+
 - Left: `~/gits/zmk/app/build/left/zephyr/zmk.uf2` (~544 KB)
 - Right: `~/gits/zmk/app/build/right/zephyr/zmk.uf2` (~698 KB)
 
 **Flashing:**
+
 1. Double-tap reset button on Nice Nano to enter bootloader mode
-2. Copy the `.uf2` file to the mounted USB drive
-3. Board will automatically reboot with new firmware
+1. Copy the `.uf2` file to the mounted USB drive
+1. Board will automatically reboot with new firmware
 
 **Important Notes:**
+
 - The `-p` flag does a pristine build (clean rebuild)
 - Remove `-p` for incremental builds after making small changes
 - The right side is larger due to the PMW3610 trackball driver
 - PMW3610 driver is fetched via West from kumamuk-git/zmk-pmw3610-driver
 
 **Dependencies:**
+
 - Zephyr SDK 0.16.3 installed at `~/zephyr-sdk-0.16.3`
 - Python packages in venv: setuptools, protobuf, west
 - CMake, dtc (device tree compiler), ninja-build
 
 **Configuration Files:**
+
 - `boards/shields/keyball44/keyball44.keymap` - Main keymap with layers, behaviors, and macros
 - `boards/shields/keyball44/keyball44.conf` - Keyboard-level configuration (BLE, display, behaviors)
 - `boards/shields/keyball44/keyball44_left.overlay` - Left side hardware definition
@@ -141,6 +153,7 @@ west build -d build/right -b nice_nano_v2 -p -- \
 
 **Architecture details:**
 See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
+
 - Timeless homerow mods implementation (urob's pattern)
 - 4-layer system (DEF/NAV/SYM/NUM with tri-layer)
 - French character macros using US International dead keys
@@ -149,6 +162,7 @@ See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
 - Testing checklist and migration notes from QMK
 
 **Troubleshooting:**
+
 - If build fails with "unknown symbol PMW3610": Run `west update` to fetch driver modules
 - If Python errors occur: Ensure `setuptools` and `protobuf` are installed in venv
 - Devicetree errors: Check syntax in `.overlay` and `.keymap` files (use `,` between binding items)
@@ -158,17 +172,20 @@ See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
 **Location:** `Linux/hypr/`
 
 **Architecture:**
+
 - Uses Omarchy defaults as base (sourced from `~/.local/share/omarchy/`)
 - Custom overrides in individual conf files: `monitors.conf`, `bindings.conf`, `input.conf`, `looknfeel.conf`, `autostart.conf`
 - NVIDIA-specific environment variables configured
 - Modular configuration split across multiple files
 
 **RustDesk integration:**
+
 - `watch-rustdesk-submap.sh` - Event-driven script that watches Hyprland socket for RustDesk windows
 - Automatically switches to `clean` submap (disables most keybindings) when RustDesk Remote Desktop window is active
 - Runs as systemd user service: `watch-rustdesk-submap.service`
 
 **Enable RustDesk watcher:**
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now watch-rustdesk-submap.service
@@ -177,6 +194,7 @@ systemctl --user enable --now watch-rustdesk-submap.service
 ## Shell Configurations
 
 **Nushell:** Primary shell (`Both/Nushell/config.nu`, `env.nu`)
+
 - Used in Pacman hooks for package list management
 - Plugins: nu_plugin_semver, nu_plugin_regex
 
