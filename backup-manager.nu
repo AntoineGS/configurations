@@ -275,6 +275,7 @@ def init_paths [] {
       [["config.json"], "", "~/.config/teams-for-linux", "./Linux/teams-for-linux"]
       [[.zshenv, .zshrc], "", "~", "./Linux/zsh"]
       [[.tmux.conf], "", "~", "./Linux/tmux"]
+      [[west.yml], "", "~/gits/zmk/app", "./Linux/zmk-config/keyball44/config"]
       [[mimeapps.list], "", "~/.config", "./Linux/os"]
       [[], "", "~/.config/fzf", "./Linux/fzf"]
       [[], "", "~/.config/ghostty", "./Linux/ghostty"]
