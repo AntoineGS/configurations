@@ -236,7 +236,7 @@
             bindings = <
 &trans         &kp EXCL     &kp AT       &kp HASH     &kp DLLR      &kp PRCNT                &dcir         &kp AMPS      &kp STAR      &none         &none          &trans
 &none          &none        &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS              &kp MINUS     &hmr RCTRL RPAR &hmr RALT RBKT &hmr RGUI RBRC &none       &none
-&bootloader    &none        &dgrv        &kp PIPE     &dtil         &kp EQUAL                &kp UNDER     &none         &none         &none         &kp BSLH       &none
+&bootloader    &none        &dgrv        &kp PIPE     &dtil         &kp EQUAL                &kp UNDER     &none         &none         &none         &kp BSLH       &bootloader
 &none          &none        &trans       &trans       &trans                       &trans    &trans        &trans        &trans        &none
             >;
         };
