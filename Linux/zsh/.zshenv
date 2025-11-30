@@ -4,6 +4,7 @@ export FZF_DEFAULT_COMMAND="fd --type f"
 export BAT_THEME="OneHalfDark"
 export ZSH="/usr/share/oh-my-zsh"
 export MANPAGER="sh -c 'awk '\''{ gsub(/\x1B\[[0-9;]*m/, \"\", \$0); gsub(/.\x08/, \"\", \$0); print }'\'' | bat -p -lman'"
+export PATH="$HOME/.local/bin:$PATH"
 
 # Load local secrets (not tracked in git)
 if [[ -f ~/.zshenv.local ]]; then
