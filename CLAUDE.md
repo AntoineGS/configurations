@@ -104,14 +104,35 @@ See `Linux/QMK/piantor_pro/AntoineGS/CLAUDE.md` for detailed documentation on:
 - Build system: West (Zephyr meta-tool)
 - Module structure: Uses ZMK module pattern with `zephyr/module.yml`
 
-**Build Commands:**
+**Build and Flash (Automated):**
 
 ```bash
-# Build left side
+# From the keyball44 config directory
+cd ~/gits/configurations/Linux/zmk-config/keyball44
+
+# Build and flash left side
+./build_flash.sh left
+
+# Build and flash right side
+./build_flash.sh right
+```
+
+The script will:
+- Build the firmware with pristine build (`-p` flag)
+- Wait for you to double-tap the reset button
+- Automatically detect and mount the Nice Nano
+- Flash the firmware
+- Sync and unmount
+
+**Manual Build Commands (if needed):**
+
+```bash
 cd ~/gits/zmk
 source .venv/bin/activate
 cd app
-west build -d build/left -b nice_nano_v2 -- -DSHIELD="keyball44_left nice_view_adapter nice_view" -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
+
+# Build left side
+west build -d build/left -b nice_nano_v2 -- -DSHIELD="keyball44_left nice_view_adapter nice_view_custom" -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
 
 # Build right side (with PMW3610 trackball driver)
 west build -d build/right -b nice_nano_v2 -- -DSHIELD="keyball44_right nice_view_adapter nice_view" -DZMK_CONFIG=/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44
