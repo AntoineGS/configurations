@@ -2,10 +2,12 @@ manifest:
   remotes:
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
-    - name: AntoineGS
+    - name: antoinegs
       url-base: https://github.com/AntoineGS
     - name: gpeye
       url-base: https://github.com/GPeye
+    - name: m165437
+      url-base: https://github.com/M165437
   projects:
     - name: zmk
       remote: zmkfirmware
@@ -14,9 +16,12 @@ manifest:
     - name: zmk-pmw3610-driver
       revision: main
       path: modules/drivers/zmk-pmw3610-driver
-      remote: AntoineGS
+      remote: antoinegs
     - name: mario-peripheral-animation
       remote: gpeye
+      revision: main
+    - name: nice-view-gem
+      remote: m165437
       revision: main
   self:
     path: config
