@@ -3,7 +3,7 @@ set -e
 
 # Check if side argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <left|right>"
+    echo "Usage: $0 <left|right|update>"
     echo "Example: $0 left"
     exit 1
 fi
@@ -11,17 +11,17 @@ fi
 SIDE=$1
 
 # Validate side argument
-if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ]; then
-    echo "Error: Side must be 'left' or 'right'"
-    echo "Usage: $0 <left|right>"
+if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ] && [ "$SIDE" != "update" ]; then
+    echo "Error: Side must be 'left' or 'right' or 'update'"
+    echo "Usage: $0 <left|right|update>"
     exit 1
 fi
 
 # Set side-specific variables
 if [ "$SIDE" = "left" ]; then
     SHIELD="keyball44_left nice_view_adapter nice_view_custom"
-else
-    SHIELD="keyball44_right nice_view_adapter nice_view"
+elif [ "$SIDE" = "right" ]; then
+    SHIELD="keyball44_right nice_view_adapter nice_view_gem"
 fi
 
 BUILD_DIR="build/$SIDE"
@@ -36,6 +36,16 @@ echo "========================================"
 cd /home/antoinegs/gits/zmk
 source .venv/bin/activate
 cd app
+
+if [ "$SIDE" = "update" ]; then
+    echo "Updating west and submodules..."
+    west update
+    echo ""
+    echo "========================================"
+    echo "Update completed successfully!"
+    echo "========================================"
+    exit 0
+fi
 
 # Build firmware
 west build -d "$BUILD_DIR" -p -b nice_nano_v2 -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$ZMK_CONFIG"
