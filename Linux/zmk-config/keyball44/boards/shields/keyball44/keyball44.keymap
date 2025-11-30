@@ -8,6 +8,56 @@
 #define NUM 3
 #define SCR 5  // Scroll mode layer (layer 5 matches overlay config)
 
+// Timing constants for homerow mods and hold-tap behaviors
+#define HRM_TAPPING_TERM 280
+#define HRM_QUICK_TAP 175
+#define HRM_PRIOR_IDLE 150
+#define LT_TAPPING_TERM 240
+#define LT_QUICK_TAP 175
+
+// Macro helpers for French accented characters
+// These reduce repetition in accent macro definitions
+#define ACCENT_MACRO(dead_key, letter) \
+    compatible = "zmk,behavior-macro"; \
+    #binding-cells = <0>; \
+    bindings = <&macro_tap &kp dead_key> \
+             , <&macro_tap &kp letter>;
+
+#define SHIFTED_ACCENT_MACRO(shifted_key, letter) \
+    compatible = "zmk,behavior-macro"; \
+    #binding-cells = <0>; \
+    bindings = <&macro_press &kp LSHFT> \
+             , <&macro_tap &kp shifted_key> \
+             , <&macro_release &kp LSHFT> \
+             , <&macro_tap &kp letter>;
+
+// Helper for homerow mod hold-tap behaviors
+// Creates a hold-tap with configurable trigger positions (for left/right hand)
+#define HOMEROW_MOD(trigger_positions) \
+    compatible = "zmk,behavior-hold-tap"; \
+    #binding-cells = <2>; \
+    flavor = "balanced"; \
+    tapping-term-ms = <HRM_TAPPING_TERM>; \
+    quick-tap-ms = <HRM_QUICK_TAP>; \
+    require-prior-idle-ms = <HRM_PRIOR_IDLE>; \
+    bindings = <&kp>, <&kp>; \
+    hold-trigger-key-positions = <trigger_positions>; \
+    hold-trigger-on-release;
+
+// Helper for hold-tap behaviors with French accent macros
+// Takes modifier key as first parameter (for &kp) and 0 as second (accent macro ignores it)
+// Usage: &egrv_hrm LGUI 0
+#define ACCENT_HRM(accent_macro) \
+    compatible = "zmk,behavior-hold-tap"; \
+    #binding-cells = <2>; \
+    flavor = "balanced"; \
+    tapping-term-ms = <HRM_TAPPING_TERM>; \
+    quick-tap-ms = <HRM_QUICK_TAP>; \
+    require-prior-idle-ms = <HRM_PRIOR_IDLE>; \
+    bindings = <&kp>, <&accent_macro>; \
+    hold-trigger-key-positions = <KEYS_R THUMBS>; \
+    hold-trigger-on-release;
+
 #include <behaviors/mouse_keys.dtsi>
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/bt.h>
@@ -25,9 +75,9 @@
 
 // Timing configuration for layer-tap
 &lt {
-    tapping-term-ms = <240>;
+    tapping-term-ms = <LT_TAPPING_TERM>;
     flavor = "balanced";
-    quick-tap-ms = <175>;
+    quick-tap-ms = <LT_QUICK_TAP>;
 };
 
 &caps_word { continue-list = <UNDERSCORE MINUS>; };
@@ -35,105 +85,18 @@
 / {
     behaviors {
         // Timeless homerow mods
-        // Left-hand home row mods
-        hml: homerow_mods_left {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            flavor = "balanced";
-            tapping-term-ms = <280>;
-            quick-tap-ms = <175>;
-            require-prior-idle-ms = <150>;
-            bindings = <&kp>, <&kp>;
-            hold-trigger-key-positions = <KEYS_R THUMBS>;
-            hold-trigger-on-release;
-        };
-
-        // Right-hand home row mods
-        hmr: homerow_mods_right {
-            compatible = "zmk,behavior-hold-tap";
-            #binding-cells = <2>;
-            flavor = "balanced";
-            tapping-term-ms = <280>;
-            quick-tap-ms = <175>;
-            require-prior-idle-ms = <150>;
-            bindings = <&kp>, <&kp>;
-            hold-trigger-key-positions = <KEYS_L THUMBS>;
-            hold-trigger-on-release;
-        };
+        hml: homerow_mods_left { HOMEROW_MOD(KEYS_R THUMBS) }; // left hand
+        hmr: homerow_mods_right { HOMEROW_MOD(KEYS_L THUMBS) }; // right hand
 
         // French accented character macros using US International dead keys
-
-        // È (e-grave)
-        egrv: egrv_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp GRAVE>
-                     , <&macro_tap &kp E>;
-        };
-
-        // É (e-acute)
-        eacu: eacu_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp SQT>
-                     , <&macro_tap &kp E>;
-        };
-
-        // Ê (e-circumflex)
-        ecir: ecir_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp N6>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp E>;
-        };
-
-        // Ë (e-diaeresis)
-        edia: edia_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp SQT>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp E>;
-        };
-
-        // À (a-grave)
-        agrv: agrv_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp GRAVE>
-                     , <&macro_tap &kp A>;
-        };
-
-        // Ù (u-grave)
-        ugrv: ugrv_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp GRAVE>
-                     , <&macro_tap &kp U>;
-        };
-
-        // Ô (o-circumflex)
-        ocir: ocir_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp N6>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp O>;
-        };
-
-        // Û (u-circumflex)
-        ucir: ucir_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp N6>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp U>;
-        };
+        egrv: egrv_macro { ACCENT_MACRO(GRAVE, E) }; // é
+        eacu: eacu_macro { ACCENT_MACRO(SQT, E) }; // è
+        ecir: ecir_macro { SHIFTED_ACCENT_MACRO(N6, E) }; // ê
+        edia: edia_macro { SHIFTED_ACCENT_MACRO(SQT, E) }; // ë
+        agrv: agrv_macro { ACCENT_MACRO(GRAVE, A) }; // à
+        ugrv: ugrv_macro { ACCENT_MACRO(GRAVE, U) }; // ù
+        ocir: ocir_macro { SHIFTED_ACCENT_MACRO(N6, O) }; // ô
+        ucir: ucir_macro { SHIFTED_ACCENT_MACRO(N6, U) }; // û
 
         // Ç (c-cedilla) - Uses AltGr+comma on US International
         cced: cced_macro {
@@ -145,52 +108,11 @@
         };
 
         // Standalone dead keys (dead key + space)
-
-        // ` (grave accent standalone)
-        dgrv: dgrv_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp GRAVE>
-                     , <&macro_tap &kp SPACE>;
-        };
-
-        // ^ (circumflex standalone)
-        dcir: dcir_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp N6>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp SPACE>;
-        };
-
-        // ~ (tilde standalone)
-        dtil: dtil_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp GRAVE>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp SPACE>;
-        };
-
-        // ´ (acute accent standalone)
-        dacu: dacu_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_tap &kp SQT>
-                     , <&macro_tap &kp SPACE>;
-        };
-
-        // ¨ (diaeresis standalone)
-        ddia: ddia_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LSHFT>
-                     , <&macro_tap &kp SQT>
-                     , <&macro_release &kp LSHFT>
-                     , <&macro_tap &kp SPACE>;
-        };
+        dgrv: dgrv_macro { ACCENT_MACRO(GRAVE, SPACE) }; // `
+        dcir: dcir_macro { SHIFTED_ACCENT_MACRO(N6, SPACE) }; // ^
+        dtil: dtil_macro { SHIFTED_ACCENT_MACRO(GRAVE, SPACE) }; // ~
+        dacu: dacu_macro { ACCENT_MACRO(SQT, SPACE) }; // ´
+        ddia: ddia_macro { SHIFTED_ACCENT_MACRO(SQT, SPACE) }; // ¨
 
         // TMUX prefix (Ctrl+B)
         tmux: tmux_macro {
@@ -200,6 +122,12 @@
                      , <&macro_tap &kp B>
                      , <&macro_release &kp LCTRL>;
         };
+
+        // Hold-tap behaviors for French accents with home row mods
+        // Usage: &egrv_hrm LGUI, &ecir_hrm LALT, &eacu_hrm LCTRL
+        egrv_hrm: egrv_homerow_mod { ACCENT_HRM(egrv) }; // è with mod (pass mod key at usage)
+        ecir_hrm: ecir_homerow_mod { ACCENT_HRM(ecir) }; // ê with mod (pass mod key at usage)
+        eacu_hrm: eacu_homerow_mod { ACCENT_HRM(eacu) }; // é with mod (pass mod key at usage)
     };
 
     // Tri-layer: NUM activates when both NAV and SYM are held
@@ -214,43 +142,43 @@
     keymap {
         compatible = "zmk,keymap";
 
-        // DEF Layer - Base QWERTY with timeless homerow mods
+        // DEF Layer
         default_layer {
             bindings = <
-&kp ESC        &kp Q        &kp W        &kp E        &kp R         &kp T                              &kp Y         &kp U         &kp I         &kp O         &kp P            &kp BSPC
-&kp TAB        &hml LSFT A  &hml LGUI S  &hml LALT D  &hml LCTRL F  &kp G                              &kp H         &hmr RCTRL J  &hmr RALT K   &hmr RGUI L   &hmr RSFT SEMI   &dacu
-&mkp LCLK      &kp Z        &kp X        &kp C        &kp V         &kp B                              &kp N         &kp M         &kp COMMA     &kp DOT       &kp FSLH         &kp DEL
-                            &none        &none        &kp LSFT      &kp RET      &mo NAV     &mo SYM   &kp SPACE                                               &tmux         
+&kp ESC        &kp Q        &kp W          &kp E          &kp R           &kp T                              &kp Y         &kp U           &kp I           &kp O          &kp P          &kp BSPC
+&kp TAB        &hml LSFT A  &hml LGUI S    &hml LALT D    &hml LCTRL F    &kp G                              &kp H         &hmr RCTRL J    &hmr RALT K     &hmr RGUI L    &hmr RSFT SEMI &dacu
+&mkp LCLK      &kp Z        &kp X          &kp C          &kp V           &kp B                              &kp N         &kp M           &kp COMMA       &kp DOT        &kp FSLH       &kp DEL
+                            &none          &none          &kp LSFT        &kp RET      &mo NAV     &mo SYM   &kp SPACE                                                    &tmux         
             >;
         };
 
         // NAV Layer - French accented characters (left) + Navigation (right)
         nav_layer {
             bindings = <
-&trans         &ddia        &dgrv        &dcir        &dacu         &none                              &kp C_AC_HOME &kp PSCRN     &none         &none         &kp C_VOL_UP   &trans
-&none          &none        &egrv        &ecir        &eacu         &agrv                              &kp LEFT      &kp DOWN      &kp UP        &kp RIGHT     &kp C_VOL_DN   &none
-&mkp MCLK      &tog SCR     &none        &none        &none         &cced                              &kp HOME      &kp PG_DN     &kp PG_UP     &kp END       &kp C_MUTE     &kp C_AL_CALC
-&bootloader    &none        &trans       &trans       &trans                                 &trans    &trans                                                  &trans      
+&trans         &ddia          &dgrv            &dcir            &dacu             &none                              &kp C_AC_HOME &kp PSCRN       &none           &none          &kp C_VOL_UP   &trans
+&none          &kp LSFT       &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &agrv                              &kp LEFT      &kp DOWN        &kp UP          &kp RIGHT      &kp C_VOL_DN   &none
+&mkp MCLK      &tog SCR       &none            &none            &none             &cced                              &kp HOME      &kp PG_DN       &kp PG_UP       &kp END        &kp C_MUTE     &kp C_AL_CALC
+                              &bootloader      &none            &trans            &trans       &trans      &trans    &trans                                                       &trans
             >;
         };
 
-        // SYM Layer - Symbols and brackets with timeless homerow mods
+        // SYM Layer
         symbol_layer {
             bindings = <
-&trans         &kp EXCL     &kp AT       &kp HASH     &kp DLLR      &kp PRCNT                          &dcir         &kp AMPS      &kp STAR      &none         &none          &trans
-&none          &none        &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                     &kp MINUS     &hmr RCTRL RPAR &hmr RALT RBKT &hmr RGUI RBRC &none      &none
-&none          &none        &dgrv        &kp PIPE     &dtil         &kp EQUAL                          &kp UNDER     &none         &none         &none         &kp BSLH       &none
-&none          &none        &trans       &trans       &trans                                 &trans    &trans                                                  &bootloader        
+&trans         &kp EXCL     &kp AT         &kp HASH       &kp DLLR        &kp PRCNT                          &dcir         &kp AMPS        &kp STAR        &none          &none          &trans
+&none          &none        &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                           &kp MINUS     &hmr RCTRL RPAR &hmr RALT RBKT  &hmr RGUI RBRC &none          &none
+&none          &none        &dgrv          &kp PIPE       &dtil           &kp EQUAL                          &kp UNDER     &none           &none           &none          &kp BSLH       &none
+                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &bootloader        
             >;
         };
 
-        // NUM Layer - Function keys (left) + Numpad (right) with timeless homerow mods
+        // NUM Layer
         num_layer {
             bindings = <
-&trans         &kp F9       &kp F10      &kp F11      &kp F12       &none                              &none         &kp N7        &kp N8        &kp N9        &none          &trans
-&none          &hml LSFT F5 &hml LGUI F6 &hml LALT F7 &hml LCTRL F8 &none                              &kp MINUS     &hmr RCTRL N4 &hmr RALT N5  &hmr RGUI N6  &hmr RSFT N0   &none
-&none          &kp F1       &kp F2       &kp F3       &kp F4        &none                              &none         &kp N1        &kp N2        &kp N3        &none          &none
-&none          &none        &trans       &trans       &trans                                 &trans    &trans                                                  &trans        
+&trans         &kp F9       &kp F10        &kp F11        &kp F12         &none                              &none         &kp N7          &kp N8          &kp N9         &none          &trans
+&none          &hml LSFT F5 &hml LGUI F6   &hml LALT F7   &hml LCTRL F8   &none                              &kp MINUS     &hmr RCTRL N4   &hmr RALT N5    &hmr RGUI N6   &hmr RSFT N0   &none
+&none          &kp F1       &kp F2         &kp F3         &kp F4          &none                              &none         &kp N1          &kp N2          &kp N3         &none          &none
+                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &trans        
             >;
         };
 
