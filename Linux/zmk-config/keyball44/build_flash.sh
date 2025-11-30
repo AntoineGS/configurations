@@ -1,0 +1,110 @@
+#!/bin/zsh
+set -e
+
+# Check if side argument is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <left|right>"
+    echo "Example: $0 left"
+    exit 1
+fi
+
+SIDE=$1
+
+# Validate side argument
+if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ]; then
+    echo "Error: Side must be 'left' or 'right'"
+    echo "Usage: $0 <left|right>"
+    exit 1
+fi
+
+# Set side-specific variables
+if [ "$SIDE" = "left" ]; then
+    SHIELD="keyball44_left nice_view_adapter nice_view_custom"
+else
+    SHIELD="keyball44_right nice_view_adapter nice_view"
+fi
+
+BUILD_DIR="build/$SIDE"
+ZMK_CONFIG="/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44"
+
+echo "========================================"
+echo "Building firmware for $SIDE side"
+echo "Shield: $SHIELD"
+echo "========================================"
+
+# Navigate to ZMK and activate venv
+cd /home/antoinegs/gits/zmk
+source .venv/bin/activate
+cd app
+
+# Build firmware
+west build -d "$BUILD_DIR" -p -b nice_nano_v2 -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$ZMK_CONFIG"
+
+if [ $? -ne 0 ]; then
+    echo "Build failed!"
+    exit 1
+fi
+
+echo ""
+echo "========================================"
+echo "Build successful! Starting flash process..."
+echo "========================================"
+
+# Flash firmware
+UF2_FILE="$BUILD_DIR/zephyr/zmk.uf2"
+
+if [ ! -f "$UF2_FILE" ]; then
+    echo "Error: Firmware file not found at $UF2_FILE"
+    exit 1
+fi
+
+echo "Flashing $UF2_FILE to $SIDE nice_nano_v2"
+echo "Please double-tap reset button on Nice Nano to enter bootloader mode..."
+
+# Wait for the device to appear (not the mount, the block device)
+DEVICE=""
+for i in {1..60}; do
+    # Look for the NICENANO device by label (it's a disk, not a partition)
+    DEVICE=$(lsblk -o NAME,LABEL,TYPE | grep NICENANO | grep disk | awk '{print "/dev/" $1}')
+    if [ -n "$DEVICE" ]; then
+        echo "Found device: $DEVICE"
+        break
+    else
+        echo "Waiting for NICENANO device to appear... ($i/60)"
+        sleep 2
+    fi
+done
+
+if [ -z "$DEVICE" ]; then
+    echo "Error: NICENANO device not found after waiting"
+    exit 1
+fi
+
+# Mount the device using udisksctl (this triggers the same mount as Files app)
+echo "Mounting $DEVICE..."
+MOUNT_POINT=$(udisksctl mount -b $DEVICE 2>&1 | grep -oP 'Mounted .* at \K.*' | tr -d '.')
+
+if [ -z "$MOUNT_POINT" ]; then
+    # Device might already be mounted, try to find it
+    MOUNT_POINT=$(lsblk -o NAME,LABEL,MOUNTPOINT | grep NICENANO | awk '{print $3}')
+    if [ -z "$MOUNT_POINT" ]; then
+        echo "Error: Failed to mount device"
+        exit 1
+    fi
+    echo "Device already mounted at: $MOUNT_POINT"
+else
+    echo "Mounted at: $MOUNT_POINT"
+fi
+
+# Copy firmware
+echo "Copying firmware..."
+cp "$UF2_FILE" "$MOUNT_POINT/"
+
+# Sync to ensure write completes
+sync
+
+echo ""
+echo "========================================"
+echo "Firmware flashed successfully!"
+echo "Device will automatically unmount and reboot."
+echo "========================================"

@@ -4,6 +4,8 @@ manifest:
       url-base: https://github.com/zmkfirmware
     - name: AntoineGS
       url-base: https://github.com/AntoineGS
+    - name: gpeye
+      url-base: https://github.com/GPeye
   projects:
     - name: zmk
       remote: zmkfirmware
@@ -13,5 +15,8 @@ manifest:
       revision: main
       path: modules/drivers/zmk-pmw3610-driver
       remote: AntoineGS
+    - name: mario-peripheral-animation
+      remote: gpeye
+      revision: main
   self:
     path: config
