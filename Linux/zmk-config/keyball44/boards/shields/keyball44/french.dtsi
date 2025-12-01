@@ -1,0 +1,64 @@
+// Macro helpers for French accented characters
+// These reduce repetition in accent macro definitions
+#define ACCENT_MACRO(dead_key, letter) \
+    compatible = "zmk,behavior-macro"; \
+    #binding-cells = <0>; \
+    bindings = <&macro_tap &kp dead_key> \
+             , <&macro_tap &kp letter>;
+
+/ {
+    behaviors {
+        // French accented character macros using US International dead keys
+        egrv: egrv_macro { ACCENT_MACRO(GRAVE, E) }; // è
+        egrv_cap: egrv_cap_macro { ACCENT_MACRO(GRAVE, LS(E)) }; // È
+        eacu: eacu_macro { ACCENT_MACRO(SQT, E) }; // é
+        eacu_cap: eacu_cap_macro { ACCENT_MACRO(SQT, LS(E)) }; // É
+        ecir: ecir_macro { ACCENT_MACRO(EN_CARET, E) }; // ê
+        ecir_cap: ecir_cap_macro { ACCENT_MACRO(EN_CARET, LS(E)) }; // Ê
+        agrv: agrv_macro { ACCENT_MACRO(GRAVE, A) }; // à
+        agrv_cap: agrv_cap_macro { ACCENT_MACRO(GRAVE, LS(A)) }; // À
+        
+        // Mod-morphs for lowercase/uppercase accented characters
+        e_grv: e_grave_morph {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&egrv>, <&egrv_cap>;  // unshifted: è, shifted: È
+            mods = <(MOD_LSFT|MOD_RSFT)>;
+        };
+        e_acu: e_acute_morph {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&eacu>, <&eacu_cap>;  // unshifted: é, shifted: É
+            mods = <(MOD_LSFT|MOD_RSFT)>;
+        };
+        e_cir: e_circumflex_morph {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&ecir>, <&ecir_cap>;  // unshifted: ê, shifted: Ê
+            mods = <(MOD_LSFT|MOD_RSFT)>;
+        };
+        a_grv: a_grave_morph {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&agrv>, <&agrv_cap>;  // unshifted: à, shifted: À
+            mods = <(MOD_LSFT|MOD_RSFT)>;
+        };
+
+        // Ç (c-cedilla) - Uses AltGr+comma on US International
+        cced: cced_macro {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp RALT>
+                     , <&macro_tap &kp COMMA>
+                     , <&macro_release &kp RALT>;
+        };
+
+        // Standalone dead keys (dead key + space)
+        dgrv: dgrv_macro { ACCENT_MACRO(GRAVE, SPACE) }; // `
+        dcir: dcir_macro { ACCENT_MACRO(EN_CARET, SPACE) }; // ^
+        dtil: dtil_macro { ACCENT_MACRO(EN_TILDE, SPACE) }; // ~
+        dacu: dacu_macro { ACCENT_MACRO(SQT, SPACE) }; // ´
+        ddia: ddia_macro { ACCENT_MACRO(EN_DOUBLE_QUOTES, SPACE) }; // ¨
+
+    };
+};
