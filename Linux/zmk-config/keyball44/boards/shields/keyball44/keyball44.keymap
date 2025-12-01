@@ -2,7 +2,7 @@
 #define NAV 1
 #define SYM 2
 #define NUM 3
-#define SCR 5  // Scroll mode layer (layer 5 matches overlay config)
+#define SCR 4  // Scroll mode layer (layer 4 matches actual position)
 
 // Timing constants for homerow mods and hold-tap behaviors
 #define HRM_TAPPING_TERM 280
@@ -174,7 +174,7 @@
             bindings = <
 &trans         &kp LS(EN_APOS) &kp EN_GRAVE     &kp EN_CARET     &kp EN_APOS       &none                              &kp C_AC_HOME &kp PSCRN       &none           &none          &kp C_VOL_UP   &trans
 &none          &kp LSFT        &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &a_grv                             &kp LEFT      &kp DOWN        &kp UP          &kp RIGHT      &kp C_VOL_DN   &none
-&mkp MCLK      &tog SCR        &none            &none            &none             &cced                              &kp HOME      &kp PG_DN       &kp PG_UP       &kp END        &kp C_MUTE     &kp C_AL_CALC
+&mkp MCLK      &mo SCR         &none            &none            &none             &cced                              &kp HOME      &kp PG_DN       &kp PG_UP       &kp END        &kp C_MUTE     &kp C_AL_CALC
                                &bootloader      &none            &trans            &trans       &trans      &trans    &trans                                                       &trans
             >;
         };
@@ -199,9 +199,8 @@
             >;
         };
 
-        // SCR Layer (5) - Scroll mode for trackball
+        // SCR Layer (4) - Scroll mode for trackball
         // When this layer is active, trackball movement becomes scrolling
-        // This mimics QMK's NumLock scroll behavior
         scroll_layer {
             bindings = <
 &trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
