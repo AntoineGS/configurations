@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-#
-# The purpose of this script is to demonstrate how to preview a file or an
-# image in the preview window of fzf.
+#!/usr/bin/env zsh
 #
 # Dependencies:
 # - https://github.com/sharkdp/bat
@@ -13,7 +10,24 @@ if [[ $# -ne 1 ]]; then
   exit 1
 fi
 
-file=${1/#\~\//$HOME/}
+# fzf-tab-completion passes data in format: fullvalue SEP value SEP index SEP ...
+# where SEP is U+00A0 (non-breaking space)
+# We want field 2 (the actual value)
+_FZF_COMPLETION_SEP=$'\u00a0'
+
+# Split by non-breaking space and extract field 2
+IFS="$_FZF_COMPLETION_SEP" read -r -A fields <<< "$1"
+if (( ${#fields[@]} >= 2 )); then
+    # fzf-tab-completion format: use field 2
+    extracted="${fields[2]}"
+else
+    # Fallback: plain filename (no special format)
+    extracted="$1"
+fi
+
+# Apply tilde expansion
+file=${extracted/#\~\//$HOME/}
+# echo "Final file path: [$file]" >&2
 
 center=0
 if [[ ! -r $file ]]; then
@@ -26,25 +40,26 @@ if [[ ! -r $file ]]; then
   fi
 fi
 
+# remove trailing [\ ] if there
+file=${file%%\\ }
+# convert triple \ to single \
+file=${file//\\/}
+
 type=$(file --brief --dereference --mime -- "$file")
+# echo "MIME type: [$type]" >&2
 
 if [[ ! $type =~ image/ ]]; then
-  if [[ $type =~ =binary ]]; then
-    file "$1"
+  if [[ $type =~ inode/directory ]]; then
+    eza -la --group-directories-first --color=always -- "$file"
     exit
   fi
 
-  # Sometimes bat is installed as batcat.
-  if command -v batcat > /dev/null; then
-    batname="batcat"
-  elif command -v bat > /dev/null; then
-    batname="bat"
-  else
-    cat "$1"
+  if [[ $type =~ '=binary' ]]; then
+    file "$file"
     exit
   fi
 
-  ${batname} --style="${BAT_STYLE:-numbers}" --color=always --pager=never --highlight-line="${center:-0}" -- "$file"
+  bat --style="${BAT_STYLE:-numbers}" --color=always --pager=never --highlight-line="${center:-0}" -- "$file"
   exit
 fi
 
