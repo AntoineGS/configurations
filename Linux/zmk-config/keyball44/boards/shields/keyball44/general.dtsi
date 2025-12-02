@@ -1,0 +1,72 @@
+#define DEF 0
+#define NAV 1
+#define SYM 2
+#define NUM 3
+#define SCR 4
+
+// nice!view display configuration
+&nice_view_spi { cs-gpios = <&pro_micro 1 GPIO_ACTIVE_HIGH>; };
+
+// Timing configuration for layer-tap
+&lt {
+    tapping-term-ms = <LT_TAPPING_TERM>;
+    flavor = "balanced";
+    quick-tap-ms = <LT_QUICK_TAP>;
+};
+
+/ {
+    behaviors {
+        // Double-tap bootloader for more reliable entry
+        boot_tap: bootloader_tap_dance {
+            compatible = "zmk,behavior-tap-dance";
+            #binding-cells = <0>;
+            tapping-term-ms = <500>;
+            bindings = <&none>, <&bootloader>;
+        };
+
+        mo_scr: momentary_scroll_layer {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&mo SCR>;
+        };
+
+        tog_scr: toggle_scroll_layer {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&tog SCR>;
+        };
+
+        ht_scr: hold_tap_scroll {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "tap-preferred";
+            tapping-term-ms = <100>;
+            bindings = <&mo>, <&tog_scr>;
+        };
+
+        lt_tmux_prev: layer_tap_navigation_tmux {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            /* flavor = "tap-preferred"; */
+            tapping-term-ms = <200>;
+            bindings = <&mo>, <&tmux_prev>;
+        };
+
+        lt_tmux_next: layer_tap_symbol_tmux {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            /* flavor = "tap-preferred"; */
+            tapping-term-ms = <200>;
+            bindings = <&mo>, <&tmux_next>;
+        };
+    };
+
+    // Tri-layer: NUM activates when both NAV and SYM are held
+    conditional_layers {
+        compatible = "zmk,conditional-layers";
+        tri_layer {
+            if-layers = <NAV SYM>;
+            then-layer = <NUM>;
+        };
+    };
+};
