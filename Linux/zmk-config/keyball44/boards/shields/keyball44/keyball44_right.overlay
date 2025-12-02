@@ -6,12 +6,6 @@
  
 #include "keyball44.dtsi"
 
-/ {
-    vendor-prefixes {
-        pixart = "PixArt Imaging Inc.";
-    };
-};
-
 &default_transform {
     col-offset = <6>;
 };
