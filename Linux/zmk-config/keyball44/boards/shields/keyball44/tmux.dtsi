@@ -1,0 +1,55 @@
+/ {
+    behaviors {
+        tmux: tmux_prefix {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LCTRL>
+                     , <&macro_tap &kp B>
+                     , <&macro_release &kp LCTRL>;
+        };
+
+        tmux_prev: tmux_previous_window {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LCTRL>
+                     , <&macro_tap &kp B>
+                     , <&macro_release &kp LCTRL>
+                     , <&macro_tap &kp P>;
+        };
+
+        tmux_prev_sel: tmux_previous_window_select {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LCTRL>
+                     , <&macro_tap &kp B>
+                     , <&macro_release &kp LCTRL>
+                     , <&macro_tap &kp L>;
+        };
+
+        tmux_next: tmux_next_window {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LCTRL>
+                     , <&macro_tap &kp B>
+                     , <&macro_release &kp LCTRL>
+                     , <&macro_tap &kp N>;
+        };
+
+        tmux_combo: bootloader_tap_dance {
+            compatible = "zmk,behavior-tap-dance";
+            #binding-cells = <0>;
+            tapping-term-ms = <200>;
+            bindings = <&tmux_prev>, <&tmux_prev_sel>;
+        };
+    };
+    
+    /* combos { */
+    /*     compatible = "zmk,combos"; */
+    /*     combo_tmux { */
+    /*         timeout-ms = <50>; */
+    /*         key-positions = <12 30>; */
+    /*         bindings = <&tmux_prev_sel>; */
+    /*         layers = <NAV>; */
+    /*     }; */
+    /* }; */
+};

@@ -1,10 +1,3 @@
-#define DEF 0
-#define NAV 1
-#define SYM 2
-#define NUM 3
-#define SCR 4  // Scroll mode layer (layer 4 matches actual position)
-
-/* #define HOST_OS 1 // 1 = Linux, 2 = Windows, 3 = MacOS */
 #include <behaviors/mouse_keys.dtsi>
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/bt.h>
@@ -14,99 +7,55 @@
 #include "bluetooth.dtsi"
 #include "french.dtsi"
 #include "hrm.dtsi"
-
-// nice!view display configuration
-&nice_view_spi { cs-gpios = <&pro_micro 1 GPIO_ACTIVE_HIGH>; };
-
-// Timing configuration for layer-tap
-&lt {
-    tapping-term-ms = <LT_TAPPING_TERM>;
-    flavor = "balanced";
-    quick-tap-ms = <LT_QUICK_TAP>;
-};
-
-&caps_word { continue-list = <UNDERSCORE MINUS>; };
+#include "general.dtsi"
+#include "tmux.dtsi"
 
 / {
-    behaviors {
-        // TMUX prefix (Ctrl+B)
-        tmux: tmux_macro {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&macro_press &kp LCTRL>
-                     , <&macro_tap &kp B>
-                     , <&macro_release &kp LCTRL>;
-        };
-        
-        // Double-tap bootloader for more reliable entry
-        bootloader_tap: bootloader_tap_dance {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            tapping-term-ms = <500>;
-            bindings = <&none>, <&bootloader>;
-        };
-    };
-
-    // Tri-layer: NUM activates when both NAV and SYM are held
-    conditional_layers {
-        compatible = "zmk,conditional-layers";
-        tri_layer {
-            if-layers = <NAV SYM>;
-            then-layer = <NUM>;
-        };
-    };
-
     keymap {
         compatible = "zmk,keymap";
 
-        // DEF Layer
-        default_layer {
+        default_layer { // DEF
             bindings = <
-&kp ESC        &kp Q        &kp W          &kp E          &kp R           &kp T                              &kp Y         &kp U           &kp I           &kp O          &kp P          &kp BSPC
-&kp TAB        &hml LSFT A  &hml LGUI S    &hml LALT D    &hml LCTRL F    &kp G                              &kp H         &hmr RCTRL J    &hmr RALT K     &hmr RGUI L    &hmr RSFT SEMI &dacu
-&mkp LCLK      &kp Z        &kp X          &kp C          &kp V           &kp B                              &kp N         &kp M           &kp COMMA       &kp DOT        &kp FSLH       &kp DEL
-                            &none          &none          &kp LSFT        &kp RET      &mo NAV     &mo SYM   &kp SPACE                                                    &tmux         
+&kp ESC   &kp Q       &kp W       &kp E       &kp R        &kp T                                           &kp Y     &kp U        &kp I       &kp O       &kp P          &kp BSPC
+&kp TAB   &hml LSFT A &hml LGUI S &hml LALT D &hml LCTRL F &kp G                                           &kp H     &hmr RCTRL J &hmr LALT K &hmr RGUI L &hmr RSFT SEMI &dacu
+&mkp LCLK &kp Z       &kp X       &kp C       &kp V        &kp B                                           &kp N     &kp M        &kp COMMA   &kp DOT     &kp FSLH       &kp DEL
+                      &none       &none       &kp LSFT     &kp RET &lt_tmux_prev NAV 0 &lt_tmux_next SYM 0 &kp SPACE                                      &tmux         
             >;
         };
 
-        // NAV Layer - French accented characters (left) + Navigation (right)
-        nav_layer {
+        nav_layer { // NAV
             bindings = <
-&trans         &kp LS(EN_APOS) &kp EN_GRAVE     &kp EN_CARET     &kp EN_APOS       &none                              &kp C_AC_HOME &kp PSCRN       &none           &none          &kp C_VOL_UP   &trans
-&none          &kp LSFT        &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &a_grv                             &kp LEFT      &kp DOWN        &kp UP          &kp RIGHT      &kp C_VOL_DN   &none
-&mkp MCLK      &mo SCR         &none            &none            &none             &cced                              &kp HOME      &kp PG_DN       &kp PG_UP       &kp END        &kp C_MUTE     &kp C_AL_CALC
-                               &bootloader_tap  &none            &trans            &trans       &trans      &trans    &trans                                                       &trans
+&trans      &kp LS(EN_APOS) &kp EN_GRAVE     &kp EN_CARET     &kp EN_APOS       &none                              &kp C_AC_HOME &kp PSCRN    &none       &none       &kp C_VOL_UP   &trans
+&tmux_combo &kp LSFT        &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &a_grv                             &kp LEFT      &kp DOWN     &kp UP      &kp RIGHT   &kp C_VOL_DN   &tmux_next
+&mkp RCLK   &ht_scr SCR 0   &none            &none            &none             &cced                              &kp HOME      &kp PG_DN    &kp PG_UP   &kp END     &kp C_MUTE     &kp C_AL_CALC
+                            &boot_tap        &none            &trans            &trans       &trans      &trans    &trans                                             &trans
             >;
         };
 
-        // SYM Layer
-        symbol_layer {
+        symbol_layer { // SYM
             bindings = <
 &trans         &kp EXCL     &kp AT         &kp HASH       &kp DLLR        &kp PRCNT                          &dcir         &kp AMPS        &kp STAR        &none          &none          &trans
-&none          &none        &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                           &kp MINUS     &hmr RCTRL RPAR &hmr RALT RBKT  &hmr RGUI RBRC &none          &none
+&none          &kp LSFT     &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                           &kp MINUS     &hmr RCTRL RPAR &hmr LALT RBKT  &hmr RGUI RBRC &kp RSFT       &none
 &none          &none        &dgrv          &kp PIPE       &dtil           &kp EQUAL                          &kp UNDER     &none           &none           &none          &kp BSLH       &none
-                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &bootloader_tap        
+                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &boot_tap        
             >;
         };
 
-        // NUM Layer
-        num_layer {
+        num_layer { // NUM
             bindings = <
 &trans         &kp F9       &kp F10        &kp F11        &kp F12         &none                              &none         &kp N7          &kp N8          &kp N9         &none          &trans
-&none          &hml LSFT F5 &hml LGUI F6   &hml LALT F7   &hml LCTRL F8   &none                              &kp MINUS     &hmr RCTRL N4   &hmr RALT N5    &hmr RGUI N6   &hmr RSFT N0   &none
+&none          &hml LSFT F5 &hml LGUI F6   &hml LALT F7   &hml LCTRL F8   &none                              &kp MINUS     &hmr RCTRL N4   &hmr LALT N5    &hmr RGUI N6   &hmr RSFT N0   &none
 &none          &kp F1       &kp F2         &kp F3         &kp F4          &none                              &none         &kp N1          &kp N2          &kp N3         &none          &none
-                            &none          &bt_hold_tap 0 0  &trans          &trans       &trans      &trans    &trans                                                       &trans        
+                            &none          &bt_hold_tap   &trans          &trans       &trans      &trans    &trans                                                       &trans        
             >;
         };
 
-        // SCR Layer (4) - Scroll mode for trackball
-        // When this layer is active, trackball movement becomes scrolling
-        scroll_layer {
+        scroll_layer { // SCR
             bindings = <
 &trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
 &trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
-&trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
-&trans         &trans       &trans       &trans       &trans                                 &trans    &trans                                                  &trans        
+&trans         &tog SCR     &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
+                            &trans       &trans       &trans        &trans       &trans    &trans      &trans                                                  &trans        
             >;
         };
     };
