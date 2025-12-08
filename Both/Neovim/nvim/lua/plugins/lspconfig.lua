@@ -88,10 +88,12 @@ M.defaults = function()
   vim.lsp.enable "cssls"
   vim.lsp.enable "powershell_es"
   vim.lsp.enable "docker_compose_language_service"
-  vim.lsp.enable "bashls"
+  vim.lsp.enable "bash-language-server"
   vim.lsp.enable "spectral"
   vim.lsp.enable "marksman"
   vim.lsp.enable "clangd"
+  vim.lsp.enable "gopls"
+  vim.lsp.enable "vtsls"
 end
 
 return {

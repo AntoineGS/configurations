@@ -33,7 +33,6 @@ M.mason = {
     "pyright",
     --    "sqls",
     "docker-compose-language-service",
-    "bash-language-server",
     --    "ltex-ls",
     "spectral-language-server",
     "sonarlint-language-server",
@@ -46,6 +45,10 @@ M.mason = {
     "clangd",
     "clang-format",
     "cpplint",
+    "bash-language-server",
+    "gopls",
+    "goimports",
+    "vtsls",
   },
 }
 
