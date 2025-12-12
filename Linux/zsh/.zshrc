@@ -43,3 +43,8 @@ alias ls="eza --group-directories-first"
 alias tailbat="tail -f $1| bat --paging=never -l log -"
 alias :q="exit"
 alias y="yazi"
+
+# Scripts
+if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
+  tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux
+fi
