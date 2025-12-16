@@ -1,11 +1,12 @@
 adbmanager
 brave-bin
-caffeine-ng
+caffeine-ng-git
 carapace
 fzf-tab-completion-git
 gitkraken
 insync
 jetbrains-toolbox
+lazysql-bin
 oh-my-zsh-git
 posting
 qmk-git
