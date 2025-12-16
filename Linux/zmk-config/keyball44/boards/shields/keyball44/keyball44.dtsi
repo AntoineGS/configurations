@@ -85,7 +85,12 @@
           , <&pro_micro 18 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>
                 ;
         };
-};    
+
+    soft_off_wakers {
+        compatible = "zmk,soft-off-wakeup-sources";
+        wakeup-sources = <&kscan0>;
+    };
+};
 
 &pinctrl {
     i2c0_default: i2c0_default {
