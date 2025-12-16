@@ -76,6 +76,14 @@
             tapping-term-ms = <200>;
             bindings = <&kp>, <&sk>;
         };
+
+        soft_off_hold: soft_off_hold_tap {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "hold-preferred";
+            tapping-term-ms = <3000>;
+            bindings = <&soft_off>, <&none>;
+        };
     };
 
     // Tri-layer: NUM activates when both NAV and SYM are held
