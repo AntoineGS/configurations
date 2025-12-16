@@ -11,9 +11,9 @@ brightnessctl
 btop
 catch2
 ccache
-claude-code
 cmark-gfm
 cups-pdf
+deno
 docker
 docker-compose
 dust
@@ -26,12 +26,14 @@ ffmpegthumbnailer
 fprintd
 ghostty
 gimp
+github-cli
 gnome-calculator
 go
 gpu-screen-recorder
 gum
 htop
 hypridle
+hyprland-preview-share-picker
 hyprlock
 hyprshot
 hyprsunset
