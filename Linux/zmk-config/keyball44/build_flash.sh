@@ -3,17 +3,19 @@ set -e
 
 # Check if side argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <left|right|update>"
+    echo "Usage: $0 <left|right|update> [debug]"
     echo "Example: $0 left"
+    echo "Example: $0 right debug  (enables USB logging)"
     exit 1
 fi
 
 SIDE=$1
+DEBUG_MODE=$2
 
 # Validate side argument
 if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ] && [ "$SIDE" != "update" ]; then
     echo "Error: Side must be 'left' or 'right' or 'update'"
-    echo "Usage: $0 <left|right|update>"
+    echo "Usage: $0 <left|right|update> [debug]"
     exit 1
 fi
 
@@ -48,7 +50,13 @@ if [ "$SIDE" = "update" ]; then
 fi
 
 # Build firmware
-west build -d "$BUILD_DIR" -p -b nice_nano_v2 -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$ZMK_CONFIG"
+SNIPPET_FLAGS=""
+if [ "$DEBUG_MODE" = "debug" ]; then
+    echo "USB logging enabled"
+    SNIPPET_FLAGS="-S zmk-usb-logging"
+fi
+
+west build -d "$BUILD_DIR" -p -b nice_nano_v2 $SNIPPET_FLAGS -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$ZMK_CONFIG"
 
 if [ $? -ne 0 ]; then
     echo "Build failed!"
