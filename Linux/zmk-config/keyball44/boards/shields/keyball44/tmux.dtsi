@@ -35,7 +35,7 @@
                      , <&macro_tap &kp N>;
         };
 
-        tmux_combo: bootloader_tap_dance {
+        tmux_td: bootloader_tap_dance {
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
             tapping-term-ms = <200>;
