@@ -3,6 +3,7 @@
 #define SYM 2
 #define NUM 3
 #define SCR 4
+#define MOU 5
 
 // nice!view display configuration
 &nice_view_spi { cs-gpios = <&pro_micro 1 GPIO_ACTIVE_HIGH>; };
@@ -44,6 +45,14 @@
             bindings = <&mo>, <&tog_scr>;
         };
 
+        ht_clk: hold_tap_click {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "hold-preferred";
+            tapping-term-ms = <200>;
+            bindings = <&mkp>, <&mo>;
+        };
+
         lt_tmux_prev: layer_tap_navigation_tmux {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
@@ -58,6 +67,14 @@
             /* flavor = "tap-preferred"; */
             tapping-term-ms = <200>;
             bindings = <&mo>, <&tmux_next>;
+        };
+
+        ht_shft: hold_tap_shift {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            /* flavor = "hold-preferred"; */
+            tapping-term-ms = <200>;
+            bindings = <&kp>, <&sk>;
         };
     };
 
