@@ -20,7 +20,7 @@
 &kp ESC &kp Q       &kp W       &kp E            &kp R        &kp T                                                 &kp Y     &kp U        &kp I       &kp O       &kp P          &kp BSPC
 &kp TAB &hml LSFT A &hml LGUI S &hml LALT D      &hml LCTRL F &kp G                                                 &kp H     &hmr RCTRL J &hmr LALT K &hmr RGUI L &hmr RSFT SEMI &dacu
 &none   &kp Z       &kp X       &kp C            &kp V        &kp B                                                 &kp N     &kp M        &kp COMMA   &kp DOT     &kp FSLH       &kp DEL
-                    &tog SCR    &mo SCR          &ht_shft LSFT LSFT &kp RET &lt_tmux_prev NAV 0 &lt_tmux_next SYM 0 &kp SPACE                                      &soft_off_hold 0 0
+                    &tog SCR    &mo SCR          &ht_shft LSFT LSFT &kp RET &lt_tmux_prev NAV 0 &lt_tmux_next SYM 0 &kp SPACE                                      &none
             >;
         };
 
@@ -29,7 +29,7 @@
 &trans   &kp LS(EN_APOS) &kp EN_GRAVE     &kp EN_CARET     &kp EN_APOS       &none                              &kp C_AC_HOME &kp PSCRN    &none       &none       &kp C_VOL_UP   &trans
 &tmux_td &kp LSFT        &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &a_grv                             &kp LEFT      &kp DOWN     &kp UP      &kp RIGHT   &kp C_VOL_DN   &tmux_next
 &none    &none           &none            &none            &none             &cced                              &kp HOME      &kp PG_DN    &kp PG_UP   &kp END     &kp C_MUTE     &kp C_AL_CALC
-                         &boot_tap        &none            &trans            &trans       &trans      &trans    &trans                                             &trans
+                         &boot_hold 0 0   &none            &trans            &trans       &trans      &trans    &trans                                             &trans
             >;
         };
 
@@ -38,7 +38,7 @@
 &trans         &kp EXCL     &kp AT         &kp HASH       &kp DLLR        &kp PRCNT                          &dcir         &kp AMPS        &kp STAR        &none          &none          &trans
 &none          &kp LSFT     &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                           &kp MINUS     &hmr RCTRL RPAR &hmr LALT RBKT  &hmr RGUI RBRC &kp RSFT       &none
 &none          &none        &dgrv          &kp PIPE       &dtil           &kp EQUAL                          &kp UNDER     &none           &none           &none          &kp BSLH       &none
-                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &boot_tap        
+                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &boot_hold 0 0       
             >;
         };
 

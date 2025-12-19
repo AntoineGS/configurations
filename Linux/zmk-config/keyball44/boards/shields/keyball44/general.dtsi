@@ -17,12 +17,12 @@
 
 / {
     behaviors {
-        // Double-tap bootloader for more reliable entry
-        boot_tap: bootloader_tap_dance {
-            compatible = "zmk,behavior-tap-dance";
-            #binding-cells = <0>;
-            tapping-term-ms = <500>;
-            bindings = <&none>, <&bootloader>;
+        boot_hold: bootloader_hold {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "hold-preferred";
+            tapping-term-ms = <3000>;
+            bindings = <&bootloader>, <&none>;
         };
 
         mo_scr: momentary_scroll_layer {
