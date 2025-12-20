@@ -2,42 +2,42 @@
     combos {
         compatible = "zmk,combos";
         combo_r_lclk: combo_right_left_click {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <31 20>;
             bindings = <&mkp LCLK>;
             layers = <DEF>;
         };
 
         combo_r_rclk: combo_right_right_click {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <31 21>;
             bindings = <&mkp RCLK>;
             layers = <DEF>;
         };
 
         combo_r_scrl: combo_right_scroll {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <31 20 21>;
             bindings = <&mo SCR>;
             layers = <DEF>;
         };
 
         combo_l_lclk: combo_left_left_click {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <15 28>;
             bindings = <&mkp LCLK>;
             layers = <DEF>;
         };
 
         combo_l_rclk: combo_left_right_click {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <14 28>;
             bindings = <&mkp RCLK>;
             layers = <DEF>;
         };
 
         combo_l_scrl: combo_left_scroll {
-            timeout-ms = <75>;
+            timeout-ms = <100>;
             key-positions = <14 15 28>;
             bindings = <&mo SCR>;
             layers = <DEF>;
