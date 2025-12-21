@@ -21,27 +21,27 @@ fi
 
 # Set side-specific variables
 if [ "$SIDE" = "left" ]; then
-    SHIELD="keyball44_left nice_view_adapter nice_view_custom"
+    SHIELD="keyball44_left nice_view_adapter nice_view"
 elif [ "$SIDE" = "right" ]; then
-    SHIELD="keyball44_right nice_view_adapter nice_view_gem"
+    SHIELD="keyball44_right nice_view_adapter nice_view"
 fi
 
+# Workspace is in the keyball44 config directory
+WORKSPACE_DIR="/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44"
 BUILD_DIR="build/$SIDE"
-ZMK_CONFIG="/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44"
+WEST="/home/antoinegs/gits/zmk/.venv/bin/west"
 
 echo "========================================"
 echo "Building firmware for $SIDE side"
 echo "Shield: $SHIELD"
 echo "========================================"
 
-# Navigate to ZMK and activate venv
-cd /home/antoinegs/gits/zmk
-source .venv/bin/activate
-cd app
+# Navigate to workspace
+cd "$WORKSPACE_DIR"
 
 if [ "$SIDE" = "update" ]; then
     echo "Updating west and submodules..."
-    west update
+    $WEST update
     echo ""
     echo "========================================"
     echo "Update completed successfully!"
@@ -56,7 +56,7 @@ if [ "$DEBUG_MODE" = "debug" ]; then
     SNIPPET_FLAGS="-S zmk-usb-logging"
 fi
 
-west build -d "$BUILD_DIR" -p -b nice_nano_v2 $SNIPPET_FLAGS -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$ZMK_CONFIG"
+$WEST build -s zmk/app -d "$BUILD_DIR" -p -b nice_nano $SNIPPET_FLAGS -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$WORKSPACE_DIR"
 
 if [ $? -ne 0 ]; then
     echo "Build failed!"
