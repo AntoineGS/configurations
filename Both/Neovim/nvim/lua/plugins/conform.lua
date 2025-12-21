@@ -21,13 +21,12 @@ return {
         jsx = { "prettierd" },
         bash = { "shfmt" },
         sh = { "shfmt" },
-        zsh = { "shfmt" },
+        zsh = { "beautysh" },
         --sql = { "sqlfmt" },
         toml = { "prettierd" },
         nu = { "prettierd" },
         clang = { "clang-format" },
-        go = { "gofmt" },
-        go = { "goimports" },
+        go = { "gofmt", "goimports" },
       },
 
       format_on_save = {
