@@ -50,7 +50,6 @@ window#waybar {
 
 #bluetooth.connected {
   opacity: 1;
-  color: #a5d6ff;
 }
 
 #disk {
