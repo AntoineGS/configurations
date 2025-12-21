@@ -21,7 +21,7 @@ fi
 
 # Set side-specific variables
 if [ "$SIDE" = "left" ]; then
-    SHIELD="keyball44_left nice_view_adapter nice_view"
+    SHIELD="keyball44_left nice_view_adapter nice_view_custom"
 elif [ "$SIDE" = "right" ]; then
     SHIELD="keyball44_right nice_view_adapter nice_view"
 fi
@@ -29,7 +29,7 @@ fi
 # Workspace is in the keyball44 config directory
 WORKSPACE_DIR="/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44"
 BUILD_DIR="build/$SIDE"
-WEST="/home/antoinegs/gits/zmk/.venv/bin/west"
+WEST="/home/antoinegs/gits/configurations/Linux/zmk-config/keyball44/zmk/.venv/bin/west"
 
 echo "========================================"
 echo "Building firmware for $SIDE side"
