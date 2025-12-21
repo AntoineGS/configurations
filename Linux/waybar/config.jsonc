@@ -110,8 +110,10 @@
     "format-disabled": "󰂲",
     "format-off": "󰂲",
     "format-connected": "󰂱",
+    "format-connected-battery": "<span color='#a5d6ff'>󰂱</span> <span size='10pt' rise='1000' color='#e4e4cd'>{device_battery_percentage}%|{device_battery_percentage_peripheral}%</span>",
     "format-no-controller": "",
     "tooltip-format": "Devices connected: {num_connections}",
+    "tooltip-format-connected": "{device_alias}\nCentral: {device_battery_percentage}%\nPeripheral: {device_battery_percentage_peripheral}%",
     "on-click": "omarchy-launch-bluetooth"
   },
   "pulseaudio": {
