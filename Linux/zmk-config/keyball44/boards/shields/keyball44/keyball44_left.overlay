@@ -16,3 +16,10 @@
 		, <&pro_micro 9 GPIO_ACTIVE_HIGH>
 		;
 };
+
+// Override the nice_nano built-in EXT_POWER node
+&{/EXT_POWER} {
+    status = "okay";
+    control-gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+    init-delay-ms = <50>;
+};

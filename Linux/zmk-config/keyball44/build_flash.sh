@@ -3,9 +3,12 @@ set -e
 
 # Check if side argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <left|right|update> [debug]"
-    echo "Example: $0 left"
-    echo "Example: $0 right debug  (enables USB logging)"
+    echo "Usage: $0 <left|right|reset|update> [debug]"
+    echo "Examples:"
+    echo "  $0 left              - Build and flash left side"
+    echo "  $0 right debug       - Build and flash right side with USB logging"
+    echo "  $0 reset             - Flash settings reset firmware"
+    echo "  $0 update            - Update west dependencies"
     exit 1
 fi
 
@@ -13,17 +16,20 @@ SIDE=$1
 DEBUG_MODE=$2
 
 # Validate side argument
-if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ] && [ "$SIDE" != "update" ]; then
-    echo "Error: Side must be 'left' or 'right' or 'update'"
-    echo "Usage: $0 <left|right|update> [debug]"
+if [ "$SIDE" != "left" ] && [ "$SIDE" != "right" ] && [ "$SIDE" != "reset" ] && [ "$SIDE" != "update" ]; then
+    echo "Error: Side must be 'left', 'right', 'reset', or 'update'"
+    echo "Usage: $0 <left|right|reset|update> [debug]"
     exit 1
 fi
 
 # Set side-specific variables
 if [ "$SIDE" = "left" ]; then
     SHIELD="keyball44_left nice_view_adapter nice_view_custom"
+    # SHIELD="keyball44_left nice_view_adapter nice_view"
 elif [ "$SIDE" = "right" ]; then
     SHIELD="keyball44_right nice_view_adapter nice_view"
+elif [ "$SIDE" = "reset" ]; then
+    SHIELD="settings_reset"
 fi
 
 # Workspace is in the keyball44 config directory
