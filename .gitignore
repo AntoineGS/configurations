@@ -2,3 +2,10 @@
 Linux/teams-for-linux/config.json
 Linux/zsh/.zshenv.local
 .cache/
+Linux/zmk-config/keyball44/build/
+Linux/zmk-config/keyball44/zephyr/
+Linux/zmk-config/keyball44/modules/
+Linux/zmk-config/keyball44/optional/
+Linux/zmk-config/keyball44/mario-peripheral-animation/
+Linux/zmk-config/keyball44/nice-view-gem/
+Linux/zmk-config/keyball44/zmk/
