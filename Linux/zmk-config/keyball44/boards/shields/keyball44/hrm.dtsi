@@ -6,7 +6,7 @@
 // Timing constants for homerow mods and hold-tap behaviors
 #define HRM_TAPPING_TERM 280
 #define HRM_QUICK_TAP 175
-#define HRM_PRIOR_IDLE 150
+#define HRM_PRIOR_IDLE 250
 #define LT_TAPPING_TERM 240
 #define LT_QUICK_TAP 175
 

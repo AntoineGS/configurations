@@ -1,46 +1,19 @@
+#define COMBO(key_positions, key_bindings) \
+    timeout-ms = <100>; \
+    key-positions = <key_positions>; \
+    bindings = <key_bindings>; \
+    layers = <DEF>; \
+    require-prior-idle-ms = <250>;
+
  / {
     combos {
         compatible = "zmk,combos";
-        combo_r_lclk: combo_right_left_click {
-            timeout-ms = <100>;
-            key-positions = <31 20>;
-            bindings = <&mkp LCLK>;
-            layers = <DEF>;
-        };
 
-        combo_r_rclk: combo_right_right_click {
-            timeout-ms = <100>;
-            key-positions = <31 21>;
-            bindings = <&mkp RCLK>;
-            layers = <DEF>;
-        };
-
-        combo_r_scrl: combo_right_scroll {
-            timeout-ms = <100>;
-            key-positions = <31 20 21>;
-            bindings = <&mo SCR>;
-            layers = <DEF>;
-        };
-
-        combo_l_lclk: combo_left_left_click {
-            timeout-ms = <100>;
-            key-positions = <15 28>;
-            bindings = <&mkp LCLK>;
-            layers = <DEF>;
-        };
-
-        combo_l_rclk: combo_left_right_click {
-            timeout-ms = <100>;
-            key-positions = <14 28>;
-            bindings = <&mkp RCLK>;
-            layers = <DEF>;
-        };
-
-        combo_l_scrl: combo_left_scroll {
-            timeout-ms = <100>;
-            key-positions = <14 15 28>;
-            bindings = <&mo SCR>;
-            layers = <DEF>;
-        };
+        combo_r_lclk: combo_right_left_click { COMBO(31 20, &mkp LCLK) };
+        combo_r_rclk: combo_right_right_click { COMBO(31 21, &mkp RCLK) };
+        combo_r_scrl: combo_right_scroll { COMBO(31 20 21, &mo SCR) };
+        combo_l_lclk: combo_left_left_click { COMBO(15 28, &mkp LCLK) };
+        combo_l_rclk: combo_left_right_click { COMBO(14 28, &mkp RCLK) };
+        combo_l_scrl: combo_left_scroll { COMBO(14 15 28, &mo SCR) };
     };
 };
