@@ -1,0 +1,27 @@
+mqtt:
+  prefix: lnxlink
+  clientId: main_pc
+  server: server.home
+  port: 1883
+  clear_on_off: true
+  auth:
+    user: mosquitto
+    pass: 77Nfd9u89j3n
+    tls: false
+    keyfile: ""
+    certfile: ""
+    ca_certs: ""
+  discovery:
+    enabled: true
+    prefix: homeassistant
+  lwt:
+    enabled: true
+    qos: 1
+update_interval: 5
+update_on_change: false
+modules:
+  - bluetooth
+custom_modules: {}
+exclude: []
+settings:
+  statistics: https://analyzer.bkbilly.workers.dev
