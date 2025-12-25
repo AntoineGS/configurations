@@ -195,7 +195,7 @@ symbol = " "
 format = '[+$added]($added_style)\[[-$deleted]($deleted_style)\] '
 
 [gcloud]
-format = '[$symbol$account(@$domain)(\($region\))]($style) '
+format = '$symbol'#'[$symbol$account(@$domain)(\($region\))]($style) '
 symbol = " "
 
 [git_branch]
