@@ -62,7 +62,7 @@ if [ "$DEBUG_MODE" = "debug" ]; then
     SNIPPET_FLAGS="-S zmk-usb-logging"
 fi
 
-$WEST build -s zmk/app -d "$BUILD_DIR" -p -b nice_nano $SNIPPET_FLAGS -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$WORKSPACE_DIR"
+$WEST build -s zmk/app -d "$BUILD_DIR" -p -b nice_nano_v2 $SNIPPET_FLAGS -- -DSHIELD="$SHIELD" -DZMK_CONFIG="$WORKSPACE_DIR"
 
 if [ $? -ne 0 ]; then
     echo "Build failed!"
