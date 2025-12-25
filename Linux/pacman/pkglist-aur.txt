@@ -4,11 +4,13 @@ caffeine-ng-git
 carapace
 fzf-tab-completion-git
 gitkraken
+google-cloud-cli
 insync
 jetbrains-toolbox
 lazysql-bin
 oh-my-zsh-git
 posting
+python-lnxlink
 qmk-git
 rustdesk-bin
 teams-for-linux-electron-bin
