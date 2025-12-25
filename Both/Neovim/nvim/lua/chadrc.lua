@@ -49,6 +49,7 @@ M.mason = {
     "gopls",
     "goimports",
     "vtsls",
+    "black",
   },
 }
 
