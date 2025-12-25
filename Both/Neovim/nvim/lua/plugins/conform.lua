@@ -27,6 +27,7 @@ return {
         nu = { "prettierd" },
         clang = { "clang-format" },
         go = { "gofmt", "goimports" },
+        python = { "black" },
       },
 
       format_on_save = {
