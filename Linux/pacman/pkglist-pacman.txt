@@ -7,6 +7,7 @@ asdcontrol
 base
 bat-extras
 bluetui
+bluez-utils
 brightnessctl
 btop
 catch2
@@ -75,10 +76,11 @@ pinta
 plymouth
 polkit-gnome
 power-profiles-daemon
-python-pillow
+python-build
+python-installer
 python-poetry-core
+python-pylint
 python-terminaltexteffects
-python-virtualenv
 rapidfuzz-cpp
 remmina
 satty
@@ -92,6 +94,7 @@ sushi
 swaybg
 swayosd
 system-config-printer
+tailscale
 tldr
 tobi-try
 tree-sitter-cli
