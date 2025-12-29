@@ -50,6 +50,7 @@ M.mason = {
     "goimports",
     "vtsls",
     "black",
+    "tex-fmt",
   },
 }
 
