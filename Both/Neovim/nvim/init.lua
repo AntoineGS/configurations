@@ -1,6 +1,12 @@
 vim.g.base46_cache = vim.fn.stdpath "data" .. "/base46/"
 vim.g.mapleader = " "
 
+-- load theme before plugins so treesitter has highlight groups defined
+dofile(vim.g.base46_cache .. "defaults")
+dofile(vim.g.base46_cache .. "statusline")
+dofile(vim.g.base46_cache .. "syntax")
+dofile(vim.g.base46_cache .. "treesitter")
+
 -- bootstrap lazy and all plugins
 local lazypath = vim.fn.stdpath "data" .. "/lazy/lazy.nvim"
 
@@ -26,7 +32,3 @@ require "marks"
 vim.schedule(function()
   require "mappings"
 end)
-
--- load theme
-dofile(vim.g.base46_cache .. "defaults")
-dofile(vim.g.base46_cache .. "statusline")
