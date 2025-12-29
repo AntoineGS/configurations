@@ -48,7 +48,15 @@ return {
       fold = { enable = true },
       highlight = { enable = true },
       indent = { enable = true },
-      incremental_selection = { enable = true },
+      incremental_selection = {
+        enable = true,
+        keymaps = {
+          init_selection = "gnn",
+          node_incremental = "gnn",
+          node_decremental = "gnd",
+          scope_incremental = false,
+        },
+      },
     },
   },
 }
