@@ -186,6 +186,11 @@ def setup_zsh_plugins [] {
       name: "tmux-plugin-manager",
       repo: "https://github.com/tmux-plugins/tpm.git",
       path: "/usr/share/tmux-plugin-manager"
+    },
+    {
+      name: "fzf",
+      repo: "https://github.com/junegunn/fzf.git",
+      path: "/usr/share/fzf"
     }
   ]
 
@@ -217,6 +222,26 @@ def setup_zsh_plugins [] {
         print $"✓ ($plugin.name) cloned successfully"
       } catch {
         print $"✗ Failed to clone ($plugin.name)"
+      }
+    }
+
+    # Create symlinks for fzf shell integration files
+    if ($plugin.name == "fzf") {
+      let fzf_path = $plugin.path
+      let shell_path = $"($fzf_path)/shell"
+
+      for $file in ["completion.zsh", "key-bindings.zsh"] {
+        let target = $"($shell_path)/($file)"
+        let link = $"($fzf_path)/($file)"
+
+        if ($target | path exists) and not ($link | path exists) {
+          try {
+            sudo ln -s $target $link
+            print $"✓ Created symlink ($link) -> ($target)"
+          } catch {
+            print $"✗ Failed to create symlink for ($file)"
+          }
+        }
       }
     }
   }
