@@ -1,4 +1,5 @@
 local logger_conf = {}
+local event = "InsertEnter"
 local src = {}
 
 if vim.fn.hostname() == "DESKTOP-E07VTRN" then
@@ -17,6 +18,7 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
     },
   }
 else
+  event = ""
   src = {
     "zbirenbaum/copilot.lua",
     dependencies = {
@@ -27,7 +29,7 @@ end
 
 return vim.tbl_deep_extend("force", src, {
   cmd = "Copilot",
-  event = "InsertEnter",
+  event = event,
   config = function()
     require("copilot").setup {
       trace = "verbose",
