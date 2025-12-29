@@ -28,11 +28,12 @@ return {
         clang = { "clang-format" },
         go = { "gofmt", "goimports" },
         python = { "black" },
+        tex = { "tex-fmt" },
       },
 
       format_on_save = {
         -- These options will be passed to conform.format()
-        timeout_ms = 500,
+        timeout_ms = 2000,
         lsp_fallback = true,
       },
     },
