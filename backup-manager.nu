@@ -139,6 +139,7 @@ def "main restore" [] {
   # Clone zsh plugins if not on Arch Linux
   if ($curr_env == $env_types.linux) {
     setup_zsh_plugins
+    setup_ghostty_terminfo
   }
 }
 
@@ -151,6 +152,24 @@ def is_arch_linux [] {
   let id = $os_info | where key == "ID" | get value.0 | str trim --char '"'
   
   $id == "arch"
+}
+
+def setup_ghostty_terminfo [] {
+  let terminfo_src = "./Linux/ghostty/xterm-ghostty.terminfo" | path expand
+
+  if not ($terminfo_src | path exists) {
+    print "Ghostty terminfo source not found - skipping"
+    return
+  }
+
+  print "Installing ghostty terminfo..."
+
+  try {
+    tic -x -o ~/.terminfo $terminfo_src
+    print "✓ Ghostty terminfo installed successfully"
+  } catch {
+    print "✗ Failed to install ghostty terminfo (tic may not be installed)"
+  }
 }
 
 def setup_zsh_plugins [] {
