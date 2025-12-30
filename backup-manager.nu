@@ -182,6 +182,11 @@ def setup_zsh_plugins [] {
 
   let plugins = [
     {
+      name: "oh-my-zsh",
+      repo: "https://github.com/ohmyzsh/ohmyzsh.git",
+      path: "/usr/share/oh-my-zsh"
+    },
+    {
       name: "zsh-vi-mode",
       repo: "https://github.com/jeffreytse/zsh-vi-mode.git",
       path: "/usr/share/zsh/plugins/zsh-vi-mode"
