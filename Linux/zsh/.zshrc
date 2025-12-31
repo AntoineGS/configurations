@@ -8,6 +8,9 @@ export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=alwa
 
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
+autoload -U edit-command-line
+zle -N edit-command-line
+bindkey '\C-x\C-e' edit-command-line
 
 # Oh My Zsh
 source "$ZSH/oh-my-zsh.sh"
@@ -18,9 +21,9 @@ source /usr/share/fzf/completion.zsh
 
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
-  bindkey '^I' fzf_completion
-  bindkey '^P' autosuggest-accept
-  source /usr/share/fzf/key-bindings.zsh
+    bindkey '^I' fzf_completion
+    bindkey '^P' autosuggest-accept
+    source /usr/share/fzf/key-bindings.zsh
 }
 
 # Carapace
@@ -30,7 +33,7 @@ source <(carapace _carapace)
 
 # Transient prompt - must be loaded BEFORE starship
 [[ -f /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh ]] && \
-  source /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh
+    source /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh
 
 # Starship and Zoxide
 eval "$(starship init zsh)"
@@ -50,5 +53,5 @@ alias y="yazi"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
-  tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux
+    tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux
 fi
