@@ -1,33 +1,42 @@
 / {
     behaviors {
-        // Bluetooth behavior: tap=BT_NEXT, double-tap=BT_PREV, hold=BT_CLEAR  
         bt_hold_tap: bt_hold_tap_behavior {
             compatible = "zmk,behavior-hold-tap";
             #binding-cells = <2>;
             flavor = "tap-preferred";
-            tapping-term-ms = <200>;
+            tapping-term-ms = <1000>;
             bindings = <&bt_clear_macro>, <&bt_tap_dance>;
         };
 
-        // Tap dance for BT_NEXT (single tap) and BT_PREV (double tap)
         bt_tap_dance: bt_tap_dance_behavior {
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
-            tapping-term-ms = <200>;
-            bindings = <&bt_next_macro>, <&bt_prev_macro>;
+            tapping-term-ms = <1000>;
+            bindings = <&bt_sel_1>, <&bt_sel_2>, <&bt_sel_3>, <&bt_sel_4>;
         };
 
-        // Bluetooth macros
-        bt_next_macro: bt_next_macro {
+        bt_sel_1: bt_select_1 {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&bt BT_NXT>;
+            bindings = <&bt BT_SEL 0>;
         };
 
-        bt_prev_macro: bt_prev_macro {
+        bt_sel_2: bt_select_2 {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&bt BT_PRV>;
+            bindings = <&bt BT_SEL 1>;
+        };
+
+        bt_sel_3: bt_select_3 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&bt BT_SEL 2>;
+        };
+
+        bt_sel_4: bt_select_4 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&bt BT_SEL 3>;
         };
 
         bt_clear_macro: bt_clear_macro {

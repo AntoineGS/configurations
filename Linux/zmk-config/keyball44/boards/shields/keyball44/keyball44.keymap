@@ -47,7 +47,7 @@
 &trans         &kp F9       &kp F10        &kp F11        &kp F12         &none                              &none         &kp N7          &kp N8          &kp N9         &none          &trans
 &none          &hml LSFT F5 &hml LGUI F6   &hml LALT F7   &hml LCTRL F8   &none                              &kp MINUS     &hmr RCTRL N4   &hmr LALT N5    &hmr RGUI N6   &hmr RSFT N0   &none
 &none          &kp F1       &kp F2         &kp F3         &kp F4          &none                              &none         &kp N1          &kp N2          &kp N3         &none          &trans
-                            &none          &bt_hold_tap   &trans          &trans       &trans      &trans    &trans                                                       &trans        
+                            &trans         &trans         &trans          &trans       &trans      &trans    &none                                                        &bt_hold_tap 0 0
             >;
         };
 
