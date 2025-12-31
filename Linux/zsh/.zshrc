@@ -9,8 +9,10 @@ export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=alwa
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
 autoload -U edit-command-line
+autoload -U zmv
 zle -N edit-command-line
 bindkey '\C-x\C-e' edit-command-line
+bindkey " " magic-space
 
 # Oh My Zsh
 source "$ZSH/oh-my-zsh.sh"
