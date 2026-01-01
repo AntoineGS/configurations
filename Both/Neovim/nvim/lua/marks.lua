@@ -6,11 +6,10 @@
 ---@type table<integer, table<string, {line: integer, id: integer}>>
 local marks = {}
 
---- Keeps track of the signs I've already created.
----@type table<string, boolean>
-local sign_cache = {}
+--- Namespace for extmarks
+local ns_id = vim.api.nvim_create_namespace("marks_signs")
 
---- The sign and autocommand group name.
+--- The autocommand group name.
 local sign_group_name = "mariasolos/marks_signs"
 
 ---@param mark string
@@ -39,8 +38,8 @@ local function delete_mark(mark, bufnr)
     return
   end
 
-  -- Remove the sign.
-  vim.fn.sign_unplace(sign_group_name, { buffer = bufnr, id = buffer_marks[mark].id })
+  -- Remove the extmark.
+  vim.api.nvim_buf_del_extmark(bufnr, ns_id, buffer_marks[mark].id)
   buffer_marks[mark] = nil
 
   -- Remove the mark.
@@ -51,31 +50,26 @@ end
 ---@param bufnr integer
 ---@param line? integer
 local function register_mark(mark, bufnr, line)
-  local buffer_marks = marks[bufnr]
-  if not buffer_marks then
-    return
+  if not marks[bufnr] then
+    marks[bufnr] = {}
   end
+  local buffer_marks = marks[bufnr]
 
   if buffer_marks[mark] then
     -- Mark already exists, remove it first.
     delete_mark(mark, bufnr)
   end
 
-  -- Add the sign to the tracking table.
-  local id = mark:byte() * 100
   line = line or vim.api.nvim_win_get_cursor(0)[1]
-  buffer_marks[mark] = { line = line, id = id }
 
-  -- Create the sign.
-  local sign_name = "Marks_" .. mark
-  if not sign_cache[sign_name] then
-    vim.fn.sign_define(sign_name, { text = mark, texthl = "DiagnosticSignOk" })
-    sign_cache[sign_name] = true
-  end
-  vim.fn.sign_place(id, sign_group_name, sign_name, bufnr, {
-    lnum = line,
+  -- Create the extmark with sign.
+  local id = vim.api.nvim_buf_set_extmark(bufnr, ns_id, line - 1, 0, {
+    sign_text = mark,
+    sign_hl_group = "DiagnosticOk",
     priority = 10,
   })
+
+  buffer_marks[mark] = { line = line, id = id }
 end
 
 ---@param bufnr integer
@@ -113,7 +107,7 @@ local function set_keymaps(bufnr)
     desc = "Delete all buffer marks",
     callback = function()
       marks[bufnr] = {}
-      vim.fn.sign_unplace(sign_group_name, { buffer = bufnr })
+      vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
       vim.cmd "delmarks!"
     end,
   })
@@ -126,7 +120,7 @@ vim.api.nvim_create_autocmd("BufWinEnter", {
     local bufnr = args.buf
     -- Only handle normal buffers.
     if vim.bo[bufnr].bt ~= "" then
-      return true
+      return
     end
 
     -- Set custom mappings.
@@ -164,3 +158,12 @@ vim.api.nvim_create_autocmd("BufWinEnter", {
     end
   end,
 })
+
+-- Set up keymaps for the current buffer on module load
+vim.schedule(function()
+  local bufnr = vim.api.nvim_get_current_buf()
+  if vim.bo[bufnr].bt == "" then
+    marks[bufnr] = {}
+    set_keymaps(bufnr)
+  end
+end)
