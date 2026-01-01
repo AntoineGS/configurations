@@ -3,6 +3,7 @@
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
 export PATH="~/.local/bin:$PATH"
+export PATH="$PATH:$(go env GOPATH)/bin"
 export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=always {} | head -200'"
 
