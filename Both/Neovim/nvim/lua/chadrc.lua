@@ -23,6 +23,14 @@ M.ui = {
   tabufline = {
     enabled = false,
   },
+  statusline = {
+    modules = {
+      cursor = function()
+        local sep_l = require("nvchad.stl.utils").separators["round"]["left"]
+        return "%#St_pos_sep#" .. sep_l .. "%#St_pos_icon# %#St_pos_text# %l/%L:%v "
+      end,
+    },
+  },
 }
 
 M.mason = {
