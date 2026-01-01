@@ -70,7 +70,13 @@ return {
   "nvim-mini/mini.nvim",
   version = false,
   require("mini.test").setup(),
-  require("mini.ai").setup(),
+  require("mini.ai").setup {
+    n_lines = 500,
+    custom_textobjects = {
+      f = require("mini.ai").gen_spec.treesitter { a = "@function.outer", i = "@function.inner" },
+      c = require("mini.ai").gen_spec.treesitter { a = "@class.outer", i = "@class.inner" },
+    },
+  },
   require("mini.indentscope").setup {
     draw = {
       delay = 50,
