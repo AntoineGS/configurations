@@ -36,15 +36,13 @@ map({ "n", "x" }, "<leader>fm", function()
 end, { desc = "general format file" })
 
 -- global lsp mappings
-map("n", "<leader>ds", vim.diagnostic.setloclist, { desc = "LSP diagnostic loclist" })
+map("n", "<leader>fs", vim.diagnostic.setloclist, { desc = "LSP diagnostic loclist" })
 
--- tabufline
+-- buffers
 map("n", "<leader>b", "<cmd>enew<CR>", { desc = "buffer new" })
-
-map("n", "<tab>", "<cmd>BufferLineCycleNext<CR>", { desc = "buffer goto next" })
-
-map("n", "<S-tab>", "<cmd>BufferLineCyclePrev<CR>", { desc = "buffer goto prev" })
-
+map("n", "<tab>", "<cmd>lua Snacks.picker.buffers()<CR>", { desc = "buffers" })
+-- map("n", "<tab>", "<cmd>bnext<CR>", { desc = "buffer goto next" })
+map("n", "<S-tab>", "<cmd>b#<CR>", { desc = "buffer goto prev" })
 map("n", "<leader>X", "<cmd>BufferLineCloseOthers<CR>", { desc = "buffer close others" })
 map("n", "<leader>x", "<cmd>bdelete<CR>", { desc = "buffer close" })
 
@@ -56,13 +54,13 @@ end, { desc = "telescope nvchad themes" })
 map("t", "<C-x>", "<C-\\><C-N>", { desc = "terminal escape terminal mode" })
 
 -- new terminals
-map("n", "<leader>h", function()
-  require("nvchad.term").new { pos = "sp" }
-end, { desc = "terminal new horizontal term" })
-
-map("n", "<leader>v", function()
-  require("nvchad.term").new { pos = "vsp" }
-end, { desc = "terminal new vertical term" })
+-- map("n", "<leader>h", function()
+--   require("nvchad.term").new { pos = "sp" }
+-- end, { desc = "terminal new horizontal term" })
+--
+-- map("n", "<leader>v", function()
+--   require("nvchad.term").new { pos = "vsp" }
+-- end, { desc = "terminal new vertical term" })
 
 -- toggleable
 map({ "n", "t" }, "<A-v>", function()
@@ -76,6 +74,10 @@ end, { desc = "terminal toggleable horizontal term" })
 map({ "n", "t" }, "<A-i>", function()
   require("nvchad.term").toggle { pos = "float", id = "floatTerm" }
 end, { desc = "terminal toggle floating term" })
+
+-- splits
+map("n", "<leader>h", "<cmd> split <CR>", { desc = "horizontal split" })
+map("n", "<leader>v", "<cmd> vsplit <CR>", { desc = "vertical split" })
 
 -- whichkey
 map("n", "<leader>wK", "<cmd>WhichKey <CR>", { desc = "whichkey all keymaps" })
