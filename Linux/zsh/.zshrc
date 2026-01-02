@@ -56,5 +56,30 @@ alias y="yazi"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
-    tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux
+    first_session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | head -1)
+    if [[ -n "$first_session" ]]; then
+        tmux attach-session -t "$first_session"
+    else
+        tmux new-session -s ssh_tmux
+    fi
 fi
+
+git-https-to-ssh() {
+    local remote="${1:-origin}"
+    local url=$(git remote get-url "$remote" 2>/dev/null)
+
+    if [[ -z "$url" ]]; then
+        echo "Remote '$remote' not found"
+        return 1
+    fi
+
+    if [[ "$url" =~ ^https://github\.com/(.+)$ ]]; then
+        local ssh_url="git@github.com:${match[1]}"
+        git remote set-url "$remote" "$ssh_url"
+        git remote set-url --push "$remote" "$ssh_url"
+        echo "Converted $remote to: $ssh_url"
+    else
+        echo "URL is not HTTPS GitHub format: $url"
+        return 1
+    fi
+}
