@@ -283,8 +283,9 @@ def init_paths [] {
 
   if $is_root {
     [
-      [filenames, windows_path, linux_path, backup_path]; 
+      [filenames, windows_path, linux_path, backup_path];
       [[pkg-backup-aur.hook,pkg-backup-pacman.hook], "", "/usr/share/libalpm/hooks", "./Linux/pacman"]
+      [[units-backup.service, units-backup.timer], "", "/etc/systemd/system", "./Linux/systemd"]
     ]
   } else { 
     [
