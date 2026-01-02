@@ -102,6 +102,16 @@ Use Winget whenever possible
 
 Use Homebrew whenever possible
 
+## Systemd Units Backup
+
+Daily timer to backup enabled services and timers to
+`Linux/systemd/units-enabled.txt`:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now units-backup.timer
+```
+
 ## Hyperland
 
 - `systemctl --user daemon-reload; systemctl --user enable --now watch-rustdesk-submap.service`

@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup enabled systemd units to dotfiles
+
+[Service]
+Type=oneshot
+ExecStart=/bin/nu -c 'systemctl list-unit-files --state=enabled --type=service,timer --no-legend | lines | each { |l| $l | split row " " | first } | sort | save -f /home/antoinegs/gits/configurations/Linux/systemd/units-enabled.txt'
