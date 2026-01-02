@@ -29,6 +29,13 @@ M.ui = {
         local sep_l = require("nvchad.stl.utils").separators["round"]["left"]
         return "%#St_pos_sep#" .. sep_l .. "%#St_pos_icon# %#St_pos_text# %l/%L:%v "
       end,
+      file = function()
+        local sep_r = require("nvchad.stl.utils").separators["round"]["right"]
+        local x = require("nvchad.stl.utils").file()
+        local modified = vim.bo.modified and " " or ""
+        local name = " " .. x[2] .. modified .. " "
+        return "%#St_file# " .. x[1] .. name .. "%#St_file_sep#" .. sep_r
+      end,
     },
   },
 }
