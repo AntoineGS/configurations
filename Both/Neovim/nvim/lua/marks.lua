@@ -7,7 +7,7 @@
 local marks = {}
 
 --- Namespace for extmarks
-local ns_id = vim.api.nvim_create_namespace("marks_signs")
+local ns_id = vim.api.nvim_create_namespace "marks_signs"
 
 --- The autocommand group name.
 local sign_group_name = "mariasolos/marks_signs"
@@ -74,43 +74,46 @@ end
 
 ---@param bufnr integer
 local function set_keymaps(bufnr)
-  vim.api.nvim_buf_set_keymap(bufnr, "n", "m", "", {
-    desc = "Add mark",
-    callback = function()
-      local ok, mark = pcall(function()
-        return vim.fn.getcharstr()
-      end)
-      if not ok or not is_letter_mark(mark) then
-        return
-      end
+  vim.keymap.set("n", "m", function()
+    local ok, mark = pcall(function()
+      return vim.fn.getcharstr()
+    end)
+    if not ok or not is_letter_mark(mark) then
+      return
+    end
 
-      register_mark(mark, bufnr)
-      vim.cmd("normal! m" .. mark)
-    end,
-  })
+    register_mark(mark, bufnr)
+    vim.cmd("normal! m" .. mark)
+  end, { buffer = bufnr, desc = "Add mark" })
 
-  vim.api.nvim_buf_set_keymap(bufnr, "n", "dm", "", {
-    desc = "Delete mark",
-    callback = function()
-      local ok, mark = pcall(function()
-        return vim.fn.getcharstr()
-      end)
-      if not ok or not is_letter_mark(mark) then
-        return
-      end
+  vim.keymap.set("n", "gmd", function()
+    local ok, mark = pcall(function()
+      return vim.fn.getcharstr()
+    end)
 
+    if ok and is_letter_mark(mark) then
+      -- Delete specific mark
       delete_mark(mark, bufnr)
-    end,
-  })
+    else
+      -- Delete mark on current line
+      local line = vim.api.nvim_win_get_cursor(0)[1]
+      local buffer_marks = marks[bufnr]
+      if buffer_marks then
+        for m, data in pairs(buffer_marks) do
+          if data.line == line then
+            delete_mark(m, bufnr)
+            return
+          end
+        end
+      end
+    end
+  end, { buffer = bufnr, desc = "Delete mark" })
 
-  vim.api.nvim_buf_set_keymap(bufnr, "n", "dm-", "", {
-    desc = "Delete all buffer marks",
-    callback = function()
-      marks[bufnr] = {}
-      vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
-      vim.cmd "delmarks!"
-    end,
-  })
+  vim.keymap.set("n", "gm-", function()
+    marks[bufnr] = {}
+    vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+    vim.cmd "delmarks!"
+  end, { buffer = bufnr, desc = "Delete all buffer marks" })
 end
 
 -- Set up autocommands to refresh the signs.
