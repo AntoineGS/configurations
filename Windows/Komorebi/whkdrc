@@ -2,16 +2,18 @@
 
 # Reload whkd configuration
 # alt + o                 : taskkill /f /im whkd.exe && start /b whkd # if shell is cmd
-win + o                 : taskkill /f /im whkd.exe; Start-Process whkd -WindowStyle hidden # if shell is pwsh / powershell
+win + r                 : taskkill /f /im whkd.exe; Start-Process whkd -WindowStyle hidden # if shell is pwsh / powershell
 win + shift + o         : komorebic reload-configuration
 
 win + i                 : komorebic toggle-shortcuts
 
 # App shortcuts - these require shell to be pwsh / powershell
 # The apps will be focused if open, or launched if not open
-# alt + f                 : if ($wshell.AppActivate('Firefox') -eq $False) { start firefox }
-# alt + b                 : if ($wshell.AppActivate('Chrome') -eq $False) { start chrome }
 win + alt + b           : if ($wshell.AppActivate('Chrome') -eq $False) { start chrome }
+win + alt + g           : if ($wshell.AppActivate('GitKraken Desktop') -eq $False) { start gitkraken }
+win + alt + m           : if ($wshell.AppActivate('MD Explorer') -eq $False) { start C:/Multidev/DBExplorer/MDExplorer.exe }
+win + alt + c           : if ($wshell.AppActivate('Total Commander (x64)') -eq $False) { start "C:/Program Files/totalcmd/TOTALCMD64.exe" }
+win + alt + h           : if ($wshell.AppActivate('Task Manager') -eq $False) { start Taskmgr }
 win + return            : start wezterm-gui.exe
 
 win + w                 : komorebic close
@@ -22,10 +24,10 @@ win + f                 : komorebic toggle-maximize
 # win + l                 : komorebic cycle-workspace next
 
 # Focus windows
-win + h                 : komorebic focus left
-win + j                 : komorebic focus down
-win + k                 : komorebic focus up
-win + l                 : komorebic focus right
+win + left                 : komorebic focus left
+win + down                 : komorebic focus down
+win + up                 : komorebic focus up
+win + right                 : komorebic focus right
 # alt + shift + oem_4     : komorebic cycle-focus previous # oem_4 is [
 # alt + shift + oem_6     : komorebic cycle-focus next # oem_6 is ]
 
