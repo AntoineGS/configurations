@@ -8,6 +8,15 @@
                      , <&macro_release &kp LCTRL>;
         };
 
+        tmux_pop: tmux_popup {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LCTRL>
+                     , <&macro_tap &kp B>
+                     , <&macro_tap &kp P>
+                     , <&macro_release &kp LCTRL>;
+        };
+
         tmux_prev: tmux_previous_window {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
