@@ -1,51 +1,48 @@
-.shell powershell
+.shell pwsh
 
 # Reload whkd configuration
-# alt + o                 : taskkill /f /im whkd.exe && start /b whkd # if shell is cmd
-win + r                 : taskkill /f /im whkd.exe; Start-Process whkd -WindowStyle hidden # if shell is pwsh / powershell
-win + shift + o         : komorebic reload-configuration
-
-win + i                 : komorebic toggle-shortcuts
+f10 + r                 : taskkill /f /im whkd.exe; Start-Process whkd -WindowStyle hidden # if shell is pwsh / powershell
+f10 + shift + r         : komorebic reload-configuration
+f10 + i                 : komorebic toggle-shortcuts
 
 # App shortcuts - these require shell to be pwsh / powershell
 # The apps will be focused if open, or launched if not open
-win + alt + b           : if ($wshell.AppActivate('Chrome') -eq $False) { start chrome }
-win + alt + g           : if ($wshell.AppActivate('GitKraken Desktop') -eq $False) { start gitkraken }
-win + alt + m           : if ($wshell.AppActivate('MD Explorer') -eq $False) { start C:/Multidev/DBExplorer/MDExplorer.exe }
-win + alt + c           : if ($wshell.AppActivate('Total Commander (x64)') -eq $False) { start "C:/Program Files/totalcmd/TOTALCMD64.exe" }
-win + alt + h           : if ($wshell.AppActivate('Task Manager') -eq $False) { start Taskmgr }
-win + return            : start wezterm-gui.exe
+f10 + alt + b           : Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Win32{[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);}' -PassThru | Out-Null; $w = Get-Process | Where-Object {$_.MainWindowTitle -match 'Chrome'} | Select-Object -First 1; if ($w) { [Win32]::ShowWindow($w.MainWindowHandle, 9); [Win32]::SetForegroundWindow($w.MainWindowHandle) } else { start chrome }
+f10 + alt + g           : Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Win32{[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);}' -PassThru | Out-Null; $w = Get-Process | Where-Object {$_.MainWindowTitle -match 'GitKraken'} | Select-Object -First 1; if ($w) { [Win32]::ShowWindow($w.MainWindowHandle, 9); [Win32]::SetForegroundWindow($w.MainWindowHandle) } else { start gitkraken }
+f10 + alt + m           : Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Win32{[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);}' -PassThru | Out-Null; $w = Get-Process | Where-Object {$_.MainWindowTitle -match 'MD Explorer'} | Select-Object -First 1; if ($w) { [Win32]::ShowWindow($w.MainWindowHandle, 9); [Win32]::SetForegroundWindow($w.MainWindowHandle) } else { start C:/Multidev/DBExplorer/MDExplorer.exe }
+f10 + alt + c           : Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Win32{[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);}' -PassThru | Out-Null; $w = Get-Process | Where-Object {$_.MainWindowTitle -match 'Total Commander'} | Select-Object -First 1; if ($w) { [Win32]::ShowWindow($w.MainWindowHandle, 9); [Win32]::SetForegroundWindow($w.MainWindowHandle) } else { start "C:/Program Files/totalcmd/TOTALCMD64.exe" }
+f10 + alt + t           : Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class Win32{[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);}' -PassThru | Out-Null; $w = Get-Process | Where-Object {$_.MainWindowTitle -match 'Task Manager'} | Select-Object -First 1; if ($w) { [Win32]::ShowWindow($w.MainWindowHandle, 9); [Win32]::SetForegroundWindow($w.MainWindowHandle) } else { start Taskmgr }
+f10 + return            : start "C:\Program Files\WindowsApps\Microsoft.WindowsTerminal_1.23.13503.0_x64__8wekyb3d8bbwe\WindowsTerminal.exe"
 
-win + w                 : komorebic close
-win + m                 : komorebic minimize
-win + f                 : komorebic toggle-maximize
+f10 + w                 : komorebic close
+f10 + m                 : komorebic minimize
+f10 + f                 : komorebic toggle-maximize
 
-# win + h                 : komorebic cycle-workspace previous 
-# win + l                 : komorebic cycle-workspace next
+# f10 + h               : komorebic cycle-workspace previous 
+# f10 + l               : komorebic cycle-workspace next
 
 # Focus windows
-win + left                 : komorebic focus left
-win + down                 : komorebic focus down
-win + up                 : komorebic focus up
-win + right                 : komorebic focus right
-# alt + shift + oem_4     : komorebic cycle-focus previous # oem_4 is [
-# alt + shift + oem_6     : komorebic cycle-focus next # oem_6 is ]
+f10 + h                 : komorebic focus left
+f10 + j                 : komorebic focus down
+f10 + l                 : komorebic focus right
+# alt + shift + oem_4   : komorebic cycle-focus previous # oem_4 is [
+# alt + shift + oem_6   : komorebic cycle-focus next # oem_6 is ]
 
 # Move windows
-win + shift + h         : komorebic move left
-win + shift + j         : komorebic move down
-win + shift + k         : komorebic move up
-win + shift + l         : komorebic move right
-win + shift + return    : komorebic promote
+f10 + shift + h         : komorebic move left
+f10 + shift + j         : komorebic move down
+f10 + shift + k         : komorebic move up
+f10 + shift + l         : komorebic move right
+f10 + shift + return    : komorebic promote
 
 # Stack windows
-alt + left              : komorebic stack left
-alt + down              : komorebic stack down
-alt + up                : komorebic stack up
-alt + right             : komorebic stack right
-alt + oem_1             : komorebic unstack # oem_1 is ;
-alt + oem_4             : komorebic cycle-stack previous # oem_4 is [
-alt + oem_6             : komorebic cycle-stack next # oem_6 is ]
+f10 + left              : komorebic stack left
+f10 + down              : komorebic stack down
+f10 + up                : komorebic stack up
+f10 + right             : komorebic stack right
+f10 + oem_1             : komorebic unstack # oem_1 is ;
+f10 + oem_4             : komorebic cycle-stack previous # oem_4 is [
+f10 + oem_6             : komorebic cycle-stack next # oem_6 is ]
 
 # Resize
 alt + oem_plus          : komorebic resize-axis horizontal increase
@@ -66,21 +63,21 @@ alt + x                 : komorebic flip-layout horizontal
 alt + y                 : komorebic flip-layout vertical
 
 # Workspaces
-win + 2                 : komorebic focus-named-workspace "main"
-win + 5                 : komorebic focus-named-workspace "terminal"
-win + 8                 : komorebic focus-named-workspace "browser"
-win + 3                 : komorebic focus-named-workspace "secondary"
-win + 6                 : komorebic focus-named-workspace "git"
-win + 9                 : komorebic focus-named-workspace "md explorer"
-win + 0                 : komorebic focus-named-workspace "commander"
+f10 + 2                 : komorebic focus-named-workspace "main"
+f10 + 5                 : komorebic focus-named-workspace "terminal"
+f10 + 8                 : komorebic focus-named-workspace "browser"
+f10 + 3                 : komorebic focus-named-workspace "secondary"
+f10 + 6                 : komorebic focus-named-workspace "git"
+f10 + 9                 : komorebic focus-named-workspace "md explorer"
+f10 + 0                 : komorebic focus-named-workspace "commander"
 
 # Move windows across workspaces
-win + shift + 2         : komorebic move-to-named-workspace "main"
-win + shift + 5         : komorebic move-to-named-workspace "terminal"
-win + shift + 8         : komorebic move-to-named-workspace "browser"
-win + shift + 3         : komorebic move-to-named-workspace "secondary"
-win + shift + 6         : komorebic move-to-named-workspace "git"
-win + shift + 9         : komorebic move-to-named-workspace "md explorer"
-win + shift + 0         : komorebic move-to-named-workspace "commander"
+f10 + shift + 2         : komorebic move-to-named-workspace "main"
+f10 + shift + 5         : komorebic move-to-named-workspace "terminal"
+f10 + shift + 8         : komorebic move-to-named-workspace "browser"
+f10 + shift + 3         : komorebic move-to-named-workspace "secondary"
+f10 + shift + 6         : komorebic move-to-named-workspace "git"
+f10 + shift + 9         : komorebic move-to-named-workspace "md explorer"
+f10 + shift + 0         : komorebic move-to-named-workspace "commander"
 
-win + p                 : komorebic move-to-named-workspace "terminal" exe "wezterm.exe"
+f10 + p                 : komorebic move-to-named-workspace "terminal" exe "wezterm.exe"
