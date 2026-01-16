@@ -13,5 +13,37 @@
     "name": "Ashes",
     "unfocused_border": "Base03",
     "bar_accent": "Base0D"
-  }
+  },
+  "ignore_rules": [
+    {
+      "kind": "Class",
+      "id": "TRegisterPopupForm",
+      "matching_stategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "TCnWizConfigForm",
+      "matching_stategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "TBufferListFrm",
+      "matching_stategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "Dialog",
+      "matching_stategy": "EndsWith"
+    },
+    {
+      "kind": "Class",
+      "id": "Popup",
+      "matching_stategy": "EndsWith"
+    },
+    {
+      "kind": "Class",
+      "id": "TGUIVCLTestRunner",
+      "matching_stategy": "Equals"
+    }
+  ]
 }
