@@ -124,11 +124,21 @@ def restore_files [filenames, _source, _destination] {
   }
 }
 
-def "main restore" [] {
+def "main restore" [
+  --os: string  # Force OS type: 'windows' or 'linux' (overrides auto-detection)
+] {
+  let os = if ($os != null) { $os } else { $curr_env }
+
+  if ($os not-in [$env_types.windows, $env_types.linux]) {
+    error make {msg: $"Invalid OS type: ($os). Must be 'windows' or 'linux'"}
+  }
+
+  print $"Using OS: ($os)"
+
   let paths = init_paths
 
   for $path in $paths {
-    if ($curr_env == $env_types.windows) {
+    if ($os == $env_types.windows) {
       restore_files $path.filenames $path.backup_path $path.windows_path
     } else {
       mut $linux_path = $path.linux_path
@@ -137,7 +147,7 @@ def "main restore" [] {
   }
 
   # Clone zsh plugins if not on Arch Linux
-  if ($curr_env == $env_types.linux) {
+  if ($os == $env_types.linux) {
     setup_zsh_plugins
     setup_ghostty_terminfo
   }
@@ -335,7 +345,17 @@ def init_paths [] {
   }
 }
 
-def "main list" [] {
+def "main list" [
+  --os: string  # Force OS type: 'windows' or 'linux' (overrides auto-detection)
+] {
+  let os = if ($os != null) { $os } else { $curr_env }
+
+  if ($os not-in [$env_types.windows, $env_types.linux]) {
+    error make {msg: $"Invalid OS type: ($os). Must be 'windows' or 'linux'"}
+  }
+
+  print $"Using OS: ($os)"
+
   let paths = init_paths
 
   for $path in $paths {
