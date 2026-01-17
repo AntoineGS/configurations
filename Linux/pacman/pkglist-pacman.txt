@@ -61,7 +61,7 @@ mqttui
 nautilus
 ncdu
 nushell
-nvidia-dkms
+nvidia-580xx-dkms
 nwg-hello
 obs-studio
 obsidian
