@@ -5,15 +5,58 @@
     layers = <DEF>; \
     require-prior-idle-ms = <250>;
 
+#define MOD_COMBO(key_positions, key_bindings) \
+    timeout-ms = <100>; \
+    key-positions = <key_positions>; \
+    bindings = <key_bindings>; \
+    layers = <MOD>; \
+    require-prior-idle-ms = <0>;
+
  / {
     combos {
         compatible = "zmk,combos";
 
-        combo_r_lclk: combo_right_left_click { COMBO(31 20, &mkp LCLK) };
-        combo_r_rclk: combo_right_right_click { COMBO(31 21, &mkp RCLK) };
-        combo_r_scrl: combo_right_scroll { COMBO(31 20 21, &mo SCR) };
-        combo_l_lclk: combo_left_left_click { COMBO(15 28, &mkp LCLK) };
-        combo_l_rclk: combo_left_right_click { COMBO(14 28, &mkp RCLK) };
-        combo_l_scrl: combo_left_scroll { COMBO(14 15 28, &mo SCR) };
+        /* combo_r_lclk: combo_right_left_click { COMBO(31 20, &mkp LCLK) }; */
+        combo_r_lclk: combo_right_left_click { COMBO(19 20, &mkp LCLK) };
+        combo_r_rclk: combo_right_right_click { COMBO(19 21, &mkp RCLK) };
+        combo_r_scrl: combo_right_scroll { COMBO(19 20 21, &mo SCR) };
+        /* combo_l_lclk: combo_left_left_click { COMBO(15 28, &mkp LCLK) }; */
+        combo_l_lclk: combo_left_left_click { COMBO(15 16, &mkp LCLK) };
+        combo_l_rclk: combo_left_right_click { COMBO(14 16, &mkp RCLK) };
+        combo_l_scrl: combo_left_scroll { COMBO(14 15 16, &mo SCR) };
+
+        // Left hand multi-modifier combos (2-key)
+        combo_l_shft_gui: combo_left_shift_gui { MOD_COMBO(13 14, &sk_shft_gui) };
+        combo_l_shft_alt: combo_left_shift_alt { MOD_COMBO(13 15, &sk_shft_alt) };
+        combo_l_shft_ctrl: combo_left_shift_ctrl { MOD_COMBO(13 16, &sk_shft_ctrl) };
+        combo_l_gui_alt: combo_left_gui_alt { MOD_COMBO(14 15, &sk_alt_gui) };
+        combo_l_gui_ctrl: combo_left_gui_ctrl { MOD_COMBO(14 16, &sk_ctrl_gui) };
+        combo_l_alt_ctrl: combo_left_alt_ctrl { MOD_COMBO(15 16, &sk_ctrl_alt) };
+
+        // Left hand multi-modifier combos (3-key)
+        combo_l_shft_gui_alt: combo_left_shift_gui_alt { MOD_COMBO(13 14 15, &sk_shft_gui_alt) };
+        combo_l_shft_gui_ctrl: combo_left_shift_gui_ctrl { MOD_COMBO(13 14 16, &sk_shft_gui_ctrl) };
+        combo_l_shft_alt_ctrl: combo_left_shift_alt_ctrl { MOD_COMBO(13 15 16, &sk_shft_ctrl_alt) };
+        combo_l_gui_alt_ctrl: combo_left_gui_alt_ctrl { MOD_COMBO(14 15 16, &sk_gui_alt_ctrl) };
+
+        // Left hand multi-modifier combo (4-key)
+        combo_l_shft_gui_alt_ctrl: combo_left_shift_gui_alt_ctrl { MOD_COMBO(13 14 15 16, &sk_shft_gui_alt_ctrl) };
+
+        // Right hand multi-modifier combos (2-key)
+        combo_r_shft_gui: combo_right_shift_gui { MOD_COMBO(22 21, &sk_shft_gui) };
+        combo_r_shft_alt: combo_right_shift_alt { MOD_COMBO(22 20, &sk_shft_alt) };
+        combo_r_shft_ctrl: combo_right_shift_ctrl { MOD_COMBO(22 19, &sk_shft_ctrl) };
+        combo_r_gui_alt: combo_right_gui_alt { MOD_COMBO(21 20, &sk_alt_gui) };
+        combo_r_gui_ctrl: combo_right_gui_ctrl { MOD_COMBO(21 19, &sk_ctrl_gui) };
+        combo_r_alt_ctrl: combo_right_alt_ctrl { MOD_COMBO(20 19, &sk_ctrl_alt) };
+
+        // Right hand multi-modifier combos (3-key)
+        combo_r_shft_gui_alt: combo_right_shift_gui_alt { MOD_COMBO(22 21 20, &sk_shft_gui_alt) };
+        combo_r_shft_gui_ctrl: combo_right_shift_gui_ctrl { MOD_COMBO(22 21 19, &sk_shft_gui_ctrl) };
+        combo_r_shft_alt_ctrl: combo_right_shift_alt_ctrl { MOD_COMBO(22 20 19, &sk_shft_ctrl_alt) };
+        combo_r_gui_alt_ctrl: combo_right_gui_alt_ctrl { MOD_COMBO(21 20 19, &sk_gui_alt_ctrl) };
+
+        // Right hand multi-modifier combo (4-key)
+        combo_r_shft_gui_alt_ctrl: combo_right_shift_gui_alt_ctrl { MOD_COMBO(22 21 20 19, &sk_shft_gui_alt_ctrl) };
     };
 };

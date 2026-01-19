@@ -6,7 +6,6 @@
 #include "keys_us_international.h"
 #include "bluetooth.dtsi"
 #include "french.dtsi"
-#include "hrm.dtsi"
 #include "general.dtsi"
 #include "tmux.dtsi"
 #include "combos.dtsi"
@@ -17,55 +16,55 @@
 
         default_layer { // DEF
             bindings = <
-&kp ESC &kp Q       &kp W       &kp E       &kp R        &kp T                                           &kp Y     &kp U        &kp I       &kp O       &kp P          &kp BSPC
-&kp TAB &hml LSFT A &hml LGUI S &hml LALT D &hml LCTRL F &kp G                                           &kp H     &hmr RCTRL J &hmr LALT K &hmr RGUI L &hmr RSFT SEMI &dacu
-&none   &kp Z       &kp X       &kp C       &kp V        &kp B                                           &kp N     &kp M        &kp COMMA   &kp DOT     &kp FSLH       &kp DEL
-                    &tog SCR    &tmux_pop   &kp LSFT     &kp RET &lt_tmux_prev NAV 0 &lt_tmux_next SYM 0 &kp SPACE                                      &none
+&kp ESC    &kp Q &kp W    &kp E     &kp R    &kp T                                   &kp Y     &kp U &kp I     &kp O   &kp P    &kp BSPC
+&kp TAB    &kp A &kp S    &kp D     &kp F    &kp G                                   &kp H     &kp J &kp K     &kp L   &kp SEMI &dacu
+&tmux_next &kp Z &kp X    &kp C     &kp V    &kp B                                   &kp N     &kp M &kp COMMA &kp DOT &kp FSLH &kp DEL
+                 &tog SCR &tmux_pop &kp LSFT &kp RET &sl_lt NAV MOD   &sl_lt SYM MOD &kp SPACE                         &none
             >;
         };
 
         nav_layer { // NAV
             bindings = <
-&trans  &kp LS(EN_APOS) &kp EN_GRAVE     &kp EN_CARET     &kp EN_APOS       &none                &kp C_AL_CALC &kp PSCRN    &none       &none       &kp C_VOL_UP   &trans
-&trans  &kp LSFT        &egrv_hrm LGUI 0 &ecir_hrm LALT 0 &eacu_hrm LCTRL 0 &a_grv               &kp LEFT      &kp DOWN     &kp UP      &kp RIGHT   &kp C_VOL_DN   &trans
-&none   &none           &none            &none            &none             &cced                &kp HOME      &kp PG_DN    &kp PG_UP   &kp END     &kp C_MUTE     &trans
-                        &boot_hold 0 0   &none            &trans            &trans &trans &trans &trans                                             &trans
+&trans     &kp LS(EN_APOS) &kp EN_GRAVE   &kp EN_CARET &kp EN_APOS &none                  &kp C_AL_CALC &kp PSCRN &none     &none     &kp C_VOL_UP &trans
+&trans     &kp A           &e_grv         &e_cir       &e_acu      &a_grv                 &kp LEFT      &kp DOWN  &kp UP    &kp RIGHT &kp C_VOL_DN &trans
+&tmux_prev &none           &none          &none        &none       &cced                  &kp HOME      &kp PG_DN &kp PG_UP &kp END   &kp C_MUTE   &trans
+                           &boot_hold 0 0 &none        &trans      &trans &trans   &trans &trans                                      &trans
             >;
         };
 
         symbol_layer { // SYM
             bindings = <
-&trans         &kp EXCL     &kp AT         &kp HASH       &kp DLLR        &kp PRCNT                          &dcir         &kp AMPS        &kp STAR        &none          &none          &trans
-&none          &kp LSFT     &hml LGUI LBRC &hml LALT LBKT &hml LCTRL LPAR &kp PLUS                           &kp MINUS     &hmr RCTRL RPAR &hmr LALT RBKT  &hmr RGUI RBRC &kp RSFT       &none
-&none          &none        &dgrv          &kp PIPE       &dtil           &kp EQUAL                          &kp UNDER     &none           &none           &none          &kp BSLH       &trans
-                            &none          &none          &trans          &trans       &trans      &trans    &trans                                                       &boot_hold 0 0       
+&trans &kp EXCL &kp AT   &kp HASH &kp DLLR &kp PRCNT                 &dcir     &kp AMPS &kp STAR &none    &none          &trans
+&none  &kp A    &kp LBRC &kp LBKT &kp LPAR &kp PLUS                  &kp MINUS &kp RPAR &kp RBKT &kp RBRC &kp SEMI       &none
+&none  &none    &dgrv    &kp PIPE &dtil    &kp EQUAL                 &kp UNDER &none    &none    &none    &kp BSLH       &trans
+                &none    &none    &trans   &trans    &trans   &trans &trans                               &boot_hold 0 0       
             >;
         };
 
         num_layer { // NUM
             bindings = <
-&trans         &kp F9       &kp F10        &kp F11        &kp F12         &none                              &none         &kp N7          &kp N8          &kp N9         &none          &trans
-&none          &hml LSFT F5 &hml LGUI F6   &hml LALT F7   &hml LCTRL F8   &none                              &kp MINUS     &hmr RCTRL N4   &hmr LALT N5    &hmr RGUI N6   &hmr RSFT N0   &none
-&none          &kp F1       &kp F2         &kp F3         &kp F4          &none                              &none         &kp N1          &kp N2          &kp N3         &none          &trans
-                            &trans         &trans         &trans          &trans       &trans      &trans    &none                                                        &bt_hold_tap 0 0
+&trans &kp F9 &kp F10 &kp F11 &kp F12 &none                  &none     &kp N7 &kp N8 &kp N9 &none  &trans
+&none  &kp F5 &kp F6  &kp F7  &kp F8  &none                  &kp MINUS &kp N4 &kp N5 &kp N6 &kp N0 &none
+&none  &kp F1 &kp F2  &kp F3  &kp F4  &none                  &none     &kp N1 &kp N2 &kp N3 &none  &trans
+              &trans  &trans  &trans  &trans &trans   &trans &none                          &bt_hold_tap 0 0
             >;
         };
 
         scroll_layer { // SCR
             bindings = <
-&tog SCR       &tog SCR     &tog SCR     &tog SCR     &tog SCR      &tog SCR                           &tog SCR      &tog SCR      &tog SCR      &tog SCR      &tog SCR       &tog SCR       
-&tog SCR       &tog SCR     &tog SCR     &tog SCR     &tog SCR      &tog SCR                           &tog SCR      &tog SCR      &tog SCR      &tog SCR      &tog SCR       &tog SCR
-&tog SCR       &tog SCR     &tog SCR     &tog SCR     &tog SCR      &tog SCR                           &tog SCR      &tog SCR      &tog SCR      &tog SCR      &tog SCR       &tog SCR
-                            &tog SCR     &tog SCR     &tog SCR      &tog SCR     &tog SCR  &tog SCR    &tog SCR                                                &tog SCR      
+&tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR                     &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR       
+&tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR                     &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR
+&tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR                     &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR
+                  &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR   &tog SCR &tog SCR                            &tog SCR      
             >;
         };
 
-        mouse_layer { // MOU
+        mod_layer{ // MOD
             bindings = <
-&trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
-&trans         &trans       &trans       &trans       &trans        &trans                             &trans        &trans        &trans        &trans        &trans         &trans
-&trans         &trans       &trans       &trans       &trans        &trans                             &trans        &mkp LCLK     &mkp RCLK     &ht_scr SCR 0 &trans         &trans
-                            &trans       &trans       &trans        &trans       &trans    &trans      &trans                                                  &trans        
+&trans &trans            &trans            &trans            &trans              &trans                 &trans &trans              &trans            &trans            &trans            &trans
+&trans &ht_mod LSFT LSFT &ht_mod LGUI LGUI &ht_mod LALT LALT &ht_mod LCTRL LCTRL &trans                 &trans &ht_mod RCTRL RCTRL &ht_mod LALT LALT &ht_mod RGUI RGUI &ht_mod RSFT RSFT &trans
+&trans &trans            &trans            &trans            &trans              &trans                 &trans &trans              &trans            &trans            &trans            &trans
+                         &trans            &trans            &trans              &trans &trans   &trans &trans                                                         &trans                    
             >;
         };
     };
