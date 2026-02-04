@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "plugins": {
+    "superpowers@superpowers-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "/home/antoinegs/.claude/plugins/cache/superpowers-marketplace/superpowers/4.0.3",
+        "version": "4.0.3",
+        "installedAt": "2025-11-02T21:32:24.697Z",
+        "lastUpdated": "2025-12-30T02:09:51.452Z",
+        "gitCommitSha": "b187e75a1ee46f54247b6720ed49a47bdcc7eb2f",
+        "isLocal": false
+      }
+    ],
+    "clangd-lsp@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/home/antoinegs/.claude/plugins/cache/claude-plugins-official/clangd-lsp/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2025-12-20T22:32:27.233Z",
+        "lastUpdated": "2025-12-20T22:32:27.233Z",
+        "isLocal": true
+      }
+    ]
+  }
+}

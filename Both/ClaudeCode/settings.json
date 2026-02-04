@@ -1,0 +1,7 @@
+{
+  "model": "sonnet",
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true,
+    "clangd-lsp@claude-plugins-official": true
+  }
+}

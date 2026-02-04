@@ -1,370 +1,536 @@
-version: 2
-backup_root: /home/antoinegs/gits/configurations
-entries:
-  - name: neovim
-    description: Vim-fork focused on extensibility and usability
-    backup: ./Both/Neovim/nvim
-    targets:
-      linux: /home/antoinegs/.config/nvim
-      windows: /home/antoinegs/AppData/Local/nvim
-    package:
+backup_root: ~/gits/configurations
+applications:
+  - name: claude code
+    description: AI assistant CLI
+    entries:
+      - targets:
+          linux: ~/.claude/skills
+          windows: ~/.claude/skills
+        name: skills
+        backup: ./Both/ClaudeCode/skills
+      - targets:
+          linux: ~/.claude/hooks
+          windows: ~/.claude/hooks
+        name: hooks
+        backup: ./Both/ClaudeCode/hooks
+      - targets:
+          linux: ~/.claude/rules
+          windows: ~/.claude/rules
+        name: rules
+        backup: ./Both/ClaudeCode/rules
+      - targets:
+          linux: ~/.claude/plugins
+          windows: ~/.claude/plugins
+        name: plugins
+        backup: ./Both/ClaudeCode/plugins
+      - targets:
+          linux: ~/.claude
+          windows: ~/.claude
+        name: configs
+        backup: ./Both/ClaudeCode
+        files:
+          - CLAUDE.md
+          - settings.json
+  - package:
       managers:
         apt: neovim
         brew: neovim
         pacman: neovim
         winget: Neovim.Neovim
-  - name: starship
-    description: Cross-shell prompt
-    package:
+    name: neovim
+    description: Vim-fork focused on extensibility and usability
+    entries:
+      - targets:
+          linux: ~/.config/nvim
+          windows: ~/AppData/Local/nvim
+        name: config
+        backup: ./Both/Neovim/nvim
+  - package:
       managers:
         brew: starship
         pacman: starship
         winget: Starship.Starship
-  - name: starship-config
-    files:
-      - starship.toml
-    backup: ./Both/Starship
-    targets:
-      linux: /home/antoinegs/.config
-      windows: /home/antoinegs/.config
-  - name: starship-cache
-    files:
-      - init.nu
-    backup: ./Both/Starship
-    targets:
-      linux: /home/antoinegs/.cache/starship
-      windows: /home/antoinegs/.cache/starship
-  - name: nushell
-    description: A new type of shell
-    files:
-      - env.nu
-      - config.nu
-    backup: ./Both/Nushell
-    targets:
-      linux: /home/antoinegs/.config/nushell
-      windows: /home/antoinegs/AppData/Roaming/nushell
-    package:
+    name: starship
+    description: Cross-shell prompt
+    entries:
+      - targets:
+          linux: ~/.config
+          windows: ~/.config
+        name: config
+        backup: ./Both/Starship
+        files:
+          - starship.toml
+      - targets:
+          linux: ~/.cache/starship
+          windows: ~/.cache/starship
+        name: cache
+        backup: ./Both/Starship
+        files:
+          - init.nu
+  - package:
       managers:
         brew: nushell
         pacman: nushell
         winget: Nushell.Nushell
-  - name: nushell-themes
-    backup: ./Both/Nushell/themes
-    targets:
-      linux: /home/antoinegs/.config/nushell/themes
-      windows: /home/antoinegs/AppData/Roaming/nushell/themes
-  - name: wezterm
-    description: GPU-accelerated terminal emulator
-    files:
-      - .wezterm.lua
-    backup: ./Both/Wezterm
-    targets:
-      linux: /home/antoinegs
-      windows: /home/antoinegs
-    package:
+    name: nushell
+    description: A new type of shell
+    entries:
+      - targets:
+          linux: ~/.config/nushell
+          windows: ~/AppData/Roaming/nushell
+        name: config
+        backup: ./Both/Nushell
+        files:
+          - env.nu
+          - config.nu
+      - targets:
+          linux: ~/.config/nushell/themes
+          windows: ~/AppData/Roaming/nushell/themes
+        name: themes
+        backup: ./Both/Nushell/themes
+  - package:
       managers:
         brew: wezterm
         pacman: wezterm
         winget: wez.wezterm
-  - name: zoxide
-    description: Smarter cd command
-    files:
-      - .zoxide.nu
-    backup: ./Both/Zoxide
-    targets:
-      linux: /home/antoinegs
-      windows: /home/antoinegs
-    package:
+    name: wezterm
+    description: GPU-accelerated terminal emulator
+    entries:
+      - targets:
+          linux: ~
+          windows: ~
+        name: config
+        backup: ./Both/Wezterm
+        files:
+          - .wezterm.lua
+  - package:
       managers:
         apt: zoxide
         brew: zoxide
         pacman: zoxide
         winget: ajeetdsouza.zoxide
-  - name: carapace
-    files:
-      - init.nu
-    backup: ./Both/Carapace
-    targets:
-      linux: /home/antoinegs/.cache/carapace
-      windows: /home/antoinegs/.cache/carapace
-  - name: yazi
-    description: Terminal file manager
-    backup: ./Both/Yazi
-    targets:
-      linux: /home/antoinegs/.config/yazi
-      windows: /home/antoinegs/AppData/Roaming/yazi/config
-    package:
+    name: zoxide
+    description: Smarter cd command
+    entries:
+      - targets:
+          linux: ~
+          windows: ~
+        name: config
+        backup: ./Both/Zoxide
+        files:
+          - .zoxide.nu
+  - package:
+      managers:
+        brew: carapace
+        pacman: carapace-bin
+        winget: carapace-shell.carapace
+    name: carapace
+    entries:
+      - targets:
+          linux: ~/.cache/carapace
+          windows: ~/.cache/carapace
+        name: config
+        backup: ./Both/Carapace
+        files:
+          - init.nu
+  - package:
       managers:
         brew: yazi
         pacman: yazi
+    name: yazi
+    description: Terminal file manager
+    entries:
+      - targets:
+          linux: ~/.config/yazi
+          windows: ~/AppData/Roaming/yazi/config
+        name: config
+        backup: ./Both/Yazi
+  - package:
+      managers:
+        brew: posting
+        yay: posting
+    name: posting
+    entries:
+      - targets:
+          linux: ~/.config/posting
+        name: config
+        backup: ./Both/posting
   - name: xcompose
-    files:
-      - .Xcompose
-    backup: ./Linux/Xcompose
-    targets:
-      linux: /home/antoinegs
-      windows: /home/antoinegs
-  - name: ideavimrc
-    files:
-      - .ideavimrc
-    backup: ./Both/IntelliJ
-    targets:
-      windows: /home/antoinegs
+    entries:
+      - targets:
+          linux: ~
+          windows: ~
+        name: config
+        backup: ./Linux/Xcompose
+        files:
+          - .Xcompose
+  - name: ideavim
+    entries:
+      - targets:
+          windows: ~
+        name: config
+        backup: ./Both/IntelliJ
+        files:
+          - .ideavimrc
   - name: vscode
-    files:
-      - settings.json
-      - keybindings.json
-    backup: ./Both/VSCode/User
-    targets:
-      windows: /home/antoinegs/AppData/Roaming/Code/User
+    entries:
+      - targets:
+          windows: ~/AppData/Roaming/Code/User
+        name: config
+        backup: ./Both/VSCode/User
+        files:
+          - settings.json
+          - keybindings.json
   - name: glazewm
-    files:
-      - config.yaml
-    backup: ./Both/GlazeWM
-    targets:
-      windows: /home/antoinegs/.glzr/glazewm
+    entries:
+      - targets:
+          windows: ~/.glzr/glazewm
+        name: config
+        backup: ./Both/GlazeWM
+        files:
+          - config.yaml
   - name: powershell
-    files:
-      - ""
-    backup: ./Windows/PowerShell
-    targets:
-      windows: ""
+    entries:
+      - targets:
+          windows: ""
+        name: config
+        backup: ./Windows/PowerShell
+        files:
+          - ""
   - name: komorebi
-    files:
-      - komorebi.json
-    backup: ./Windows/Komorebi
-    targets:
-      windows: /home/antoinegs
+    entries:
+      - targets:
+          windows: ~
+        name: config
+        backup: ./Windows/Komorebi
+        files:
+          - komorebi.json
   - name: whkd
-    files:
-      - whkdrc
-    backup: ./Windows/Komorebi
-    targets:
-      windows: /home/antoinegs/.config
+    entries:
+      - targets:
+          windows: ~/.config
+        name: config
+        backup: ./Windows/Komorebi
+        files:
+          - whkdrc
   - name: yasb
-    files:
-      - config.yaml
-      - styles.css
-    backup: ./Windows/Yasb
-    targets:
-      windows: /home/antoinegs/.config/yasb
+    entries:
+      - targets:
+          windows: ~/.config/yasb
+        name: config
+        backup: ./Windows/Yasb
+        files:
+          - config.yaml
+          - styles.css
   - name: windows-terminal
-    files:
-      - settings.json
-    backup: ./Windows/WindowsTerminal
-    targets:
-      windows: /home/antoinegs/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState
+    entries:
+      - targets:
+          windows: ~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState
+        name: config
+        backup: ./Windows/WindowsTerminal
+        files:
+          - settings.json
   - name: total-commander
-    files:
-      - wincmd.ini
-    backup: ./Windows/TotalCommander
-    targets:
-      windows: /home/antoinegs/AppData/Roaming/GHISLER
-  - name: everything
-    files:
-      - Everything-1.5a.ini
-    backup: ./Windows/TotalCommander
-    targets:
-      windows: /home/antoinegs/AppData/Roaming/Everything
+    entries:
+      - targets:
+          windows: ~/AppData/Roaming/GHISLER
+        name: config
+        backup: ./Windows/TotalCommander
+        files:
+          - wincmd.ini
+      - targets:
+          windows: ~/AppData/Roaming/Everything
+        name: everything
+        backup: ./Windows/TotalCommander
+        files:
+          - Everything-1.5a.ini
   - name: bash
-    files:
-      - .bashrc
-    backup: ./Linux/Bash
-    targets:
-      linux: /home/antoinegs
-  - name: zsh
-    files:
-      - .zshenv
-      - .zshrc
-    backup: ./Linux/zsh
-    targets:
-      linux: /home/antoinegs
-  - name: tmux
-    files:
-      - .tmux.conf
-    backup: ./Linux/tmux
-    targets:
-      linux: /home/antoinegs
-  - name: hyprland
-    description: Dynamic tiling Wayland compositor
-    backup: ./Linux/hypr
-    targets:
-      linux: /home/antoinegs/.config/hypr
-    package:
+    entries:
+      - targets:
+          linux: ~
+        name: config
+        backup: ./Linux/Bash
+        files:
+          - .bashrc
+  - package:
+      managers:
+        apt: zsh
+        brew: zsh
+        pacman: zsh
+    name: zsh
+    entries:
+      - targets:
+          linux: ~
+        name: config
+        backup: ./Linux/zsh
+        files:
+          - .zshenv
+          - .zshrc
+  - package:
+      managers:
+        apt: tmux
+        brew: tmux
+        pacman: tmux
+    name: tmux
+    entries:
+      - targets:
+          linux: ~
+        name: config
+        backup: ./Linux/tmux
+        files:
+          - .tmux.conf
+  - package:
       managers:
         pacman: hyprland
-  - name: rustdesk-service
-    files:
-      - watch-rustdesk-submap.service
-    backup: ./Linux/hypr
-    targets:
-      linux: /home/antoinegs/.config/systemd/user
-  - name: waybar
-    backup: ./Linux/waybar
-    targets:
-      linux: /home/antoinegs/.config/waybar
-  - name: walker
-    description: Application launcher for Wayland
-    backup: ./Linux/walker
-    targets:
-      linux: /home/antoinegs/.config/walker
-    package:
+    name: hyprland
+    description: Dynamic tiling Wayland compositor
+    entries:
+      - targets:
+          linux: ~/.config/hypr
+        name: config
+        backup: ./Linux/hypr
+      - targets:
+          linux: ~/.config/systemd/user
+        name: rustdesk-service
+        backup: ./Linux/hypr
+        files:
+          - watch-rustdesk-submap.service
+  - package:
+      managers:
+        pacman: waybar
+    name: waybar
+    entries:
+      - targets:
+          linux: ~/.config/waybar
+        name: config
+        backup: ./Linux/waybar
+  - package:
       managers:
         paru: walker-bin
         yay: walker-bin
+    name: walker
+    description: Application launcher for Wayland
+    entries:
+      - targets:
+          linux: ~/.config/walker
+        name: config
+        backup: ./Linux/walker
   - name: elephant
-    backup: ./Linux/elephant
-    targets:
-      linux: /home/antoinegs/.config/elephant
+    entries:
+      - targets:
+          linux: ~/.config/elephant
+        name: config
+        backup: ./Linux/elephant
   - name: uwsm
-    backup: ./Linux/uwsm/default
-    targets:
-      linux: /home/antoinegs/.config/uwsm/default
+    entries:
+      - targets:
+          linux: ~/.config/uwsm/default
+        name: config
+        backup: ./Linux/uwsm/default
   - name: qmk
-    backup: ./Linux/qmk
-    targets:
-      linux: /home/antoinegs/.config/qmk
+    entries:
+      - targets:
+          linux: ~/.config/qmk
+        name: config
+        backup: ./Linux/qmk
+      - targets:
+          linux: ~/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS
+        name: piantor
+        backup: ./Linux/QMK/piantor_pro/AntoineGS
+      - targets:
+          linux: ~/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS
+        name: trackball
+        backup: ./Linux/QMK/trackball_nano/AntoineGS
+      - targets:
+          linux: ~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS
+        name: sofle
+        backup: ./Linux/QMK/sofle_choc/AntoineGS
   - name: warp
-    files:
-      - user_preferences.json
-    backup: ./Linux/Warp
-    targets:
-      linux: /home/antoinegs/.config/warp-terminal
-  - name: teams-for-linux
-    files:
-      - config.json
-    backup: ./Linux/teams-for-linux
-    targets:
-      linux: /home/antoinegs/.config/teams-for-linux
-  - name: fzf
-    description: Command-line fuzzy finder
-    backup: ./Linux/fzf
-    targets:
-      linux: /home/antoinegs/.config/fzf
-    package:
+    entries:
+      - targets:
+          linux: ~/.config/warp-terminal
+        name: config
+        backup: ./Linux/Warp
+        files:
+          - user_preferences.json
+  - package:
+      managers:
+        apt: teams-for-linux
+        brew: teams-for-linux
+        pacman: teams-for-linux
+    name: teams-for-linux
+    entries:
+      - targets:
+          linux: ~/.config/teams-for-linux
+        name: config
+        backup: ./Linux/teams-for-linux
+        files:
+          - config.json
+  - package:
       managers:
         apt: fzf
         brew: fzf
         pacman: fzf
-  - name: ghostty
-    backup: ./Linux/ghostty
-    targets:
-      linux: /home/antoinegs/.config/ghostty
-  - name: lnxlink
-    files:
-      - config.yaml
-    backup: ./Linux/lnxlink
-    targets:
-      linux: /home/antoinegs/.config/lnxlink
+    name: fzf
+    description: Command-line fuzzy finder
+    entries:
+      - targets:
+          linux: ~/.config/fzf
+        name: config
+        backup: ./Linux/fzf
+  - package:
+      managers:
+        pacman: ghostty
+    name: ghostty
+    entries:
+      - targets:
+          linux: ~/.config/ghostty
+        name: config
+        backup: ./Linux/ghostty
+  - package:
+      managers:
+        yay: python-lnxlink
+    name: lnxlink
+    entries:
+      - targets:
+          linux: ~/.config/lnxlink
+        type: config
+        name: conf
+        backup: ./Linux/lnxlink
+        files:
+          - config.yaml
   - name: mimeapps
-    files:
-      - mimeapps.list
-    backup: ./Linux/os
-    targets:
-      linux: /home/antoinegs/.config
-  - name: posting
-    backup: ./Both/posting
-    targets:
-      linux: /home/antoinegs/.config/posting
-  - name: qmk-piantor
-    backup: ./Linux/QMK/piantor_pro/AntoineGS
-    targets:
-      linux: /home/antoinegs/qmk_firmware/keyboards/beekeeb/piantor_pro/keymaps/AntoineGS
-  - name: qmk-trackball
-    backup: ./Linux/QMK/trackball_nano/AntoineGS
-    targets:
-      linux: /home/antoinegs/qmk_firmware/keyboards/ploopyco/trackball_nano/keymaps/AntoineGS
-  - name: qmk-sofle
-    backup: ./Linux/QMK/sofle_choc/AntoineGS
-    targets:
-      linux: /home/antoinegs/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS
+    entries:
+      - targets:
+          linux: ~/.config
+        name: config
+        backup: ./Linux/os
+        files:
+          - mimeapps.list
   - name: pacman-hooks
-    root: true
-    files:
-      - pkg-backup-aur.hook
-      - pkg-backup-pacman.hook
-    backup: ./Linux/pacman
-    targets:
-      linux: /usr/share/libalpm/hooks
+    entries:
+      - targets:
+          linux: /usr/share/libalpm/hooks
+        name: hooks
+        backup: ./Linux/pacman
+        files:
+          - pkg-backup-aur.hook
+          - pkg-backup-pacman.hook
+        sudo: true
   - name: systemd-units
-    root: true
-    files:
-      - units-backup.service
-      - units-backup.timer
-    backup: ./Linux/systemd
-    targets:
-      linux: /etc/systemd/system
-  - name: oh-my-zsh
+    entries:
+      - targets:
+          linux: /etc/systemd/system
+        name: units
+        backup: ./Linux/systemd
+        files:
+          - units-backup.service
+          - units-backup.timer
+        sudo: true
+  - package:
+      managers:
+        git:
+          url: https://github.com/ohmyzsh/ohmyzsh.git
+          targets:
+            linux: /usr/share/oh-my-zsh
+          sudo: true
+    name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
-    root: true
-    targets:
-      linux: /usr/share/oh-my-zsh
-    repo: https://github.com/ohmyzsh/ohmyzsh.git
-  - name: zsh-vi-mode
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/jeffreytse/zsh-vi-mode.git
+          targets:
+            linux: /usr/share/zsh/plugins/zsh-vi-mode
+          sudo: true
+    name: zsh-vi-mode
     description: Zsh vi mode plugin (skip on Arch - use zsh-vi-mode)
-    root: true
-    targets:
-      linux: /usr/share/zsh/plugins/zsh-vi-mode
-    repo: https://github.com/jeffreytse/zsh-vi-mode.git
-  - name: zsh-autosuggestions
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/zsh-users/zsh-autosuggestions.git
+          targets:
+            linux: /usr/share/zsh/plugins/zsh-autosuggestions
+          sudo: true
+    name: zsh-autosuggestions
     description: Zsh autosuggestions plugin (skip on Arch - use zsh-autosuggestions)
-    root: true
-    targets:
-      linux: /usr/share/zsh/plugins/zsh-autosuggestions
-    repo: https://github.com/zsh-users/zsh-autosuggestions.git
-  - name: fzf-tab-completion
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/lincheney/fzf-tab-completion.git
+          targets:
+            linux: /usr/share/fzf-tab-completion
+          sudo: true
+    name: fzf-tab-completion
     description: Fzf tab completion for various shells
-    root: true
-    targets:
-      linux: /usr/share/fzf-tab-completion
-    repo: https://github.com/lincheney/fzf-tab-completion.git
-  - name: zsh-transient-prompt
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/olets/zsh-transient-prompt.git
+          targets:
+            linux: /usr/share/zsh/plugins/zsh-transient-prompt
+          sudo: true
+    name: zsh-transient-prompt
     description: Zsh transient prompt plugin
-    root: true
-    targets:
-      linux: /usr/share/zsh/plugins/zsh-transient-prompt
-    repo: https://github.com/olets/zsh-transient-prompt.git
-  - name: tmux-plugin-manager
+    entries: []
+  - package:
+      managers:
+        yay: tmux-plugin-manager
+        git:
+          url: https://github.com/tmux-plugins/tpm.git
+          targets:
+            linux: /usr/share/tmux-plugin-manager
+          sudo: true
+    name: tmux-plugin-manager
     description: Tmux plugin manager (skip on Arch - use tmux-plugin-manager)
-    root: true
-    targets:
-      linux: /usr/share/tmux-plugin-manager
-    repo: https://github.com/tmux-plugins/tpm.git
-  - name: fzf-source
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/junegunn/fzf.git
+          targets:
+            linux: /usr/share/fzf
+          sudo: true
+    name: fzf-source
     description: Fzf source repo for shell integrations (skip on Arch - use fzf)
-    root: true
-    targets:
-      linux: /usr/share/fzf
-    repo: https://github.com/junegunn/fzf.git
-  - name: ripgrep
-    description: Fast grep alternative
-    package:
+    entries: []
+  - package:
       managers:
         apt: ripgrep
         brew: ripgrep
         pacman: ripgrep
         winget: BurntSushi.ripgrep.MSVC
-  - name: fd
-    description: Fast find alternative
-    package:
+    name: ripgrep
+    description: Fast grep alternative
+    entries: []
+  - package:
       managers:
         apt: fd-find
         brew: fd
         pacman: fd
-  - name: lazygit
-    description: Terminal UI for git
-    package:
+    name: fd
+    description: Fast find alternative
+    entries: []
+  - package:
       managers:
         brew: lazygit
         pacman: lazygit
-  - name: rustup
-    description: Rust toolchain installer
-    package:
+    name: lazygit
+    description: Terminal UI for git
+    entries: []
+  - package:
       managers:
         winget: Rustlang.Rustup
       custom:
         darwin: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    name: rustup
+    description: Rust toolchain installer
+    entries: []
 manager_priority:
   - pacman
   - yay
@@ -372,3 +538,4 @@ manager_priority:
   - apt
   - brew
   - winget
+version: 3
