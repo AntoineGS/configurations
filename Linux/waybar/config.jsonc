@@ -19,6 +19,7 @@
     "network",
     "pulseaudio",
     "bluetooth",
+    "battery",
     "disk",
     "memory",
     "cpu"
@@ -114,8 +115,8 @@
     "on-click": "omarchy-launch-wifi"
   },
   "battery": {
-    "format": "{capacity}% {icon}",
-    "format-discharging": "{icon}",
+    "format": "{icon} {capacity}%",
+    "format-discharging": "{icon} {capacity}%",
     "format-charging": "{icon}",
     "format-plugged": "\uf1e6",
     "format-icons": {
