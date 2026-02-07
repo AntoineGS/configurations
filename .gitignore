@@ -11,3 +11,7 @@ Linux/zmk-config/keyball44/nice-view-gem/
 Linux/zmk-config/keyball44/zmk/
 lnxlink.log
 Both/ClaudeCode/plugins/cache/
+*.tmpl.rendered
+*.tmpl.conflict
+.dot-manager.db
+.dot-manager.db-*
