@@ -403,6 +403,7 @@ applications:
       managers:
         yay: python-lnxlink
     name: lnxlink
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
       - targets:
           linux: ~/.config/lnxlink
