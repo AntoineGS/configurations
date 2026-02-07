@@ -1,4 +1,12 @@
+version: 3
 backup_root: ~/gits/configurations
+manager_priority:
+  - pacman
+  - yay
+  - paru
+  - apt
+  - brew
+  - winget
 applications:
   - name: claude code
     description: AI assistant CLI
@@ -97,8 +105,8 @@ applications:
     description: GPU-accelerated terminal emulator
     entries:
       - targets:
-          linux: ~
-          windows: ~
+          linux: ""
+          windows: ""
         name: config
         backup: ./Both/Wezterm
         files:
@@ -113,8 +121,8 @@ applications:
     description: Smarter cd command
     entries:
       - targets:
-          linux: ~
-          windows: ~
+          linux: ""
+          windows: ""
         name: config
         backup: ./Both/Zoxide
         files:
@@ -122,8 +130,8 @@ applications:
   - package:
       managers:
         brew: carapace
-        pacman: carapace-bin
         winget: carapace-shell.carapace
+        yay: carapace
     name: carapace
     entries:
       - targets:
@@ -158,8 +166,8 @@ applications:
   - name: xcompose
     entries:
       - targets:
-          linux: ~
-          windows: ~
+          linux: ""
+          windows: ""
         name: config
         backup: ./Linux/Xcompose
         files:
@@ -167,7 +175,7 @@ applications:
   - name: ideavim
     entries:
       - targets:
-          windows: ~
+          windows: ""
         name: config
         backup: ./Both/IntelliJ
         files:
@@ -200,7 +208,7 @@ applications:
   - name: komorebi
     entries:
       - targets:
-          windows: ~
+          windows: ""
         name: config
         backup: ./Windows/Komorebi
         files:
@@ -247,7 +255,7 @@ applications:
   - name: bash
     entries:
       - targets:
-          linux: ~
+          linux: ""
         name: config
         backup: ./Linux/Bash
         files:
@@ -260,7 +268,7 @@ applications:
     name: zsh
     entries:
       - targets:
-          linux: ~
+          linux: ""
         name: config
         backup: ./Linux/zsh
         files:
@@ -274,7 +282,7 @@ applications:
     name: tmux
     entries:
       - targets:
-          linux: ~
+          linux: ""
         name: config
         backup: ./Linux/tmux
         files:
@@ -306,8 +314,7 @@ applications:
         backup: ./Linux/waybar
   - package:
       managers:
-        paru: walker-bin
-        yay: walker-bin
+        yay: walker
     name: walker
     description: Application launcher for Wayland
     entries:
@@ -315,7 +322,10 @@ applications:
           linux: ~/.config/walker
         name: config
         backup: ./Linux/walker
-  - name: elephant
+  - package:
+      managers:
+        yay: elephant
+    name: elephant
     entries:
       - targets:
           linux: ~/.config/elephant
@@ -328,6 +338,7 @@ applications:
         name: config
         backup: ./Linux/uwsm/default
   - name: qmk
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
       - targets:
           linux: ~/.config/qmk
@@ -358,6 +369,7 @@ applications:
         apt: teams-for-linux
         brew: teams-for-linux
         pacman: teams-for-linux
+        yay: teams-for-linux-electron-bin
     name: teams-for-linux
     entries:
       - targets:
@@ -394,7 +406,6 @@ applications:
     entries:
       - targets:
           linux: ~/.config/lnxlink
-        type: config
         name: conf
         backup: ./Linux/lnxlink
         files:
@@ -434,6 +445,7 @@ applications:
           targets:
             linux: /usr/share/oh-my-zsh
           sudo: true
+        yay: oh-my-zsh-git
     name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
     entries: []
@@ -444,6 +456,7 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-vi-mode
           sudo: true
+        yay: zsh-vi-mode
     name: zsh-vi-mode
     description: Zsh vi mode plugin (skip on Arch - use zsh-vi-mode)
     entries: []
@@ -454,6 +467,7 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-autosuggestions
           sudo: true
+        yay: zsh-autosuggestions
     name: zsh-autosuggestions
     description: Zsh autosuggestions plugin (skip on Arch - use zsh-autosuggestions)
     entries: []
@@ -464,6 +478,7 @@ applications:
           targets:
             linux: /usr/share/fzf-tab-completion
           sudo: true
+        yay: fzf-tab-completion-git
     name: fzf-tab-completion
     description: Fzf tab completion for various shells
     entries: []
@@ -474,17 +489,18 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-transient-prompt
           sudo: true
+        yay: zsh-transient-prompt-git
     name: zsh-transient-prompt
     description: Zsh transient prompt plugin
     entries: []
   - package:
       managers:
-        yay: tmux-plugin-manager
         git:
           url: https://github.com/tmux-plugins/tpm.git
           targets:
             linux: /usr/share/tmux-plugin-manager
           sudo: true
+        yay: tmux-plugin-manager
     name: tmux-plugin-manager
     description: Tmux plugin manager (skip on Arch - use tmux-plugin-manager)
     entries: []
@@ -531,11 +547,3 @@ applications:
     name: rustup
     description: Rust toolchain installer
     entries: []
-manager_priority:
-  - pacman
-  - yay
-  - paru
-  - apt
-  - brew
-  - winget
-version: 3
