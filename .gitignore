@@ -13,5 +13,5 @@ lnxlink.log
 Both/ClaudeCode/plugins/cache/
 *.tmpl.rendered
 *.tmpl.conflict
-.dot-manager.db
-.dot-manager.db-*
+.tidydots.db
+.tidydots.db-*
