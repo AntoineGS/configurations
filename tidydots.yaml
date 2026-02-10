@@ -82,6 +82,7 @@ applications:
         winget: Nushell.Nushell
     name: nushell
     description: A new type of shell
+    when: "{{ false }}"
     entries:
       - targets:
           linux: ~/.config/nushell
@@ -103,6 +104,7 @@ applications:
         winget: wez.wezterm
     name: wezterm
     description: GPU-accelerated terminal emulator
+    when: "{{ false }}"
     entries:
       - targets:
           linux: ""
@@ -164,6 +166,7 @@ applications:
         name: config
         backup: ./Both/posting
   - name: xcompose
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ""
@@ -181,6 +184,7 @@ applications:
         files:
           - .ideavimrc
   - name: vscode
+    when: "{{ false }}"
     entries:
       - targets:
           windows: ~/AppData/Roaming/Code/User
@@ -190,6 +194,7 @@ applications:
           - settings.json
           - keybindings.json
   - name: glazewm
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ~/.glzr/glazewm
@@ -198,6 +203,7 @@ applications:
         files:
           - config.yaml
   - name: powershell
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ""
@@ -206,6 +212,7 @@ applications:
         files:
           - ""
   - name: komorebi
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ""
@@ -214,6 +221,7 @@ applications:
         files:
           - komorebi.json
   - name: whkd
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ~/.config
@@ -222,6 +230,7 @@ applications:
         files:
           - whkdrc
   - name: yasb
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ~/.config/yasb
@@ -231,6 +240,7 @@ applications:
           - config.yaml
           - styles.css
   - name: windows-terminal
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           windows: ~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState
@@ -239,6 +249,7 @@ applications:
         files:
           - settings.json
   - name: total-commander
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ~/AppData/Roaming/GHISLER
@@ -280,6 +291,7 @@ applications:
         brew: tmux
         pacman: tmux
     name: tmux
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           linux: ""
@@ -292,6 +304,7 @@ applications:
         pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/hypr
@@ -307,6 +320,7 @@ applications:
       managers:
         pacman: waybar
     name: waybar
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/waybar
@@ -317,6 +331,7 @@ applications:
         yay: walker
     name: walker
     description: Application launcher for Wayland
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/walker
@@ -326,12 +341,14 @@ applications:
       managers:
         yay: elephant
     name: elephant
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/elephant
         name: config
         backup: ./Linux/elephant
   - name: uwsm
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/uwsm/default
@@ -357,6 +374,7 @@ applications:
         name: sofle
         backup: ./Linux/QMK/sofle_choc/AntoineGS
   - name: warp
+    when: "{{ false }}"
     entries:
       - targets:
           linux: ~/.config/warp-terminal
@@ -371,6 +389,7 @@ applications:
         pacman: teams-for-linux
         yay: teams-for-linux-electron-bin
     name: teams-for-linux
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/teams-for-linux
@@ -394,6 +413,7 @@ applications:
       managers:
         pacman: ghostty
     name: ghostty
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/ghostty
@@ -412,6 +432,7 @@ applications:
         files:
           - config.yaml
   - name: mimeapps
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           linux: ~/.config
@@ -420,6 +441,7 @@ applications:
         files:
           - mimeapps.list
   - name: pacman-hooks
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           linux: /usr/share/libalpm/hooks
@@ -430,6 +452,7 @@ applications:
           - pkg-backup-pacman.hook
         sudo: true
   - name: systemd-units
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           linux: /etc/systemd/system
@@ -541,10 +564,20 @@ applications:
     entries: []
   - package:
       managers:
+        apt: gh
+        brew: gh
+        pacman: github-cli
+        winget: GitHub.cli
+    name: gh
+    description: GitHub CLI
+    entries: []
+  - package:
+      managers:
         winget: Rustlang.Rustup
-      custom:
-        darwin: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        installer:
+          command:
+            linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          binary: rustup
     name: rustup
     description: Rust toolchain installer
     entries: []
