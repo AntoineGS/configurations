@@ -1,5 +1,17 @@
 local autocmd = vim.api.nvim_create_autocmd
 
+-- Handle OneDrive (or other sync tools) touching file timestamps without changing content
+autocmd("FileChangedShell", {
+  callback = function()
+    local reason = vim.v.fcs_reason
+    if reason == "time" then
+      vim.v.fcs_choice = "nothing"
+    elseif reason == "changed" then
+      vim.v.fcs_choice = "reload"
+    end
+  end,
+})
+
 -- user event that loads after UIEnter + only if file buf is there
 autocmd({ "UIEnter", "BufReadPost", "BufNewFile" }, {
   group = vim.api.nvim_create_augroup("NvFilePost", { clear = true }),
