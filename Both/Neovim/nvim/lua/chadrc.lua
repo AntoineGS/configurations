@@ -46,7 +46,7 @@ M.mason = {
     "prettierd",
     "powershell-editor-services",
     "pyright",
-    --    "sqls",
+    "sqls",
     "docker-compose-language-service",
     --    "ltex-ls",
     "spectral-language-server",
