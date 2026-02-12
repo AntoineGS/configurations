@@ -14,12 +14,14 @@
     "unfocused_border": "Base03",
     "bar_accent": "Base0D"
   },
-  "manage_rules": [
+  "force_manage_rules": [
     {
       "kind": "Exe",
       "id": "WindowsTerminal.exe",
       "matching_strategy": "Equals"
-    },
+    }
+  ],
+  "manage_rules": [
     {
       "kind": "Class",
       "id": "TAppBuilder",
