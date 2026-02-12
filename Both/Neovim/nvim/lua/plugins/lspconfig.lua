@@ -94,6 +94,7 @@ M.defaults = function()
   vim.lsp.enable "clangd"
   vim.lsp.enable "gopls"
   vim.lsp.enable "vtsls"
+  vim.lsp.enable "sqls"
 end
 
 return {
