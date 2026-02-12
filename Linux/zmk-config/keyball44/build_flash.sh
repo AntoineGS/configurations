@@ -24,8 +24,8 @@ fi
 
 # Set side-specific variables
 if [ "$SIDE" = "left" ]; then
-    SHIELD="keyball44_left nice_view_adapter nice_view_custom"
-    # SHIELD="keyball44_left nice_view_adapter nice_view"
+    # SHIELD="keyball44_left nice_view_adapter nice_view_custom"
+    SHIELD="keyball44_left nice_view_adapter nice_view"
 elif [ "$SIDE" = "right" ]; then
     SHIELD="keyball44_right nice_view_adapter nice_view"
 elif [ "$SIDE" = "reset" ]; then
