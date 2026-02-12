@@ -14,21 +14,95 @@
     "unfocused_border": "Base03",
     "bar_accent": "Base0D"
   },
+  "manage_rules": [
+    {
+      "kind": "Exe",
+      "id": "WindowsTerminal.exe",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "TAppBuilder",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "TfrmDataNavigator",
+      "matching_strategy": "Equals"
+    }
+  ],
+  "monitors": [
+    {
+      "workspaces": [
+        {
+          "name": "main",
+          "layout": "BSP"
+        },
+        {
+          "name": "shell",
+          "layout": "BSP",
+          "initial_workspace_rules": [
+            { "kind": "Exe", "id": "WindowsTerminal.exe", "matching_strategy": "Equals" },
+            { "kind": "Exe", "id": "pwsh.exe", "matching_strategy": "Equals" },
+            { "kind": "Exe", "id": "powershell.exe", "matching_strategy": "Equals" },
+            { "kind": "Exe", "id": "cmd.exe", "matching_strategy": "Equals" }
+          ]
+        },
+        {
+          "name": "browser",
+          "layout": "BSP",
+          "initial_workspace_rules": [
+            { "kind": "Exe", "id": "chrome.exe", "matching_strategy": "Equals" }
+          ]
+        }
+      ]
+    },
+    {
+      "workspaces": [
+        {
+          "name": "secondary",
+          "layout": "BSP"
+        },
+        {
+          "name": "git",
+          "layout": "BSP",
+          "initial_workspace_rules": [
+            { "kind": "Exe", "id": "gitkraken.exe", "matching_strategy": "Equals" }
+          ]
+        },
+        {
+          "name": "sql",
+          "layout": "BSP",
+          "initial_workspace_rules": [
+            { "kind": "Exe", "id": "MDExplorer.exe", "matching_strategy": "Equals" },
+            { "kind": "Exe", "id": "datagrip64.exe", "matching_strategy": "Equals" }
+          ]
+        },
+        {
+          "name": "explorer",
+          "layout": "BSP",
+          "initial_workspace_rules": [
+            { "kind": "Exe", "id": "TOTALCMD64.EXE", "matching_strategy": "Equals" }
+          ]
+        }
+      ]
+    }
+  ],
   "ignore_rules": [
     {
-      "kind": "Class",
-      "id": "TRegisterPopupForm",
-      "matching_stategy": "Equals"
+      "kind": "Exe",
+      "id": "bds.exe",
+      "matching_strategy": "Equals"
     },
     {
-      "kind": "Class",
-      "id": "TCnWizConfigForm",
-      "matching_stategy": "Equals"
+      "kind": "Exe",
+      "id": "SFClient2.exe",
+      "matching_strategy": "Equals"
     },
     {
-      "kind": "Class",
-      "id": "TBufferListFrm",
-      "matching_stategy": "Equals"
+      "kind": "Exe",
+      "id": "ChainDrive SF.exe",
+      "matching_strategy": "Equals"
     },
     {
       "kind": "Class",
@@ -37,13 +111,18 @@
     },
     {
       "kind": "Class",
-      "id": "Popup",
+      "id": "Notification",
       "matching_stategy": "EndsWith"
     },
     {
       "kind": "Class",
-      "id": "TGUIVCLTestRunner",
-      "matching_stategy": "Equals"
+      "id": "Dlg",
+      "matching_stategy": "EndsWith"
+    },
+    {
+      "kind": "Class",
+      "id": "Popup",
+      "matching_stategy": "EndsWith"
     }
   ]
 }
