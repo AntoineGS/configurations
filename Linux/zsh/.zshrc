@@ -40,7 +40,7 @@ source <(carapace _carapace)
 
 # Starship and Zoxide
 eval "$(starship init zsh)"
-eval "$(zoxide init zsh --cmd cd)"
+[[ -n "$ZSH_VERSION" && $- == *i* ]] && eval "$(zoxide init zsh --cmd cd)"
 
 # Transient prompt config - must be set AFTER starship init
 TRANSIENT_PROMPT_PROMPT='$(starship prompt --terminal-width="$COLUMNS" --keymap="${KEYMAP:-}" --status="$STARSHIP_CMD_STATUS" --pipestatus="${STARSHIP_PIPE_STATUS[*]}" --cmd-duration="${STARSHIP_DURATION:-}" --jobs="$STARSHIP_JOBS_COUNT")'
