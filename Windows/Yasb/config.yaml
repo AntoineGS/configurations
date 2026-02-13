@@ -44,7 +44,7 @@ bars:
         - "clock"
       right:
         - "systray"
-        - "traffic"
+        # - "traffic"
         - "volume"
         # - "microphone"
         # - "notifications"
@@ -151,7 +151,7 @@ widgets:
   disk:
     type: "yasb.disk.DiskWidget"
     options:
-      label: "<span> \uf0a0 </span> {space[used][percent]}%"
+      label: "<span> \uf0a0 </span> {space[used][percent]}"
       label_alt: "{volume_label}: {space[used][gb]} / {space[total][gb]}"
       volume_label: "C"
       decimal_display: 0
