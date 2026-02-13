@@ -1,5 +1,4 @@
 version: 3
-backup_root: ~/gits/configurations
 manager_priority:
   - pacman
   - yay
@@ -8,7 +7,14 @@ manager_priority:
   - brew
   - winget
 applications:
-  - name: claude code
+  - package:
+      managers:
+        installer:
+          command:
+            linux: curl -fsSL https://claude.ai/install.sh | bash
+            windows: irm https://claude.ai/install.ps1 | iex
+          binary: claude
+    name: claude code
     description: AI assistant CLI
     entries:
       - targets:
@@ -104,7 +110,7 @@ applications:
         winget: wez.wezterm
     name: wezterm
     description: GPU-accelerated terminal emulator
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           linux: ""
@@ -159,6 +165,10 @@ applications:
   - package:
       managers:
         brew: posting
+        installer:
+          command:
+            windows: uv tool install --python 3.13 posting
+          binary: posting
         yay: posting
     name: posting
     entries:
@@ -185,7 +195,7 @@ applications:
         files:
           - .ideavimrc
   - name: vscode
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           windows: ~/AppData/Roaming/Code/User
@@ -230,11 +240,11 @@ applications:
         backup: ./Windows/Komorebi
         files:
           - whkdrc
-  - name: yasb reborn
-    when: '{{ eq .Os "Windows" }}'
-    package:
+  - package:
       managers:
         winget: AmN.yasb
+    name: yasb reborn
+    when: '{{ eq .Os "Windows" }}'
     entries:
       - targets:
           windows: ~/.config/yasb
@@ -281,6 +291,7 @@ applications:
         brew: zsh
         pacman: zsh
     name: zsh
+    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
           linux: ""
@@ -378,7 +389,7 @@ applications:
         name: sofle
         backup: ./Linux/QMK/sofle_choc/AntoineGS
   - name: warp
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           linux: ~/.config/warp-terminal
@@ -406,6 +417,7 @@ applications:
         apt: fzf
         brew: fzf
         pacman: fzf
+        winget: junegunn.fzf
     name: fzf
     description: Command-line fuzzy finder
     entries:
@@ -476,6 +488,7 @@ applications:
         yay: oh-my-zsh-git
     name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
+    when: '{{ eq .Os "Linux" }}'
     entries: []
   - package:
       managers:
@@ -487,6 +500,7 @@ applications:
         yay: zsh-vi-mode
     name: zsh-vi-mode
     description: Zsh vi mode plugin (skip on Arch - use zsh-vi-mode)
+    when: '{{ eq .Os "Linux" }}'
     entries: []
   - package:
       managers:
@@ -498,6 +512,7 @@ applications:
         yay: zsh-autosuggestions
     name: zsh-autosuggestions
     description: Zsh autosuggestions plugin (skip on Arch - use zsh-autosuggestions)
+    when: '{{ eq .Os "Linux" }}'
     entries: []
   - package:
       managers:
@@ -520,6 +535,7 @@ applications:
         yay: zsh-transient-prompt-git
     name: zsh-transient-prompt
     description: Zsh transient prompt plugin
+    when: '{{ eq .Os "Linux" }}'
     entries: []
   - package:
       managers:
@@ -531,6 +547,7 @@ applications:
         yay: tmux-plugin-manager
     name: tmux-plugin-manager
     description: Tmux plugin manager (skip on Arch - use tmux-plugin-manager)
+    when: '{{ ez .Os "Linux" }}'
     entries: []
   - package:
       managers:
@@ -556,6 +573,7 @@ applications:
         apt: fd-find
         brew: fd
         pacman: fd
+        winget: sharkdp.fd
     name: fd
     description: Fast find alternative
     entries: []
@@ -563,6 +581,7 @@ applications:
       managers:
         brew: lazygit
         pacman: lazygit
+        winget: JesseDuffield.lazygit
     name: lazygit
     description: Terminal UI for git
     entries: []
@@ -604,14 +623,14 @@ applications:
   - package:
       managers:
         pacman: nodejs
-        winget: nodejs
+        winget: OpenJS.NodeJS
     name: nodejs
     entries: []
   - package:
       managers:
         apt: python3
         pacman: python
-        winget: python
+        winget: Python.Python.3.14
     name: python
     entries: []
   - package:
@@ -619,4 +638,9 @@ applications:
         winget: Microsoft.OpenJDF.21
     name: java
     when: '{{ eq .Os "windows" }}'
+    entries: []
+  - package:
+      managers:
+        winget: GolangCI.golangci-lint
+    name: golangci-lint
     entries: []
