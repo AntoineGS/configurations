@@ -82,7 +82,7 @@ applications:
         winget: Nushell.Nushell
     name: nushell
     description: A new type of shell
-    when: "{{ false }}"
+    when: '{{ eq .Os "windows" }}'
     entries:
       - targets:
           linux: ~/.config/nushell
@@ -132,7 +132,7 @@ applications:
   - package:
       managers:
         brew: carapace
-        winget: carapace-shell.carapace
+        winget: rsteube.Carapace
         yay: carapace
     name: carapace
     entries:
@@ -147,6 +147,7 @@ applications:
       managers:
         brew: yazi
         pacman: yazi
+        winget: sxyazi.yazi
     name: yazi
     description: Terminal file manager
     entries:
@@ -229,8 +230,11 @@ applications:
         backup: ./Windows/Komorebi
         files:
           - whkdrc
-  - name: yasb
+  - name: yasb reborn
     when: '{{ eq .Os "Windows" }}'
+    package:
+      managers:
+        winget: AmN.yasb
     entries:
       - targets:
           windows: ~/.config/yasb
@@ -520,7 +524,7 @@ applications:
   - package:
       managers:
         git:
-          url: https://github.com/tmux-plugins/tpm.git
+          url: https://github.com/antoinegs/tpm.git
           targets:
             linux: /usr/share/tmux-plugin-manager
           sudo: true
@@ -573,11 +577,46 @@ applications:
     entries: []
   - package:
       managers:
-        winget: Rustlang.Rustup
         installer:
           command:
             linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           binary: rustup
+        winget: Rustlang.Rustup
     name: rustup
     description: Rust toolchain installer
+    entries: []
+  - package:
+      managers:
+        installer:
+          command:
+            windows: cargo install eza
+          binary: eza
+        pacman: eza
+    name: eza
+    entries: []
+  - package:
+      managers:
+        apt: golang
+        pacman: go
+        winget: GoLang.Go
+    name: go
+    entries: []
+  - package:
+      managers:
+        pacman: nodejs
+        winget: nodejs
+    name: nodejs
+    entries: []
+  - package:
+      managers:
+        apt: python3
+        pacman: python
+        winget: python
+    name: python
+    entries: []
+  - package:
+      managers:
+        winget: Microsoft.OpenJDF.21
+    name: java
+    when: '{{ eq .Os "windows" }}'
     entries: []
