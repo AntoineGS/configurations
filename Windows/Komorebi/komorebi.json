@@ -8,11 +8,11 @@
   "border": true,
   "border_width": 4,
   "border_offset": -1,
-  "theme": {
-    "palette": "Base16",
-    "name": "Ashes",
-    "unfocused_border": "Base03",
-    "bar_accent": "Base0D"
+  "border_colours": {
+    "single": "#61afef",
+    "stack": "#56b6c2",
+    "monocle": "#d19a66",
+    "unfocused": "#747C84"
   },
   "force_manage_rules": [
     {
