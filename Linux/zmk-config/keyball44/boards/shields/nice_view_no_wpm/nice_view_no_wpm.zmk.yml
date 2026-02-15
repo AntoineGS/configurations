@@ -1,0 +1,8 @@
+file_format: "1"
+id: nice_view_no_wpm
+name: nice!view (no WPM)
+type: shield
+url: https://nicekeyboards.com/nice-view
+requires: [nice_view_header]
+features:
+  - display
