@@ -110,11 +110,11 @@ applications:
         winget: wez.wezterm
     name: wezterm
     description: GPU-accelerated terminal emulator
-    when: '{{ false }}'
+    when: "{{ false }}"
     entries:
       - targets:
-          linux: ""
-          windows: ""
+          linux: "~"
+          windows: "~"
         name: config
         backup: ./Both/Wezterm
         files:
@@ -129,8 +129,8 @@ applications:
     description: Smarter cd command
     entries:
       - targets:
-          linux: ""
-          windows: ""
+          linux: "~"
+          windows: "~"
         name: config
         backup: ./Both/Zoxide
         files:
@@ -180,8 +180,8 @@ applications:
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
-          linux: ""
-          windows: ""
+          linux: "~"
+          windows: "~"
         name: config
         backup: ./Linux/Xcompose
         files:
@@ -189,13 +189,13 @@ applications:
   - name: ideavim
     entries:
       - targets:
-          windows: ""
+          windows: "~"
         name: config
         backup: ./Both/IntelliJ
         files:
           - .ideavimrc
   - name: vscode
-    when: '{{ false }}'
+    when: "{{ false }}"
     entries:
       - targets:
           windows: ~/AppData/Roaming/Code/User
@@ -205,7 +205,7 @@ applications:
           - settings.json
           - keybindings.json
   - name: glazewm
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           windows: ~/.glzr/glazewm
@@ -214,25 +214,25 @@ applications:
         files:
           - config.yaml
   - name: powershell
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
-          windows: ""
+          windows: "~"
         name: config
         backup: ./Windows/PowerShell
         files:
-          - ""
+          - ~
   - name: komorebi
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
-          windows: ""
+          windows: "~"
         name: config
         backup: ./Windows/Komorebi
         files:
           - komorebi.json
   - name: whkd
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           windows: ~/.config
@@ -244,7 +244,7 @@ applications:
       managers:
         winget: AmN.yasb
     name: yasb reborn
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           windows: ~/.config/yasb
@@ -254,7 +254,7 @@ applications:
           - config.yaml
           - styles.css
   - name: windows-terminal
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           windows: ~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState
@@ -263,7 +263,7 @@ applications:
         files:
           - settings.json
   - name: total-commander
-    when: '{{ eq .Os "Windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           windows: ~/AppData/Roaming/GHISLER
@@ -280,7 +280,7 @@ applications:
   - name: bash
     entries:
       - targets:
-          linux: ""
+          linux: "~"
         name: config
         backup: ./Linux/Bash
         files:
@@ -291,10 +291,9 @@ applications:
         brew: zsh
         pacman: zsh
     name: zsh
-    when: '{{ eq .Os "Linux" }}'
     entries:
       - targets:
-          linux: ""
+          linux: /home/antoinegs/
         name: config
         backup: ./Linux/zsh
         files:
@@ -306,10 +305,10 @@ applications:
         brew: tmux
         pacman: tmux
     name: tmux
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
-          linux: ""
+          linux: "~"
         name: config
         backup: ./Linux/tmux
         files:
@@ -389,7 +388,7 @@ applications:
         name: sofle
         backup: ./Linux/QMK/sofle_choc/AntoineGS
   - name: warp
-    when: '{{ false }}'
+    when: "{{ false }}"
     entries:
       - targets:
           linux: ~/.config/warp-terminal
@@ -448,7 +447,7 @@ applications:
         files:
           - config.yaml
   - name: mimeapps
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: ~/.config
@@ -457,7 +456,7 @@ applications:
         files:
           - mimeapps.list
   - name: pacman-hooks
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: /usr/share/libalpm/hooks
@@ -468,7 +467,7 @@ applications:
           - pkg-backup-pacman.hook
         sudo: true
   - name: systemd-units
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: /etc/systemd/system
@@ -488,7 +487,7 @@ applications:
         yay: oh-my-zsh-git
     name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -500,7 +499,7 @@ applications:
         yay: zsh-vi-mode
     name: zsh-vi-mode
     description: Zsh vi mode plugin (skip on Arch - use zsh-vi-mode)
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -512,7 +511,7 @@ applications:
         yay: zsh-autosuggestions
     name: zsh-autosuggestions
     description: Zsh autosuggestions plugin (skip on Arch - use zsh-autosuggestions)
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -535,7 +534,7 @@ applications:
         yay: zsh-transient-prompt-git
     name: zsh-transient-prompt
     description: Zsh transient prompt plugin
-    when: '{{ eq .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -547,7 +546,7 @@ applications:
         yay: tmux-plugin-manager
     name: tmux-plugin-manager
     description: Tmux plugin manager (skip on Arch - use tmux-plugin-manager)
-    when: '{{ ez .Os "Linux" }}'
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
