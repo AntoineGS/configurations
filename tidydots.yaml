@@ -599,6 +599,7 @@ applications:
           command:
             linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           binary: rustup
+        pacman: rustup
         winget: Rustlang.Rustup
     name: rustup
     description: Rust toolchain installer
