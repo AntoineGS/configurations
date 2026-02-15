@@ -53,6 +53,7 @@ alias ls="eza --group-directories-first"
 alias tailbat="tail -f $1| bat --paging=never -l log -"
 alias :q="exit"
 alias y="yazi"
+alias lg="lazygit"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
@@ -82,5 +83,20 @@ git-https-to-ssh() {
     else
         echo "URL is not HTTPS format: $url"
         return 1
+    fi
+}
+
+headless-ssh() {
+    export OP_BIOMETRIC_UNLOCK_ENABLED=false
+    eval "$(op signin)"
+    eval "$(ssh-agent -s)"
+
+    op read "op://Private/Main PC/private key" | ssh-add -
+
+    # Override IdentityAgent from ~/.ssh/config to use the new agent
+    export GIT_SSH_COMMAND="ssh -o IdentityAgent=$SSH_AUTH_SOCK"
+
+    if [[ $# -gt 0 ]]; then
+        "$@"
     fi
 }
