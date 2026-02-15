@@ -220,8 +220,6 @@ applications:
           windows: "~"
         name: config
         backup: ./Windows/PowerShell
-        files:
-          - ~
   - name: komorebi
     when: '{{ eq .OS "windows" }}'
     entries:
@@ -643,4 +641,9 @@ applications:
       managers:
         winget: GolangCI.golangci-lint
     name: golangci-lint
+    entries: []
+  - package:
+      managers:
+        yay: vicinae-bin
+    name: vicinae
     entries: []
