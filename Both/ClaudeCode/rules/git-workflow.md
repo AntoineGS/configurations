@@ -4,9 +4,9 @@
 
 ```
 <type>: <description>
-
-<optional body>
 ```
+
+Use single-line commit messages by default. Only add a body for reference tags (e.g., `Refs #123`, `Closes #456`).
 
 Types: feat, fix, refactor, docs, test, chore, perf, ci
 
