@@ -444,6 +444,16 @@ applications:
         backup: ./Linux/lnxlink
         files:
           - config.yaml
+  - name: modprobe
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/modprobe.d
+        name: config
+        backup: ./Linux/modprobe
+        files:
+          - blacklist-raydium.conf
+        sudo: true
   - name: mimeapps
     when: '{{ eq .OS "linux" }}'
     entries:
