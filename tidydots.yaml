@@ -661,4 +661,13 @@ applications:
       managers:
         yay: insync
     name: insync
+  - package:
+      managers:
+        yay: brave-bin
+    name: brave
+    entries: []
+  - package:
+      managers:
+        pacman: signal-desktop
+    name: signal
     entries: []
