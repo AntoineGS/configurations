@@ -657,3 +657,8 @@ applications:
         yay: vicinae-bin
     name: vicinae
     entries: []
+  - package:
+      managers:
+        yay: insync
+    name: insync
+    entries: []
