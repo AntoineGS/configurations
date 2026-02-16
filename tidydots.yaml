@@ -153,7 +153,16 @@ applications:
       managers:
         brew: yazi
         pacman: yazi
-        winget: sxyazi.yazi
+        winget:
+          deps:
+            - 7zip.7zip
+            - jqlang.jq
+            - sharkdp.fd
+            - burntsushi.ripgrep.msvc
+            - junegunn.fzf
+            - ajeetdsouza.zoxide
+            - imagemagick.imagemagick
+          name: sxyazi.yazi
     name: yazi
     description: Terminal file manager
     entries:
@@ -662,6 +671,7 @@ applications:
       managers:
         yay: insync
     name: insync
+    entries: []
   - package:
       managers:
         yay: brave-bin
