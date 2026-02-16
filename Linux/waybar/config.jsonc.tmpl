@@ -20,9 +20,7 @@
     "group/tray-expander",
     "network",
     "pulseaudio",
-  {{ if eq .Hostname "DESKTOP-E07VTRN" }}
     "bluetooth",
-  {{ end }}
     "battery",
     "disk",
     "memory",
@@ -159,19 +157,22 @@
       "critical": 10
     }
   },
-  {{ if eq .Hostname "DESKTOP-E07VTRN" }}
   "bluetooth": {
     "format": "\uf294",
     "format-disabled": "\udb80\udcb2",
     "format-off": "\udb80\udcb2",
     "format-connected": "\udb80\udcb1",
+  {{- if eq .Hostname "DESKTOP-E07VTRN" -}}
     "format-connected-battery": "<span color='#a5d6ff'>\udb80\udcb1</span> <span size='10pt' rise='1000' color='#e4e4cd'>{device_battery_percentage_peripheral}%|{device_battery_percentage}%</span>",
+    "tooltip-format-connected": "{device_alias}\nCentral: {device_battery_percentage}%\nPeripheral: {device_battery_percentage_peripheral}%",
+  {{- else -}}
+    "format-connected-battery": "<span color='#a5d6ff'>\udb80\udcb1</span> <span size='10pt' rise='1000' color='#e4e4cd'>{device_battery_percentage}%</span>",
+    "tooltip-format-connected": "{device_alias}\nCentral: {device_battery_percentage}%",
+  {{- end -}}
     "format-no-controller": "",
     "tooltip-format": "Devices connected: {num_connections}",
-    "tooltip-format-connected": "{device_alias}\nCentral: {device_battery_percentage}%\nPeripheral: {device_battery_percentage_peripheral}%",
     "on-click": "omarchy-launch-bluetooth"
   },
-  {{ end }}
   "pulseaudio": {
     "format": "{icon}",
     "on-click": "omarchy-launch-audio",
