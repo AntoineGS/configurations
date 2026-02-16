@@ -650,6 +650,7 @@ applications:
   - package:
       managers:
         winget: GolangCI.golangci-lint
+        yay: golangci-lint-bin
     name: golangci-lint
     entries: []
   - package:
