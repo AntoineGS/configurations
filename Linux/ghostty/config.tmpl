@@ -27,7 +27,7 @@ keybind = super+control+shift+alt+arrow_up=resize_split:up,100
 keybind = super+control+shift+alt+arrow_left=resize_split:left,100
 keybind = super+control+shift+alt+arrow_right=resize_split:right,100
 command="zsh"
-{{ if ne .Hostname "chromebook-omarchy" -}}
+{{ if eq .Hostname "DESKTOP-E07VTRN" -}}
 custom-shader = shaders/sonic_boom_cursor.glsl
 custom-shader-animation = always
 {{- end }}
