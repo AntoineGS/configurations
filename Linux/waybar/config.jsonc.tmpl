@@ -14,9 +14,7 @@
     "custom/screenrecording-indicator"
   ],
   "modules-right": [
-  {{ if eq .Hostname "DESKTOP-E07VTRN" }}
     "custom/claude-usage",
-  {{ end }}
     "group/tray-expander",
     "network",
     "pulseaudio",
@@ -244,16 +242,13 @@
       "<span color='#985265'>\uefc5 </span>"
     ],
     "on-click": "omarchy-launch-or-focus-tui btop"
-  }
-{{ if eq .Hostname "DESKTOP-E07VTRN" }}
-  ,
+  },
   "custom/claude-usage": {
-    "exec": "/usr/bin/claude-usage --waybar --format '{?5h_reset}{5h_pct}%/{5h_reset}{/5h_reset}{?5h_reset&7d_reset} - {/}{?7d_reset}{7d_pct}%/{7d_reset}{/7d_reset}'",
+    "exec": "waybar-ai-usage claude --waybar --browser brave --format '{?5h_reset}{5h_pct}%/{5h_reset}{/5h_reset}{?5h_reset&7d_reset} - {/}{?7d_reset}{7d_pct}%/{7d_reset}{/7d_reset}'",
     "return-type": "json",
     "interval": 120,
     "tooltip": true,
     "on-click": "pkill -RTMIN+8 waybar",
     "signal": 8
   }
-{{ end }}
 }

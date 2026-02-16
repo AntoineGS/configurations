@@ -74,6 +74,10 @@ window#waybar {
   margin: 0 7.5px;
 }
 
+#custom-claude-usage {
+  margin-right: 12px;
+}
+
 #custom-expand-icon {
   margin-right: 7px;
 }
