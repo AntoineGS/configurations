@@ -37,11 +37,25 @@ Komorebic(args) {
 
 #!b::FocusOrLaunch("Chrome", "chrome")
 #!g::FocusOrLaunch("GitKraken", "gitkraken")
-#!m::FocusOrLaunch("MD Explorer", "C:/Multidev/DBExplorer/MDExplorer.exe")
+#!e::FocusOrLaunch("MD Explorer", "C:/Multidev/DBExplorer/MDExplorer.exe")
 #!c::FocusOrLaunch("Total Commander", "C:/Program Files/totalcmd/TOTALCMD64.exe")
-#!t::FocusOrLaunch("Task Manager", "Taskmgr")
+#!m::FocusOrLaunch("ahk_exe ms-teams.exe", "ms-teams.exe")
+#!o::FocusOrLaunch("ahk_exe olk.exe", "olk.exe")
+#!t::{
+    if WinExist("ahk_class btop") {
+        WinClose
+        return
+    }
+    MonitorGetWorkArea(MonitorGetPrimary(), &mLeft, &mTop, &mRight, &mBottom)
+    w := Round((mRight - mLeft) * 0.8)
+    h := Round((mBottom - mTop) * 0.8)
+    cols := Round(w / 9)
+    rows := Round(h / 19)
+    cmd := "wezterm-gui.exe --config initial_cols=" cols " --config initial_rows=" rows " start --class btop -- btop"
+    Run cmd
+}
 #!f::FocusOrLaunch("Everything", "C:\Program Files\Everything 1.5a\Everything.exe")
-#Enter::Run "wt.exe"
+#Enter::Run "wezterm-gui.exe"
 
 ; --- Window management -----------------------------------------------------
 
