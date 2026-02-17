@@ -76,6 +76,7 @@ window#waybar {
 
 #custom-claude-usage {
   margin-right: 12px;
+  opacity: 0.6;
 }
 
 #custom-expand-icon {
