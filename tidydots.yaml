@@ -567,16 +567,6 @@ applications:
     entries: []
   - package:
       managers:
-        git:
-          url: https://github.com/junegunn/fzf.git
-          targets:
-            linux: /usr/share/fzf
-          sudo: true
-    name: fzf-source
-    description: Fzf source repo for shell integrations (skip on Arch - use fzf)
-    entries: []
-  - package:
-      managers:
         apt: ripgrep
         brew: ripgrep
         pacman: ripgrep
@@ -671,6 +661,7 @@ applications:
       managers:
         yay: insync
     name: insync
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -681,4 +672,16 @@ applications:
       managers:
         pacman: signal-desktop
     name: signal
+    entries: []
+  - package:
+      managers:
+        pacman: btop
+        winget: aristocratos.btop4win
+    name: btop
+    entries: []
+  - package:
+      managers:
+        winget: gsudo
+    name: gsudo
+    when: '{{ eq .OS "windows" }}'
     entries: []
