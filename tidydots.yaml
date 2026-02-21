@@ -483,6 +483,26 @@ applications:
           - pkg-backup-aur.hook
           - pkg-backup-pacman.hook
         sudo: true
+  - name: ssh-agent
+    description: SSH agent with 4-hour key lifetime (replaces 1Password agent)
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/systemd/user/ssh-agent.service.d
+        name: systemd-override
+        backup: ./Linux/ssh-agent/ssh-agent.service.d
+      - targets:
+          linux: ~/.config/environment.d
+        name: environment
+        backup: ./Linux/ssh-agent
+        files:
+          - ssh-agent.conf
+      - targets:
+          linux: ~/.ssh
+        name: ssh-config
+        backup: ./Linux/ssh-agent
+        files:
+          - config
   - name: systemd-units
     when: '{{ eq .OS "linux" }}'
     entries:

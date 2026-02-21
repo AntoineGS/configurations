@@ -117,9 +117,16 @@ sudo systemctl enable --now units-backup.timer
 - `systemctl --user daemon-reload; systemctl --user enable --now watch-rustdesk-submap.service`
 - `sudo chmod +x ~/.config/hypr/rustdesk-submap-watch.sh`
 
-## 1Password
+## SSH Agent
 
-- `echo "export SSH_AUTH_SOCK=~/.1password/agent.sock" | sudo tee /etc/profile.d/1password-ssh-auth-sock.sh`
+Systemd socket-activated ssh-agent with 4-hour key lifetime. Keys are automatically added on first use via `AddKeysToAgent yes` in `~/.ssh/config`.
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now ssh-agent.socket
+```
+
+Log out and back in (or `export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"` in the current session) for the environment variable to take effect.
 
 ## Requirements
 
