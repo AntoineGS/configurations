@@ -18,11 +18,11 @@
 
         /* combo_r_lclk: combo_right_left_click { COMBO(31 20, &mkp LCLK) }; */
         combo_r_lclk: combo_right_left_click { COMBO(19 20, &mkp LCLK) };
-        combo_r_rclk: combo_right_right_click { COMBO(19 21, &mkp RCLK) };
+        combo_r_rclk: combo_right_right_click { COMBO(20 21, &mkp RCLK) };
         combo_r_scrl: combo_right_scroll { COMBO(19 20 21, &mo SCR) };
         /* combo_l_lclk: combo_left_left_click { COMBO(15 28, &mkp LCLK) }; */
         combo_l_lclk: combo_left_left_click { COMBO(15 16, &mkp LCLK) };
-        combo_l_rclk: combo_left_right_click { COMBO(14 16, &mkp RCLK) };
+        combo_l_rclk: combo_left_right_click { COMBO(14 15, &mkp RCLK) };
         combo_l_scrl: combo_left_scroll { COMBO(14 15 16, &mo SCR) };
 
         // Left hand multi-modifier combos (2-key)
