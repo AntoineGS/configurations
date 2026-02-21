@@ -5,13 +5,13 @@ general {
     inhibit_sleep = 3                                      # wait until screen is locked
 }
 
-{{ if neq .Hostname "omarchbook" -}}
+{{- if ne .Hostname "omarchbook" -}}
 
 listener {
     timeout = 300
     on-timeout = pidof hyprlock || omarchy-launch-screensaver # start screensaver (if we haven't locked already)
 }
-{{- end }}
+{{- end -}}
 
 listener {
     timeout = 600
