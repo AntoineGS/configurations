@@ -8,15 +8,19 @@ base
 bat-extras
 bluetui
 bluez-utils
+bolt
 brightnessctl
 btop
+caligula
 catch2
 ccache
+chromium
 cmark-gfm
 cups-pdf
+delve
 deno
-docker
 docker-compose
+dotnet-runtime-9.0
 dust
 electron
 expac
@@ -29,8 +33,10 @@ ghostty
 gimp
 github-cli
 gnome-calculator
-go
+gopls
+gpsd
 gpu-screen-recorder
+gtkmm3
 gum
 htop
 hypridle
@@ -49,6 +55,7 @@ kdenlive
 kitty
 lazydocker
 lazygit
+libmpdclient
 libva-nvidia-driver
 limine-snapper-sync
 localsend
@@ -58,6 +65,7 @@ mise
 mold
 mpv
 mqttui
+namcap
 nautilus
 ncdu
 nushell
@@ -76,9 +84,6 @@ pinta
 plymouth
 polkit-gnome
 power-profiles-daemon
-python-build
-python-installer
-python-poetry-core
 python-pylint
 python-terminaltexteffects
 rapidfuzz-cpp
@@ -95,6 +100,9 @@ swaybg
 swayosd
 system-config-printer
 tailscale
+texlive-doc
+texlive-fontsextra
+texlive-xetex
 tldr
 tobi-try
 tree-sitter-cli
@@ -102,7 +110,6 @@ ttf-ia-writer
 typora
 tzupdate
 ufw-docker
-waybar
 wayfreeze
 wezterm
 whois
@@ -118,5 +125,6 @@ xournalpp
 yaru-icon-theme
 yay
 yazi
+yq
 zram-generator
 zsh-completions
