@@ -1,84 +1,26 @@
-!! Add Everything config and MultiCommander config
+sudo pacman -S texlive-basic texlive-xetex texlive-latexextra texlive-fontsextra
+texlive-fontsrecommended texlive-bin texlive-doc sudo pacman -S
+texlive-fontsrecommended texlive-latexextra texlive-fontsextra sudo pacman -S
+texlive-fontsextra sudo ln -s /usr/share/texmf-dist/fonts/opentype
+/usr/share/fonts/texmf-opentype; fc-cache -f
 
-# Both
-
-## Requirements
-
-- See requirements under Windows and Linux sections
-
-## VSCode
-
-- Install NeoVim plugin
-
-## IntelliJ
-
-- Install IdeaVim
-- .ideavimrc is located in user directory root
+!! Add Everything config and MultiCommander config !! Add
+/etc/pam.d/system-local-login
 
 # Windows
 
-Use Winget whenever possible
-
 ## Requirements
 
-- Python
-  - `choco install python mingw`
-- NodeJS
-- Go
-  - `winget install GoLang.Go`
 - Nerdfonts
   - `wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip`
   - Download and install with right click.
-- Java
-  - `winget install Microsoft.OpenJDF.21`
-- Rust / Cargo
-
-## RipGrep
-
-- `winget install BurntSushi.ripgrep.MSVC`
-
-## WezTerm
-
-- `winget install wez.wezterm`
-
-## Neovim
-
-- `winget install Neovim.Neovim`
-
-## Starship
-
-- `winget install Starship.Starship`
-
-## PowerShell
-
-- Use latest version of PowerShell
-- To get the path to the PowerShell configuration file, type `$PROFILE` in pwsh
-- Set JetBrains Mono Nerd Font Bold as default font
 
 ## Nushell
 
 - `winget install nushell`
-- `cargo install nu_plugin_semver nu_plugin_regex`
-  From Nushell:
+- `cargo install nu_plugin_semver nu_plugin_regex` From Nushell:
 - `plugin add ~\.cargo\bin\nu_plugin_regex.exe`
 - `plugin add ~\.cargo\bin\nu_plugin_semver.exe`
-
-## Zoxide
-
-- `winget install ajeetdsouza.zoxide`
-
-## eza
-
-`cargo install eza`
-
-## carapace
-
-`winget install -e --id rsteube.Carapace`
-
-## Yazi
-
-`winget install sxyazi.yazi`
-`winget install 7zip.7zip jqlang.jq sharkdp.fd BurntSushi.ripgrep.MSVC junegunn.fzf ajeetdsouza.zoxide ImageMagick.ImageMagick`
 
 ## File Indexing
 
@@ -89,8 +31,7 @@ Use Winget whenever possible
 
 `https://www.ghisler.com/download.htm`
 
-- Plugins:
-  `https://www.ghisler.ch/board/viewtopic.php?t=33740`
+- Plugins: `https://www.ghisler.ch/board/viewtopic.php?t=33740`
 
 ## Winaero Tweaker
 
@@ -99,8 +40,6 @@ Use Winget whenever possible
 `https://github.com/BluePointLilac/ContextMenuManager/releases`
 
 # Linux
-
-Use Homebrew whenever possible
 
 ## Systemd Units Backup
 
@@ -130,14 +69,8 @@ Log out and back in (or `export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket
 
 ## Requirements
 
-- Go, Python
-  - `sudo apt install golang python3 python3-venv build-essential`
-  - sudo pacman -S go python3
 - NodeJS
-  - `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash`
-  - `nvm install 22`
   - `sudo npm install -g shelljs typescript`
-  - `sudo pacman -S nodejs npm`
 - Nerdfonts
   - Go in a temp directory
   - `wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip`
@@ -145,8 +78,6 @@ Log out and back in (or `export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket
   - `rm JetBrainsMono.zip`
   - `sudo mv JetBrainsMono* /usr/share/fonts/`
   - `fc-cache -f -v`
-- Rust / Cargo
-  - `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 
 ## Homebrew
 
@@ -155,17 +86,12 @@ Log out and back in (or `export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket
   - `echo >> ~/.bashrc`
   - `echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc`
 
-## RipGrep
-
-- `brew install ripgrep`
-
 ## Ghostty
 
 - `xdg-mime default com.mitchellh.ghostty.desktop x-scheme-handler/terminal`
 
 ## Neovim
 
-- `brew install neovim`
 - `sudo update-alternatives --install /usr/bin/editor editor /home/linuxbrew/.linuxbrew/bin/nvim 1 && \ sudo update-alternatives --set editor /home/linuxbrew/.linuxbrew/bin/nvim`
 - If error when copying to "+ then:
   - `sudo apt install xclip`
@@ -176,42 +102,10 @@ Log out and back in (or `export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket
 - Install NerdFont (JetBrains Mono Nerd Font)
 - `brew install starship`
 
-## Warp Terminal
-
-Not currently in use
-
-- `https://www.warp.dev/download`
-- Font to JetBrainsMono and 16pt on WSL
-
 ## Nushell
 
-- `sudo apt install pkg-config libssl-dev build-essential`
-- `brew install nushell`
-  Very long to install, currently optional
-- `cargo install nu_plugin_semver nu_plugin_regex`
 - `which nu | sudo tee -a /etc/shells`
-- `chsh -s "$(which nu)"`
-  From Nushell, most likely not needed:
-- `plugin add ~\.cargo\bin\nu_plugin_regex`
-- `plugin add ~\.cargo\bin\nu_plugin_semver`
-
-## Zoxide
-
-Modern `cd` replacement
-
-- `brew install zoxide`
-
-## eza
-
-Modern `ls` replacement
-
-- `brew install eza`
-
-## carapace
-
-Cross-shell auto-completion
-
-- `brew install carapace`
+- `chsh -s "$(which nu)"` From Nushell, most likely not needed:
 
 ## Yazi
 
@@ -219,6 +113,5 @@ Cross-shell auto-completion
 
 # TODO
 
-- .bashrc, but need restore option for wgpu
 - Add nushell LSP/Formatter
 - Add pwsh Formatter
