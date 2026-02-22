@@ -340,6 +340,9 @@ applications:
   - package:
       managers:
         pacman: waybar
+        yay:
+          deps:
+            - waybar-ai-usage-go
     name: waybar
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
@@ -704,4 +707,7 @@ applications:
         winget: gsudo
     name: gsudo
     when: '{{ eq .OS "windows" }}'
+        pacman: gopls
+    name: gopls
+    when: '{{ eq .OS "linux" }}'
     entries: []
