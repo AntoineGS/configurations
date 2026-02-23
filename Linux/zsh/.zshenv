@@ -14,3 +14,4 @@ export LC_ALL=en_US.UTF-8
 if [[ -f ~/.zshenv.local ]]; then
   source ~/.zshenv.local
 fi
+export RIPGREP_CONFIG_PATH=~/.ripgreprc

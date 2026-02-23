@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# URI handler for nvim:// scheme
+# Opens files in Neovim:
+#   - In a new tmux window if a tmux session exists
+#   - In a new Ghostty tab otherwise
+# Expected URI format: nvim://open?file=/path/to/file&line=N&column=N
+
+set -euo pipefail
+
+uri="${1:-}"
+
+if [[ -z "$uri" ]]; then
+    echo "Usage: nvim-open 'nvim://open?file=/path/to/file&line=N&column=N'" >&2
+    exit 1
+fi
+
+query="${uri#*\?}"
+
+file=""
+line=""
+column=""
+
+IFS='&' read -ra params <<< "$query"
+for param in "${params[@]}"; do
+    key="${param%%=*}"
+    value="${param#*=}"
+    case "$key" in
+        file) file="$value" ;;
+        line) line="$value" ;;
+        column) column="$value" ;;
+    esac
+done
+
+if [[ -z "$file" ]]; then
+    echo "Error: no file parameter in URI" >&2
+    exit 1
+fi
+
+# Build nvim arguments as an array
+nvim_args=()
+if [[ -n "$line" && -n "$column" ]]; then
+    nvim_args=("+call cursor(${line},${column})")
+elif [[ -n "$line" ]]; then
+    nvim_args=("+${line}")
+fi
+nvim_args+=("$file")
+
+if tmux list-sessions &>/dev/null; then
+    exec tmux new-window nvim "${nvim_args[@]}"
+else
+    exec ghostty --gtk-single-instance=true -e nvim "${nvim_args[@]}"
+fi

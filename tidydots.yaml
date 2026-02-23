@@ -43,7 +43,6 @@ applications:
         name: configs
         backup: ./Both/ClaudeCode
         files:
-          - CLAUDE.md
           - settings.json
   - package:
       managers:
@@ -110,7 +109,7 @@ applications:
         winget: wez.wezterm
     name: wezterm
     description: GPU-accelerated terminal emulator
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           linux: "~"
@@ -204,7 +203,7 @@ applications:
         files:
           - .ideavimrc
   - name: vscode
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           windows: ~/AppData/Roaming/Code/User
@@ -398,7 +397,7 @@ applications:
         name: sofle
         backup: ./Linux/QMK/sofle_choc/AntoineGS
   - name: warp
-    when: "{{ false }}"
+    when: '{{ false }}'
     entries:
       - targets:
           linux: ~/.config/warp-terminal
@@ -475,6 +474,21 @@ applications:
         backup: ./Linux/os
         files:
           - mimeapps.list
+      - targets:
+          linux: ~/.local/share/applications
+        name: desktop-files
+        backup: ./Linux/os
+        files:
+          - nvim-open.desktop
+  - name: nvim-open
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: script
+        backup: ./Linux/scripts
+        files:
+          - nvim-open
   - name: pacman-hooks
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -596,7 +610,13 @@ applications:
         winget: BurntSushi.ripgrep.MSVC
     name: ripgrep
     description: Fast grep alternative
-    entries: []
+    entries:
+      - targets:
+          linux: "~"
+        name: config
+        backup: Both/Ripgrep/
+        files:
+          - .ripgreprc
   - package:
       managers:
         apt: fd-find

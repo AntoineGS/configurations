@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Neovim URI Handler
+Comment=Open files in Neovim via nvim:// URIs
+Exec=nvim-open %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/nvim;
