@@ -109,7 +109,7 @@ applications:
         winget: wez.wezterm
     name: wezterm
     description: GPU-accelerated terminal emulator
-    when: '{{ false }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           linux: "~"
