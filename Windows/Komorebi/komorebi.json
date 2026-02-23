@@ -25,6 +25,11 @@
       "kind": "Exe",
       "id": "wezterm-gui.exe",
       "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "1Password.exe",
+      "matching_strategy": "Equals"
     }
   ],
   "float_rule_placement": "Center",
@@ -32,6 +37,11 @@
     {
       "kind": "Class",
       "id": "btop",
+      "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Exe",
+      "id": "1Password.exe",
       "matching_strategy": "Equals"
     }
   ],
@@ -49,6 +59,7 @@
   ],
   "monitors": [
     {
+      "default_workspace": "main",
       "workspaces": [
         {
           "name": "main",
@@ -92,6 +103,7 @@
       ]
     },
     {
+      "default_workspace": "secondary",
       "workspaces": [
         {
           "name": "secondary",
