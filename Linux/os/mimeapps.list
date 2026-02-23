@@ -29,6 +29,7 @@ application/ogg=mpv.desktop
 x-scheme-handler/gitkraken=GitKraken.desktop
 x-scheme-handler/jetbrains=jetbrains-toolbox.desktop
 x-scheme-handler/terminal=com.mitchellh.ghostty.desktop
+x-scheme-handler/nvim=nvim-open.desktop
 text/plain=nvim.desktop
 text/english=nvim.desktop
 text/x-makefile=nvim.desktop
