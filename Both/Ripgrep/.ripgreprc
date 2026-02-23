@@ -1,0 +1,2 @@
+--color=auto
+--hyperlink-format=nvim://open?file={path}&line={line}&column={column}
