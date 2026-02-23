@@ -28,9 +28,19 @@ Komorebic(args) {
     Run "komorebic " args,, "Hide"
 }
 
+EnterResizeMode() {
+    global resizeMode := true
+    ToolTip "RESIZE MODE (hjkl to resize, Esc to exit)"
+}
+
+ExitResizeMode() {
+    global resizeMode := false
+    ToolTip
+}
+
 ; --- Reload ----------------------------------------------------------------
 
-#r::Reload
+#!r::Reload
 #i::Komorebic("toggle-shortcuts")
 
 ; --- App shortcuts (focus or launch) ---------------------------------------
@@ -69,6 +79,7 @@ Komorebic(args) {
 #j::Komorebic("focus down")
 #k::Komorebic("focus up")
 #l::Komorebic("focus right")
+#vkBA::Komorebic("focus right")
 
 ; --- Move windows ----------------------------------------------------------
 
@@ -80,20 +91,17 @@ Komorebic(args) {
 
 ; --- Stack windows ---------------------------------------------------------
 
-#Left::Komorebic("stack left")
-#Down::Komorebic("stack down")
-#Up::Komorebic("stack up")
-#Right::Komorebic("stack right")
-#vkBA::Komorebic("unstack")            ; semicolon key
-#[::Komorebic("cycle-stack previous")
-#]::Komorebic("cycle-stack next")
+; #Left::Komorebic("stack left")
+; #Down::Komorebic("stack down")
+; #Up::Komorebic("stack up")
+; #Right::Komorebic("stack right")
+; #vkBA::Komorebic("unstack")            ; semicolon key
+; #[::Komorebic("cycle-stack previous")
+; #]::Komorebic("cycle-stack next")
 
-; --- Resize ----------------------------------------------------------------
+; --- Resize mode (Win+R to enter, hjkl to resize, Esc to exit) -----------
 
-#=::Komorebic("resize-axis horizontal increase")
-#-::Komorebic("resize-axis horizontal decrease")
-#+=::Komorebic("resize-axis vertical increase")
-#+-::Komorebic("resize-axis vertical decrease")
+#r::EnterResizeMode()
 
 ; --- Manipulate windows ----------------------------------------------------
 
@@ -102,7 +110,8 @@ Komorebic(args) {
 
 ; --- Window manager options ------------------------------------------------
 
-#+r::Komorebic("retile")
+; #+r::Komorebic("retile")
+#+r::Run('powershell -Command "komorebic stop; gsudo komorebic start"',, "Hide")
 #p::Komorebic("toggle-pause")
 
 ; --- Layouts ---------------------------------------------------------------
@@ -129,3 +138,15 @@ Komorebic(args) {
 #+6::Komorebic('move-to-named-workspace "git"')
 #+9::Komorebic('move-to-named-workspace "sql"')
 #+0::Komorebic('move-to-named-workspace "explorer"')
+
+; --- Resize mode hotkeys (active only while in resize mode) ---------------
+
+resizeMode := false
+
+#HotIf resizeMode
+h::Komorebic("resize-axis horizontal decrease")
+l::Komorebic("resize-axis horizontal increase")
+k::Komorebic("resize-axis vertical decrease")
+j::Komorebic("resize-axis vertical increase")
+Escape::ExitResizeMode()
+#HotIf
