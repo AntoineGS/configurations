@@ -727,6 +727,8 @@ applications:
         winget: gsudo
     name: gsudo
     when: '{{ eq .OS "windows" }}'
+  - package:
+      managers:
         pacman: gopls
     name: gopls
     when: '{{ eq .OS "linux" }}'
