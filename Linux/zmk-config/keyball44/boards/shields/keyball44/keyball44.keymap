@@ -6,6 +6,7 @@
 #include "keys_us_international.h"
 #include "bluetooth.dtsi"
 #include "french.dtsi"
+#include "hrm.dtsi"
 #include "general.dtsi"
 #include "tmux.dtsi"
 #include "combos.dtsi"
@@ -18,8 +19,8 @@
             bindings = <
 &kp ESC    &kp Q &kp W    &kp E     &kp R    &kp T                                   &kp Y     &kp U &kp I     &kp O   &kp P    &kp BSPC
 &kp TAB    &kp A &kp S    &kp D     &kp F    &kp G                                   &kp H     &kp J &kp K     &kp L   &kp SEMI &dacu
-&tmux_next &kp Z &kp X    &kp C     &kp V    &kp B                                   &kp N     &kp M &kp COMMA &kp DOT &kp FSLH &kp DEL
-                 &tog SCR &tmux_pop &kp LSFT &kp RET &sl_lt NAV MOD   &sl_lt SYM MOD &kp SPACE                         &none
+&tmux_next &hml LSFT Z &hml LGUI X &hml LALT C &hml LCTRL V &kp B                                   &kp N &hmr RCTRL M &hmr LALT COMMA &hmr RGUI DOT &hmr RSFT FSLH &kp DEL
+                 &tog SCR &tmux_pop &kp LSFT &kp RET &mo NAV                       &mo SYM &kp SPACE                         &none
             >;
         };
 
@@ -27,7 +28,7 @@
             bindings = <
 &trans     &kp LS(EN_APOS) &kp EN_GRAVE   &kp EN_CARET &kp EN_APOS &none                  &kp C_AL_CALC &kp PSCRN &none     &none     &kp C_VOL_UP &trans
 &trans     &kp A           &e_grv         &e_cir       &e_acu      &a_grv                 &kp LEFT      &kp DOWN  &kp UP    &kp RIGHT &kp C_VOL_DN &trans
-&tmux_prev &none           &none          &none        &none       &cced                  &kp HOME      &kp PG_DN &kp PG_UP &kp END   &kp C_MUTE   &trans
+&tmux_prev &kp LSFT        &kp LGUI       &kp LALT     &kp LCTRL   &cced                  &kp HOME      &hmr RCTRL PG_DN &hmr LALT PG_UP &hmr RGUI END &hmr RSFT C_MUTE &trans
                            &boot_hold 0 0 &none        &trans      &trans &trans   &trans &trans                                      &trans
             >;
         };
@@ -36,7 +37,7 @@
             bindings = <
 &trans &kp EXCL &kp AT   &kp HASH &kp DLLR &kp PRCNT                 &dcir     &kp AMPS &kp STAR &none    &none          &trans
 &none  &kp A    &kp LBRC &kp LBKT &kp LPAR &kp PLUS                  &kp MINUS &kp RPAR &kp RBKT &kp RBRC &kp SEMI       &none
-&none  &none    &dgrv    &kp PIPE &dtil    &kp EQUAL                 &kp UNDER &none    &none    &none    &kp BSLH       &trans
+&none  &kp LSFT &dgrv_hrm LGUI 0 &hml LALT PIPE &dtil_hrm LCTRL 0 &kp EQUAL                 &kp UNDER &kp RCTRL &kp LALT &kp RGUI &hmr RSFT BSLH &trans
                 &none    &none    &trans   &trans    &trans   &trans &trans                               &boot_hold 0 0       
             >;
         };
@@ -45,7 +46,7 @@
             bindings = <
 &trans &kp F9 &kp F10 &kp F11 &kp F12 &none                  &none     &kp N7 &kp N8 &kp N9 &none  &trans
 &none  &kp F5 &kp F6  &kp F7  &kp F8  &none                  &kp MINUS &kp N4 &kp N5 &kp N6 &kp N0 &none
-&none  &kp F1 &kp F2  &kp F3  &kp F4  &none                  &none     &kp N1 &kp N2 &kp N3 &none  &trans
+&none  &hml LSFT F1 &hml LGUI F2 &hml LALT F3 &hml LCTRL F4 &none                  &none &hmr RCTRL N1 &hmr LALT N2 &hmr RGUI N3 &kp RSFT &trans
               &trans  &trans  &trans  &trans &trans   &trans &none                          &bt_hold_tap 0 0
             >;
         };
@@ -56,15 +57,6 @@
 &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR                     &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR
 &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR                     &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR
                   &tog SCR &tog SCR &tog SCR &tog SCR &tog SCR   &tog SCR &tog SCR                            &tog SCR      
-            >;
-        };
-
-        mod_layer{ // MOD
-            bindings = <
-&trans &trans            &trans            &trans            &trans              &trans                 &trans &trans              &trans            &trans            &trans            &trans
-&trans &ht_mod LSFT LSFT &ht_mod LGUI LGUI &ht_mod LALT LALT &ht_mod LCTRL LCTRL &trans                 &trans &ht_mod RCTRL RCTRL &ht_mod LALT LALT &ht_mod RGUI RGUI &ht_mod RSFT RSFT &trans
-&trans &trans            &trans            &trans            &trans              &trans                 &trans &trans              &trans            &trans            &trans            &trans
-                         &trans            &trans            &trans              &trans &trans   &trans &trans                                                         &trans                    
             >;
         };
     };

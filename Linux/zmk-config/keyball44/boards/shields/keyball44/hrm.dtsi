@@ -1,0 +1,45 @@
+// Key position constants
+#define KEYS_L 0 1 2 3 4 5  12 13 14 15 16 17  24 25 26 27 28 29  // Left hand keys
+#define KEYS_R 6 7 8 9 10 11  18 19 20 21 22 23  30 31 32 33 34 35  // Right hand keys
+#define THUMBS 36 37 38 39 40 41 42 43  // All thumb keys
+
+// Timing constants for homerow mods
+#define HRM_TAPPING_TERM 500
+#define HRM_QUICK_TAP 125
+
+// Helper for homerow mod hold-tap behaviors
+// Creates a hold-tap with configurable trigger positions (for left/right hand)
+#define HOMEROW_MOD(trigger_positions) \
+    compatible = "zmk,behavior-hold-tap"; \
+    #binding-cells = <2>; \
+    flavor = "balanced"; \
+    tapping-term-ms = <HRM_TAPPING_TERM>; \
+    quick-tap-ms = <HRM_QUICK_TAP>; \
+    bindings = <&kp>, <&kp>; \
+    hold-trigger-key-positions = <trigger_positions>; \
+    hold-trigger-on-release;
+
+// Helper for hold-tap behaviors with macro on tap
+// Hold sends &kp (modifier), tap sends the macro (second cell ignored by macro, pass 0)
+// Usage: &dgrv_hrm LGUI 0
+#define MACRO_HRM(macro_name, trigger_positions) \
+    compatible = "zmk,behavior-hold-tap"; \
+    #binding-cells = <2>; \
+    flavor = "balanced"; \
+    tapping-term-ms = <HRM_TAPPING_TERM>; \
+    quick-tap-ms = <HRM_QUICK_TAP>; \
+    bindings = <&kp>, <&macro_name>; \
+    hold-trigger-key-positions = <trigger_positions>; \
+    hold-trigger-on-release;
+
+/ {
+    behaviors {
+        // Timeless homerow mods (bottom row)
+        hml: homerow_mods_left { HOMEROW_MOD(KEYS_R THUMBS) }; // left hand
+        hmr: homerow_mods_right { HOMEROW_MOD(KEYS_L THUMBS) }; // right hand
+
+        // Hold-tap behaviors for dead key macros with HRM
+        dgrv_hrm: dgrv_homerow_mod { MACRO_HRM(dgrv, KEYS_R THUMBS) }; // ` with mod
+        dtil_hrm: dtil_homerow_mod { MACRO_HRM(dtil, KEYS_R THUMBS) }; // ~ with mod
+    };
+};

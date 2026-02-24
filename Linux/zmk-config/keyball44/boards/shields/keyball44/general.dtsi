@@ -3,7 +3,6 @@
 #define SYM 2
 #define NUM 3
 #define SCR 4
-#define MOD 5 
 
 #define LT_TAPPING_TERM 240
 #define LT_QUICK_TAP 175
