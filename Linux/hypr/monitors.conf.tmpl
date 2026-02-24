@@ -4,8 +4,8 @@
 # You must relaunch Hyprland after changing any envs (use Super+Esc, then Relaunch)
 
 env = GDK_SCALE,1
-{{- if eq .Hostname "omarchbook" }}
 
+{{ if eq .Hostname "omarchbook" -}}
 # Laptop: built-in display, mirror any external monitor (TV/HDMI)
 monitor = eDP-1, preferred, auto, 1
 monitor = , preferred, auto, 1, mirror, eDP-1
@@ -24,7 +24,6 @@ workspace = 7, monitor:"DVI-D-1", persistent:true
 workspace = 8, monitor:"HDMI-A-1", persistent:true
 workspace = 9, monitor:"DP-2", persistent:true
 workspace = 10, monitor:"DP-2", persistent:true
-{{- end }}
 
 # Default workspace for applications
 windowrule {
@@ -68,3 +67,4 @@ windowrule {
   workspace = 7
   match:class = brave-browser
 }
+{{- end }}
