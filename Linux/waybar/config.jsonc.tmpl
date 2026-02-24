@@ -28,7 +28,8 @@
     "on-click": "activate",
     "format": "{icon}",
     "format-icons": {
-      "default": "\uea71",
+      "default": "\uea71"
+{{- if eq .Hostname "DESKTOP-E07VTRN" }},
       "1": "chat",
       "2": "main",
       "3": "secondary",
@@ -39,7 +40,9 @@
       "8": "work",
       "9": "work",
       "10": "explorer"
-    },
+{{- end }}
+    }
+{{- if eq .Hostname "DESKTOP-E07VTRN" }},
     "persistent-workspaces": {
       "DVI-D-1": [
         1,
@@ -58,6 +61,7 @@
         10
       ]
     }
+{{- end }}
   },
   "custom/omarchy": {
     "format": "<span font='omarchy'>\ue900</span>",
