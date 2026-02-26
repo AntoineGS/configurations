@@ -37,13 +37,12 @@ if [[ -z "$file" ]]; then
 fi
 
 # Build nvim arguments as an array
-nvim_args=()
+nvim_args=("$file")
 if [[ -n "$line" && -n "$column" ]]; then
-    nvim_args=("+call cursor(${line},${column})")
+    nvim_args+=(-c "call cursor(${line},${column})")
 elif [[ -n "$line" ]]; then
-    nvim_args=("+${line}")
+    nvim_args+=(-c "${line}")
 fi
-nvim_args+=("$file")
 
 if tmux list-sessions &>/dev/null; then
     exec tmux new-window nvim "${nvim_args[@]}"
