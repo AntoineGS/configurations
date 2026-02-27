@@ -2,13 +2,7 @@ local wezterm = require("wezterm")
 local act = wezterm.action
 local config = wezterm.config_builder()
 local launch_menu = {}
--- local tabline = wezterm.plugin.require("https://github.com/michaelbrusegard/tabline.wez")
 local is_windows = wezterm.target_triple == "x86_64-pc-windows-msvc"
-
---wezterm.on("gui-startup", function(cmd)
---	local _, _, window = mux.spawn_window(cmd or {})
---	window:gui_window():maximize()
---end)
 
 config.inactive_pane_hsb = {
 	saturation = 0.8,
@@ -16,17 +10,10 @@ config.inactive_pane_hsb = {
 }
 
 config.enable_wayland = false
+-- config.window_background_opacity = 0.98
 
-if is_windows then
-	config.window_background_opacity = 0.5
-	config.win32_system_backdrop = "Mica"
-else
-	config.window_background_opacity = 0.98
-end
-
----config.tab_bar_at_bottom = true
 config.window_decorations = "RESIZE"
-config.color_scheme = "One Dark (Gogh)"
+config.color_scheme = "Catppuccin Mocha"
 config.font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Bold" })
 config.font_size = 11
 config.use_dead_keys = true
