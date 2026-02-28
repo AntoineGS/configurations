@@ -8,14 +8,14 @@ local M = {}
 
 -- For some reason these get changed back to defaults, so we set them but defer it
 vim.schedule(function()
-  vim.api.nvim_set_hl(0, "DiffAdd", { fg = "#98c379", bg = "#2a3231" })
-  vim.api.nvim_set_hl(0, "DiffChange", { fg = "#6f737b", bg = "#262a32" })
-  vim.api.nvim_set_hl(0, "DiffDelete", { fg = "#e06c75", bg = "#312931", strikethrough = true })
-  vim.api.nvim_set_hl(0, "DiffText", { fg = "#abb2bf", bg = "#252931" })
+  vim.api.nvim_set_hl(0, "DiffAdd", { fg = "#a6e3a1", bg = "#2a3231" })
+  vim.api.nvim_set_hl(0, "DiffChange", { fg = "#6c7086", bg = "#262a32" })
+  vim.api.nvim_set_hl(0, "DiffDelete", { fg = "#f38ba8", bg = "#312931", strikethrough = true })
+  vim.api.nvim_set_hl(0, "DiffText", { fg = "#cdd6f4", bg = "#252931" })
 end)
 
 M.base46 = {
-  theme = "onedark",
+  theme = "catppuccin",
   transparency = true,
 }
 

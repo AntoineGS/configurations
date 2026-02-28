@@ -6,8 +6,8 @@
 }
 
 window#waybar {
-  color: #e4e4cd;
-  background: rgba(40, 42, 54, 0.75);
+  color: #cdd6f4;
+  background: rgba(30, 30, 46, 0.75);
   opacity: 0.96;
 }
 
@@ -24,14 +24,14 @@ window#waybar {
 }
 
 #workspaces button.visible {
-  color: rgba(217, 165, 233, 1);
+  color: #cba6f7;
   opacity: 1;
-  background: rgba(40, 42, 54, 75);
+  background: rgba(30, 30, 46, 0.75);
 }
 
 #workspaces button:hover {
   opacity: 1;
-  box-shadow: 0 0 8px 8px #3b4048;
+  box-shadow: 0 0 8px 8px #45475a;
 }
 
 #tray,
@@ -68,7 +68,7 @@ window#waybar {
 }
 
 #custom-omarchy,
-#custom-screenrecording-indicator,
+
 #custom-update {
   min-width: 12px;
   margin: 0 7.5px;
@@ -86,7 +86,7 @@ window#waybar {
 #tray menu,
 tooltip {
   padding: 2px;
-  background: rgba(40, 42, 54, 0.9);
+  background: rgba(30, 30, 46, 0.9);
   font-weight: normal;
 }
 
@@ -98,15 +98,19 @@ tooltip {
   opacity: 0;
 }
 
-#custom-screenrecording-indicator {
+
+#custom-screenrecording-indicator,
+#custom-idle-indicator,
+#custom-notification-silencing-indicator {
   min-width: 12px;
   margin-left: 5px;
+  margin-right: 0;
   font-size: 10px;
   padding-bottom: 1px;
 }
 
 #custom-screenrecording-indicator.active {
-  color: #a55555;
+  color: #f38ba8;
 }
 
 #custom-voxtype {
@@ -115,5 +119,10 @@ tooltip {
 }
 
 #custom-voxtype.recording {
-  color: #a55555;
+  color: #f38ba8;
+}
+
+#custom-idle-indicator.active,
+#custom-notification-silencing-indicator.active {
+  color: #f38ba8;
 }
