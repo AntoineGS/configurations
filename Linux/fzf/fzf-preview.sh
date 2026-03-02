@@ -1,9 +1,8 @@
 #!/usr/bin/env zsh
 #
-# Dependencies:
-# - https://github.com/sharkdp/bat
-# - https://github.com/hpjansson/chafa
-# - https://iterm2.com/utilities/imgcat
+# fzf preview script
+# Handles: files, directories, images, PDFs, videos, audio, archives, markdown
+# Dependencies (optional): bat, chafa, pdftoppm, ffmpegthumbnailer, glow
 
 if [[ $# -ne 1 ]]; then
   >&2 echo "usage: $0 FILENAME[:LINENO][:IGNORED]"
@@ -18,16 +17,13 @@ _FZF_COMPLETION_SEP=$'\u00a0'
 # Split by non-breaking space and extract field 2
 IFS="$_FZF_COMPLETION_SEP" read -r -A fields <<< "$1"
 if (( ${#fields[@]} >= 2 )); then
-    # fzf-tab-completion format: use field 2
     extracted="${fields[2]}"
 else
-    # Fallback: plain filename (no special format)
     extracted="$1"
 fi
 
 # Apply tilde expansion
 file=${extracted/#\~\//$HOME/}
-# echo "Final file path: [$file]" >&2
 
 center=0
 if [[ ! -r $file ]]; then
@@ -40,62 +36,147 @@ if [[ ! -r $file ]]; then
   fi
 fi
 
-# remove trailing [\ ] if there
-file=${file%%\\ }
-# convert triple \ to single \
+# Strip all backslashes and trailing whitespace (fzf-tab-completion escaping)
 file=${file//\\/}
+file=${file%% }
 
-type=$(file --brief --dereference --mime -- "$file")
-# echo "MIME type: [$type]" >&2
+# --- Cache setup ---
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-preview"
+mkdir -p "$CACHE_DIR"
 
-if [[ ! $type =~ image/ ]]; then
-  if [[ $type =~ inode/directory ]]; then
+get_cache_key() {
+  local mtime=$(stat -c "%Y" "$1" 2>/dev/null)
+  local size=$(stat -c "%s" "$1" 2>/dev/null)
+  echo "${mtime}_${size}_$(basename "$1")"
+}
+
+get_cached_image() {
+  local cache_file="$CACHE_DIR/$(get_cache_key "$1")"
+  if [[ -f "$cache_file" ]]; then
+    touch "$cache_file"
+    echo "$cache_file"
+    return 0
+  fi
+  return 1
+}
+
+cache_image() {
+  local src="$1" original="$2"
+  local cache_file="$CACHE_DIR/$(get_cache_key "$original")"
+  cp "$src" "$cache_file" 2>/dev/null && echo "$cache_file"
+}
+
+# --- Image display ---
+show_image() {
+  local img="$1"
+  local dim=${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}
+  if [[ $dim == x ]]; then
+    dim=$(stty size < /dev/tty | awk '{print $2 "x" $1}')
+  fi
+
+  if [[ $KITTY_WINDOW_ID ]] || { [[ $GHOSTTY_RESOURCES_DIR ]] && command -v kitten > /dev/null; }; then
+    kitten icat --clear --transfer-mode=memory --unicode-placeholder --stdin=no \
+      --place="$dim@0x0" "$img" | sed '$d' | sed $'$s/$/\e[m/'
+  elif command -v chafa > /dev/null; then
+    chafa -f symbols -s "$dim" --relative off --optimize 0 --probe off "$img"
+  else
+    file "$img"
+  fi
+}
+
+# --- Main preview logic ---
+type=$(file --brief --dereference --mime-type -- "$file" 2>/dev/null)
+
+case "$type" in
+  inode/directory)
     eza -la --group-directories-first --color=always -- "$file"
-    exit
-  fi
+    ;;
 
-  if [[ $type =~ '=binary' ]]; then
+  application/pdf)
+    if cached=$(get_cached_image "$file"); then
+      show_image "$cached"
+    elif command -v pdftoppm > /dev/null; then
+      tmpimg=$(mktemp /tmp/fzf-preview-XXXXXX)
+      trap "rm -f '$tmpimg' '${tmpimg}.jpg'" EXIT
+      if pdftoppm -singlefile -jpeg "$file" "$tmpimg" 2>/dev/null; then
+        cached=$(cache_image "${tmpimg}.jpg" "$file")
+        show_image "${cached:-${tmpimg}.jpg}"
+      fi
+    fi
+    ;;
+
+  video/*)
+    if cached=$(get_cached_image "$file"); then
+      show_image "$cached"
+    elif command -v ffmpegthumbnailer > /dev/null; then
+      tmpimg=$(mktemp /tmp/fzf-preview-XXXXXX.jpg)
+      trap "rm -f '$tmpimg'" EXIT
+      if ffmpegthumbnailer -i "$file" -o "$tmpimg" -s 1080 -m 2>/dev/null; then
+        cached=$(cache_image "$tmpimg" "$file")
+        show_image "${cached:-$tmpimg}"
+      fi
+    fi
+    ;;
+
+  audio/*)
+    if cached=$(get_cached_image "$file"); then
+      show_image "$cached"
+    elif command -v ffmpeg > /dev/null; then
+      tmpimg=$(mktemp /tmp/fzf-preview-XXXXXX.jpg)
+      trap "rm -f '$tmpimg'" EXIT
+      if ffmpeg -y -i "$file" -an -c:v copy "$tmpimg" 2>/dev/null; then
+        cached=$(cache_image "$tmpimg" "$file")
+        show_image "${cached:-$tmpimg}"
+      else
+        command -v exiftool > /dev/null && exiftool "$file" 2>/dev/null
+      fi
+    fi
+    ;;
+
+  image/*)
+    show_image "$file"
+    ;;
+
+  application/zip)
     file "$file"
-    exit
-  fi
+    echo
+    unzip -l "$file" 2>/dev/null
+    ;;
 
-  bat --style="${BAT_STYLE:-numbers}" --color=always --pager=never --highlight-line="${center:-0}" -- "$file"
-  exit
-fi
+  application/gzip)
+    file "$file"
+    echo
+    zcat -l "$file" 2>/dev/null
+    ;;
 
-dim=${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}
-if [[ $dim == x ]]; then
-  dim=$(stty size < /dev/tty | awk '{print $2 "x" $1}')
-elif ! [[ $KITTY_WINDOW_ID ]] && ((FZF_PREVIEW_TOP + FZF_PREVIEW_LINES == $(stty size < /dev/tty | awk '{print $1}'))); then
-  # Avoid scrolling issue when the Sixel image touches the bottom of the screen
-  # * https://github.com/junegunn/fzf/issues/2544
-  dim=${FZF_PREVIEW_COLUMNS}x$((FZF_PREVIEW_LINES - 1))
-fi
+  application/x-xz)
+    file "$file"
+    echo
+    xz -l "$file" 2>/dev/null
+    ;;
 
-# 1. Use icat (from Kitty) if kitten is installed
-if [[ $KITTY_WINDOW_ID ]] || [[ $GHOSTTY_RESOURCES_DIR ]] && command -v kitten > /dev/null; then
-  # 1. 'memory' is the fastest option but if you want the image to be scrollable,
-  #    you have to use 'stream'.
-  #
-  # 2. The last line of the output is the ANSI reset code without newline.
-  #    This confuses fzf and makes it render scroll offset indicator.
-  #    So we remove the last line and append the reset code to its previous line.
-  kitten icat --clear --transfer-mode=memory --unicode-placeholder --stdin=no --place="$dim@0x0" "$file" | sed '$d' | sed $'$s/$/\e[m/'
+  application/x-tar|application/x-bzip2)
+    file "$file"
+    echo
+    tar tf "$file" 2>/dev/null | head -100
+    ;;
 
-# 2. Use chafa with Sixel output
-elif command -v chafa > /dev/null; then
-  chafa -s "$dim" "$file"
-  # Add a new line character so that fzf can display multiple images in the preview window
-  echo
+  text/*)
+    if [[ "${file: -3}" == ".md" ]] && command -v glow > /dev/null; then
+      glow --width $((FZF_PREVIEW_COLUMNS - 1)) "$file"
+    else
+      bat --style="${BAT_STYLE:-numbers}" --color=always --pager=never \
+        --highlight-line="${center:-0}" -- "$file"
+    fi
+    ;;
 
-# 3. If chafa is not found but imgcat is available, use it on iTerm2
-elif command -v imgcat > /dev/null; then
-  # NOTE: We should use https://iterm2.com/utilities/it2check to check if the
-  # user is running iTerm2. But for the sake of simplicity, we just assume
-  # that's the case here.
-  imgcat -W "${dim%%x*}" -H "${dim##*x}" "$file"
-
-# 4. Cannot find any suitable method to preview the image
-else
-  file "$file"
-fi
+  *)
+    # Fallback: try bat for anything that looks like text, otherwise show file info
+    if file --brief "$file" 2>/dev/null | grep -qi text; then
+      bat --style="${BAT_STYLE:-numbers}" --color=always --pager=never \
+        --highlight-line="${center:-0}" -- "$file"
+    else
+      file "$file"
+    fi
+    ;;
+esac
