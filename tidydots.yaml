@@ -424,7 +424,10 @@ applications:
       managers:
         apt: fzf
         brew: fzf
-        pacman: fzf
+        pacman:
+          deps:
+            - kitten
+          name: fzf
         winget: junegunn.fzf
     name: fzf
     description: Command-line fuzzy finder
@@ -727,6 +730,7 @@ applications:
         winget: gsudo
     name: gsudo
     when: '{{ eq .OS "windows" }}'
+    entries: []
   - package:
       managers:
         pacman: gopls

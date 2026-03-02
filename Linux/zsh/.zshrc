@@ -7,6 +7,16 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=always {} | head -200'"
 
+# Default: hide preview, dynamically show for files/directories
+zstyle ':completion:*' fzf-completion-opts \
+  --preview-window='right:50%:wrap:hidden' \
+  --bind 'focus:transform:val={2}; val=${val//\\/}; val=${val%% }; [[ -e $val || -d $val ]] && echo "change-preview-window(right:50%:wrap:nohidden)" || echo "change-preview-window(hidden)"'
+
+# Command-name completion: show docs
+zstyle ':completion:*:complete:-command-:*' fzf-completion-opts \
+  --preview='tldr {2} 2>/dev/null || man {2} 2>/dev/null | col -bx | head -80' \
+  --preview-window='right:50%:wrap'
+
 fpath+=/usr/share/zsh/site-functions
 autoload -U compinit && compinit
 autoload -U edit-command-line
