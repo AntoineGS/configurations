@@ -6,8 +6,10 @@ wk.add {
 
 return {
   dir = "~/gits/tidydots.nvim",
-  cmd = "TidydotsPreview",
+  event = "BufReadPre *.tmpl",
   opts = {
     cmd = "~/gits/tidydots/tidydots",
+    auto_open = true,
+    debug = true,
   },
 }
