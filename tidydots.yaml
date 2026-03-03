@@ -636,7 +636,28 @@ applications:
         winget: JesseDuffield.lazygit
     name: lazygit
     description: Terminal UI for git
-    entries: []
+    entries:
+      - targets:
+          linux: ~/.config/lazygit
+          windows: ~/AppData/Roaming/lazygit
+        name: config
+        backup: ./Both/lazygit
+        files:
+          - config.yml
+  - package:
+      managers:
+        apt: git
+        pacman: git
+        winget: git
+    name: git
+    entries:
+      - targets:
+          linux: ~/.config/git
+          windows: ~/.config/git
+        name: config
+        backup: ./Both/Git
+        files:
+          - config
   - package:
       managers:
         apt: gh
@@ -737,3 +758,43 @@ applications:
     name: gopls
     when: '{{ eq .OS "linux" }}'
     entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/catppuccin/lazygit
+          targets:
+            linux: ~/.local/share/catppuccin/lazygit
+    name: catppuccin - lazygit
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/catppuccin/delta
+          targets:
+            linux: ~/.local/share/catppuccin/delta
+    name: catppuccin - delta
+    entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/catppuccin/bat
+          targets:
+            linux: ~/.local/share/catppuccin/bat
+    name: catppuccin - bat
+    entries:
+      - targets:
+          linux: ~/.config/bat/themes
+        name: themes
+        backup: ~/.local/share/catppuccin/bat/themes
+  - package:
+      managers:
+        apt: bat
+        pacman: bat
+    name: bat
+    entries:
+      - targets:
+          linux: ~/.config/bat
+        name: config
+        backup: ./Linux/bat
+        files:
+          - config
