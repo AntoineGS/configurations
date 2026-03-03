@@ -1,0 +1,22 @@
+[include]
+	path = ~/.local/share/catppuccin/delta/catppuccin.gitconfig
+
+[core]
+	pager = delta
+
+[delta]
+	features = catppuccin-mocha
+	line-numbers = true
+
+[alias]
+	co = checkout
+	br = branch
+	ci = commit
+	st = status
+[pull]
+	rebase = true
+[init]
+	defaultBranch = master
+[user]
+	name = Antoine Gaudreau Simard
+	email = antoineg.simard@gmail.com
