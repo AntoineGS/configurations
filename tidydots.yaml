@@ -804,3 +804,13 @@ applications:
         backup: ./Linux/bat
         files:
           - config
+  - package:
+      managers:
+        apt: sd
+        installer:
+          command:
+            windows: cargo install sd
+          binary: sd
+        pacman: sd
+    name: sd
+    entries: []
