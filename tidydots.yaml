@@ -446,6 +446,12 @@ applications:
           linux: ~/.config/ghostty
         name: config
         backup: ./Linux/ghostty
+      - targets:
+          linux: ~/.config
+        name: default terminal
+        backup: ./Linux/xdg-terminals
+        files:
+          - xdg-terminals.list
   - package:
       managers:
         yay: python-lnxlink
