@@ -36,6 +36,7 @@ source /usr/share/fzf/completion.zsh
 zvm_after_init() {
     bindkey '^I' fzf_completion
     bindkey '^P' autosuggest-accept
+    bindkey '^[k' clear-screen
     source /usr/share/fzf/key-bindings.zsh
 }
 
