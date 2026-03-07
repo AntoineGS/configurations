@@ -675,6 +675,7 @@ applications:
     entries: []
   - package:
       managers:
+        brew: eza
         installer:
           command:
             windows: cargo install eza
@@ -802,4 +803,10 @@ applications:
           binary: sd
         pacman: sd
     name: sd
+    entries: []
+  - package:
+      managers:
+        brew: delta
+        yay: delta
+    name: delta
     entries: []
