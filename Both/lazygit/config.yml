@@ -1,3 +1,9 @@
+gui:
+  theme:
+    selectedLineBgColor:
+      - "#45475a" # surface1
+    cherryPickedCommitBgColor:
+      - "#45475a" # surface1
 git:
   pagers:
     - pager: delta --paging=never
