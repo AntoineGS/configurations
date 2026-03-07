@@ -300,7 +300,7 @@ applications:
     name: zsh
     entries:
       - targets:
-          linux: /home/antoinegs/
+          linux: "~"
         name: config
         backup: ./Linux/zsh
         files:
