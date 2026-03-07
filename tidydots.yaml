@@ -16,6 +16,7 @@ applications:
           binary: claude
     name: claude code
     description: AI assistant CLI
+    when: '{{ ne .Distro "ubuntu" }}'
     entries:
       - targets:
           linux: ~/.claude/skills
@@ -597,18 +598,6 @@ applications:
         yay: zsh-transient-prompt-git
     name: zsh-transient-prompt
     description: Zsh transient prompt plugin
-    when: '{{ eq .OS "linux" }}'
-    entries: []
-  - package:
-      managers:
-        git:
-          url: https://github.com/antoinegs/tpm.git
-          targets:
-            linux: /usr/share/tmux-plugin-manager
-          sudo: true
-        yay: tmux-plugin-manager
-    name: tmux-plugin-manager
-    description: Tmux plugin manager (skip on Arch - use tmux-plugin-manager)
     when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
