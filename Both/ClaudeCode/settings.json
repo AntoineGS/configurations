@@ -21,5 +21,6 @@
     "superpowers@superpowers-marketplace": true,
     "clangd-lsp@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
-  }
+  },
+  "effortLevel": "high"
 }
