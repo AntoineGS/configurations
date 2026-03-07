@@ -810,3 +810,9 @@ applications:
         yay: delta
     name: delta
     entries: []
+  - package:
+      managers:
+        brew: tmuxpack/tpack/tpack
+        yay: tpack-bin
+    name: tpack
+    entries: []
