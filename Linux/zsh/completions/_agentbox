@@ -1,0 +1,37 @@
+#compdef agentbox
+
+_agentbox() {
+    local -a commands=(
+        'shell:Start interactive shell instead of Claude CLI'
+        'ssh-init:Initialize SSH directory for AgentBox'
+    )
+
+    local -a opts=(
+        '(-h --help)'{-h,--help}'[Show help message]'
+        '--rebuild[Force rebuild of the image]'
+        '--parent[Mount parent directory instead of current directory]'
+        '*--add-dir[Mount additional directory]:directory:_directories'
+        '--tool[Choose tool]:tool:(claude opencode)'
+        '*-p[Forward a port from host to container]:port:'
+        '--ignore-dot-env[Do not load .env files as environment variables]'
+    )
+
+    _arguments -s $opts \
+        '1:command:->cmd' \
+        '*:: :->args'
+
+    case $state in
+        cmd)
+            _describe -t commands 'command' commands
+            ;;
+        args)
+            case $words[1] in
+                shell)
+                    _arguments '--admin[Start admin shell with sudo access]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_agentbox "$@"

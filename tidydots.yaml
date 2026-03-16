@@ -284,7 +284,11 @@ applications:
         backup: ./Windows/TotalCommander
         files:
           - Everything-1.5a.ini
-  - name: bash
+  - package:
+      managers:
+        apt: bash
+        pacman: bash
+    name: bash
     entries:
       - targets:
           linux: "~"
@@ -306,6 +310,10 @@ applications:
         files:
           - .zshenv
           - .zshrc
+      - targets:
+          linux: ~/.local/share/zsh/completions
+        name: completions
+        backup: ./Linux/zsh/completions
   - package:
       managers:
         apt: tmux
@@ -423,7 +431,6 @@ applications:
           - config.json
   - package:
       managers:
-        apt: fzf
         brew: fzf
         pacman:
           deps:
@@ -816,3 +823,24 @@ applications:
         yay: tpack-bin
     name: tpack
     entries: []
+  - package:
+      managers:
+        git:
+          url: https://github.com/junegunn/fzf
+          targets:
+            linux: /usr/share/fzf
+          sudo: true
+    name: fzf-repo
+    entries: []
+  - package:
+      managers:
+        pacman: limine
+    name: limine
+    entries:
+      - targets:
+          linux: /etc/
+        name: limine-snapper-sync.conf
+        backup: ./Linux/limine/
+        files:
+          - limine-snapper-sync.conf
+        sudo: true
