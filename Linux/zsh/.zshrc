@@ -1,23 +1,15 @@
-# ZSH_THEME=...
-# plugins=(...)
-export PATH="/opt/homebrew/bin:$PATH"
-export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-export PATH="~/.local/bin:$PATH"
-export PATH="$PATH:$(go env GOPATH)/bin"
-export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
-export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=always {} | head -200'"
-
 # Default: hide preview, dynamically show for files/directories
 zstyle ':completion:*' fzf-completion-opts \
-  --preview-window='right:50%:wrap:hidden' \
-  --bind 'focus:transform:val={2}; val=${val//\\/}; val=${val%% }; [[ -e $val || -d $val ]] && echo "change-preview-window(right:50%:wrap:nohidden)" || echo "change-preview-window(hidden)"'
+    --preview-window='right:50%:wrap:hidden' \
+    --bind 'focus:transform:val={2}; val=${val//\\/}; val=${val%% }; [[ -e $val || -d $val ]] && echo "change-preview-window(right:50%:wrap:nohidden)" || echo "change-preview-window(hidden)"'
 
 # Command-name completion: show docs
 zstyle ':completion:*:complete:-command-:*' fzf-completion-opts \
-  --preview='tldr {2} 2>/dev/null || man {2} 2>/dev/null | col -bx | head -80' \
-  --preview-window='right:50%:wrap'
+    --preview='tldr {2} 2>/dev/null || man {2} 2>/dev/null | col -bx | head -80' \
+    --preview-window='right:50%:wrap'
 
 fpath+=/usr/share/zsh/site-functions
+fpath+=~/.local/share/zsh/completions
 autoload -U compinit && compinit
 autoload -U edit-command-line
 autoload -U zmv
@@ -41,7 +33,6 @@ zvm_after_init() {
 }
 
 # Carapace
-export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense' # optional
 zstyle ':completion:*' format $'\e[2;37mCompleting %d\e[m'
 source <(carapace _carapace)
 
@@ -111,3 +102,6 @@ headless-ssh() {
         "$@"
     fi
 }
+
+# needs to be here or 1password changes it after zshenv
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/ssh-agent.socket"
