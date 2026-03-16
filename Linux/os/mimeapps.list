@@ -48,6 +48,8 @@ text/x-c++=nvim.desktop
 application/xml=nvim.desktop
 text/xml=nvim.desktop
 inode/directory=org.gnome.Nautilus.desktop
+x-scheme-handler/sgnl=signal.desktop
+x-scheme-handler/signalcaptcha=signal.desktop
 
 [Added Associations]
 text/plain=nvim.desktop;org.gnome.Nautilus.desktop;
