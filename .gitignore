@@ -15,3 +15,4 @@ lnxlink.log
 .tidydots.db
 .tidydots.db-*
 Both/Neovim/nvim/lazy-lock.json
+.claude
