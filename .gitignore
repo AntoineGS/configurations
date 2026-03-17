@@ -25,3 +25,5 @@ Both/ClaudeCode/plugins/blocklist.json
 Both/ClaudeCode/settings_target_20260221.json
 Both/Neovim/nvim/lazy-lock.json
 /Both/ClaudeCode/plugins/marketplaces/claude-code-plugins/
+/Both/ClaudeCode/plugins/marketplaces/cc-marketplace/
+/Both/ClaudeCode/plugins/marketplaces/claude-code-workflows/
