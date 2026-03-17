@@ -844,3 +844,11 @@ applications:
         files:
           - limine-snapper-sync.conf
         sudo: true
+  - package:
+      managers:
+        git:
+          url: https://github.com/wbingli/zsh-claudecode-completion.git
+          targets:
+            linux: ~/.local/share/zsh/zsh-claudecode-completion
+    name: zsh-claudecode-completion
+    entries: []

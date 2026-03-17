@@ -10,6 +10,7 @@ zstyle ':completion:*:complete:-command-:*' fzf-completion-opts \
 
 fpath+=/usr/share/zsh/site-functions
 fpath+=~/.local/share/zsh/completions
+fpath+=/usr/share/zsh/plugins/zsh-claudecode-completion
 autoload -U compinit && compinit
 autoload -U edit-command-line
 autoload -U zmv
