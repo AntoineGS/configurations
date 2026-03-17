@@ -19,32 +19,10 @@ applications:
     when: '{{ ne .Distro "ubuntu" }}'
     entries:
       - targets:
-          linux: ~/.claude/skills
-          windows: ~/.claude/skills
-        name: skills
-        backup: ./Both/ClaudeCode/skills
-      - targets:
-          linux: ~/.claude/hooks
-          windows: ~/.claude/hooks
-        name: hooks
-        backup: ./Both/ClaudeCode/hooks
-      - targets:
-          linux: ~/.claude/rules
-          windows: ~/.claude/rules
-        name: rules
-        backup: ./Both/ClaudeCode/rules
-      - targets:
-          linux: ~/.claude/plugins
-          windows: ~/.claude/plugins
-        name: plugins
-        backup: ./Both/ClaudeCode/plugins
-      - targets:
           linux: ~/.claude
           windows: ~/.claude
-        name: configs
+        name: config
         backup: ./Both/ClaudeCode
-        files:
-          - settings.json
   - package:
       managers:
         apt: neovim

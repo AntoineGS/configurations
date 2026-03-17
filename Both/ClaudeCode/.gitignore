@@ -1,0 +1,13 @@
+# Ignore everything by default, un-ignore tracked items
+*
+
+!.gitignore
+!agents/
+!agents/**
+!hooks/
+!hooks/**
+!rules/
+!rules/**
+!skills/
+!skills/**
+!settings.json

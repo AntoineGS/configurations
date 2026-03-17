@@ -1,32 +1,10 @@
-
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "attribution": {
     "commit": "",
     "pr": ""
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/gopls-check.sh",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "printf '\\a'"
-          }
-        ]
-      }
-    ]
   },
   "enabledPlugins": {
     "gopls-lsp@claude-plugins-official": true,
@@ -50,7 +28,9 @@
     "systems-programming@claude-code-workflows": true,
     "tdd-workflows@claude-code-workflows": true,
     "ui-design@claude-code-workflows": true,
-    "unit-testing@claude-code-workflows": true
+    "unit-testing@claude-code-workflows": true,
+    "openviking-memory@openviking-local": true,
+    "safety-net@cc-marketplace": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
@@ -58,11 +38,20 @@
         "source": "github",
         "repo": "wshobson/agents"
       }
+    },
+    "openviking-local": {
+      "source": {
+        "source": "directory",
+        "path": "/home/antoinegs/.local/share/openviking-marketplace"
+      }
+    },
+    "cc-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "kenryu42/cc-marketplace"
+      }
     }
   },
   "effortLevel": "high",
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  },
   "skipDangerousModePermissionPrompt": true
 }
