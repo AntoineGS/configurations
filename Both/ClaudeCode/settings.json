@@ -30,26 +30,30 @@
     "ui-design@claude-code-workflows": true,
     "unit-testing@claude-code-workflows": true,
     "openviking-memory@openviking-local": true,
-    "safety-net@cc-marketplace": true
+    "safety-net@cc-marketplace": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
       "source": {
         "source": "github",
         "repo": "wshobson/agents"
-      }
+      },
+      "autoUpdate": true
     },
     "openviking-local": {
       "source": {
         "source": "directory",
         "path": "/home/antoinegs/.local/share/openviking-marketplace"
-      }
+      },
+      "autoUpdate": true
     },
     "cc-marketplace": {
       "source": {
         "source": "github",
         "repo": "kenryu42/cc-marketplace"
-      }
+      },
+      "autoUpdate": true
     }
   },
   "effortLevel": "high",
