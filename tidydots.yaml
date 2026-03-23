@@ -484,7 +484,10 @@ applications:
         backup: ./Linux/scripts
         files:
           - nvim-open
-  - name: pacman-hooks
+  - package:
+      managers:
+        pacman: pacman-contrib
+    name: pacman-hooks
     when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
@@ -494,6 +497,7 @@ applications:
         files:
           - pkg-backup-aur.hook
           - pkg-backup-pacman.hook
+          - clean-cache.hook
         sudo: true
   - name: ssh-agent
     description: SSH agent with 4-hour key lifetime (replaces 1Password agent)
