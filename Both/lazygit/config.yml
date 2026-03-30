@@ -7,3 +7,6 @@ gui:
 git:
   pagers:
     - pager: delta --paging=never
+
+os:
+  editPreset: "nvim"
