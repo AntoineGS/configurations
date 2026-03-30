@@ -16,3 +16,6 @@ lnxlink.log
 .tidydots.db-*
 Both/Neovim/nvim/lazy-lock.json
 .claude
+Windows/PowerShell/.VirtualBox
+Windows/PowerShell/.bun
+Windows/PowerShell/.cargo
