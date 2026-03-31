@@ -19,17 +19,17 @@ config.font_size = 11
 config.use_dead_keys = true
 config.scrollback_lines = 5000
 config.adjust_window_size_when_changing_font_size = false
-config.hide_tab_bar_if_only_one_tab = false
+config.hide_tab_bar_if_only_one_tab = true
 config.tab_max_width = 100
 config.window_frame = {
 	font = wezterm.font({ family = "JetBrainsMono Nerd Font", weight = "Bold" }),
 	active_titlebar_bg = "#282c34",
 	inactive_titlebar_bg = "#282c34",
 }
-config.leader = { key = "b", mods = "CTRL", timeout_milliseconds = 5000 }
+config.leader = { key = "w", mods = "CTRL", timeout_milliseconds = 5000 }
 config.keys = {
-	-- Send C-b to the terminal when pressing C-b twice
-	{ key = "b", mods = "LEADER|CTRL", action = act.SendKey({ key = "b", mods = "CTRL" }) },
+	-- Send C-w to the terminal when pressing C-w twice
+	{ key = "w", mods = "LEADER|CTRL", action = act.SendKey({ key = "w", mods = "CTRL" }) },
 
 	-- Windows (tmux: c, n, p, number, w, ,, &)
 	{ key = "c", mods = "LEADER", action = act.SpawnTab("CurrentPaneDomain") },
@@ -121,7 +121,7 @@ config.keys = {
 	{ key = "DownArrow", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
 }
 
-config.default_prog = { "nu", "" }
+config.default_prog = { "zellij" }
 
 if is_windows then
 	-- WezTerm auto-discovers WSL distros as domains,
