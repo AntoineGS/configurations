@@ -778,4 +778,3 @@ source ./themes/catppuccin_mocha.nu
 use ~/.cache/starship/init.nu
 
 alias cd = z
-source $"($nu.home-path)/.cargo/env.nu"
