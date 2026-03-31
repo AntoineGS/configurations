@@ -1,4 +1,5 @@
 format = """
+$os\
 $username\
 $hostname\
 $localip\
@@ -88,7 +89,6 @@ $jobs\
 $battery\
 $time\
 $status\
-$os\
 $container\
 $netns\
 $shell
@@ -320,6 +320,7 @@ format = '[$symbol($version)]($style) '
 format = '[$symbol$cloud(\($project\))]($style) '
 
 [os]
+disabled = false
 format = '[$symbol]($style) '
 
 [os.symbols]
@@ -426,7 +427,7 @@ format = '[$symbol($version)]($style) '
 symbol = " "
 
 [shell]
-nu_indicator = '>'
+nu_indicator = ''
 powershell_indicator = ' '
 bash_indicator = '\$'
 zsh_indicator = '%'
