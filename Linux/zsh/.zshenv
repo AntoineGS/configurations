@@ -23,3 +23,4 @@ export RIPGREP_CONFIG_PATH=~/.ripgreprc
 if [[ -f ~/.zshenv.local ]]; then
     source ~/.zshenv.local
 fi
+. "$HOME/.cargo/env"
