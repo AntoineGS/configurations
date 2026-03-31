@@ -62,6 +62,7 @@ M.mason = {
     "cpplint",
     "bash-language-server",
     "gopls",
+    "intelephense",
     "goimports",
     "vtsls",
     "black",

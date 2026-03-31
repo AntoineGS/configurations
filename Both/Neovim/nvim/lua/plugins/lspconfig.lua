@@ -95,6 +95,7 @@ M.defaults = function()
   vim.lsp.enable "gopls"
   vim.lsp.enable "vtsls"
   vim.lsp.enable "sqls"
+  vim.lsp.enable "intelephense"
 
   -- Delphi LSP (bundled with RAD Studio 13 Florence)
   vim.lsp.config("delphi_ls", {
@@ -111,7 +112,10 @@ M.defaults = function()
         client.config.settings = { settingsFile = lsp_config }
         client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
       else
-        vim.notify_once("delphi_ls: '*.delphilsp.json' config file not found in " .. client.config.root_dir, vim.log.levels.WARN)
+        vim.notify_once(
+          "delphi_ls: '*.delphilsp.json' config file not found in " .. client.config.root_dir,
+          vim.log.levels.WARN
+        )
       end
     end,
   })
