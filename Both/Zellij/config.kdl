@@ -86,9 +86,9 @@ keybinds clear-defaults=true {
         bind "L" { Resize "Increase Right"; SwitchToMode "Normal"; }
 
         // Shell tabs
-        bind "a" { NewTab { command "wsl" { args "-d" "Archlinux"; }; }; SwitchToMode "Normal"; }
-        bind "u" { NewTab { command "wsl" { args "-d" "Ubuntu"; }; }; SwitchToMode "Normal"; }
-        bind "w" { NewTab { command "pwsh" { args "-NoLogo"; }; }; SwitchToMode "Normal"; }
+        bind "a" { NewTab { layout "arch"; }; SwitchToMode "Normal"; }
+        bind "u" { NewTab { layout "ubuntu"; }; SwitchToMode "Normal"; }
+        bind "w" { NewTab { layout "pwsh"; }; SwitchToMode "Normal"; }
 
         // Detach session
         bind "d" { Detach; }
