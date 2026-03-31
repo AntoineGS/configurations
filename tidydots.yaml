@@ -308,6 +308,27 @@ applications:
           - .tmux.conf
   - package:
       managers:
+        winget: Zellij.Zellij
+    name: zellij
+    description: Terminal multiplexer
+    when: '{{ eq .OS "windows" }}'
+    entries:
+      - targets:
+          windows: ~/AppData/Roaming/Zellij/config
+        name: config
+        backup: ./Both/Zellij
+        files:
+          - config.kdl
+      - targets:
+          windows: ~/AppData/Roaming/Zellij/config/themes
+        name: themes
+        backup: ./Both/Zellij/themes
+      - targets:
+          windows: ~/AppData/Roaming/Zellij/config/layouts
+        name: layouts
+        backup: ./Both/Zellij/layouts
+  - package:
+      managers:
         pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
