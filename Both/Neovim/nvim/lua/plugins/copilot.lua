@@ -3,13 +3,13 @@ local event = "InsertEnter"
 local src = {}
 
 if vim.fn.hostname() == "DESKTOP-E07VTRN" then
-  logger_conf = {
-    file_log_level = vim.log.levels.TRACE,
-    print_log_level = vim.log.levels.WARN,
-    trace_lsp = "verbose",
-    log_lsp_messages = true,
-    trace_lsp_progress = true,
-  }
+  -- logger_conf = {
+  --   file_log_level = vim.log.levels.TRACE,
+  --   print_log_level = vim.log.levels.WARN,
+  --   trace_lsp = "verbose",
+  --   log_lsp_messages = true,
+  --   trace_lsp_progress = true,
+  -- }
 
   src = {
     dir = "~/gits/copilot.lua",
@@ -18,7 +18,7 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
     },
   }
 else
-  event = nil
+  event = ""
   src = {
     "zbirenbaum/copilot.lua",
     dependencies = {
@@ -32,7 +32,7 @@ return vim.tbl_deep_extend("force", src, {
   event = event,
   config = function()
     require("copilot").setup {
-      trace = "verbose",
+      -- trace = "verbose",
       -- copilot_model = "gpt-4o-copilot",
       logger = logger_conf,
       -- panel = {
@@ -91,7 +91,7 @@ return vim.tbl_deep_extend("force", src, {
       end,
       server = {
         -- type = "nodejs",
-        type = "binary",
+        -- type = "binary",
         -- custom_server_filepath = "C:\\Users\\antoi\\AppData\\Local\\nvim-data\\lazy\\copilot.lua\\copilot\\js_2\\language-server.js",
       },
       -- auth_provider_url = "https://someurl.com",
