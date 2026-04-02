@@ -66,6 +66,7 @@ M.mason = {
     "goimports",
     "vtsls",
     "black",
+    "rust-analyzer",
     "tex-fmt",
   },
 }
