@@ -93,6 +93,7 @@ M.defaults = function()
   vim.lsp.enable "marksman"
   vim.lsp.enable "clangd"
   vim.lsp.enable "gopls"
+  vim.lsp.enable "rust_analyzer"
   vim.lsp.enable "vtsls"
   vim.lsp.enable "sqls"
   vim.lsp.enable "intelephense"

@@ -27,6 +27,7 @@ return {
         nu = { "prettierd" },
         clang = { "clang-format" },
         go = { "gofmt", "goimports" },
+        rust = { "rustfmt" },
         python = { "black" },
         tex = { "tex-fmt" },
       },
