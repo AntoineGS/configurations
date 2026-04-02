@@ -168,7 +168,27 @@ Then reload:
 systemctl --user daemon-reload
 ```
 
-## Phase 5: Remove Omarchy Repo & Keyring (requires sudo)
+## Phase 5: Restore Official Arch Mirrors (requires sudo)
+
+Omarchy redirects all pacman traffic through `stable-mirror.omarchy.org` via `/etc/pacman.d/mirrorlist`.
+This delays upstream packages (e.g. Qt 6.11 shipped in Arch on March 26 but the omarchy mirror lagged behind),
+which causes ABI mismatches with omarchy packages built against newer versions.
+
+```bash
+# Back up current mirrorlist
+sudo cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.omarchy
+
+# Generate a fresh mirrorlist with reflector (adjust --country as needed)
+sudo reflector --country Canada --latest 10 --sort rate --save /etc/pacman.d/mirrorlist
+
+# Or manually set a mirror
+# echo 'Server = https://mirror.csclub.uwaterloo.ca/archlinux/$repo/os/$arch' | sudo tee /etc/pacman.d/mirrorlist
+
+# Full system update with the real repos
+sudo pacman -Syu
+```
+
+## Phase 6: Remove Omarchy Repo & Keyring (requires sudo)
 
 ```bash
 # Remove [omarchy] section from pacman.conf
@@ -184,7 +204,7 @@ sudo pacman -Syyu
 After this, all ex-omarchy packages stay installed but won't auto-update.
 Reinstall from AUR later if you want updates for specific packages (yay, spotify, etc.).
 
-## Phase 6: System Cleanup (requires sudo)
+## Phase 7: System Cleanup (requires sudo)
 
 ### Plymouth boot splash
 
