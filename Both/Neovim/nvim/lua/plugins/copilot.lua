@@ -18,7 +18,6 @@ if vim.fn.hostname() == "DESKTOP-E07VTRN" then
     },
   }
 else
-  event = ""
   src = {
     "zbirenbaum/copilot.lua",
     dependencies = {
