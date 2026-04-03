@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = python
+
+[Action]
+Description = Checking for packages that need rebuilding after Python upgrade...
+When = PostTransaction
+Exec = /usr/bin/checkrebuild
