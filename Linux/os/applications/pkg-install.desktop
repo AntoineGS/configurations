@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=Install Package
+Comment=Install packages from pacman
+# Exec=xdg-terminal-exec --app-id=TUI.tile -e lazydocker
+Exec=xdg-terminal-exec --app-id=TUI.tile -e pkg-install
+Terminal=false
+Type=Application
+# Icon=/home/antoinegs/.local/share/applications/icons/Docker.png
+StartupNotify=true
