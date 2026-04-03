@@ -611,6 +611,15 @@ applications:
   - package:
       managers:
         git:
+          url: https://github.com/basecamp/omarchy.git
+          targets:
+            linux: ~/.local/share/omarchy
+    name: omarchy
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
+        git:
           url: https://github.com/olets/zsh-transient-prompt.git
           targets:
             linux: /usr/share/zsh/plugins/zsh-transient-prompt
