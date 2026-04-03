@@ -517,7 +517,10 @@ applications:
           - nvim-open
   - package:
       managers:
-        pacman: pacman-contrib
+        pacman:
+          deps:
+            - rebuild-detector
+          name: pacman-contrib
     name: pacman-hooks
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -528,6 +531,7 @@ applications:
         files:
           - pkg-backup-aur.hook
           - pkg-backup-pacman.hook
+          - pkg-checkrebuild.hook
           - clean-cache.hook
         sudo: true
   - name: ssh-agent
