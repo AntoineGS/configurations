@@ -485,6 +485,10 @@ applications:
           linux: ~/.local/share/helpers
         name: helper scripts
         backup: ./Linux/os/helpers
+      - targets:
+          linux: ~/.local/share/applications
+        name: .desktop files
+        backup: ./Linux/os/applications
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
