@@ -21,6 +21,7 @@ update_interval: 5
 update_on_change: false
 modules:
   - bluetooth
+  - suspend
 custom_modules: {}
 exclude: []
 settings:
