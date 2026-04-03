@@ -357,27 +357,6 @@ applications:
           linux: ~/.config/waybar
         name: config
         backup: ./Linux/waybar
-  - package:
-      managers:
-        yay: walker
-    name: walker
-    description: Application launcher for Wayland
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/walker
-        name: config
-        backup: ./Linux/walker
-  - package:
-      managers:
-        yay: elephant
-    name: elephant
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/elephant
-        name: config
-        backup: ./Linux/elephant
   - name: uwsm
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
