@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Returns the battery full capacity in Wh (rounded to whole number).
-# Used by omarchy-battery-status for displaying battery capacity.
+# Used by battery-status for displaying battery capacity.
 
 battery_info=$(upower -i $(upower -e | grep BAT))
 

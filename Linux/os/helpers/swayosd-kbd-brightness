@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Display keyboard brightness level using SwayOSD on the current monitor.
-# Usage: omarchy-swayosd-kbd-brightness <percent>
+# Usage: swayosd-kbd-brightness <percent>
 
 percent="$1"
 

@@ -13,9 +13,9 @@ if [[ -f $CONFIG_FILE ]] && \
 fi
 
 # Refresh the Chromium configuration
-omarchy-refresh-config chromium-flags.conf
+refresh-config chromium-flags.conf
 
 # Re-install Google accounts if previously configured
 if [[ $INSTALL_GOOGLE_ACCOUNTS == "true" ]]; then
-  omarchy-install-chromium-google-account
+  install-chromium-google-account
 fi

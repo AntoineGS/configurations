@@ -17,4 +17,4 @@ if [[ $url =~ ^zoom(mtg|us):// ]]; then
   fi
 fi
 
-exec omarchy-launch-webapp "$web_url"
+exec launch-webapp "$web_url"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set the system-wide monospace font that should be used by the terminal, hyprlock, waybar, swayosd, etc.
-# The font name must be one of the ones returned by omarchy-font-list.
+# The font name must be one of the ones returned by font-list.
 
 font_name="$1"
 
@@ -29,18 +29,18 @@ if [[ -n $font_name ]]; then
       -v "$font_name" \
       ~/.config/fontconfig/fonts.conf
 
-    omarchy-restart-waybar
-    omarchy-restart-swayosd
+    restart-waybar
+    restart-swayosd
 
     if pgrep -x ghostty; then
       notify-send "    You must restart Ghostty to see font change"
     fi
 
-    omarchy-hook font-set "$font_name"
+    hook font-set "$font_name"
   else
     echo "Font '$font_name' not found."
     exit 1
   fi
 else
-  echo "Usage: omarchy-font-set <font-name>"
+  echo "Usage: font-set <font-name>"
 fi

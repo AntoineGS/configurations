@@ -2,7 +2,7 @@
 
 # Update AUR packages if any are installed
 if pacman -Qem >/dev/null; then
-  if omarchy-pkg-aur-accessible; then
+  if pkg-aur-accessible; then
     echo -e "\e[32m\nUpdate AUR packages\e[0m"
     yay -Sua --noconfirm --cleanafter --ignore gcc14,gcc14-libs
     echo

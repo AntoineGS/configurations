@@ -8,4 +8,4 @@ if [[ $url =~ ^mailto: ]]; then
   web_url="https://app.hey.com/messages/new?to=$email"
 fi
 
-exec omarchy-launch-webapp "$web_url"
+exec launch-webapp "$web_url"

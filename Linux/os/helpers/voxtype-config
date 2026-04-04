@@ -3,4 +3,4 @@ set -e
 
 # Used by Voxtype waybar module to open config on right click
 
-exec omarchy-launch-editor ~/.config/voxtype/config.toml
+exec launch-editor ~/.config/voxtype/config.toml

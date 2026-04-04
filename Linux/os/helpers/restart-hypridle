@@ -2,4 +2,4 @@
 
 # Restart the hypridle service (used for idle detection and auto-lock).
 
-omarchy-restart-app hypridle
+restart-app hypridle

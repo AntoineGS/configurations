@@ -100,7 +100,7 @@ else
 
   # Install required packages
   print_info "Installing required packages..."
-  omarchy-pkg-add fprintd usbutils
+  pkg-add fprintd usbutils
 
   if ! check_fingerprint_hardware; then
     exit 1

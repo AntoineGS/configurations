@@ -3,7 +3,7 @@
 # Set the branch for Omarchy's git repository.
 
 if (($# == 0)); then
-  echo "Usage: omarchy-branch-set [master|rc|dev]"
+  echo "Usage: branch-set [master|rc|dev]"
   exit 1
 else
   branch="$1"

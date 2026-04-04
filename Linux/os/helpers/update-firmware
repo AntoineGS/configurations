@@ -3,8 +3,8 @@
 set -e
 echo -e "\e[32mUpdate Firmware\e[0m"
 
-if omarchy-cmd-missing fwupdmgr; then
-  omarchy-pkg-add fwupd
+if cmd-missing fwupdmgr; then
+  pkg-add fwupd
 fi
 
 fwupdmgr refresh --force

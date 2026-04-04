@@ -4,8 +4,8 @@
 # Requires reboot to take effect.
 
 # Ensure supergfxctl has been installed
-if omarchy-cmd-missing supergfxctl; then
-  omarchy-pkg-add supergfxctl
+if cmd-missing supergfxctl; then
+  pkg-add supergfxctl
 
   # Create config before starting service to prevent hang on first boot
   sudo tee /etc/supergfxd.conf >/dev/null <<'CONF'
@@ -37,7 +37,7 @@ case "$gpu_mode" in
     # Remove the startup delay override (not needed for Hybrid mode)
     sudo rm -rf /etc/systemd/system/supergfxd.service.d/delay-start.conf
 
-    omarchy-system-reboot
+    system-reboot
   fi
   ;;
 "Hybrid")
@@ -55,7 +55,7 @@ case "$gpu_mode" in
     sudo mkdir -p /etc/systemd/system/supergfxd.service.d
     sudo cp -p $OMARCHY_PATH/default/systemd/system/supergfxd.service.d/delay-start.conf /etc/systemd/system/supergfxd.service.d/
 
-    omarchy-system-reboot
+    system-reboot
   fi
   ;;
 *)

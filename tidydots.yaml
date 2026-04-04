@@ -476,12 +476,6 @@ applications:
         files:
           - nvim-open.desktop
       - targets:
-          linux: ~/.config/environment.d
-        name: helpers.conf
-        backup: ./Linux/os
-        files:
-          - helpers.conf
-      - targets:
           linux: ~/.local/share/helpers
         name: helper scripts
         backup: ./Linux/os/helpers

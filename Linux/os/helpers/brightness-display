@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Adjust brightness on the most likely display device.
-# Usage: omarchy-brightness-display <step>
+# Usage: brightness-display <step>
 
 step="${1:-+5%}"
 
@@ -18,4 +18,4 @@ done
 brightnessctl -d "$device" set "$step" >/dev/null
 
 # Use SwayOSD to display the new brightness setting.
-omarchy-swayosd-brightness "$(brightnessctl -d "$device" -m | cut -d',' -f4 | tr -d '%')"
+swayosd-brightness "$(brightnessctl -d "$device" -m | cut -d',' -f4 | tr -d '%')"

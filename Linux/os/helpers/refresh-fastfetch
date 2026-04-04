@@ -2,4 +2,4 @@
 
 # Overwrite the user config for fastfetch with the Omarchy default.
 
-omarchy-refresh-config fastfetch/config.jsonc
+refresh-config fastfetch/config.jsonc

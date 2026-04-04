@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Remove all TUIs installed via omarchy-tui-install.
+# Remove all TUIs installed via tui-install.
 # Identifies TUIs by their Exec pattern (xdg-terminal-exec --app-id=TUI.).
 
 set -e
