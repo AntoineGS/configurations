@@ -9,7 +9,7 @@ set_theme() {
   local settings_path="$2"
   local skip_flag="$3"
 
-  omarchy-cmd-present "$editor_cmd" && [[ ! -f $skip_flag ]] || return 0
+  cmd-present "$editor_cmd" && [[ ! -f $skip_flag ]] || return 0
 
   if [[ -f $VS_CODE_THEME ]]; then
     theme_name=$(jq -r '.name' "$VS_CODE_THEME")

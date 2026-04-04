@@ -20,8 +20,8 @@ back_to() {
 }
 
 toggle_existing_menu() {
-  if pgrep -f "walker.*--dmenu" > /dev/null; then
-    walker --close > /dev/null 2>&1
+  if pgrep -f "vicinae dmenu" > /dev/null; then
+    vicinae close > /dev/null 2>&1
     exit 0
   fi
 }
@@ -30,19 +30,10 @@ menu() {
   local prompt="$1"
   local options="$2"
   local extra="$3"
-  local preselect="$4"
 
   read -r -a args <<<"$extra"
 
-  if [[ -n $preselect ]]; then
-    local index
-    index=$(echo -e "$options" | grep -nxF "$preselect" | cut -d: -f1)
-    if [[ -n $index ]]; then
-      args+=("-c" "$index")
-    fi
-  fi
-
-  echo -e "$options" | omarchy-launch-walker --dmenu --width 295 --minheight 1 --maxheight 630 -p "$prompt…" "${args[@]}" 2>/dev/null
+  echo -e "$options" | vicinae dmenu -W 295 -p "$prompt…" "${args[@]}" 2>/dev/null
 }
 
 terminal() {
@@ -50,46 +41,46 @@ terminal() {
 }
 
 present_terminal() {
-  omarchy-launch-floating-terminal-with-presentation $1
+  launch-floating-terminal-with-presentation $1
 }
 
 open_in_editor() {
   notify-send "Editing config file" "$1"
-  omarchy-launch-editor "$1"
+  launch-editor "$1"
 }
 
 install() {
-  present_terminal "echo 'Installing $1...'; omarchy-pkg-add $2"
+  present_terminal "echo 'Installing $1...'; pkg-add $2"
 }
 
 install_and_launch() {
-  present_terminal "echo 'Installing $1...'; omarchy-pkg-add $2 && setsid gtk-launch $3"
+  present_terminal "echo 'Installing $1...'; pkg-add $2 && setsid gtk-launch $3"
 }
 
 install_font() {
-  present_terminal "echo 'Installing $1...'; omarchy-pkg-add $2 && sleep 2 && omarchy-font-set '$3'"
+  present_terminal "echo 'Installing $1...'; pkg-add $2 && sleep 2 && font-set '$3'"
 }
 
 install_terminal() {
-  present_terminal "omarchy-install-terminal $1"
+  present_terminal "install-terminal $1"
 }
 
 aur_install() {
-  present_terminal "echo 'Installing $1 from AUR...'; omarchy-pkg-aur-add $2"
+  present_terminal "echo 'Installing $1 from AUR...'; pkg-aur-add $2"
 }
 
 aur_install_and_launch() {
-  present_terminal "echo 'Installing $1 from AUR...'; omarchy-pkg-aur-add $2 && setsid gtk-launch $3"
+  present_terminal "echo 'Installing $1 from AUR...'; pkg-aur-add $2 && setsid gtk-launch $3"
 }
 
 show_learn_menu() {
   case $(menu "Learn" "  Keybindings\n  Omarchy\n  Hyprland\n󰣇  Arch\n  Neovim\n󱆃  Bash") in
-  *Keybindings*) omarchy-menu-keybindings ;;
-  *Omarchy*) omarchy-launch-webapp "https://learn.omacom.io/2/the-omarchy-manual" ;;
-  *Hyprland*) omarchy-launch-webapp "https://wiki.hypr.land/" ;;
-  *Arch*) omarchy-launch-webapp "https://wiki.archlinux.org/title/Main_page" ;;
-  *Bash*) omarchy-launch-webapp "https://devhints.io/bash" ;;
-  *Neovim*) omarchy-launch-webapp "https://www.lazyvim.org/keymaps" ;;
+  *Keybindings*) menu-keybindings ;;
+  *Omarchy*) launch-webapp "https://learn.omacom.io/2/the-manual" ;;
+  *Hyprland*) launch-webapp "https://wiki.hypr.land/" ;;
+  *Arch*) launch-webapp "https://wiki.archlinux.org/title/Main_page" ;;
+  *Bash*) launch-webapp "https://devhints.io/bash" ;;
+  *Neovim*) launch-webapp "https://www.lazyvim.org/keymaps" ;;
   *) show_main_menu ;;
   esac
 }
@@ -106,7 +97,7 @@ show_trigger_menu() {
 
 show_capture_menu() {
   case $(menu "Capture" "  Screenshot\n  Screenrecord\n󰃉  Color") in
-  *Screenshot*) omarchy-cmd-screenshot ;;
+  *Screenshot*) cmd-screenshot ;;
   *Screenrecord*) show_screenrecord_menu ;;
   *Color*) pkill hyprpicker || hyprpicker -a ;;
   *) back_to show_trigger_menu ;;
@@ -141,18 +132,18 @@ show_webcam_select_menu() {
 }
 
 show_screenrecord_menu() {
-  omarchy-cmd-screenrecord --stop-recording && exit 0
+  cmd-screenrecord --stop-recording && exit 0
 
   case $(menu "Screenrecord" "  With no audio\n  With desktop audio\n  With desktop + microphone audio\n  With desktop + microphone audio + webcam") in
-  *"With no audio") omarchy-cmd-screenrecord ;;
-  *"With desktop audio") omarchy-cmd-screenrecord --with-desktop-audio ;;
-  *"With desktop + microphone audio") omarchy-cmd-screenrecord --with-desktop-audio --with-microphone-audio ;;
+  *"With no audio") cmd-screenrecord ;;
+  *"With desktop audio") cmd-screenrecord --with-desktop-audio ;;
+  *"With desktop + microphone audio") cmd-screenrecord --with-desktop-audio --with-microphone-audio ;;
   *"With desktop + microphone audio + webcam")
     local device=$(show_webcam_select_menu) || {
       back_to show_capture_menu
       return
     }
-    omarchy-cmd-screenrecord --with-desktop-audio --with-microphone-audio --with-webcam --webcam-device="$device"
+    cmd-screenrecord --with-desktop-audio --with-microphone-audio --with-webcam --webcam-device="$device"
     ;;
   *) back_to show_capture_menu ;;
   esac
@@ -160,9 +151,9 @@ show_screenrecord_menu() {
 
 show_share_menu() {
   case $(menu "Share" "  Clipboard\n  File \n  Folder") in
-  *Clipboard*) omarchy-cmd-share clipboard ;;
-  *File*) terminal bash -c "omarchy-cmd-share file" ;;
-  *Folder*) terminal bash -c "omarchy-cmd-share folder" ;;
+  *Clipboard*) cmd-share clipboard ;;
+  *File*) terminal bash -c "cmd-share file" ;;
+  *Folder*) terminal bash -c "cmd-share folder" ;;
   *) back_to show_trigger_menu ;;
   esac
 }
@@ -170,21 +161,21 @@ show_share_menu() {
 show_toggle_menu() {
   case $(menu "Toggle" "󱄄  Screensaver\n󰔎  Nightlight\n󱫖  Idle Lock\n󰍜  Top Bar\n󱂬  Workspace Layout\n  Window Gaps\n  1-Window Ratio\n󰍹  Display Scaling") in
 
-  *Screensaver*) omarchy-toggle-screensaver ;;
-  *Nightlight*) omarchy-toggle-nightlight ;;
-  *Idle*) omarchy-toggle-idle ;;
-  *Bar*) omarchy-toggle-waybar ;;
-  *Layout*) omarchy-hyprland-workspace-layout-toggle ;;
-  *Ratio*) omarchy-hyprland-window-single-square-aspect-toggle ;;
-  *Gaps*) omarchy-hyprland-window-gaps-toggle ;;
-  *Scaling*) omarchy-hyprland-monitor-scaling-cycle ;;
+  *Screensaver*) toggle-screensaver ;;
+  *Nightlight*) toggle-nightlight ;;
+  *Idle*) toggle-idle ;;
+  *Bar*) toggle-waybar ;;
+  *Layout*) hyprland-workspace-layout-toggle ;;
+  *Ratio*) hyprland-window-single-square-aspect-toggle ;;
+  *Gaps*) hyprland-window-gaps-toggle ;;
+  *Scaling*) hyprland-monitor-scaling-cycle ;;
   *) back_to show_trigger_menu ;;
   esac
 }
 
 show_hardware_menu() {
   case $(menu "Toggle" "  Hybrid GPU") in
-  *"Hybrid GPU"*) present_terminal omarchy-toggle-hybrid-gpu ;;
+  *"Hybrid GPU"*) present_terminal toggle-hybrid-gpu ;;
   *) show_trigger_menu ;;
   esac
 }
@@ -202,19 +193,43 @@ show_style_menu() {
 }
 
 show_theme_menu() {
-  omarchy-launch-walker -m menus:omarchythemes --width 800 --minheight 400
-}
-
-show_background_menu() {
-  omarchy-launch-walker -m menus:omarchyBackgroundSelector --width 800 --minheight 400
-}
-
-show_font_menu() {
-  theme=$(menu "Font" "$(omarchy-font-list)" "--width 350" "$(omarchy-font-current)")
+  theme=$(menu "Theme" "$(theme-list)" "-W 350" "$(theme-current)")
   if [[ $theme == "CNCLD" || -z $theme ]]; then
     back_to show_style_menu
   else
-    omarchy-font-set "$theme"
+    theme-set "$theme"
+  fi
+}
+
+show_background_menu() {
+  local theme_name bg_list selection selected_path
+  theme_name=$(cat "$HOME/.config/omarchy/current/theme.name" 2>/dev/null)
+
+  bg_list=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort -u)
+
+  if [[ -z $bg_list ]]; then
+    notify-send "No backgrounds found for current theme" -t 2000
+    back_to show_style_menu
+    return
+  fi
+
+  selection=$(menu "Background" "$bg_list" "-W 400")
+
+  if [[ -z $selection ]]; then
+    back_to show_style_menu
+    return
+  fi
+
+  selected_path=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -name "$selection" -type f 2>/dev/null | head -1)
+  [[ -n $selected_path ]] && theme-bg-set "$selected_path"
+}
+
+show_font_menu() {
+  theme=$(menu "Font" "$(font-list)" "-W 350" "$(font-current)")
+  if [[ $theme == "CNCLD" || -z $theme ]]; then
+    back_to show_style_menu
+  else
+    font-set "$theme"
   fi
 }
 
@@ -225,15 +240,15 @@ show_setup_menu() {
   options="$options\n󰱔  DNS\n  Security\n  Config"
 
   case $(menu "Setup" "$options") in
-  *Audio*) omarchy-launch-audio ;;
-  *Wifi*) omarchy-launch-wifi ;;
-  *Bluetooth*) omarchy-launch-bluetooth ;;
+  *Audio*) launch-audio ;;
+  *Wifi*) launch-wifi ;;
+  *Bluetooth*) launch-bluetooth ;;
   *Power*) show_setup_power_menu ;;
   *System*) show_setup_system_menu ;;
   *Monitors*) open_in_editor ~/.config/hypr/monitors.conf ;;
   *Keybindings*) open_in_editor ~/.config/hypr/bindings.conf ;;
   *Input*) open_in_editor ~/.config/hypr/input.conf ;;
-  *DNS*) present_terminal omarchy-setup-dns ;;
+  *DNS*) present_terminal setup-dns ;;
   *Security*) show_setup_security_menu ;;
   *Config*) show_setup_config_menu ;;
   *) show_main_menu ;;
@@ -241,7 +256,7 @@ show_setup_menu() {
 }
 
 show_setup_power_menu() {
-  profile=$(menu "Power Profile" "$(omarchy-powerprofiles-list)" "" "$(powerprofilesctl get)")
+  profile=$(menu "Power Profile" "$(powerprofiles-list)" "" "$(powerprofilesctl get)")
 
   if [[ $profile == "CNCLD" || -z $profile ]]; then
     back_to show_setup_menu
@@ -252,23 +267,23 @@ show_setup_power_menu() {
 
 show_setup_security_menu() {
   case $(menu "Setup" "󰈷  Fingerprint\n  Fido2") in
-  *Fingerprint*) present_terminal omarchy-setup-fingerprint ;;
-  *Fido2*) present_terminal omarchy-setup-fido2 ;;
+  *Fingerprint*) present_terminal setup-fingerprint ;;
+  *Fido2*) present_terminal setup-fido2 ;;
   *) show_setup_menu ;;
   esac
 }
 
 show_setup_config_menu() {
-  case $(menu "Setup" "  Defaults\n  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n  Swayosd\n󰌧  Walker\n󰍜  Waybar\n󰞅  XCompose") in
+  case $(menu "Setup" "  Defaults\n  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n  Swayosd\n󰌧  Vicinae\n󰍜  Waybar\n󰞅  XCompose") in
   *Defaults*) open_in_editor ~/.config/uwsm/default ;;
   *Hyprland*) open_in_editor ~/.config/hypr/hyprland.conf ;;
-  *Hypridle*) open_in_editor ~/.config/hypr/hypridle.conf && omarchy-restart-hypridle ;;
+  *Hypridle*) open_in_editor ~/.config/hypr/hypridle.conf && restart-hypridle ;;
   *Hyprlock*) open_in_editor ~/.config/hypr/hyprlock.conf ;;
-  *Hyprsunset*) open_in_editor ~/.config/hypr/hyprsunset.conf && omarchy-restart-hyprsunset ;;
-  *Swayosd*) open_in_editor ~/.config/swayosd/config.toml && omarchy-restart-swayosd ;;
-  *Walker*) open_in_editor ~/.config/walker/config.toml && omarchy-restart-walker ;;
-  *Waybar*) open_in_editor ~/.config/waybar/config.jsonc && omarchy-restart-waybar ;;
-  *XCompose*) open_in_editor ~/.XCompose && omarchy-restart-xcompose ;;
+  *Hyprsunset*) open_in_editor ~/.config/hypr/hyprsunset.conf && restart-hyprsunset ;;
+  *Swayosd*) open_in_editor ~/.config/swayosd/config.toml && restart-swayosd ;;
+  *Vicinae*) open_in_editor ~/.config/vicinae/settings.json && vicinae server ;;
+  *Waybar*) open_in_editor ~/.config/waybar/config.jsonc && restart-waybar ;;
+  *XCompose*) open_in_editor ~/.XCompose && restart-xcompose ;;
   *) show_setup_menu ;;
   esac
 }
@@ -282,33 +297,33 @@ show_setup_system_menu() {
     options="$options󰒲  Disable Suspend"
   fi
 
-  if omarchy-hibernation-available; then
+  if hibernation-available; then
     options="$options\n󰤁  Disable Hibernate"
   else
     options="$options\n󰤁  Enable Hibernate"
   fi
 
   case $(menu "System" "$options") in
-  *Suspend*) omarchy-toggle-suspend ;;
-  *"Enable Hibernate"*) present_terminal omarchy-hibernation-setup ;;
-  *"Disable Hibernate"*) present_terminal omarchy-hibernation-remove ;;
+  *Suspend*) toggle-suspend ;;
+  *"Enable Hibernate"*) present_terminal hibernation-setup ;;
+  *"Disable Hibernate"*) present_terminal hibernation-remove ;;
   *) show_setup_menu ;;
   esac
 }
 
 show_install_menu() {
   case $(menu "Install" "󰣇  Package\n󰣇  AUR\n  Web App\n  TUI\n  Service\n  Style\n󰵮  Development\n  Editor\n  Terminal\n󱚤  AI\n󰍲  Windows\n  Gaming") in
-  *Package*) terminal omarchy-pkg-install ;;
-  *AUR*) terminal omarchy-pkg-aur-install ;;
-  *Web*) present_terminal omarchy-webapp-install ;;
-  *TUI*) present_terminal omarchy-tui-install ;;
+  *Package*) terminal pkg-install ;;
+  *AUR*) terminal pkg-aur-install ;;
+  *Web*) present_terminal webapp-install ;;
+  *TUI*) present_terminal tui-install ;;
   *Service*) show_install_service_menu ;;
   *Style*) show_install_style_menu ;;
   *Development*) show_install_development_menu ;;
   *Editor*) show_install_editor_menu ;;
   *Terminal*) show_install_terminal_menu ;;
   *AI*) show_install_ai_menu ;;
-  *Windows*) present_terminal "omarchy-windows-vm install" ;;
+  *Windows*) present_terminal "windows-vm install" ;;
   *Gaming*) show_install_gaming_menu ;;
   *) show_main_menu ;;
   esac
@@ -316,18 +331,18 @@ show_install_menu() {
 
 show_install_service_menu() {
   case $(menu "Install" "  Dropbox\n  Tailscale\n󱇱  NordVPN [AUR]\n󰟵  Bitwarden\n  Chromium Account") in
-  *Dropbox*) present_terminal omarchy-install-dropbox ;;
-  *Tailscale*) present_terminal omarchy-install-tailscale ;;
-  *NordVPN*) present_terminal omarchy-install-nordvpn ;;
+  *Dropbox*) present_terminal install-dropbox ;;
+  *Tailscale*) present_terminal install-tailscale ;;
+  *NordVPN*) present_terminal install-nordvpn ;;
   *Bitwarden*) install_and_launch "Bitwarden" "bitwarden bitwarden-cli" "bitwarden" ;;
-  *Chromium*) present_terminal omarchy-install-chromium-google-account ;;
+  *Chromium*) present_terminal install-chromium-google-account ;;
   *) show_install_menu ;;
   esac
 }
 
 show_install_editor_menu() {
   case $(menu "Install" "  VSCode\n  Cursor\n  Zed\n  Sublime Text\n  Helix\n  Emacs") in
-  *VSCode*) present_terminal omarchy-install-vscode ;;
+  *VSCode*) present_terminal install-vscode ;;
   *Cursor*) install_and_launch "Cursor" "cursor-bin" "cursor" ;;
   *Zed*) install_and_launch "Zed" "zed" "dev.zed.Zed" ;;
   *Sublime*) install_and_launch "Sublime Text" "sublime-text-4" "sublime_text" ;;
@@ -354,7 +369,7 @@ show_install_ai_menu() {
   )
 
   case $(menu "Install" "  Dictation\n󱚤  Claude Code\n󱚤  Codex\n󱚤  Gemini CLI\n󱚤  Copilot CLI\n󱚤  Cursor CLI\n󱚤  LM Studio\n󱚤  Ollama\n󱚤  Crush") in
-  *Dictation*) present_terminal omarchy-voxtype-install ;;
+  *Dictation*) present_terminal voxtype-install ;;
   *Claude*) install "Claude Code" "claude-code" ;;
   *Codex*) install "Codex" "openai-codex" ;;
   *Gemini*) install "Gemini CLI" "gemini-cli" ;;
@@ -369,26 +384,26 @@ show_install_ai_menu() {
 
 show_install_gaming_menu() {
   case $(menu "Install" "  Steam\n󰢹  NVIDIA GeForce NOW\n  RetroArch [AUR]\n󰍳  Minecraft\n󰖺  Xbox Controller [AUR]") in
-  *Steam*) present_terminal omarchy-install-steam ;;
-  *GeForce*) present_terminal omarchy-install-geforce-now ;;
+  *Steam*) present_terminal install-steam ;;
+  *GeForce*) present_terminal install-geforce-now ;;
   *RetroArch*) aur_install_and_launch "RetroArch" "retroarch retroarch-assets libretro libretro-fbneo" "com.libretro.RetroArch.desktop" ;;
   *Minecraft*) install_and_launch "Minecraft" "minecraft-launcher" "minecraft-launcher" ;;
-  *Xbox*) present_terminal omarchy-install-xbox-controllers ;;
+  *Xbox*) present_terminal install-xbox-controllers ;;
   *) show_install_menu ;;
   esac
 }
 
 show_install_style_menu() {
   case $(menu "Install" "󰸌  Theme\n  Background\n  Font") in
-  *Theme*) present_terminal omarchy-theme-install ;;
-  *Background*) omarchy-theme-bg-install ;;
+  *Theme*) present_terminal theme-install ;;
+  *Background*) theme-bg-install ;;
   *Font*) show_install_font_menu ;;
   *) show_install_menu ;;
   esac
 }
 
 show_install_font_menu() {
-  case $(menu "Install" "  Cascadia Mono\n  Meslo LG Mono\n  Fira Code\n  Victor Code\n  Bistream Vera Mono\n  Iosevka" "--width 350") in
+  case $(menu "Install" "  Cascadia Mono\n  Meslo LG Mono\n  Fira Code\n  Victor Code\n  Bistream Vera Mono\n  Iosevka" "-W 350") in
   *Cascadia*) install_font "Cascadia Mono" "ttf-cascadia-mono-nerd" "CaskaydiaMono Nerd Font" ;;
   *Meslo*) install_font "Meslo LG Mono" "ttf-meslo-nerd" "MesloLGL Nerd Font" ;;
   *Fira*) install_font "Fira Code" "ttf-firacode-nerd" "FiraCode Nerd Font" ;;
@@ -401,122 +416,122 @@ show_install_font_menu() {
 
 show_install_development_menu() {
   case $(menu "Install" "󰫏  Ruby on Rails\n  Docker DB\n  JavaScript\n  Go\n  PHP\n  Python\n  Elixir\n  Zig\n  Rust\n  Java\n  .NET\n  OCaml\n  Clojure\n  Scala") in
-  *Rails*) present_terminal "omarchy-install-dev-env ruby" ;;
-  *Docker*) present_terminal omarchy-install-docker-dbs ;;
+  *Rails*) present_terminal "install-dev-env ruby" ;;
+  *Docker*) present_terminal install-docker-dbs ;;
   *JavaScript*) show_install_javascript_menu ;;
-  *Go*) present_terminal "omarchy-install-dev-env go" ;;
+  *Go*) present_terminal "install-dev-env go" ;;
   *PHP*) show_install_php_menu ;;
-  *Python*) present_terminal "omarchy-install-dev-env python" ;;
+  *Python*) present_terminal "install-dev-env python" ;;
   *Elixir*) show_install_elixir_menu ;;
-  *Zig*) present_terminal "omarchy-install-dev-env zig" ;;
-  *Rust*) present_terminal "omarchy-install-dev-env rust" ;;
-  *Java*) present_terminal "omarchy-install-dev-env java" ;;
-  *NET*) present_terminal "omarchy-install-dev-env dotnet" ;;
-  *OCaml*) present_terminal "omarchy-install-dev-env ocaml" ;;
-  *Clojure*) present_terminal "omarchy-install-dev-env clojure" ;;
-  *Scala*) present_terminal "omarchy-install-dev-env scala" ;;
+  *Zig*) present_terminal "install-dev-env zig" ;;
+  *Rust*) present_terminal "install-dev-env rust" ;;
+  *Java*) present_terminal "install-dev-env java" ;;
+  *NET*) present_terminal "install-dev-env dotnet" ;;
+  *OCaml*) present_terminal "install-dev-env ocaml" ;;
+  *Clojure*) present_terminal "install-dev-env clojure" ;;
+  *Scala*) present_terminal "install-dev-env scala" ;;
   *) show_install_menu ;;
   esac
 }
 
 show_install_javascript_menu() {
   case $(menu "Install" "  Node.js\n  Bun\n  Deno") in
-  *Node*) present_terminal "omarchy-install-dev-env node" ;;
-  *Bun*) present_terminal "omarchy-install-dev-env bun" ;;
-  *Deno*) present_terminal "omarchy-install-dev-env deno" ;;
+  *Node*) present_terminal "install-dev-env node" ;;
+  *Bun*) present_terminal "install-dev-env bun" ;;
+  *Deno*) present_terminal "install-dev-env deno" ;;
   *) show_install_development_menu ;;
   esac
 }
 
 show_install_php_menu() {
   case $(menu "Install" "  PHP\n  Laravel\n  Symfony") in
-  *PHP*) present_terminal "omarchy-install-dev-env php" ;;
-  *Laravel*) present_terminal "omarchy-install-dev-env laravel" ;;
-  *Symfony*) present_terminal "omarchy-install-dev-env symfony" ;;
+  *PHP*) present_terminal "install-dev-env php" ;;
+  *Laravel*) present_terminal "install-dev-env laravel" ;;
+  *Symfony*) present_terminal "install-dev-env symfony" ;;
   *) show_install_development_menu ;;
   esac
 }
 
 show_install_elixir_menu() {
   case $(menu "Install" "  Elixir\n  Phoenix") in
-  *Elixir*) present_terminal "omarchy-install-dev-env elixir" ;;
-  *Phoenix*) present_terminal "omarchy-install-dev-env phoenix" ;;
+  *Elixir*) present_terminal "install-dev-env elixir" ;;
+  *Phoenix*) present_terminal "install-dev-env phoenix" ;;
   *) show_install_development_menu ;;
   esac
 }
 
 show_remove_menu() {
   case $(menu "Remove" "󰣇  Package\n  Web App\n  TUI\n󰵮  Development\n󰏓  Preinstalls\n  Dictation\n󰸌  Theme\n󰍲  Windows\n󰈷  Fingerprint\n  Fido2") in
-  *Package*) terminal omarchy-pkg-remove ;;
-  *Web*) present_terminal omarchy-webapp-remove ;;
-  *TUI*) present_terminal omarchy-tui-remove ;;
+  *Package*) terminal pkg-remove ;;
+  *Web*) present_terminal webapp-remove ;;
+  *TUI*) present_terminal tui-remove ;;
   *Development*) show_remove_development_menu ;;
-  *Preinstalls*) present_terminal omarchy-remove-preinstalls ;;
-  *Dictation*) present_terminal omarchy-voxtype-remove ;;
-  *Theme*) present_terminal omarchy-theme-remove ;;
-  *Windows*) present_terminal "omarchy-windows-vm remove" ;;
-  *Fingerprint*) present_terminal "omarchy-setup-fingerprint --remove" ;;
-  *Fido2*) present_terminal "omarchy-setup-fido2 --remove" ;;
+  *Preinstalls*) present_terminal remove-preinstalls ;;
+  *Dictation*) present_terminal voxtype-remove ;;
+  *Theme*) present_terminal theme-remove ;;
+  *Windows*) present_terminal "windows-vm remove" ;;
+  *Fingerprint*) present_terminal "setup-fingerprint --remove" ;;
+  *Fido2*) present_terminal "setup-fido2 --remove" ;;
   *) show_main_menu ;;
   esac
 }
 
 show_remove_development_menu() {
   case $(menu "Remove" "󰫏  Ruby on Rails\n  JavaScript\n  Go\n  PHP\n  Python\n  Elixir\n  Zig\n  Rust\n  Java\n  .NET\n  OCaml\n  Clojure\n  Scala") in
-  *Rails*) present_terminal "omarchy-remove-dev-env ruby" ;;
+  *Rails*) present_terminal "remove-dev-env ruby" ;;
   *JavaScript*) show_remove_javascript_menu ;;
-  *Go*) present_terminal "omarchy-remove-dev-env go" ;;
+  *Go*) present_terminal "remove-dev-env go" ;;
   *PHP*) show_remove_php_menu ;;
-  *Python*) present_terminal "omarchy-remove-dev-env python" ;;
+  *Python*) present_terminal "remove-dev-env python" ;;
   *Elixir*) show_remove_elixir_menu ;;
-  *Zig*) present_terminal "omarchy-remove-dev-env zig" ;;
-  *Rust*) present_terminal "omarchy-remove-dev-env rust" ;;
-  *Java*) present_terminal "omarchy-remove-dev-env java" ;;
-  *NET*) present_terminal "omarchy-remove-dev-env dotnet" ;;
-  *OCaml*) present_terminal "omarchy-remove-dev-env ocaml" ;;
-  *Clojure*) present_terminal "omarchy-remove-dev-env clojure" ;;
-  *Scala*) present_terminal "omarchy-remove-dev-env scala" ;;
+  *Zig*) present_terminal "remove-dev-env zig" ;;
+  *Rust*) present_terminal "remove-dev-env rust" ;;
+  *Java*) present_terminal "remove-dev-env java" ;;
+  *NET*) present_terminal "remove-dev-env dotnet" ;;
+  *OCaml*) present_terminal "remove-dev-env ocaml" ;;
+  *Clojure*) present_terminal "remove-dev-env clojure" ;;
+  *Scala*) present_terminal "remove-dev-env scala" ;;
   *) show_remove_menu ;;
   esac
 }
 
 show_remove_javascript_menu() {
   case $(menu "Remove" "  Node.js\n  Bun\n  Deno") in
-  *Node*) present_terminal "omarchy-remove-dev-env node" ;;
-  *Bun*) present_terminal "omarchy-remove-dev-env bun" ;;
-  *Deno*) present_terminal "omarchy-remove-dev-env deno" ;;
+  *Node*) present_terminal "remove-dev-env node" ;;
+  *Bun*) present_terminal "remove-dev-env bun" ;;
+  *Deno*) present_terminal "remove-dev-env deno" ;;
   *) show_remove_development_menu ;;
   esac
 }
 
 show_remove_php_menu() {
   case $(menu "Remove" "  PHP\n  Laravel\n  Symfony") in
-  *PHP*) present_terminal "omarchy-remove-dev-env php" ;;
-  *Laravel*) present_terminal "omarchy-remove-dev-env laravel" ;;
-  *Symfony*) present_terminal "omarchy-remove-dev-env symfony" ;;
+  *PHP*) present_terminal "remove-dev-env php" ;;
+  *Laravel*) present_terminal "remove-dev-env laravel" ;;
+  *Symfony*) present_terminal "remove-dev-env symfony" ;;
   *) show_remove_development_menu ;;
   esac
 }
 
 show_remove_elixir_menu() {
   case $(menu "Remove" "  Elixir\n  Phoenix") in
-  *Elixir*) present_terminal "omarchy-remove-dev-env elixir" ;;
-  *Phoenix*) present_terminal "omarchy-remove-dev-env phoenix" ;;
+  *Elixir*) present_terminal "remove-dev-env elixir" ;;
+  *Phoenix*) present_terminal "remove-dev-env phoenix" ;;
   *) show_remove_development_menu ;;
   esac
 }
 
 show_update_menu() {
   case $(menu "Update" "  Omarchy\n󰔫  Channel\n  Config\n󰸌  Extra Themes\n  Process\n󰇅  Hardware\n  Firmware\n  Password\n  Timezone\n  Time") in
-  *Omarchy*) present_terminal omarchy-update ;;
+  *Omarchy*) present_terminal update ;;
   *Channel*) show_update_channel_menu ;;
   *Config*) show_update_config_menu ;;
-  *Themes*) present_terminal omarchy-theme-update ;;
+  *Themes*) present_terminal theme-update ;;
   *Process*) show_update_process_menu ;;
   *Hardware*) show_update_hardware_menu ;;
-  *Firmware*) present_terminal omarchy-update-firmware ;;
-  *Timezone*) present_terminal omarchy-tz-select ;;
-  *Time*) present_terminal omarchy-update-time ;;
+  *Firmware*) present_terminal update-firmware ;;
+  *Timezone*) present_terminal tz-select ;;
+  *Time*) present_terminal update-time ;;
   *Password*) show_update_password_menu ;;
   *) show_main_menu ;;
   esac
@@ -524,85 +539,83 @@ show_update_menu() {
 
 show_update_channel_menu() {
   case $(menu "Update channel" "🟢 Stable\n🟡 RC\n🟠 Edge\n🔴 Dev") in
-  *Stable*) present_terminal "omarchy-channel-set stable" ;;
-  *RC*) present_terminal "omarchy-channel-set rc" ;;
-  *Edge*) present_terminal "omarchy-channel-set edge" ;;
-  *Dev*) present_terminal "omarchy-channel-set dev" ;;
+  *Stable*) present_terminal "channel-set stable" ;;
+  *RC*) present_terminal "channel-set rc" ;;
+  *Edge*) present_terminal "channel-set edge" ;;
+  *Dev*) present_terminal "channel-set dev" ;;
   *) show_update_menu ;;
   esac
 }
 show_update_process_menu() {
-  case $(menu "Restart" "  Hypridle\n  Hyprsunset\n  Swayosd\n󰌧  Walker\n󰍜  Waybar") in
-  *Hypridle*) omarchy-restart-hypridle ;;
-  *Hyprsunset*) omarchy-restart-hyprsunset ;;
-  *Swayosd*) omarchy-restart-swayosd ;;
-  *Walker*) omarchy-restart-walker ;;
-  *Waybar*) omarchy-restart-waybar ;;
+  case $(menu "Restart" "  Hypridle\n  Hyprsunset\n  Swayosd\n󰌧  Vicinae\n󰍜  Waybar") in
+  *Hypridle*) restart-hypridle ;;
+  *Hyprsunset*) restart-hyprsunset ;;
+  *Swayosd*) restart-swayosd ;;
+  *Vicinae*) vicinae server ;;
+  *Waybar*) restart-waybar ;;
   *) show_update_menu ;;
   esac
 }
 
 show_update_config_menu() {
-  case $(menu "Use default config" "  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n󱣴  Plymouth\n  Swayosd\n  Tmux\n󰌧  Walker\n󰍜  Waybar") in
-  *Hyprland*) present_terminal omarchy-refresh-hyprland ;;
-  *Hypridle*) present_terminal omarchy-refresh-hypridle ;;
-  *Hyprlock*) present_terminal omarchy-refresh-hyprlock ;;
-  *Hyprsunset*) present_terminal omarchy-refresh-hyprsunset ;;
-  *Plymouth*) present_terminal omarchy-refresh-plymouth ;;
-  *Swayosd*) present_terminal omarchy-refresh-swayosd ;;
-  *Tmux*) present_terminal omarchy-refresh-tmux ;;
-  *Walker*) present_terminal omarchy-refresh-walker ;;
-  *Waybar*) present_terminal omarchy-refresh-waybar ;;
+  case $(menu "Use default config" "  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n󱣴  Plymouth\n  Swayosd\n  Tmux\n󰍜  Waybar") in
+  *Hyprland*) present_terminal refresh-hyprland ;;
+  *Hypridle*) present_terminal refresh-hypridle ;;
+  *Hyprlock*) present_terminal refresh-hyprlock ;;
+  *Hyprsunset*) present_terminal refresh-hyprsunset ;;
+  *Plymouth*) present_terminal refresh-plymouth ;;
+  *Swayosd*) present_terminal refresh-swayosd ;;
+  *Tmux*) present_terminal refresh-tmux ;;
+  *Waybar*) present_terminal refresh-waybar ;;
   *) show_update_menu ;;
   esac
 }
 
 show_update_hardware_menu() {
   case $(menu "Restart" "  Audio\n󱚾  Wi-Fi\n󰂯  Bluetooth") in
-  *Audio*) present_terminal omarchy-restart-pipewire ;;
-  *Wi-Fi*) present_terminal omarchy-restart-wifi ;;
-  *Bluetooth*) present_terminal omarchy-restart-bluetooth ;;
+  *Audio*) present_terminal restart-pipewire ;;
+  *Wi-Fi*) present_terminal restart-wifi ;;
+  *Bluetooth*) present_terminal restart-bluetooth ;;
   *) show_update_menu ;;
   esac
 }
 
 show_update_password_menu() {
   case $(menu "Update Password" "  Drive Encryption\n  User") in
-  *Drive*) present_terminal omarchy-drive-set-password ;;
+  *Drive*) present_terminal drive-set-password ;;
   *User*) present_terminal passwd ;;
   *) show_update_menu ;;
   esac
 }
 
 show_about() {
-  omarchy-launch-about
+  launch-about
 }
 
 show_system_menu() {
   local options="󱄄  Screensaver\n  Lock"
   [[ ! -f ~/.local/state/omarchy/toggles/suspend-off ]] && options="$options\n󰒲  Suspend"
-  omarchy-hibernation-available && options="$options\n󰤁  Hibernate"
+  hibernation-available && options="$options\n󰤁  Hibernate"
   options="$options\n󰍃  Logout\n󰜉  Restart\n󰐥  Shutdown"
 
   case $(menu "System" "$options") in
-  *Screensaver*) omarchy-launch-screensaver force ;;
-  *Lock*) omarchy-lock-screen ;;
+  *Screensaver*) launch-screensaver force ;;
+  *Lock*) lock-screen ;;
   *Suspend*) systemctl suspend ;;
   *Hibernate*) systemctl hibernate ;;
-  *Logout*) omarchy-system-logout ;;
-  *Restart*) omarchy-system-reboot ;;
-  *Shutdown*) omarchy-system-shutdown ;;
+  *Logout*) system-logout ;;
+  *Restart*) system-reboot ;;
+  *Shutdown*) system-shutdown ;;
   *) back_to show_main_menu ;;
   esac
 }
 
 show_main_menu() {
-  go_to_menu "$(menu "Go" "󰀻  Apps\n󰧑  Learn\n󱓞  Trigger\n  Style\n  Setup\n󰉉  Install\n󰭌  Remove\n  Update\n  About\n  System")"
+  go_to_menu "$(menu "Go" "󰧑  Learn\n󱓞  Trigger\n  Style\n  Setup\n󰉉  Install\n󰭌  Remove\n  Update\n  About\n  System")"
 }
 
 go_to_menu() {
   case "${1,,}" in
-  *apps*) walker -p "Launch…" ;;
   *learn*) show_learn_menu ;;
   *trigger*) show_trigger_menu ;;
   *toggle*) show_toggle_menu ;;

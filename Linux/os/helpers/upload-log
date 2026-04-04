@@ -40,7 +40,7 @@ fi
 case "$LOG_TYPE" in
 install)
   ARCHINSTALL_LOG="/var/log/archinstall/install.log"
-  OMARCHY_LOG="/var/log/omarchy-install.log"
+  OMARCHY_LOG="/var/log/install.log"
 
   # Combine system info with logs
   cat "$SYSTEM_INFO" >"$TEMP_LOG"

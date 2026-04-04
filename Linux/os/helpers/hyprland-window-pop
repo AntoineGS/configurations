@@ -3,7 +3,7 @@
 # Toggle to pop-out a tile to stay fixed on a display basis.
 
 # Usage:
-# omarchy-hyprland-window-pop [width height [x y]]
+# hyprland-window-pop [width height [x y]]
 #
 # Arguments:
 #   width   Optional. Width of the floating window. Default: 1300

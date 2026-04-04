@@ -2,4 +2,4 @@
 
 # Overwrite the user config for hyprlock with the Omarchy default.
 
-omarchy-refresh-config hypr/hyprlock.conf
+refresh-config hypr/hyprlock.conf

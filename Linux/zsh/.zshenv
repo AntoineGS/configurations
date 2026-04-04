@@ -11,6 +11,7 @@ export LC_ALL=en_US.UTF-8
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
 export ADZUNA_APP_ID=4bb9d1ce
 export ADZUNA_APP_KEY=3801f98eb7fd7d72a8e98db8afd25df9
+export PATH="$HOME/.local/share/helpers:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"

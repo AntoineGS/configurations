@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Returns drive information about a given volumne, like /dev/nvme0, which is used by omarchy-drive-select.
+# Returns drive information about a given volumne, like /dev/nvme0, which is used by drive-select.
 
 if (($# == 0)); then
-  echo "Usage: omarchy-drive-info [/dev/drive]"
+  echo "Usage: drive-info [/dev/drive]"
   exit 1
 else
   drive="$1"

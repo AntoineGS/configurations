@@ -4,4 +4,4 @@
 # Also attempts to unblock bluetooth service if rfkill had blocked it.
 
 rfkill unblock bluetooth
-exec omarchy-launch-or-focus-tui bluetui
+exec launch-or-focus-tui bluetui

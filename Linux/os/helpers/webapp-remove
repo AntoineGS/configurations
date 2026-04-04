@@ -8,7 +8,7 @@ DESKTOP_DIR="$HOME/.local/share/applications/"
 if (( $# == 0 )); then
   # Find all web apps
   while IFS= read -r -d '' file; do
-    if grep -q '^Exec=.*\(omarchy-launch-webapp\|omarchy-webapp-handler\).*' "$file"; then
+    if grep -q '^Exec=.*\(launch-webapp\|webapp-handler\).*' "$file"; then
       WEB_APPS+=("$(basename "${file%.desktop}")")
     fi
   done < <(find "$DESKTOP_DIR" -name '*.desktop' -print0)

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Remove all web apps installed via omarchy-webapp-install.
-# Identifies web apps by their Exec pattern (omarchy-launch-webapp or omarchy-webapp-handler).
+# Remove all web apps installed via webapp-install.
+# Identifies web apps by their Exec pattern (launch-webapp or webapp-handler).
 
 set -e
 
@@ -12,7 +12,7 @@ echo "Scanning for web apps in $APP_DIR..."
 
 webapp_desktop_files=()
 while IFS= read -r -d '' file; do
-  if grep -q "Exec=omarchy-launch-webapp\|Exec=omarchy-webapp-handler" "$file" 2>/dev/null; then
+  if grep -q "Exec=launch-webapp\|Exec=webapp-handler" "$file" 2>/dev/null; then
     webapp_desktop_files+=("$file")
   fi
 done < <(find "$APP_DIR" -maxdepth 1 -name "*.desktop" -print0 2>/dev/null)

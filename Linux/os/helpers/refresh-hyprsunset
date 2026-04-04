@@ -2,5 +2,5 @@
 
 # Overwrite the user config for hyprsunset with the Omarchy default and restart the service.
 #
-omarchy-refresh-config hypr/hyprsunset.conf
-omarchy-restart-hyprsunset
+refresh-config hypr/hyprsunset.conf
+restart-hyprsunset

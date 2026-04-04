@@ -6,17 +6,17 @@ COMMAND="$1"
 OMARCHY_PATH=${OMARCHY_PATH:-$HOME/.local/share/omarchy}
 
 if [[ -z $COMMAND ]]; then
-  echo "Usage: omarchy-snapshot <create|restore>" >&2
+  echo "Usage: snapshot <create|restore>" >&2
   exit 1
 fi
 
 if ! command -v snapper &>/dev/null; then
-  exit 127 # omarchy-update can use this to just ignore if snapper is not available
+  exit 127 # update can use this to just ignore if snapper is not available
 fi
 
 case "$COMMAND" in
 create)
-  DESC="$(omarchy-version)"
+  DESC="$(version)"
 
   echo -e "\e[32mCreate system snapshot\e[0m"
 
