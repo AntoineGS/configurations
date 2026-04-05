@@ -20,8 +20,8 @@ back_to() {
 }
 
 toggle_existing_menu() {
-  if pgrep -f "vicinae dmenu" > /dev/null; then
-    vicinae close > /dev/null 2>&1
+  if pgrep -f "vicinae dmenu" >/dev/null; then
+    vicinae close >/dev/null 2>&1
     exit 0
   fi
 }
@@ -33,15 +33,22 @@ menu() {
 
   read -r -a args <<<"$extra"
 
-  echo -e "$options" | vicinae dmenu -W 295 -p "$prompt…" "${args[@]}" 2>/dev/null
+  local width_args=(-W 295)
+  if [[ "$extra" == *-W* ]]; then
+    width_args=()
+  fi
+
+  echo -e "$options" | vicinae dmenu "${width_args[@]}" -p "$prompt…" "${args[@]}" 2>/dev/null
 }
 
 terminal() {
-  xdg-terminal-exec --app-id=org.omarchy.terminal "$@"
+  # xdg-terminal-exec --app-id=org.omarchy.terminal "$@"
+  launch-tui-large "$@"
 }
 
 present_terminal() {
-  launch-floating-terminal-with-presentation $1
+  # launch-floating-terminal-with-presentation $1
+  launch-tui-large "$@"
 }
 
 open_in_editor() {
@@ -71,18 +78,6 @@ aur_install() {
 
 aur_install_and_launch() {
   present_terminal "echo 'Installing $1 from AUR...'; pkg-aur-add $2 && setsid gtk-launch $3"
-}
-
-show_learn_menu() {
-  case $(menu "Learn" "  Keybindings\n  Omarchy\n  Hyprland\n󰣇  Arch\n  Neovim\n󱆃  Bash") in
-  *Keybindings*) menu-keybindings ;;
-  *Omarchy*) launch-webapp "https://learn.omacom.io/2/the-manual" ;;
-  *Hyprland*) launch-webapp "https://wiki.hypr.land/" ;;
-  *Arch*) launch-webapp "https://wiki.archlinux.org/title/Main_page" ;;
-  *Bash*) launch-webapp "https://devhints.io/bash" ;;
-  *Neovim*) launch-webapp "https://www.lazyvim.org/keymaps" ;;
-  *) show_main_menu ;;
-  esac
 }
 
 show_trigger_menu() {
@@ -181,13 +176,12 @@ show_hardware_menu() {
 }
 
 show_style_menu() {
-  case $(menu "Style" "󰸌  Theme\n  Font\n  Background\n  Hyprland\n󱄄  Screensaver\n  About") in
+  case $(menu "Style" "󰸌  Theme\n  Font\n  Background\n  Hyprland\n󱄄  Screensaver\n") in
   *Theme*) show_theme_menu ;;
   *Font*) show_font_menu ;;
   *Background*) show_background_menu ;;
   *Hyprland*) open_in_editor ~/.config/hypr/looknfeel.conf ;;
   *Screensaver*) open_in_editor ~/.config/omarchy/branding/screensaver.txt ;;
-  *About*) open_in_editor ~/.config/omarchy/branding/about.txt ;;
   *) show_main_menu ;;
   esac
 }
@@ -202,10 +196,10 @@ show_theme_menu() {
 }
 
 show_background_menu() {
-  local theme_name bg_list selection selected_path
+  local theme_name bg_list selection
   theme_name=$(cat "$HOME/.config/omarchy/current/theme.name" 2>/dev/null)
 
-  bg_list=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort -u)
+  bg_list=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -type f 2>/dev/null | sort -u)
 
   if [[ -z $bg_list ]]; then
     notify-send "No backgrounds found for current theme" -t 2000
@@ -213,15 +207,14 @@ show_background_menu() {
     return
   fi
 
-  selection=$(menu "Background" "$bg_list" "-W 400")
+  selection=$(menu "Background" "$bg_list" "-W 800")
 
   if [[ -z $selection ]]; then
     back_to show_style_menu
     return
   fi
 
-  selected_path=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -name "$selection" -type f 2>/dev/null | head -1)
-  [[ -n $selected_path ]] && theme-bg-set "$selected_path"
+  [[ -n $selection ]] && theme-bg-set "$selection"
 }
 
 show_font_menu() {
@@ -312,87 +305,13 @@ show_setup_system_menu() {
 }
 
 show_install_menu() {
-  case $(menu "Install" "󰣇  Package\n󰣇  AUR\n  Web App\n  TUI\n  Service\n  Style\n󰵮  Development\n  Editor\n  Terminal\n󱚤  AI\n󰍲  Windows\n  Gaming") in
+  case $(menu "Install" "󰣇  Package\n󰣇  AUR\n  Style") in
   *Package*) terminal pkg-install ;;
   *AUR*) terminal pkg-aur-install ;;
-  *Web*) present_terminal webapp-install ;;
-  *TUI*) present_terminal tui-install ;;
-  *Service*) show_install_service_menu ;;
   *Style*) show_install_style_menu ;;
-  *Development*) show_install_development_menu ;;
-  *Editor*) show_install_editor_menu ;;
-  *Terminal*) show_install_terminal_menu ;;
-  *AI*) show_install_ai_menu ;;
-  *Windows*) present_terminal "windows-vm install" ;;
-  *Gaming*) show_install_gaming_menu ;;
   *) show_main_menu ;;
   esac
 }
-
-show_install_service_menu() {
-  case $(menu "Install" "  Dropbox\n  Tailscale\n󱇱  NordVPN [AUR]\n󰟵  Bitwarden\n  Chromium Account") in
-  *Dropbox*) present_terminal install-dropbox ;;
-  *Tailscale*) present_terminal install-tailscale ;;
-  *NordVPN*) present_terminal install-nordvpn ;;
-  *Bitwarden*) install_and_launch "Bitwarden" "bitwarden bitwarden-cli" "bitwarden" ;;
-  *Chromium*) present_terminal install-chromium-google-account ;;
-  *) show_install_menu ;;
-  esac
-}
-
-show_install_editor_menu() {
-  case $(menu "Install" "  VSCode\n  Cursor\n  Zed\n  Sublime Text\n  Helix\n  Emacs") in
-  *VSCode*) present_terminal install-vscode ;;
-  *Cursor*) install_and_launch "Cursor" "cursor-bin" "cursor" ;;
-  *Zed*) install_and_launch "Zed" "zed" "dev.zed.Zed" ;;
-  *Sublime*) install_and_launch "Sublime Text" "sublime-text-4" "sublime_text" ;;
-  *Helix*) install "Helix" "helix" ;;
-  *Emacs*) install "Emacs" "emacs-wayland" && systemctl --user enable --now emacs.service ;;
-  *) show_install_menu ;;
-  esac
-}
-
-show_install_terminal_menu() {
-  case $(menu "Install" "  Alacritty\n  Ghostty\n  Kitty") in
-  *Alacritty*) install_terminal "alacritty" ;;
-  *Ghostty*) install_terminal "ghostty" ;;
-  *Kitty*) install_terminal "kitty" ;;
-  *) show_install_menu ;;
-  esac
-}
-
-show_install_ai_menu() {
-  ollama_pkg=$(
-    (command -v nvidia-smi &>/dev/null && echo ollama-cuda) ||
-      (command -v rocminfo &>/dev/null && echo ollama-rocm) ||
-      echo ollama
-  )
-
-  case $(menu "Install" "  Dictation\n󱚤  Claude Code\n󱚤  Codex\n󱚤  Gemini CLI\n󱚤  Copilot CLI\n󱚤  Cursor CLI\n󱚤  LM Studio\n󱚤  Ollama\n󱚤  Crush") in
-  *Dictation*) present_terminal voxtype-install ;;
-  *Claude*) install "Claude Code" "claude-code" ;;
-  *Codex*) install "Codex" "openai-codex" ;;
-  *Gemini*) install "Gemini CLI" "gemini-cli" ;;
-  *Copilot*) install "Copilot CLI" "github-copilot-cli" ;;
-  *Cursor*) install "Cursor CLI" "cursor-cli" ;;
-  *Studio*) install "LM Studio" "lmstudio-bin" ;;
-  *Ollama*) install "Ollama" $ollama_pkg ;;
-  *Crush*) install "Crush" "crush-bin" ;;
-  *) show_install_menu ;;
-  esac
-}
-
-show_install_gaming_menu() {
-  case $(menu "Install" "  Steam\n󰢹  NVIDIA GeForce NOW\n  RetroArch [AUR]\n󰍳  Minecraft\n󰖺  Xbox Controller [AUR]") in
-  *Steam*) present_terminal install-steam ;;
-  *GeForce*) present_terminal install-geforce-now ;;
-  *RetroArch*) aur_install_and_launch "RetroArch" "retroarch retroarch-assets libretro libretro-fbneo" "com.libretro.RetroArch.desktop" ;;
-  *Minecraft*) install_and_launch "Minecraft" "minecraft-launcher" "minecraft-launcher" ;;
-  *Xbox*) present_terminal install-xbox-controllers ;;
-  *) show_install_menu ;;
-  esac
-}
-
 show_install_style_menu() {
   case $(menu "Install" "󰸌  Theme\n  Background\n  Font") in
   *Theme*) present_terminal theme-install ;;
@@ -413,60 +332,11 @@ show_install_font_menu() {
   *) show_install_menu ;;
   esac
 }
-
-show_install_development_menu() {
-  case $(menu "Install" "󰫏  Ruby on Rails\n  Docker DB\n  JavaScript\n  Go\n  PHP\n  Python\n  Elixir\n  Zig\n  Rust\n  Java\n  .NET\n  OCaml\n  Clojure\n  Scala") in
-  *Rails*) present_terminal "install-dev-env ruby" ;;
-  *Docker*) present_terminal install-docker-dbs ;;
-  *JavaScript*) show_install_javascript_menu ;;
-  *Go*) present_terminal "install-dev-env go" ;;
-  *PHP*) show_install_php_menu ;;
-  *Python*) present_terminal "install-dev-env python" ;;
-  *Elixir*) show_install_elixir_menu ;;
-  *Zig*) present_terminal "install-dev-env zig" ;;
-  *Rust*) present_terminal "install-dev-env rust" ;;
-  *Java*) present_terminal "install-dev-env java" ;;
-  *NET*) present_terminal "install-dev-env dotnet" ;;
-  *OCaml*) present_terminal "install-dev-env ocaml" ;;
-  *Clojure*) present_terminal "install-dev-env clojure" ;;
-  *Scala*) present_terminal "install-dev-env scala" ;;
-  *) show_install_menu ;;
-  esac
-}
-
-show_install_javascript_menu() {
-  case $(menu "Install" "  Node.js\n  Bun\n  Deno") in
-  *Node*) present_terminal "install-dev-env node" ;;
-  *Bun*) present_terminal "install-dev-env bun" ;;
-  *Deno*) present_terminal "install-dev-env deno" ;;
-  *) show_install_development_menu ;;
-  esac
-}
-
-show_install_php_menu() {
-  case $(menu "Install" "  PHP\n  Laravel\n  Symfony") in
-  *PHP*) present_terminal "install-dev-env php" ;;
-  *Laravel*) present_terminal "install-dev-env laravel" ;;
-  *Symfony*) present_terminal "install-dev-env symfony" ;;
-  *) show_install_development_menu ;;
-  esac
-}
-
-show_install_elixir_menu() {
-  case $(menu "Install" "  Elixir\n  Phoenix") in
-  *Elixir*) present_terminal "install-dev-env elixir" ;;
-  *Phoenix*) present_terminal "install-dev-env phoenix" ;;
-  *) show_install_development_menu ;;
-  esac
-}
-
 show_remove_menu() {
-  case $(menu "Remove" "󰣇  Package\n  Web App\n  TUI\n󰵮  Development\n󰏓  Preinstalls\n  Dictation\n󰸌  Theme\n󰍲  Windows\n󰈷  Fingerprint\n  Fido2") in
+  case $(menu "Remove" "󰣇  Package\n  Web App\n  TUI\n  Dictation\n󰸌  Theme\n󰍲  Windows\n󰈷  Fingerprint\n  Fido2") in
   *Package*) terminal pkg-remove ;;
   *Web*) present_terminal webapp-remove ;;
   *TUI*) present_terminal tui-remove ;;
-  *Development*) show_remove_development_menu ;;
-  *Preinstalls*) present_terminal remove-preinstalls ;;
   *Dictation*) present_terminal voxtype-remove ;;
   *Theme*) present_terminal theme-remove ;;
   *Windows*) present_terminal "windows-vm remove" ;;
@@ -476,54 +346,9 @@ show_remove_menu() {
   esac
 }
 
-show_remove_development_menu() {
-  case $(menu "Remove" "󰫏  Ruby on Rails\n  JavaScript\n  Go\n  PHP\n  Python\n  Elixir\n  Zig\n  Rust\n  Java\n  .NET\n  OCaml\n  Clojure\n  Scala") in
-  *Rails*) present_terminal "remove-dev-env ruby" ;;
-  *JavaScript*) show_remove_javascript_menu ;;
-  *Go*) present_terminal "remove-dev-env go" ;;
-  *PHP*) show_remove_php_menu ;;
-  *Python*) present_terminal "remove-dev-env python" ;;
-  *Elixir*) show_remove_elixir_menu ;;
-  *Zig*) present_terminal "remove-dev-env zig" ;;
-  *Rust*) present_terminal "remove-dev-env rust" ;;
-  *Java*) present_terminal "remove-dev-env java" ;;
-  *NET*) present_terminal "remove-dev-env dotnet" ;;
-  *OCaml*) present_terminal "remove-dev-env ocaml" ;;
-  *Clojure*) present_terminal "remove-dev-env clojure" ;;
-  *Scala*) present_terminal "remove-dev-env scala" ;;
-  *) show_remove_menu ;;
-  esac
-}
-
-show_remove_javascript_menu() {
-  case $(menu "Remove" "  Node.js\n  Bun\n  Deno") in
-  *Node*) present_terminal "remove-dev-env node" ;;
-  *Bun*) present_terminal "remove-dev-env bun" ;;
-  *Deno*) present_terminal "remove-dev-env deno" ;;
-  *) show_remove_development_menu ;;
-  esac
-}
-
-show_remove_php_menu() {
-  case $(menu "Remove" "  PHP\n  Laravel\n  Symfony") in
-  *PHP*) present_terminal "remove-dev-env php" ;;
-  *Laravel*) present_terminal "remove-dev-env laravel" ;;
-  *Symfony*) present_terminal "remove-dev-env symfony" ;;
-  *) show_remove_development_menu ;;
-  esac
-}
-
-show_remove_elixir_menu() {
-  case $(menu "Remove" "  Elixir\n  Phoenix") in
-  *Elixir*) present_terminal "remove-dev-env elixir" ;;
-  *Phoenix*) present_terminal "remove-dev-env phoenix" ;;
-  *) show_remove_development_menu ;;
-  esac
-}
-
 show_update_menu() {
-  case $(menu "Update" "  Omarchy\n󰔫  Channel\n  Config\n󰸌  Extra Themes\n  Process\n󰇅  Hardware\n  Firmware\n  Password\n  Timezone\n  Time") in
-  *Omarchy*) present_terminal update ;;
+  case $(menu "Update" "  Arch\n󰔫  Channel\n  Config\n󰸌  Extra Themes\n  Process\n󰇅  Hardware\n  Firmware\n  Password\n  Timezone\n  Time") in
+  *Arch*) present_terminal update ;;
   *Channel*) show_update_channel_menu ;;
   *Config*) show_update_config_menu ;;
   *Themes*) present_terminal theme-update ;;
@@ -537,15 +362,6 @@ show_update_menu() {
   esac
 }
 
-show_update_channel_menu() {
-  case $(menu "Update channel" "🟢 Stable\n🟡 RC\n🟠 Edge\n🔴 Dev") in
-  *Stable*) present_terminal "channel-set stable" ;;
-  *RC*) present_terminal "channel-set rc" ;;
-  *Edge*) present_terminal "channel-set edge" ;;
-  *Dev*) present_terminal "channel-set dev" ;;
-  *) show_update_menu ;;
-  esac
-}
 show_update_process_menu() {
   case $(menu "Restart" "  Hypridle\n  Hyprsunset\n  Swayosd\n󰌧  Vicinae\n󰍜  Waybar") in
   *Hypridle*) restart-hypridle ;;
@@ -588,10 +404,6 @@ show_update_password_menu() {
   esac
 }
 
-show_about() {
-  launch-about
-}
-
 show_system_menu() {
   local options="󱄄  Screensaver\n  Lock"
   [[ ! -f ~/.local/state/omarchy/toggles/suspend-off ]] && options="$options\n󰒲  Suspend"
@@ -611,12 +423,11 @@ show_system_menu() {
 }
 
 show_main_menu() {
-  go_to_menu "$(menu "Go" "󰧑  Learn\n󱓞  Trigger\n  Style\n  Setup\n󰉉  Install\n󰭌  Remove\n  Update\n  About\n  System")"
+  go_to_menu "$(menu "Go" "󱓞  Trigger\n  Style\n  Setup\n󰉉  Install\n󰭌  Remove\n  Update\n  System")"
 }
 
 go_to_menu() {
   case "${1,,}" in
-  *learn*) show_learn_menu ;;
   *trigger*) show_trigger_menu ;;
   *toggle*) show_toggle_menu ;;
   *share*) show_share_menu ;;
@@ -630,7 +441,6 @@ go_to_menu() {
   *install*) show_install_menu ;;
   *remove*) show_remove_menu ;;
   *update*) show_update_menu ;;
-  *about*) show_about ;;
   *system*) show_system_menu ;;
   esac
 }
