@@ -6,4 +6,4 @@ Target = *
 
 [Action]
 When = PostTransaction
-Exec = /bin/bash -c 'pacman -Qqemt > /home/antoinegs/gits/configurations/Linux/pacman/pkglist-aur.txt'
+Exec = /bin/bash -c 'pacman -Qqemt > /home/antoinegs/gits/configurations/Linux/pacman/pkglist-aur-$(hostname).txt'
