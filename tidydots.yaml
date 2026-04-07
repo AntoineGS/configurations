@@ -364,6 +364,16 @@ applications:
           linux: ~/.config/uwsm/default
         name: config
         backup: ./Linux/uwsm/default
+  - name: sddm
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+    entries:
+      - targets:
+          linux: /etc/sddm.conf.d
+        name: config
+        backup: ./Linux/sddm
+        files:
+          - autologin.conf
+        sudo: true
   - name: qmk
     when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
