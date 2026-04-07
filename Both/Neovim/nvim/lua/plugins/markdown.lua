@@ -4,14 +4,14 @@ return {
   -- dependencies = { 'nvim-treesitter/nvim-treesitter', 'echasnovski/mini.icons' }, -- if you use standalone mini plugins
   -- dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-tree/nvim-web-devicons' }, -- if you prefer nvim-web-devicons
   init = function()
-    -- Define color variables
-    local color1_bg = "#c678dd"
-    local color2_bg = "#e06c75"
-    local color3_bg = "#d19a66"
-    local color4_bg = "#98c379"
-    local color5_bg = "#61afef"
-    local color6_bg = "#56b6c2"
-    local color_fg = "#1e2127"
+    -- Catppuccin Mocha colors
+    local color1_bg = "#cba6f7" -- mauve
+    local color2_bg = "#f38ba8" -- red
+    local color3_bg = "#fab387" -- peach
+    local color4_bg = "#a6e3a1" -- green
+    local color5_bg = "#89b4fa" -- blue
+    local color6_bg = "#94e2d5" -- teal
+    local color_fg = "#1e1e2e" -- base
 
     -- Heading colors (when not hovered over), extends through the entire line
     vim.cmd(string.format([[highlight RenderMarkdownH1Bg guifg=%s guibg=%s]], color_fg, color1_bg))
