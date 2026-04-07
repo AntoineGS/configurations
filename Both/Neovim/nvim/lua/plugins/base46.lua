@@ -30,6 +30,10 @@ return {
         vim.api.nvim_set_hl(0, group, { bg = "NONE", ctermbg = "NONE" })
       end
 
+      -- Brighten muted text (NonText/Comment are too dim with transparency)
+      vim.api.nvim_set_hl(0, "NonText", { fg = "#9399b2" })
+      vim.api.nvim_set_hl(0, "SnacksPickerDir", { fg = "#9399b2" })
+
       -- Set active tab with colored background
       -- vim.api.nvim_set_hl(0, "TabLineSel", { bg = "#434256" })
 
