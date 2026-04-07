@@ -1,16 +1,18 @@
 general {
+    {{- if eq .Hostname "omarchbook" -}}
     lock_cmd = pidof hyprlock || hyprlock                   # lock screen
-    before_sleep_cmd = loginctl lock-session               # lock before suspend.
-    after_sleep_cmd = sleep 1 && hyprctl dispatch dpms on             # to avoid having to press a key twice to turn on the display.
-    inhibit_sleep = 3                                      # wait until screen is locked
+    before_sleep_cmd = loginctl lock-session                # lock before suspend.
+    inhibit_sleep = 3                                       # wait until screen is locked
+    {{- end }}
+    after_sleep_cmd = sleep 1 && hyprctl dispatch dpms on   # to avoid having to press a key twice to turn on the display.
 }
 
-{{- if ne .Hostname "omarchbook" }}
+{{- if eq .Hostname "omarchbook" -}}
 listener {
     timeout = 300
-    on-timeout = pidof hyprlock || loginctl lock-session      # lock screen on idle (if we haven't locked already)
+    on-timeout = pidof hyprlock || loginctl lock-session     # lock screen on idle (if we haven't locked already)
 }
-{{- end }}
+{{- end -}}
 
 listener {
     timeout = 30 
@@ -19,12 +21,7 @@ listener {
 }
 
 listener {
-    timeout = 600
-    on-timeout = loginctl lock-session                               # lock screen when timeout has passed
-}
-
-listener {
     timeout = 630
-    on-timeout = hyprctl dispatch dpms off                           # screen off shortly after lock
-    on-resume = hyprctl dispatch dpms on && brightnessctl -r         # screen on when activity is detected
+    on-timeout = hyprctl dispatch dpms off                   # screen off shortly after lock
+    on-resume = hyprctl dispatch dpms on && brightnessctl -r # screen on when activity is detected
 }
