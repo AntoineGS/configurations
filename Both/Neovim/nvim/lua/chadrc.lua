@@ -12,6 +12,7 @@ vim.schedule(function()
   vim.api.nvim_set_hl(0, "DiffChange", { fg = "#6c7086", bg = "#262a32" })
   vim.api.nvim_set_hl(0, "DiffDelete", { fg = "#f38ba8", bg = "#312931", strikethrough = true })
   vim.api.nvim_set_hl(0, "DiffText", { fg = "#cdd6f4", bg = "#252931" })
+  vim.api.nvim_set_hl(0, "Visual", { bg = "#585b70" })
 end)
 
 M.base46 = {
