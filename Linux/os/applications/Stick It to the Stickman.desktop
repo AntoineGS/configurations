@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Stick It to the Stickman
+Comment=Play this game on Steam
+Exec=steam steam://rungameid/2085540
+Icon=steam_icon_2085540
+Terminal=false
+Type=Application
+Categories=Game;

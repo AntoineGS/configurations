@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=CLion 2026.1
+Exec="/home/antoinegs/.local/share/JetBrains/Toolbox/apps/clion/bin/clion" %u
+Version=1.0
+Type=Application
+Categories=Development;IDE;
+Terminal=false
+Icon=jetbrains-clion-c4a9f8bc-0474-4d45-b95f-8698f0af8f30
+X-Icon-Path=/home/antoinegs/.local/share/icons/hicolor/scalable/apps/jetbrains-clion-c4a9f8bc-0474-4d45-b95f-8698f0af8f30.svg
+X-Installed-Icon-Cache-Path=/home/antoinegs/.local/share/icons/hicolor
+X-Icon-Name-Before-Sanitization=jetbrains-clion-c4a9f8bc-0474-4d45-b95f-8698f0af8f30.desktop.icon.svg
+Comment=A cross-platform C and C++ IDE
+StartupWMClass=jetbrains-clion
+StartupNotify=true

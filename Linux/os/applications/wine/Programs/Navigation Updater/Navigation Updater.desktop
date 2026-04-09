@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Navigation Updater
+Exec=env "WINEPREFIX=/home/antoinegs/.wine" wine "C:\\\\users\\\\antoinegs\\\\AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu\\\\Programs\\\\Navigation Updater\\\\Navigation Updater.lnk"
+Type=Application
+StartupNotify=true
+Path=/home/antoinegs/.wine/drive_c/Program Files (x86)/Navigation Updater/package
+Icon=1065_Navigation Updater.0
+StartupWMClass=navigation updater.exe
