@@ -46,7 +46,7 @@ M.defaults = function()
 
   vim.diagnostic.config {
     virtual_text = false,
-    virtual_lines = true,
+    virtual_lines = false,
     signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
     underline = true,
     float = { border = "single" },
