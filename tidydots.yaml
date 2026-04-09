@@ -827,7 +827,7 @@ applications:
   - package:
       managers:
         brew: delta
-        yay: delta
+        pacman: git-delta
     name: delta
     entries: []
   - package:

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Navigation Updater
+MimeType=x-scheme-handler/com.genesis.update.nau;
+Exec=env "WINEPREFIX=/home/antoinegs/.wine" wine start %u
+NoDisplay=true
+StartupNotify=true
+Icon=1065_Navigation Updater.0

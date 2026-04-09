@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Android Studio Panda 3 2025.3.3
+Exec="/home/antoinegs/.local/share/JetBrains/Toolbox/apps/android-studio/bin/studio" %u
+Version=1.0
+Type=Application
+Categories=Development;IDE;
+Terminal=false
+Icon=jetbrains-studio-5b80a962-58cf-4103-9742-89a23437cae6
+X-Icon-Path=/home/antoinegs/.local/share/icons/hicolor/scalable/apps/jetbrains-studio-5b80a962-58cf-4103-9742-89a23437cae6.svg
+X-Installed-Icon-Cache-Path=/home/antoinegs/.local/share/icons/hicolor
+X-Icon-Name-Before-Sanitization=jetbrains-studio-5b80a962-58cf-4103-9742-89a23437cae6.desktop.icon.svg
+Comment=An IDE for Android app development
+StartupWMClass=jetbrains-studio
+StartupNotify=true
