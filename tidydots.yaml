@@ -448,6 +448,107 @@ applications:
         backup: ./Linux/xdg-terminals
         files:
           - xdg-terminals.list
+  - name: fastfetch
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/fastfetch
+        name: config
+        backup: ./Linux/fastfetch
+  - name: fontconfig
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/fontconfig
+        name: config
+        backup: ./Linux/fontconfig
+  - name: hyprland-preview-share-picker
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/hyprland-preview-share-picker
+        name: config
+        backup: ./Linux/hyprland-preview-share-picker
+  - name: imv
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/imv
+        name: config
+        backup: ./Linux/imv
+  - name: makima
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/makima
+        name: config
+        backup: ./Linux/makima
+  - name: mako
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/mako
+        name: config
+        backup: ./Linux/mako
+  - name: mise
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/mise
+        name: config
+        backup: ./Linux/mise
+        files:
+          - config.toml
+  - name: swayosd
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/swayosd
+        name: config
+        backup: ./Linux/swayosd
+  - name: typora
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/Typora/themes
+        name: themes
+        backup: ./Linux/Typora/themes
+  - name: wiremix
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/wiremix
+        name: config
+        backup: ./Linux/wiremix
+  - name: vicinae
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    package:
+      managers:
+        yay: vicinae-bin
+    entries:
+      - targets:
+          linux: ~/.config/vicinae
+        name: config
+        backup: ./Linux/vicinae
+        files:
+          - settings.json
+  - name: autostart
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/autostart
+        name: config
+        backup: ./Linux/autostart
+  - name: browser-flags
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config
+        name: config
+        backup: ./Linux/browser-flags
+        files:
+          - brave-flags.conf
+          - chromium-flags.conf
   - package:
       managers:
         yay: python-lnxlink
@@ -737,11 +838,6 @@ applications:
     entries: []
   - package:
       managers:
-        yay: vicinae-bin
-    name: vicinae
-    entries: []
-  - package:
-      managers:
         yay: insync
     name: insync
     when: '{{ eq .OS "linux" }}'
@@ -760,8 +856,14 @@ applications:
       managers:
         pacman: btop
         winget: aristocratos.btop4win
+    entries:
+      - targets:
+          linux: ~/.config/btop
+        name: config
+        backup: ./Linux/btop
+        files:
+          - btop.conf
     name: btop
-    entries: []
   - package:
       managers:
         winget: gsudo
