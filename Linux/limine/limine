@@ -1,0 +1,29 @@
+TARGET_OS_NAME="Omarchy"
+
+ESP_PATH="/boot"
+
+KERNEL_CMDLINE[default]+="cryptdevice=PARTUUID=d3583d22-8d21-4361-ad85-e204822ae5cd:root root=/dev/mapper/root zswap.enabled=0 rootflags=subvol=@ rw rootfstype=btrfs"
+KERNEL_CMDLINE[default]+="quiet splash"
+
+ENABLE_UKI=yes
+CUSTOM_UKI_NAME="omarchy"
+
+ENABLE_LIMINE_FALLBACK=yes
+
+# Find and add other bootloaders
+FIND_BOOTLOADERS=yes
+
+BOOT_ORDER="*, *fallback, Snapshots"
+
+MAX_SNAPSHOT_ENTRIES=5
+
+SNAPSHOT_FORMAT_CHOICE=2
+
+ROOT_SUBVOLUME_PATH="/@"
+ROOT_SNAPSHOTS_PATH="/@/.snapshots"
+LIMIT_USAGE_PERCENT=85
+RESTORE_METHOD=replace
+SET_SNAPSHOT_AS_DEFAULT=no
+NOTIFICATION_ICON="/usr/share/icons/hicolor/128x128/apps/LimineSnapperSync.png"
+COMMANDS_BEFORE_SAVE="limine-reset-enroll"
+COMMANDS_AFTER_SAVE="limine-enroll-config"
