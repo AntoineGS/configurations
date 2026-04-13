@@ -520,11 +520,11 @@ applications:
           linux: ~/.config/wiremix
         name: config
         backup: ./Linux/wiremix
-  - name: vicinae
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
-    package:
+  - package:
       managers:
         yay: vicinae-bin
+    name: vicinae
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/vicinae
@@ -856,6 +856,7 @@ applications:
       managers:
         pacman: btop
         winget: aristocratos.btop4win
+    name: btop
     entries:
       - targets:
           linux: ~/.config/btop
@@ -863,7 +864,6 @@ applications:
         backup: ./Linux/btop
         files:
           - btop.conf
-    name: btop
   - package:
       managers:
         winget: gsudo
@@ -958,6 +958,13 @@ applications:
         backup: ./Linux/limine/
         files:
           - limine-snapper-sync.conf
+        sudo: true
+      - targets:
+          linux: /etc/default/
+        name: limine
+        backup: ./Linux/limine/
+        files:
+          - limine
         sudo: true
   - package:
       managers:
