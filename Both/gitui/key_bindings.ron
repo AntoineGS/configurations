@@ -37,8 +37,15 @@
     stash_open: Some(( code: Char('l'), modifiers: "")),
 
     abort_merge: Some(( code: Char('M'), modifiers: "SHIFT")),
+
     stage_unstage_item: Some(( code: Char(' '), modifiers: "")),
+
     file_find: Some(( code: Char('/'), modifiers: "")),
     log_find: Some(( code: Char('/'), modifiers: "")),
     branch_find: Some(( code: Char('/'), modifiers: "")),
+
+    fetch: Some(( code: Char('f'), modifiers: "")),
+    pull: Some(( code: Char('p'), modifiers: "")),
+    push: Some(( code: Char('P'), modifiers: "SHIFT")),
+    force_push: Some(( code: Char('P'), modifiers: "SHIFT|CONTROL")),
 )
