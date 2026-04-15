@@ -140,6 +140,7 @@ applications:
             - junegunn.fzf
             - ajeetdsouza.zoxide
             - imagemagick.imagemagick
+            - GnuWin32.File
           name: sxyazi.yazi
     name: yazi
     description: Terminal file manager
