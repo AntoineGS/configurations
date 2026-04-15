@@ -110,6 +110,9 @@ $env.NU_PLUGIN_DIRS = [
 # To load from a custom file you can use:
 # source ($nu.default-config-dir | path join 'custom.nu')
 $env.CARAPACE_BRIDGES = 'zsh,fish,bash,inshellisense'
+$env.EDITOR = 'nvim'
+$env.VISUAL = 'nvim'
+$env.GIT_EDITOR = 'nvim'
 if ($os != "Windows") {
   $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')
   $env.PATH = ($env.PATH | split row (char esep) | prepend '~/.local/bin')

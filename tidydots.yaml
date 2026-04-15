@@ -747,6 +747,22 @@ applications:
     entries: []
   - package:
       managers:
+        brew: gitui
+        pacman: gitui
+        winget: StephanDilly.gitui
+    name: gitui
+    description: Terminal UI for git written in Rust
+    entries:
+      - targets:
+          linux: ~/.config/gitui
+          windows: ~/AppData/Roaming/gitui
+        name: config
+        backup: ./Both/gitui
+        files:
+          - theme.ron
+          - key_bindings.ron
+  - package:
+      managers:
         brew: lazygit
         pacman: lazygit
         winget: JesseDuffield.lazygit

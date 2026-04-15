@@ -57,6 +57,8 @@ alias tailbat="tail -f $1| bat --paging=never -l log -"
 alias :q="exit"
 alias y="yazi"
 alias lg="lazygit"
+alias gu="gitui"
+alias guw="gitui --watcher"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
