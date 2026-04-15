@@ -1,5 +1,9 @@
 Import-Module PSReadLine
-Set-PSReadLineOption -EditMode Vi 
+Set-PSReadLineOption -EditMode Vi
+
+$env:EDITOR = 'nvim'
+$env:VISUAL = 'nvim'
+$env:GIT_EDITOR = 'nvim'
 
 function Invoke-Starship-TransientFunction {
   &starship module character
