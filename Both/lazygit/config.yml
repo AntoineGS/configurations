@@ -1,12 +1,34 @@
 gui:
   theme:
+    activeBorderColor:
+      - "#89b4fa" # blue
+      - bold
+    inactiveBorderColor:
+      - "#a6adc8" # subtext0
+    searchingActiveBorderColor:
+      - "#f9e2af" # yellow
+    optionsTextColor:
+      - "#89b4fa" # blue
     selectedLineBgColor:
-      - "#45475a" # surface1
+      - "#313244" # surface0
+    inactiveViewSelectedLineBgColor:
+      - "#6c7086" # overlay0
+    cherryPickedCommitFgColor:
+      - "#89b4fa" # blue
     cherryPickedCommitBgColor:
       - "#45475a" # surface1
+    markedBaseCommitFgColor:
+      - "#89b4fa" # blue
+    markedBaseCommitBgColor:
+      - "#f9e2af" # yellow
+    unstagedChangesColor:
+      - "#f38ba8" # red
+    defaultFgColor:
+      - "#cdd6f4" # text
+  authorColors:
+    "*": "#b4befe" # lavender
 git:
   pagers:
     - pager: delta --paging=never
-
 os:
   editPreset: "nvim"
