@@ -6,6 +6,7 @@ export ZSH="/usr/share/oh-my-zsh"
 export MANPAGER="sh -c 'awk '\''{ gsub(/\x1B\[[0-9;]*m/, \"\", \$0); gsub(/.\x08/, \"\", \$0); print }'\'' | bat -p -lman'"
 export EDITOR=nvim
 export VISUAL=nvim
+export GIT_EDITOR=nvim
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
