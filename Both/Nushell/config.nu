@@ -771,6 +771,8 @@ def --env y [...args] {
 alias ll = ls -al
 alias :q = exit
 alias lg = lazygit
+alias gu = gitui
+alias guw = gitui --watcher
 
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
