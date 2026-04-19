@@ -76,6 +76,17 @@ autocmd("BufWritePost", {
   end,
 })
 
+-- Spellcheck: enable for normal file buffers. Treesitter @spell captures scope
+-- checking to comments/strings in code; prose filetypes (markdown, text) get
+-- full-buffer checking since their whole content is prose.
+autocmd("FileType", {
+  callback = function(args)
+    if vim.bo[args.buf].buftype == "" then
+      vim.opt_local.spell = true
+    end
+  end,
+})
+
 -- user event that loads after UIEnter + only if file buf is there
 autocmd({ "UIEnter", "BufReadPost", "BufNewFile" }, {
   group = vim.api.nvim_create_augroup("NvFilePost", { clear = true }),
