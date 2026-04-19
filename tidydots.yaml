@@ -37,6 +37,13 @@ applications:
           windows: ~/AppData/Local/nvim
         name: config
         backup: ./Both/Neovim/nvim
+      - targets:
+          linux: ~/.local/share/nvim/site/spell
+          windows: ~/AppData/Local/nvim-data/site/spell
+        name: spell
+        backup: ./Both/Neovim/spell
+        files:
+          - en.utf-8.add
   - package:
       managers:
         brew: starship
