@@ -1,11 +1,11 @@
-sudo pacman -S texlive-basic texlive-xetex texlive-latexextra texlive-fontsextra
-texlive-fontsrecommended texlive-bin texlive-doc sudo pacman -S
-texlive-fontsrecommended texlive-latexextra texlive-fontsextra sudo pacman -S
-texlive-fontsextra sudo ln -s /usr/share/texmf-dist/fonts/opentype
-/usr/share/fonts/texmf-opentype; fc-cache -f
+`sudo pacman -S texlive-basic texlive-xetex texlive-latexextra texlive-fontsextra`
+`texlive-fontsrecommended texlive-bin texlive-doc sudo pacman -S`
+`texlive-fontsrecommended texlive-latexextra texlive-fontsextra sudo pacman -S`
+`texlive-fontsextra sudo ln -s /usr/share/texmf-dist/fonts/opentype`
+`/usr/share/fonts/texmf-opentype; fc-cache -f`
 
 !! Add Everything config and MultiCommander config !! Add
-/etc/pam.d/system-local-login
+`/etc/pam.d/system-local-login`
 
 # Windows
 
@@ -51,7 +51,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now units-backup.timer
 ```
 
-## Hyperland
+## Hyprland
 
 - `systemctl --user daemon-reload; systemctl --user enable --now watch-rustdesk-submap.service`
 - `sudo chmod +x ~/.config/hypr/rustdesk-submap-watch.sh`
@@ -102,7 +102,7 @@ session) for the environment variable to take effect.
 
 ## Starship
 
-- Install NerdFont (JetBrains Mono Nerd Font)
+- Install Nerd Fonts (JetBrains Mono Nerd Font)
 - `brew install starship`
 
 ## Nushell
