@@ -31,7 +31,8 @@
     "unit-testing@claude-code-workflows": true,
     "openviking-memory@openviking-local": true,
     "safety-net@cc-marketplace": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "clangd-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "claude-code-workflows": {
@@ -56,6 +57,6 @@
       "autoUpdate": true
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "skipDangerousModePermissionPrompt": true
 }
