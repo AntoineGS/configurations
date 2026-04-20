@@ -65,7 +65,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) : ;; *) tmux rename-window -t \"$TMUX_PANE\" \"󰂚 $name\" ;; esac; true"
+            "command": "~/.claude/hooks/tmux-mark-window.sh waiting"
+          },
+          {
+            "type": "command",
+            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::waiting::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true"
           }
         ]
       }
@@ -75,7 +79,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) : ;; *) tmux rename-window -t \"$TMUX_PANE\" \"󰂚 $name\" ;; esac; true"
+            "command": "~/.claude/hooks/tmux-mark-window.sh completed"
+          },
+          {
+            "type": "command",
+            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::completed::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true"
           }
         ]
       }
@@ -85,7 +93,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) tmux rename-window -t \"$TMUX_PANE\" \"${name#󰂚 }\" ;; esac; true"
+            "command": "~/.claude/hooks/tmux-mark-window.sh clear"
           }
         ]
       }

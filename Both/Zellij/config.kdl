@@ -11,6 +11,14 @@ session_name "-"
 attach_to_session true
 default_shell "C:/Program Files/nu/bin/nu.exe"
 
+load_plugins {
+    "file:~/.config/zellij/plugins/zellij-attention.wasm" {
+        enabled "true"
+        waiting_icon "󰂚 "
+        completed_icon "󰄬 "
+    }
+}
+
 keybinds clear-defaults=true {
     normal {
         // vim-tmux-navigator pane navigation
