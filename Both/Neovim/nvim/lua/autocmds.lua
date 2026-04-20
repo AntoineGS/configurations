@@ -83,6 +83,7 @@ autocmd("FileType", {
   callback = function(args)
     if vim.bo[args.buf].buftype == "" then
       vim.opt_local.spell = true
+      vim.cmd([[syntax match NoSpellVersion /\v<v?\d+(\.\d+)*>/ contains=@NoSpell containedin=ALL transparent]])
     end
   end,
 })
