@@ -341,6 +341,10 @@ applications:
           windows: ~/AppData/Roaming/Zellij/config/layouts
         name: layouts
         backup: ./Both/Zellij/layouts
+      - targets:
+          windows: ~/AppData/Roaming/Zellij/config/plugins
+        name: plugins
+        backup: ./Both/Zellij/plugins
   - package:
       managers:
         pacman: hyprland
