@@ -58,5 +58,37 @@
     }
   },
   "effortLevel": "xhigh",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) : ;; *) tmux rename-window -t \"$TMUX_PANE\" \"󰂚 $name\" ;; esac; true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) : ;; *) tmux rename-window -t \"$TMUX_PANE\" \"󰂚 $name\" ;; esac; true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$TMUX\" ] && name=$(tmux display-message -p -t \"$TMUX_PANE\" \"#W\" 2>/dev/null) && case \"$name\" in \"󰂚 \"*) tmux rename-window -t \"$TMUX_PANE\" \"${name#󰂚 }\" ;; esac; true"
+          }
+        ]
+      }
+    ]
+  }
 }
