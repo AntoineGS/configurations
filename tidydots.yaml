@@ -314,6 +314,12 @@ applications:
         backup: ./Linux/tmux
         files:
           - .tmux.conf
+      - targets:
+          linux: ~/.config/tmux
+        name: scripts
+        backup: ./Linux/tmux
+        files:
+          - clear-claude-bell.sh
   - package:
       managers:
         winget: Zellij.Zellij
