@@ -1,5 +1,12 @@
-[plugin]
-deps = []
+[[plugin.deps]]
+use = "barbanevosa/autosession"
+rev = "7a12b20"
+hash = "f9b76184511c983db7c6f719eea1e14d"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:git"
+rev = "442d908"
+hash = "6849444b7c2df08eace83f3f86fb55a3"
 
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-mocha"
