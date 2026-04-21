@@ -10,6 +10,8 @@ config.inactive_pane_hsb = {
 }
 
 config.enable_wayland = false
+-- Don't inject SSH_AUTH_SOCK; let Windows OpenSSH use the named-pipe ssh-agent service.
+config.mux_enable_ssh_agent = false
 -- config.window_background_opacity = 0.98
 
 config.window_decorations = "RESIZE"
@@ -90,13 +92,7 @@ config.keys = {
 	-- Paste (tmux: ])
 	{ key = "]", mods = "LEADER", action = act.PasteFrom("Clipboard") },
 
-	-- vim-tmux-navigator: Ctrl+hjkl without leader for seamless pane navigation
-	{ key = "h", mods = "CTRL", action = act.ActivatePaneDirection("Left") },
-	{ key = "j", mods = "CTRL", action = act.ActivatePaneDirection("Down") },
-	{ key = "k", mods = "CTRL", action = act.ActivatePaneDirection("Up") },
-	{ key = "l", mods = "CTRL", action = act.ActivatePaneDirection("Right") },
-
-	-- Popup terminal (tmux: C-b C-p spawns a zoomed split)
+-- Popup terminal (tmux: C-b C-p spawns a zoomed split)
 	{
 		key = "p",
 		mods = "LEADER|CTRL",
