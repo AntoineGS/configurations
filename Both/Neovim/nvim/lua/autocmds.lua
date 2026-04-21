@@ -83,9 +83,40 @@ autocmd("FileType", {
   callback = function(args)
     if vim.bo[args.buf].buftype == "" then
       vim.opt_local.spell = true
-      vim.cmd([[syntax match NoSpellVersion /\v<v?\d+(\.\d+)*>/ contains=@NoSpell containedin=ALL transparent]])
     end
   end,
+})
+
+-- Exclude version-like tokens (e.g. v1, 1.2.3) from spellcheck via extmarks.
+-- A legacy `syntax match` would work but flips the buffer into syntax-enabled
+-- mode, which breaks Treesitter's @spell scoping and causes every identifier
+-- to be spellchecked. Extmarks override TS spell captures without that
+-- side-effect.
+local version_ns = vim.api.nvim_create_namespace("spell_version_exclusions")
+local version_regex = vim.regex([[\v<v?\d+(\.\d+)*>]])
+
+local function update_version_spell_marks(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  if vim.bo[bufnr].buftype ~= "" then return end
+  vim.api.nvim_buf_clear_namespace(bufnr, version_ns, 0, -1)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  for lnum, line in ipairs(lines) do
+    local offset = 0
+    while offset < #line do
+      local s, e = version_regex:match_str(line:sub(offset + 1))
+      if not s then break end
+      vim.api.nvim_buf_set_extmark(bufnr, version_ns, lnum - 1, offset + s, {
+        end_col = offset + e,
+        spell = false,
+        priority = 200,
+      })
+      offset = offset + e
+    end
+  end
+end
+
+autocmd({ "BufReadPost", "TextChanged", "InsertLeave" }, {
+  callback = function(args) update_version_spell_marks(args.buf) end,
 })
 
 -- user event that loads after UIEnter + only if file buf is there
