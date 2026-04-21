@@ -1,0 +1,5 @@
+[mgr]
+prepend_keymap = [
+  { on = [ "q" ], run = "plugin sessionquit", desc = "Quit (save session if launched with autosession)" },
+  { on = [ "Q" ], run = "quit",               desc = "Quit without saving session" },
+]

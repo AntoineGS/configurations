@@ -1,3 +1,26 @@
 [mgr]
 show_hidden=true
 linemode="size_and_mtime"
+
+[opener]
+edit = [
+  { run = 'nvim "$@"', block = true, for = "unix" },
+  { run = 'nvim %*',   block = true, for = "windows" },
+]
+
+[open]
+prepend_rules = [
+  { name = "*", use = "edit" },
+]
+
+[[plugin.prepend_fetchers]]
+id    = "git"
+url   = "*"
+run   = "git"
+group = "git"
+
+[[plugin.prepend_fetchers]]
+id    = "git"
+url   = "*/"
+run   = "git"
+group = "git"
