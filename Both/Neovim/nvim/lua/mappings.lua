@@ -5,6 +5,8 @@ wk.add {
   { "<leader>y", '"+y', desc = "Yank to +" },
   { "<leader>y", '"+y', desc = "Yank to +", mode = "v" },
   { "<leader>Y", '"+Y', desc = "Yank rest of line to +" },
+
+  { "gr", group = "lsp" },
 }
 
 map("n", "<C-d>", "<C-d>zz")
