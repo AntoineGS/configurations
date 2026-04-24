@@ -3,8 +3,7 @@ if vim.g.neovide then
 else
   return {
     "sphamba/smear-cursor.nvim",
-    lazy = false,
-    enable = false,
+    event = "VeryLazy",
     opts = { -- Default  Range
       stiffness = 1, -- 0.6      [0, 1]
       trailing_stiffness = 0.4, -- 0.4      [0, 1]

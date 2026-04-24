@@ -30,7 +30,8 @@ return vim.tbl_deep_extend("force", src, {
   cmd = "Copilot",
   event = event,
   config = function()
-    require("copilot").setup {
+    vim.schedule(function()
+      require("copilot").setup {
       -- trace = "verbose",
       -- copilot_model = "gpt-4o-copilot",
       logger = logger_conf,
@@ -96,6 +97,7 @@ return vim.tbl_deep_extend("force", src, {
       -- auth_provider_url = "https://someurl.com",
       -- lsp_binary = "C:\\Users\\antoi\\AppData\\Local\\nvim-data\\lazy\\copilot.lua\\copilot\\copilot-language-server.exe",
     }
+    end)
   end,
 
   -- stylua: ignore

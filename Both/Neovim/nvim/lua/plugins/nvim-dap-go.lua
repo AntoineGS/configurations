@@ -1,6 +1,6 @@
 return {
   "leoluz/nvim-dap-go",
-  lazy = false,
+  ft = "go",
   dependencies = { "mfussenegger/nvim-dap" },
   config = function()
     require("dap-go").setup {
