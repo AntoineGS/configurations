@@ -2,4 +2,5 @@
 prepend_keymap = [
   { on = [ "q" ], run = "plugin sessionquit", desc = "Quit (save session if launched with autosession)" },
   { on = [ "Q" ], run = "quit",               desc = "Quit without saving session" },
+  { on = [ "<C-y>" ], run = '''shell 'powershell -NoProfile -Command "& {Set-Clipboard -LiteralPath $args}" %*' --block''', desc = "Copy file(s)/folder(s) to Windows clipboard" },
 ]

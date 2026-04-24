@@ -7,10 +7,13 @@ edit = [
   { run = 'nvim "$@"', block = true, for = "unix" },
   { run = 'nvim %*',   block = true, for = "windows" },
 ]
+admin = [
+  { run = 'gsudo %*', orphan = true, for = "windows" },
+]
 
 [open]
 prepend_rules = [
-  { name = "*", use = "edit" },
+  { name = "*", use = [ "edit", "admin" ] },
 ]
 
 [[plugin.prepend_fetchers]]
