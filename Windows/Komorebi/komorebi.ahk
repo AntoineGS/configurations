@@ -63,6 +63,39 @@ RunAsUser(target, args := "", workDir := "", verb := "open", show := 1) {
     desktopView.Document.Application.ShellExecute(target, args, workDir, verb, show)
 }
 
+; Launch a wezterm command, bring the newly-spawned window to the foreground,
+; and optionally move it to a komorebi workspace. Diffs the wezterm window list
+; before/after launch so we don't depend on a specific window class matching.
+LaunchWezterm(launchArgs, workspace := "") {
+    before := Map()
+    for hwnd in WinGetList("ahk_exe wezterm-gui.exe")
+        before[hwnd] := true
+
+    RunAsUser("wezterm-gui.exe", launchArgs)
+
+    newHwnd := 0
+    startTick := A_TickCount
+    while (A_TickCount - startTick < 5000) {
+        for hwnd in WinGetList("ahk_exe wezterm-gui.exe") {
+            if !before.Has(hwnd) {
+                newHwnd := hwnd
+                break 2
+            }
+        }
+        Sleep 50
+    }
+
+    if newHwnd {
+        Sleep 100  ; let komorebi place/float the window first
+        WinActivate "ahk_id " newHwnd
+        if workspace != "" {
+            Sleep 100
+            Komorebic('move-to-named-workspace "' workspace '"')
+            Komorebic('focus-named-workspace "' workspace '"')
+        }
+    }
+}
+
 EnterResizeMode() {
     global resizeMode := true
     ToolTip "RESIZE MODE (hjkl to resize, Esc to exit)"
@@ -81,7 +114,7 @@ ExitResizeMode() {
 ; --- App shortcuts (focus or launch) ---------------------------------------
 
 #!b::FocusOrLaunch("Chrome", "chrome")
-#!g::FocusOrLaunch("GitKraken", "gitkraken")
+#!l::LaunchWezterm('start --class lazygit -- pwsh -NoLogo -NoProfile -Command lazygit', "git")
 #!e::FocusOrLaunch("MD Explorer", "C:/Multidev/DBExplorer/MDExplorer.exe")
 #!c::FocusOrLaunch("Total Commander", "C:/Program Files/totalcmd/TOTALCMD64.exe")
 #!m::FocusOrLaunch("ahk_exe ms-teams.exe", "ms-teams.exe")
@@ -96,18 +129,11 @@ ExitResizeMode() {
     h := Round((mBottom - mTop) * 0.8)
     cols := Round(w / 9)
     rows := Round(h / 19)
-    cmd := "wezterm-gui.exe --config initial_cols=" cols " --config initial_rows=" rows " start --class btop -- btop"
-    Run cmd
+    LaunchWezterm("--config initial_cols=" cols " --config initial_rows=" rows " start --class btop -- btop")
 }
 #!f::FocusOrLaunch("Everything", "C:\Program Files\Everything 1.5a\Everything.exe")
 #Enter::Run "wezterm-gui.exe"
-#!y::{
-    RunAsUser("wezterm-gui.exe", "start --class yazi -- yazi")
-    if WinWait("ahk_class yazi",, 5) {
-        Komorebic('move-to-named-workspace "explorer"')
-        Komorebic('focus-named-workspace "explorer"')
-    }
-}
+#!y::LaunchWezterm('start --class yazi -- pwsh -NoLogo -NoProfile -Command "$env:YAZI_AUTOSESSION=1; yazi"', "explorer")
 
 ; --- Window management -----------------------------------------------------
 
@@ -129,7 +155,7 @@ ExitResizeMode() {
 #+j::Komorebic("move down")
 #+k::Komorebic("move up")
 #+l::Komorebic("move right")
-#+Enter::Komorebic("promote")
+#+Enter::Run 'wezterm-gui.exe start -- nu'
 
 ; --- Stack windows ---------------------------------------------------------
 
