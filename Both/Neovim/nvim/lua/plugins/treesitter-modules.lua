@@ -37,12 +37,12 @@ return {
     "nvim-treesitter/nvim-treesitter",
     branch = "main",
     build = ":TSUpdate",
-    lazy = false,
+    event = { "BufReadPost", "BufNewFile" },
   },
   {
     "MeanderingProgrammer/treesitter-modules.nvim",
     dependencies = { "nvim-treesitter/nvim-treesitter" },
-    lazy = false,
+    event = { "BufReadPost", "BufNewFile" },
     opts = {
       ensure_installed = languages,
       fold = { enable = true },
@@ -62,7 +62,7 @@ return {
   {
     "nvim-treesitter/nvim-treesitter-textobjects",
     branch = "main",
-    lazy = false,
+    event = { "BufReadPost", "BufNewFile" },
     dependencies = { "nvim-treesitter/nvim-treesitter" },
     init = function()
       -- Disable entire built-in ftplugin mappings to avoid conflicts.

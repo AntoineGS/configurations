@@ -79,4 +79,9 @@ return {
     },
   },
   opts_extend = { "sources.default" },
+  config = function(_, opts)
+    vim.schedule(function()
+      require("blink.cmp").setup(opts)
+    end)
+  end,
 }

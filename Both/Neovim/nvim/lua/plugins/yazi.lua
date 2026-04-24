@@ -11,7 +11,6 @@ return {
   cmd = "Yazi",
   dependencies = {
     { "nvim-lua/plenary.nvim", lazy = true },
-    { "folke/snacks.nvim", lazy = true },
   },
   opts = {
     open_for_directories = false,
