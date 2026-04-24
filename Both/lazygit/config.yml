@@ -1,3 +1,4 @@
+notARepository: skip
 gui:
   theme:
     activeBorderColor:
@@ -32,3 +33,15 @@ git:
     - pager: delta --paging=never
 os:
   editPreset: "nvim"
+keybinding:
+  universal:
+    prevPage: "<c-u>"
+    nextPage: "<c-d>"
+    scrollUpMain: ","
+    scrollDownMain: "."
+    scrollUpMain-alt2: "<disabled>"
+    scrollDownMain-alt2: "<disabled>"
+  commits:
+    moveDownCommit: "J"
+    moveUpCommit: "K"
+    openLogMenu: ";"
