@@ -70,8 +70,8 @@
           "layout": "BSP",
           "initial_workspace_rules": [
             {
-              "kind": "Exe",
-              "id": "wezterm-gui.exe",
+              "kind": "Class",
+              "id": "org.wezfurlong.wezterm",
               "matching_strategy": "Equals"
             },
             {
