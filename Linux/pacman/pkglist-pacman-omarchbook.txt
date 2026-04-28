@@ -6,6 +6,7 @@ brightnessctl
 btop
 clang
 cups-pdf
+delve
 docker-compose
 dotnet-runtime-9.0
 expac
@@ -55,6 +56,7 @@ satty
 sd
 sddm
 signal-desktop
+socat
 starship
 swaybg
 swayosd
