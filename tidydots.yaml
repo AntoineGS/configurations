@@ -589,6 +589,17 @@ applications:
         files:
           - blacklist-raydium.conf
         sudo: true
+  - name: system-sleep-hooks
+    description: Post-resume hooks (e.g. rebind elan_i2c touchpad to avoid dmesg flood + fan ramp)
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /usr/lib/systemd/system-sleep
+        name: hooks
+        backup: ./Linux/system-sleep
+        files:
+          - elan-i2c-rebind
+        sudo: true
   - name: os-files
     when: '{{ eq .OS "linux" }}'
     entries:
