@@ -1019,3 +1019,14 @@ applications:
             linux: ~/.local/share/zsh/zsh-claudecode-completion
     name: zsh-claudecode-completion
     entries: []
+  - package:
+      managers:
+        pacman: snapper
+    name: snapper
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: /etc/snapper/configs
+        name: configs
+        backup: ./Linux/Snapper/configs
+        sudo: true
