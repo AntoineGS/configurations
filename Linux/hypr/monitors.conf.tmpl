@@ -6,9 +6,13 @@
 env = GDK_SCALE,1
 
 {{ if eq .Hostname "omarchbook" -}}
-# Laptop: built-in display, mirror any external monitor (TV/HDMI)
+# Laptop: built-in display, mirror any external monitor (TV/HDMI).
+# External pinned to 1920x1080@60 to match the laptop panel — avoids the
+# Denon AVR advertising DCI 4K@30 over EDID, which causes side bars and flicker.
+# SUPER+E toggles "takeover" mode (laptop off, external as sole display) via
+# scripts/toggle-external-takeover.sh.
 monitor = eDP-1, preferred, auto, 1
-monitor = , preferred, auto, 1, mirror, eDP-1
+monitor = , 1920x1080@60, auto, 1, mirror, eDP-1
 {{- else }}
 
 # Desktop: multi-monitor setup (1x for 1080p/1440p displays)
