@@ -1,11 +1,12 @@
 notARepository: skip
 gui:
+  showDivergenceFromBaseBranch: arrowAndNumber
   theme:
     activeBorderColor:
-      - "#89b4fa" # blue
+      - "#cba6f7" # mauve
       - bold
     inactiveBorderColor:
-      - "#a6adc8" # subtext0
+      - "#45475a" # surface1
     searchingActiveBorderColor:
       - "#f9e2af" # yellow
     optionsTextColor:
