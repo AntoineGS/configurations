@@ -1,0 +1,27 @@
+#!/bin/bash
+# Rebind the Elan i2c touchpad after resume. The chip occasionally fails to
+# reinitialize cleanly post-S3 and floods dmesg with
+# "elan_i2c i2c-ELAN0000:00: invalid report id data (ff)", which spins the fan
+# up until the burst stops on its own.
+
+set -u
+
+action="${1:-}"
+sleep_state="${2:-}"
+
+[ "$action" = "post" ] || exit 0
+
+case "$sleep_state" in
+  suspend|hibernate|hybrid-sleep|suspend-then-hibernate) ;;
+  *) exit 0 ;;
+esac
+
+driver=/sys/bus/i2c/drivers/elan_i2c
+device=i2c-ELAN0000:00
+
+[ -e "$driver/$device" ] || exit 0
+
+printf '%s' "$device" > "$driver/unbind" 2>/dev/null || true
+printf '%s' "$device" > "$driver/bind" 2>/dev/null || true
+
+exit 0
