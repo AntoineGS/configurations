@@ -46,7 +46,19 @@ o.timeoutlen = 400
 o.undofile = true
 o.autoread = true
 
+-- Backups: keep timestamped copies in stdpath('state')/backup; pruned after 14 days (see autocmds.lua).
+-- Trailing '//' encodes the source file's full path into the backup name so files with the same
+-- basename in different directories don't collide.
+do
+  local backup_dir = vim.fn.stdpath "state" .. "/backup"
+  vim.fn.mkdir(backup_dir, "p")
+  o.backup = true
+  o.writebackup = true
+  opt.backupdir = backup_dir .. "//"
+end
+
 opt.spelllang = { "en_us" }
+opt.spelloptions:append "camel"
 
 -- interval for writing swap file to disk, also used by gitsigns
 o.updatetime = 250

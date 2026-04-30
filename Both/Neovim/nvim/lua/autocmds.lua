@@ -1,5 +1,36 @@
 local autocmd = vim.api.nvim_create_autocmd
 
+-- Backups: timestamp 'backupext' before each write so saves don't overwrite the previous backup.
+-- Companion to the backup config in options.lua.
+autocmd("BufWritePre", {
+  callback = function()
+    vim.opt.backupext = "~" .. os.date "%Y-%m-%d_%H-%M-%S"
+  end,
+})
+
+-- Prune backups older than 14 days. Runs once per session, deferred so it doesn't slow startup.
+autocmd("VimEnter", {
+  callback = function()
+    vim.schedule(function()
+      local dir = vim.fn.stdpath "state" .. "/backup"
+      local cutoff = os.time() - 14 * 24 * 60 * 60
+      local handle = vim.uv.fs_scandir(dir)
+      if not handle then return end
+      while true do
+        local name, ftype = vim.uv.fs_scandir_next(handle)
+        if not name then break end
+        if ftype == "file" then
+          local path = dir .. "/" .. name
+          local stat = vim.uv.fs_stat(path)
+          if stat and stat.mtime.sec < cutoff then
+            vim.uv.fs_unlink(path)
+          end
+        end
+      end
+    end)
+  end,
+})
+
 -- Handle OneDrive (or other sync tools) touching file timestamps without changing content.
 -- Track file state ourselves since checktime is blocked inside autocommands (autocmd_busy).
 local function track_file_state(bufnr)
