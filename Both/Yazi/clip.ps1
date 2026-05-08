@@ -1,0 +1,1 @@
+Set-Clipboard -LiteralPath $args
