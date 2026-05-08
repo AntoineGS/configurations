@@ -24,6 +24,31 @@ FocusOrLaunch(windowTitle, execPath) {
     }
 }
 
+; Like FocusOrLaunch, but explicitly moves the window to a komorebi workspace
+; AFTER it appears. Use this for apps where komorebi's initial_workspace_rules
+; race with app initialization (e.g. Delphi apps that show a transient
+; Application/splash window before the real main form settles).
+FocusOrLaunchOnWorkspace(windowTitle, execPath, workspace) {
+    if WinExist(windowTitle) {
+        WinActivate
+        Komorebic('focus-named-workspace "' workspace '"')
+        return
+    }
+    Run execPath
+    startTick := A_TickCount
+    while (A_TickCount - startTick < 8000) {
+        if WinExist(windowTitle) {
+            Sleep 300  ; let the app finish initializing its main form
+            WinActivate
+            Sleep 100
+            Komorebic('move-to-named-workspace "' workspace '"')
+            Komorebic('focus-named-workspace "' workspace '"')
+            return
+        }
+        Sleep 50
+    }
+}
+
 Komorebic(args) {
     Run "komorebic " args,, "Hide"
 }
@@ -114,8 +139,8 @@ ExitResizeMode() {
 ; --- App shortcuts (focus or launch) ---------------------------------------
 
 #!b::FocusOrLaunch("Chrome", "chrome")
-#!l::LaunchWezterm('start --class lazygit -- pwsh -NoLogo -NoProfile -Command lazygit', "git")
-#!e::FocusOrLaunch("MD Explorer", "C:/Multidev/DBExplorer/MDExplorer.exe")
+#!l::LaunchWezterm('start --class lazygit -- pwsh -NoLogo -NoProfile -Command "lazygit --debug"', "git")
+#!e::FocusOrLaunchOnWorkspace("MD Explorer", "C:/Multidev/DBExplorer/MDExplorer.exe", "sql")
 #!c::FocusOrLaunch("Total Commander", "C:/Program Files/totalcmd/TOTALCMD64.exe")
 #!m::FocusOrLaunch("ahk_exe ms-teams.exe", "ms-teams.exe")
 #!o::FocusOrLaunch("ahk_exe olk.exe", "olk.exe")
