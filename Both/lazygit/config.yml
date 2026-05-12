@@ -1,20 +1,22 @@
 notARepository: skip
 gui:
   showDivergenceFromBaseBranch: arrowAndNumber
+  spinner:
+    rate: 200
   theme:
     activeBorderColor:
       - "#cba6f7" # mauve
       - bold
     inactiveBorderColor:
-      - "#45475a" # surface1
+      - "#7f849c" # overlay1
     searchingActiveBorderColor:
       - "#f9e2af" # yellow
     optionsTextColor:
       - "#89b4fa" # blue
     selectedLineBgColor:
-      - "#313244" # surface0
+      - "#585b70" # surface2
     inactiveViewSelectedLineBgColor:
-      - "#6c7086" # overlay0
+      - "#45475a" # surface1
     cherryPickedCommitFgColor:
       - "#89b4fa" # blue
     cherryPickedCommitBgColor:
