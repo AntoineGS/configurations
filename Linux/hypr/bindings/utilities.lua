@@ -14,7 +14,7 @@ hl.bind("SUPER + CTRL + H",        hl.dsp.exec_cmd("restart-hyprctl"),          
 hl.bind("SUPER + SHIFT + SPACE",         hl.dsp.exec_cmd("toggle-waybar"),                                 { description = "Toggle top bar" })
 hl.bind("SUPER + CTRL + SPACE",          hl.dsp.exec_cmd("menu background"),                               { description = "Theme background menu" })
 hl.bind("SUPER + SHIFT + CTRL + SPACE",  hl.dsp.exec_cmd("menu theme"),                                    { description = "Theme menu" })
-hl.bind("SUPER + BACKSPACE",             hl.dsp.exec_cmd([[hyprctl dispatch setprop "address:$(hyprctl activewindow -j | jq -r '.address')" opaque toggle]]), { description = "Toggle window transparency" })
+hl.bind("SUPER + BACKSPACE",             hl.dsp.window.set_prop({ prop = "opaque", value = "toggle" }),    { description = "Toggle window transparency" })
 hl.bind("SUPER + SHIFT + BACKSPACE",     hl.dsp.exec_cmd("hyprland-window-gaps-toggle"),                   { description = "Toggle window gaps" })
 hl.bind("SUPER + CTRL + BACKSPACE",      hl.dsp.exec_cmd("hyprland-window-single-square-aspect-toggle"),   { description = "Toggle single-window square aspect" })
 
@@ -42,9 +42,9 @@ hl.bind("SUPER + CTRL + T",              hl.dsp.exec_cmd("launch-tui-large btop"
 -- Dictation
 hl.bind("SUPER + CTRL + X",              hl.dsp.exec_cmd("voxtype record toggle"),                         { description = "Toggle dictation" })
 
--- Zoom
-hl.bind("SUPER + CTRL + Z",              hl.dsp.exec_cmd([[hyprctl keyword cursor:zoom_factor $(hyprctl getoption cursor:zoom_factor -j | jq '.float + 1')]]), { description = "Zoom in" })
-hl.bind("SUPER + CTRL + ALT + Z",        hl.dsp.exec_cmd("hyprctl keyword cursor:zoom_factor 1"),          { description = "Reset zoom" })
+-- Zoom (legacy `hyprctl keyword` rejected by Lua parser; round-trip through `hyprctl eval` + hl.config / hl.get_config)
+hl.bind("SUPER + CTRL + Z",              hl.dsp.exec_cmd([[hyprctl eval 'hl.config({cursor = {zoom_factor = hl.get_config("cursor:zoom_factor") + 1}})']]), { description = "Zoom in" })
+hl.bind("SUPER + CTRL + ALT + Z",        hl.dsp.exec_cmd([[hyprctl eval 'hl.config({cursor = {zoom_factor = 1}})']]), { description = "Reset zoom" })
 
 -- Lock system
 hl.bind("SUPER + CTRL + L",              hl.dsp.exec_cmd("lock-screen"),                                   { description = "Lock system" })

@@ -30,19 +30,19 @@ move_workspaces() {
   hyprctl workspaces -j \
     | jq -r --arg from "$from" '.[] | select(.monitor == $from) | .id' \
     | while read -r ws; do
-        [ -n "$ws" ] && hyprctl dispatch moveworkspacetomonitor "$ws $to" >/dev/null
+        [ -n "$ws" ] && hyprctl eval "hl.dispatch(hl.dsp.workspace.move({workspace=\"$ws\", monitor=\"$to\"}))" >/dev/null
       done
 }
 
 toggled=0
 if [ "$laptop_disabled" = "true" ]; then
   # Currently in takeover mode — restore mirror.
-  hyprctl keyword monitor "$LAPTOP, preferred, auto, 1"
+  hyprctl eval "hl.monitor({output=\"$LAPTOP\", mode=\"preferred\", position=\"auto\", scale=1})"
   if [ -n "$external" ]; then
     move_workspaces "$external" "$LAPTOP"
-    hyprctl keyword monitor "$external, $RES, auto, 1, mirror, $LAPTOP"
+    hyprctl eval "hl.monitor({output=\"$external\", mode=\"$RES\", position=\"auto\", scale=1, mirror=\"$LAPTOP\"})"
   fi
-  [ -n "$focused_ws" ] && hyprctl dispatch workspace "$focused_ws" >/dev/null
+  [ -n "$focused_ws" ] && hyprctl eval "hl.dispatch(hl.dsp.focus({workspace=\"$focused_ws\"}))" >/dev/null
   notify "Mirror mode"
   toggled=1
 elif [ -n "$external" ]; then
@@ -52,12 +52,12 @@ elif [ -n "$external" ]; then
   # re-advertise the wl_output global, which leaves waybar with no output to
   # bind a bar surface to. The full disable/enable cycle forces a clean
   # re-advertisement.
-  hyprctl keyword monitor "$external, disable"
+  hyprctl eval "hl.monitor({output=\"$external\", disabled=true})"
   sleep 0.3
-  hyprctl keyword monitor "$external, $RES, 0x0, 1"
+  hyprctl eval "hl.monitor({output=\"$external\", mode=\"$RES\", position=\"0x0\", scale=1})"
   move_workspaces "$LAPTOP" "$external"
-  hyprctl keyword monitor "$LAPTOP, disable"
-  [ -n "$focused_ws" ] && hyprctl dispatch workspace "$focused_ws" >/dev/null
+  hyprctl eval "hl.monitor({output=\"$LAPTOP\", disabled=true})"
+  [ -n "$focused_ws" ] && hyprctl eval "hl.dispatch(hl.dsp.focus({workspace=\"$focused_ws\"}))" >/dev/null
   notify "Takeover ($external)"
   toggled=1
 else
