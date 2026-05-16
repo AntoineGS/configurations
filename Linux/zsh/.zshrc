@@ -70,6 +70,13 @@ if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
     fi
 fi
 
+# Pull fresh env (WAYLAND_DISPLAY etc.) from tmux session on every prompt so
+# long-running panes self-heal after an SSH reconnect with a new waypipe socket.
+if [[ -n "$TMUX" ]]; then
+    _tmux_refresh_env() { eval "$(tmux show-environment -s 2>/dev/null | grep -v SSH_AUTH_SOCK)" }
+    precmd_functions+=(_tmux_refresh_env)
+fi
+
 git-https-to-ssh() {
     local remote="${1:-origin}"
     local url=$(git remote get-url "$remote" 2>/dev/null)
