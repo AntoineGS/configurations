@@ -21,16 +21,17 @@ else
     hl.monitor({ output = "DP-2",     mode = "1920x1080@60",    position = "3600x0", scale = 1 })
     hl.monitor({ output = "",         mode = "preferred",       position = "auto",   scale = 1 })
 
-    hl.workspace_rule({ workspace = "1",  monitor = "DVI-D-1",  persistent = true, default = true })
-    hl.workspace_rule({ workspace = "2",  monitor = "HDMI-A-1", persistent = true, default = true })
-    hl.workspace_rule({ workspace = "3",  monitor = "DP-2",     persistent = true, default = true })
-    hl.workspace_rule({ workspace = "4",  monitor = "DVI-D-1",  persistent = true })
-    hl.workspace_rule({ workspace = "5",  monitor = "HDMI-A-1", persistent = true })
-    hl.workspace_rule({ workspace = "6",  monitor = "DP-2",     persistent = true })
-    hl.workspace_rule({ workspace = "7",  monitor = "DVI-D-1",  persistent = true })
-    hl.workspace_rule({ workspace = "8",  monitor = "HDMI-A-1", persistent = true })
-    hl.workspace_rule({ workspace = "9",  monitor = "DP-2",     persistent = true })
-    hl.workspace_rule({ workspace = "10", monitor = "DP-2",     persistent = true })
+    -- layout pinned to dwindle so omarchy-hyprland-workspace-layout-toggle can't silently drift a workspace into master/scrolling
+    hl.workspace_rule({ workspace = "1",  monitor = "DVI-D-1",  layout = "dwindle", persistent = true, default = true })
+    hl.workspace_rule({ workspace = "2",  monitor = "HDMI-A-1", layout = "dwindle", persistent = true, default = true })
+    hl.workspace_rule({ workspace = "3",  monitor = "DP-2",     layout = "dwindle", persistent = true, default = true })
+    hl.workspace_rule({ workspace = "4",  monitor = "DVI-D-1",  layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "5",  monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "6",  monitor = "DP-2",     layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "7",  monitor = "DVI-D-1",  layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "8",  monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "9",  monitor = "DP-2",     layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "10", monitor = "DP-2",     layout = "dwindle", persistent = true })
 
     -- Default workspace for applications
     hl.window_rule({ name = "windowrule-1", match = { class = "teams-for-linux" },         workspace = "1" })

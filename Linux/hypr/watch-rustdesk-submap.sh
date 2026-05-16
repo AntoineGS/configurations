@@ -31,17 +31,17 @@ while IFS= read -r evline; do
     count=$(count_rustdesk_remote_windows)
     if [ "$count" -gt 1 ]; then
       target_ws=$(hyprctl monitors -j | jq -r '.[] | select(.name == "'"${RIGHTMOST_MONITOR}"'") | .activeWorkspace.id')
-      hyprctl dispatch movetoworkspacesilent "${target_ws},address:0x${window_addr}"
+      hyprctl eval "hl.dispatch(hl.dsp.window.move({workspace=${target_ws}, follow=false, window=\"address:0x${window_addr}\"}))"
     fi
   fi
 
   # Switch to clean submap when a RustDesk Remote Desktop window is focused
   if printf '%s\n' "$evline" | grep -qi "^activewindow>>"; then
     if is_rustdesk_remote "$evline"; then
-      hyprctl dispatch submap clean
+      hyprctl eval 'hl.dispatch(hl.dsp.submap("clean"))'
       ACTIVATED_CLEAN_WORKSPACE=true
     elif [ "$ACTIVATED_CLEAN_WORKSPACE" = true ]; then
-      hyprctl dispatch submap reset
+      hyprctl eval 'hl.dispatch(hl.dsp.submap("reset"))'
       ACTIVATED_CLEAN_WORKSPACE=false
     fi
   fi

@@ -17,7 +17,7 @@ hl.config({
 
         resize_on_border = false,
         allow_tearing    = false,
-        layout           = "master",
+        layout           = "dwindle",
     },
 })
 

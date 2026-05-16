@@ -19,9 +19,12 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("teams-for-linux")
     hl.exec_cmd("vicinae server")
 
-    -- Ensure all persistent workspaces are on correct monitors
-    hl.exec_cmd([[sleep 1 && hyprctl --batch "dispatch moveworkspacetomonitor 1 DVI-D-1 ; dispatch moveworkspacetomonitor 4 DVI-D-1 ; dispatch moveworkspacetomonitor 7 DVI-D-1 ; dispatch moveworkspacetomonitor 2 HDMI-A-1 ; dispatch moveworkspacetomonitor 5 HDMI-A-1 ; dispatch moveworkspacetomonitor 8 HDMI-A-1 ; dispatch moveworkspacetomonitor 3 DP-2 ; dispatch moveworkspacetomonitor 6 DP-2 ; dispatch moveworkspacetomonitor 9 DP-2 ; dispatch moveworkspacetomonitor 10 DP-2 ; dispatch workspace 2"]])
+    -- Ensure all persistent workspaces are on correct monitors.
+    -- Legacy `hyprctl dispatch <name> <args>` strings are rejected by the Lua parser; route through `hyprctl eval`.
+    -- `hl.dsp.*` calls return dispatcher closures — they only fire when wrapped in `hl.dispatch(...)`.
+    hl.exec_cmd([[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']])
 
     -- Hyprland 0.55 regression: cursor can't enter DP-2's region until the monitor is re-applied. Drop once upstream fixes it.
-    hl.exec_cmd([[sleep 2 && hyprctl keyword monitor "DP-2, 1920x1080@60, 3601x0, 1" && hyprctl keyword monitor "DP-2, 1920x1080@60, 3600x0, 1"]])
+    -- `hyprctl keyword` is disabled under the Lua parser ("keyword can't work with non-legacy parsers"), so route the nudge through `hyprctl eval` instead.
+    hl.exec_cmd([[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3601x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })']])
 end)
