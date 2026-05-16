@@ -82,9 +82,16 @@ local function set_keymaps(bufnr)
       return
     end
 
+    local cur_line = vim.api.nvim_win_get_cursor(0)[1]
+    local existing = marks[bufnr] and marks[bufnr][mark]
+    if existing and existing.line == cur_line then
+      delete_mark(mark, bufnr)
+      return
+    end
+
     register_mark(mark, bufnr)
     vim.cmd("normal! m" .. mark)
-  end, { buffer = bufnr, desc = "Add mark" })
+  end, { buffer = bufnr, desc = "Add or toggle off mark" })
 
   vim.keymap.set("n", "gmd", function()
     local ok, mark = pcall(function()
