@@ -53,5 +53,35 @@ themes {
     cyan "#89dceb" // Sky
     black "#181825" // Mantle
     white "#cdd6f4" // Text
+
+    // Active pane frame: Mauve (purple) — pops against the dim inactive frames
+    frame_selected {
+      base 203 166 247       // #cba6f7 Mauve
+      background 24 24 37    // #181825 Mantle
+      emphasis_0 249 226 175 // #f9e2af Yellow
+      emphasis_1 166 227 161 // #a6e3a1 Green
+      emphasis_2 137 220 235 // #89dceb Sky
+      emphasis_3 245 194 231 // #f5c2e7 Pink
+    }
+
+    // Inactive pane frame: Surface1 — nearly blends into the bg
+    frame_unselected {
+      base 69 71 90          // #45475a Surface1
+      background 24 24 37    // #181825 Mantle
+      emphasis_0 249 226 175
+      emphasis_1 166 227 161
+      emphasis_2 137 220 235
+      emphasis_3 245 194 231
+    }
+
+    // Mode-switch highlight (Lavender — clearly distinct from Mauve)
+    frame_highlight {
+      base 180 190 254       // #b4befe Lavender
+      background 24 24 37
+      emphasis_0 249 226 175
+      emphasis_1 166 227 161
+      emphasis_2 137 220 235
+      emphasis_3 245 194 231
+    }
   }
 }
