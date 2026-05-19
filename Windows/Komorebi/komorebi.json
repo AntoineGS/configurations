@@ -43,6 +43,11 @@
       "kind": "Exe",
       "id": "1Password.exe",
       "matching_strategy": "Equals"
+    },
+    {
+      "kind": "Class",
+      "id": "TfrmFuzzyPicker",
+      "matching_strategy": "Equals"
     }
   ],
   "manage_rules": [
