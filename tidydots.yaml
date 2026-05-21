@@ -23,6 +23,16 @@ applications:
           windows: ~/.claude
         name: config
         backup: ./Both/ClaudeCode
+  - name: ccstatusline
+    description: Claude Code status line (runs via npx, no install needed)
+    entries:
+      - targets:
+          linux: ~/.config/ccstatusline
+          windows: ~/.config/ccstatusline
+        name: config
+        backup: ./Both/ccstatusline
+        files:
+          - settings.json
   - package:
       managers:
         apt: neovim
