@@ -59,6 +59,12 @@
   },
   "effortLevel": "xhigh",
   "skipDangerousModePermissionPrompt": true,
+  "theme": "auto",
+  "editorMode": "vim",
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
   "hooks": {
     "Notification": [
       {
@@ -97,6 +103,5 @@
           }
         ]
       }
-    ]
   }
 }
