@@ -58,7 +58,9 @@ keybinds clear-defaults=true {
 
     tmux {
         bind "Esc" { SwitchToMode "Normal"; }
-        bind "Ctrl b" { SwitchToMode "Normal"; }
+        // Forward the prefix to a nested session (remote tmux/zellij over SSH).
+        // Ctrl+b Ctrl+b sends a literal Ctrl+b (byte 0x02) to the focused pane.
+        bind "Ctrl b" { Write 2; SwitchToMode "Normal"; }
 
         // Split panes (keeps current path by default)
         bind "\"" { NewPane "Down"; SwitchToMode "Normal"; }
