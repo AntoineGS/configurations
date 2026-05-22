@@ -19,7 +19,7 @@
       "power": {
          "entrypoints": {
             "hibernate": {
-               "enabled": false
+               "enabled": true
             },
             "lock": {
                "enabled": false

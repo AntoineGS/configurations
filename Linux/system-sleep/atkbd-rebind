@@ -1,0 +1,27 @@
+#!/bin/bash
+# Rebind the AT keyboard after resume. Hibernate resume requires typing the
+# LUKS passphrase in initramfs, and the Enter keyup event is lost across the
+# suspend-to-disk boundary. The kernel sees Enter as still held and autorepeats
+# it into the resumed session. Unbind/rebind clears the stale key state.
+
+set -u
+
+action="${1:-}"
+sleep_state="${2:-}"
+
+[ "$action" = "post" ] || exit 0
+
+case "$sleep_state" in
+  suspend|hibernate|hybrid-sleep|suspend-then-hibernate) ;;
+  *) exit 0 ;;
+esac
+
+driver=/sys/bus/serio/drivers/atkbd
+device=serio0
+
+[ -e "$driver/$device" ] || exit 0
+
+printf '%s' "$device" > "$driver/unbind" 2>/dev/null || true
+printf '%s' "$device" > "$driver/bind" 2>/dev/null || true
+
+exit 0
