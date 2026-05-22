@@ -643,12 +643,6 @@ applications:
         files:
           - mimeapps.list
       - targets:
-          linux: ~/.local/share/applications
-        name: desktop-files
-        backup: ./Linux/os
-        files:
-          - nvim-open.desktop
-      - targets:
           linux: ~/.local/share/helpers
         name: helper scripts
         backup: ./Linux/os/helpers
