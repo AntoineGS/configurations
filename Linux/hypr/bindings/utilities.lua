@@ -4,7 +4,10 @@ hl.bind("SUPER + CTRL + C",        hl.dsp.exec_cmd("menu capture"),             
 hl.bind("SUPER + CTRL + O",        hl.dsp.exec_cmd("menu toggle"),                                     { description = "Toggle menu" })
 hl.bind("SUPER + ALT + SPACE",     hl.dsp.exec_cmd("menu"),                                            { description = "Omarchy menu" })
 hl.bind("SUPER + ESCAPE",          hl.dsp.exec_cmd("menu system"),                                     { description = "System menu" })
-hl.bind("XF86PowerOff",            hl.dsp.exec_cmd("vicinae vicinae://launch/power"),                  { description = "Power menu" })
+-- vicinae 0.20.12: `vicinae vicinae://launch/power` registers the deeplink but
+-- doesn't raise the window (works fine for clipboard/emojis/calculator). Chain
+-- an explicit `open` so the window actually appears.
+hl.bind("XF86PowerOff",            hl.dsp.exec_cmd("vicinae open && vicinae deeplink vicinae://launch/power"), { description = "Power menu" })
 hl.bind("SUPER + CTRL + K",        hl.dsp.exec_cmd("menu-keybindings"),                                { description = "Show key bindings" })
 hl.bind("XF86Calculator",          hl.dsp.exec_cmd("vicinae vicinae://extensions/vicinae/calculator/history"), { description = "Calculator" })
 hl.bind("SUPER + CTRL + W",        hl.dsp.exec_cmd("pkill waybar && waybar &"),                        { description = "Reload Waybar" })
