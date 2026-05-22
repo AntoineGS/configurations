@@ -599,6 +599,17 @@ applications:
         files:
           - blacklist-raydium.conf
         sudo: true
+  - name: udev-rules
+    description: Detach faulty Raydium touchscreen driver to stop CRC storms and phantom cursor events after resume
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/udev/rules.d
+        name: rules
+        backup: ./Linux/udev
+        files:
+          - 90-disable-raydium.rules
+        sudo: true
   - name: system-sleep-hooks
     description: Post-resume hooks (e.g. rebind elan_i2c touchpad to avoid dmesg flood + fan ramp)
     when: '{{ eq .Hostname "omarchbook" }}'

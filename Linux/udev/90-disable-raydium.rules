@@ -1,0 +1,13 @@
+# Disable the Raydium touchscreen on this laptop. The hardware sends garbled
+# i2c packets that produce CRC error storms (CPU/IRQ burn even with the lid
+# closed) and, after suspend/resume, phantom touch events that hijack the
+# cursor (rapid icon flicker, clicks lost).
+#
+# The companion modprobe.d/blacklist-raydium.conf install directive does not
+# reliably stop the module from loading on this kernel/UKI setup (the module
+# ends up loaded even though `modprobe --show-depends raydium_i2c_ts` prints
+# `install /bin/true`). Detach the driver from the device the moment it binds
+# instead -- works regardless of how the module was loaded, and re-fires on
+# every bind (e.g. if anything tries to rebind after resume).
+ACTION=="bind", SUBSYSTEM=="i2c", KERNEL=="i2c-RAYD0001:00", \
+    RUN+="/bin/sh -c 'echo i2c-RAYD0001:00 > /sys/bus/i2c/drivers/raydium_ts/unbind'"
