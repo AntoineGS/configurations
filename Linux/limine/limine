@@ -3,6 +3,7 @@ TARGET_OS_NAME="Omarchy"
 ESP_PATH="/boot"
 
 KERNEL_CMDLINE[default]+="cryptdevice=PARTUUID=d3583d22-8d21-4361-ad85-e204822ae5cd:root root=/dev/mapper/root zswap.enabled=0 rootflags=subvol=@ rw rootfstype=btrfs"
+KERNEL_CMDLINE[default]+=" resume=/dev/mapper/root resume_offset=11364183 "
 KERNEL_CMDLINE[default]+="quiet splash"
 
 ENABLE_UKI=yes

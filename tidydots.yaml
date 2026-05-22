@@ -609,6 +609,18 @@ applications:
         backup: ./Linux/system-sleep
         files:
           - elan-i2c-rebind
+          - atkbd-rebind
+        sudo: true
+  - name: logind-config
+    description: Hibernate on lid close (workaround for ballistic fan in S3)
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/logind.conf.d
+        name: drop-ins
+        backup: ./Linux/systemd/logind.conf.d
+        files:
+          - hibernate-on-lid.conf
         sudo: true
   - name: os-files
     when: '{{ eq .OS "linux" }}'
