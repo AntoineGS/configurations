@@ -13,7 +13,9 @@ cmark-gfm
 cups-pdf
 delve
 deno
+discord
 docker-compose
+doctest
 dotnet-runtime-9.0
 dust
 electron
@@ -26,10 +28,13 @@ fprintd
 ghostty
 gimp
 github-cli
+gitui
 gnome-calculator
+gobject-introspection
 gopls
 gpsd
 gpu-screen-recorder
+gtk-doc
 gtkmm3
 gum
 htop
@@ -91,6 +96,7 @@ texlive-xetex
 tldr
 tree-sitter-cli
 uv
+waypipe
 wezterm
 whois
 winetricks
@@ -104,4 +110,3 @@ xournalpp
 yazi
 yq
 zram-generator
-zsh-completions

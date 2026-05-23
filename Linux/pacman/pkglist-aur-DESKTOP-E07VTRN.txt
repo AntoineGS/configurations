@@ -12,11 +12,14 @@ github-copilot-cli
 gitkraken
 golangci-lint-bin
 google-cloud-cli
+hyprland-preview-share-picker-git
+hyprland-preview-share-picker-git-debug
 icu74
 insync
 jetbrains-toolbox
 lazysql-bin
 lazysys-git
+libfprint-cs9711-git-debug
 limine-snapper-sync
 nvidia-580xx-dkms
 oh-my-zsh-git
@@ -44,6 +47,5 @@ wol-systemd
 xdg-terminal-exec
 yaru-icon-theme
 yay
-zsh-autosuggestions-git
 zsh-transient-prompt-git
 zsh-vi-mode
