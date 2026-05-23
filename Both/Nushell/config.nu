@@ -773,6 +773,7 @@ alias :q = exit
 alias lg = lazygit
 alias gu = gitui
 alias guw = gitui --watcher
+alias clauded = claude --dangerously-skip-permissions
 
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
