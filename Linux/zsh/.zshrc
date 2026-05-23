@@ -59,6 +59,7 @@ alias y="yazi"
 alias lg="lazygit"
 alias gu="gitui"
 alias guw="gitui --watcher"
+alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
