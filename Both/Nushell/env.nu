@@ -113,6 +113,91 @@ $env.CARAPACE_BRIDGES = 'zsh,fish,bash,inshellisense'
 $env.EDITOR = 'nvim'
 $env.VISUAL = 'nvim'
 $env.GIT_EDITOR = 'nvim'
+
+# Catppuccin Mocha palette for `ls` output (consumed by nushell when `use_ls_colors: true`).
+# Overrides any system LS_COLORS that ships unreadable combos (e.g. yellow-on-yellow for README).
+let _cat = {
+    text:    "38;2;205;214;244"
+    subtext: "38;2;186;194;222"
+    blue:    "38;2;137;180;250"
+    teal:    "38;2;148;226;213"
+    green:   "38;2;166;227;161"
+    yellow:  "38;2;249;226;175"
+    peach:   "38;2;250;179;135"
+    maroon:  "38;2;235;160;172"
+    red:     "38;2;243;139;168"
+    pink:    "38;2;245;194;231"
+    mauve:   "38;2;203;166;247"
+}
+$env.LS_COLORS = ([
+    $"di=1;($_cat.blue)"
+    $"ln=($_cat.teal)"
+    $"or=1;($_cat.red)"
+    $"ex=($_cat.green)"
+    $"pi=($_cat.yellow)"
+    $"so=($_cat.pink)"
+    $"bd=($_cat.peach)"
+    $"cd=($_cat.peach)"
+    $"su=1;($_cat.red)"
+    $"sg=1;($_cat.yellow)"
+    $"tw=1;($_cat.green)"
+    $"ow=1;($_cat.blue)"
+    # Docs / text — neutral foreground, no aggressive background
+    $"*README=($_cat.text)"
+    $"*README.md=($_cat.text)"
+    $"*README.txt=($_cat.text)"
+    $"*readme=($_cat.text)"
+    $"*.md=($_cat.text)"
+    $"*.txt=($_cat.text)"
+    $"*.rst=($_cat.text)"
+    # Source code
+    $"*.rs=($_cat.text)"
+    $"*.go=($_cat.text)"
+    $"*.py=($_cat.text)"
+    $"*.js=($_cat.text)"
+    $"*.ts=($_cat.text)"
+    $"*.tsx=($_cat.text)"
+    $"*.c=($_cat.text)"
+    $"*.cpp=($_cat.text)"
+    $"*.h=($_cat.text)"
+    $"*.hpp=($_cat.text)"
+    $"*.lua=($_cat.text)"
+    $"*.nu=($_cat.text)"
+    $"*.sh=($_cat.text)"
+    $"*.ps1=($_cat.text)"
+    # Config — subtext
+    $"*.toml=($_cat.subtext)"
+    $"*.yaml=($_cat.subtext)"
+    $"*.yml=($_cat.subtext)"
+    $"*.json=($_cat.subtext)"
+    $"*.ini=($_cat.subtext)"
+    $"*.conf=($_cat.subtext)"
+    $"*.kdl=($_cat.subtext)"
+    # Archives — maroon
+    $"*.zip=($_cat.maroon)"
+    $"*.tar=($_cat.maroon)"
+    $"*.gz=($_cat.maroon)"
+    $"*.bz2=($_cat.maroon)"
+    $"*.xz=($_cat.maroon)"
+    $"*.zst=($_cat.maroon)"
+    $"*.7z=($_cat.maroon)"
+    $"*.rar=($_cat.maroon)"
+    # Images — pink
+    $"*.png=($_cat.pink)"
+    $"*.jpg=($_cat.pink)"
+    $"*.jpeg=($_cat.pink)"
+    $"*.gif=($_cat.pink)"
+    $"*.svg=($_cat.pink)"
+    $"*.webp=($_cat.pink)"
+    # Video — mauve
+    $"*.mp4=($_cat.mauve)"
+    $"*.mkv=($_cat.mauve)"
+    $"*.webm=($_cat.mauve)"
+    # Audio — peach
+    $"*.mp3=($_cat.peach)"
+    $"*.flac=($_cat.peach)"
+    $"*.wav=($_cat.peach)"
+] | str join ":")
 if ($os != "Windows") {
   $env.PATH = ($env.PATH | split row (char esep) | prepend '/home/linuxbrew/.linuxbrew/bin')
   $env.PATH = ($env.PATH | split row (char esep) | prepend '~/.local/bin')
