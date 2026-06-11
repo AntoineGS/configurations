@@ -118,36 +118,50 @@ autocmd("FileType", {
   end,
 })
 
--- Exclude version-like tokens (e.g. v1, 1.2.3) from spellcheck via extmarks.
+-- Exclude tokens from spellcheck via extmarks:
+--   * version-like tokens (e.g. v1, 1.2.3)
+--   * all-uppercase words / acronyms (e.g. API, UTF8, S3) — assumed to be
+--     special lingo, not misspellings
 -- A legacy `syntax match` would work but flips the buffer into syntax-enabled
 -- mode, which breaks Treesitter's @spell scoping and causes every identifier
 -- to be spellchecked. Extmarks override TS spell captures without that
 -- side-effect.
-local version_ns = vim.api.nvim_create_namespace("spell_version_exclusions")
-local version_regex = vim.regex([[\v<v?\d+(\.\d+)*>]])
+local spell_ns = vim.api.nvim_create_namespace("spell_exclusions")
+local spell_exclusion_regexes = {
+  vim.regex([[\v<v?\d+(\.\d+)*>]]),
+  -- run starting with an uppercase letter, 2+ chars, only uppercase + digits.
+  -- Bounded by lowercase lookarounds rather than \< \> keyword boundaries, so
+  -- separators like `.` and `_` split it (SV1020.ACCSEC_USERS -> SV1020,
+  -- ACCSEC, USERS) while genuine camelCase (OAuth) is left to spelloptions.
+  -- The leading \l@<! / trailing \l@! also peel acronyms out of camelCase
+  -- (HTTPResponse -> HTTP excluded, Response still checked).
+  vim.regex([[\v\l@<!\u%(\u|\d)+\l@!]]),
+}
 
-local function update_version_spell_marks(bufnr)
+local function update_spell_marks(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then return end
   if vim.bo[bufnr].buftype ~= "" then return end
-  vim.api.nvim_buf_clear_namespace(bufnr, version_ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(bufnr, spell_ns, 0, -1)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   for lnum, line in ipairs(lines) do
-    local offset = 0
-    while offset < #line do
-      local s, e = version_regex:match_str(line:sub(offset + 1))
-      if not s then break end
-      vim.api.nvim_buf_set_extmark(bufnr, version_ns, lnum - 1, offset + s, {
-        end_col = offset + e,
-        spell = false,
-        priority = 200,
-      })
-      offset = offset + e
+    for _, regex in ipairs(spell_exclusion_regexes) do
+      local offset = 0
+      while offset < #line do
+        local s, e = regex:match_str(line:sub(offset + 1))
+        if not s then break end
+        vim.api.nvim_buf_set_extmark(bufnr, spell_ns, lnum - 1, offset + s, {
+          end_col = offset + e,
+          spell = false,
+          priority = 200,
+        })
+        offset = offset + e
+      end
     end
   end
 end
 
 autocmd({ "BufReadPost", "TextChanged", "InsertLeave" }, {
-  callback = function(args) update_version_spell_marks(args.buf) end,
+  callback = function(args) update_spell_marks(args.buf) end,
 })
 
 -- user event that loads after UIEnter + only if file buf is there
