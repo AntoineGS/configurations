@@ -32,11 +32,13 @@ return {
         tex = { "tex-fmt" },
       },
 
-      format_on_save = {
+      format_on_save = function(bufnr)
+        -- sql has no conform formatter; without this guard lsp_fallback would
+        -- hand formatting to the sqls language server on every save.
+        if vim.bo[bufnr].filetype == "sql" then return end
         -- These options will be passed to conform.format()
-        timeout_ms = 2000,
-        lsp_fallback = true,
-      },
+        return { timeout_ms = 2000, lsp_fallback = true }
+      end,
     },
   },
 }
