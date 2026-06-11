@@ -53,6 +53,16 @@ Komorebic(args) {
     Run "komorebic " args,, "Hide"
 }
 
+; komorebi's `komorebic start` doesn't apply monitors[].workspaces[].name
+; from komorebi.json on fresh start (verified v0.1.41) — a follow-up
+; replace-configuration against the running daemon does. Used by the
+; manual restart binding below; deferred via SetTimer so the daemon has
+; time to come up before we talk to it.
+ApplyNamedWorkspacesOnce() {
+    configPath := EnvGet("USERPROFILE") "\komorebi.json"
+    Komorebic('replace-configuration "' configPath '"')
+}
+
 ; Run a program unelevated from an elevated AHK script by borrowing
 ; Explorer's token via IShellWindows::FindWindowSW(SWC_DESKTOP) ->
 ; IShellFolderViewDual.Application -> IShellDispatch2.ShellExecute.
@@ -203,8 +213,12 @@ ExitResizeMode() {
 
 ; --- Window manager options ------------------------------------------------
 
-; #+r::Komorebic("retile")
-#+r::Run('powershell -Command "komorebic stop; gsudo komorebic start"',, "Hide")
+; Full restart that also re-applies named workspaces (works around the
+; startup-time names bug that breaks `focus-named-workspace` in-office).
+#^k::{
+    Run('powershell -Command "komorebic stop; gsudo komorebic start"',, "Hide")
+    SetTimer ApplyNamedWorkspacesOnce, -3000
+}
 #p::Komorebic("toggle-pause")
 
 ; --- Layouts ---------------------------------------------------------------
