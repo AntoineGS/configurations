@@ -932,6 +932,7 @@ applications:
     entries:
       - targets:
           linux: ~/.config/btop
+          windows: ~/.config/btop
         name: config
         backup: ./Linux/btop
         files:
