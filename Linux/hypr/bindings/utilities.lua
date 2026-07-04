@@ -53,7 +53,14 @@ hl.bind("SUPER + CTRL + ALT + Z",        hl.dsp.exec_cmd([[hyprctl eval 'hl.conf
 hl.bind("SUPER + CTRL + L",              hl.dsp.exec_cmd("lock-screen"),                                   { description = "Lock system" })
 
 -- Display
-hl.bind("SUPER + E",                     hl.dsp.exec_cmd("~/.config/hypr/scripts/toggle-external-takeover.sh"), { description = "Toggle external display takeover" })
+-- Laptop-only: the takeover script assumes eDP-1 and disables monitors on the desktop.
+local hostname_pipe = io.popen("hostname")
+local hostname      = hostname_pipe and hostname_pipe:read("*l") or ""
+if hostname_pipe then hostname_pipe:close() end
+
+if hostname == "omarchbook" then
+    hl.bind("SUPER + E",                 hl.dsp.exec_cmd("~/.config/hypr/scripts/toggle-external-takeover.sh"), { description = "Toggle external display takeover" })
+end
 
 hl.bind("SUPER + V",                     hl.dsp.exec_cmd("vicinae vicinae://launch/clipboard/history"),    { description = "Clipboard history" })
 hl.bind("SUPER + PERIOD",                hl.dsp.exec_cmd("vicinae vicinae://launch/core/search-emojis"),   { description = "Emoji picker" })
