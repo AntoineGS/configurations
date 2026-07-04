@@ -937,6 +937,11 @@ applications:
         backup: ./Linux/btop
         files:
           - btop.conf
+      - targets:
+          linux: ~/.config/btop/themes
+          windows: ~/config/btop/themes
+        name: themes
+        backup: ./Linux/btop/themes
   - package:
       managers:
         winget: gsudo
