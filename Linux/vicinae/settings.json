@@ -16,6 +16,11 @@
       }
    },
    "providers": {
+      "@nikbpetrov/store.vicinae.it-tools": {
+         "preferences": {
+            "base-url": "https://it-tools.antoinedev.io"
+         }
+      },
       "power": {
          "entrypoints": {
             "hibernate": {
