@@ -7,6 +7,7 @@
 [delta]
 	features = catppuccin-mocha
 	line-numbers = true
+	wrap-max-lines = unlimited
 
 [alias]
 	co = checkout
