@@ -190,6 +190,11 @@
       "kind": "Class",
       "id": "Popup",
       "matching_stategy": "EndsWith"
+    },
+    {
+      "kind": "Class",
+      "id": "TfrmAddDBtoVST",
+      "matching_stategy": "Equals"
     }
   ]
 }

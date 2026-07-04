@@ -154,7 +154,7 @@ ExitResizeMode() {
 #!c::FocusOrLaunch("Total Commander", "C:/Program Files/totalcmd/TOTALCMD64.exe")
 #!m::FocusOrLaunch("ahk_exe ms-teams.exe", "ms-teams.exe")
 #!o::FocusOrLaunch("ahk_exe olk.exe", "olk.exe")
-#!t::{
+#^t::{
     if WinExist("ahk_class btop") {
         WinClose
         return
