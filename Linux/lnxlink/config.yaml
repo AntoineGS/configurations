@@ -8,20 +8,29 @@ mqtt:
     user: mosquitto
     pass: 77Nfd9u89j3n
     tls: false
-    keyfile: ""
-    certfile: ""
-    ca_certs: ""
+    keyfile: ''
+    certfile: ''
+    ca_certs: ''
   discovery:
     enabled: true
     prefix: homeassistant
   lwt:
     enabled: true
     qos: 1
+  transport: mqtt
+  homeassistant:
+    url: ''
+    token: ''
+    token_env: ''
+    token_file: ''
+    timeout: 20
+    verify_ssl: true
+    subscribe_commands: true
 update_interval: 5
 update_on_change: false
 modules:
-  - bluetooth
-  - suspend
+- bluetooth
+- suspend
 custom_modules: {}
 exclude: []
 settings:
