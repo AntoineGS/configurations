@@ -20,6 +20,9 @@ hl.window_rule({
     tag = "+floating-window",
 })
 hl.window_rule({ match = { class = "org.gnome.Calculator" }, float = true })
+hl.window_rule({ match = { class = "^([Gg]simplecal)$" }, float = true })
+-- Pin the calendar popup to top-center, just below the bar
+hl.window_rule({ match = { class = "^([Gg]simplecal)$" }, move = { "((monitor_w-window_w)/2)", "36" } })
 
 -- Fullscreen screensaver
 hl.window_rule({ match = { class = "org.omarchy.screensaver" }, fullscreen = true })

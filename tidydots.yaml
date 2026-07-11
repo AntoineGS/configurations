@@ -504,13 +504,6 @@ applications:
           linux: ~/.config/imv
         name: config
         backup: ./Linux/imv
-  - name: makima
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/makima
-        name: config
-        backup: ./Linux/makima
   - name: mako
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:

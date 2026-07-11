@@ -65,14 +65,14 @@
   },
   "custom/omarchy": {
     "format": "<span font='omarchy'>\ue900</span>",
-    "on-click": "omarchy-menu",
+    "on-click": "menu",
     "on-click-right": "xdg-terminal-exec",
     "tooltip-format": "Omarchy Menu\n\nSuper + Alt + Space"
   },
   "custom/update": {
     "format": "\uf021",
-    "exec": "omarchy-update-available",
-    "on-click": "omarchy-launch-floating-terminal-with-presentation omarchy-update",
+    "exec": "update-available",
+    "on-click": "launch-floating-terminal-with-presentation update",
     "tooltip-format": "Omarchy update available",
     "signal": 7,
     "interval": 3600
@@ -87,16 +87,16 @@
       "<span>\uf4bc </span>",
       "<span color='#985265'>\uf4bc </span>"
     ],
-    "on-click": "omarchy-launch-or-focus-tui btop"
+    "on-click": "launch-or-focus-tui btop"
   },
   "clock": {
     "format": "{:L%A %B %d %Y - %H:%M:%S}",
     "format_": "{:L%A %H:%M}",
     "format-alt_": "{:L%d %B W%V %Y}",
     "tooltip": false,
-    "on-click": "omarchy-launch-or-focus-webapp GMail \"https://calendar.google.com/calendar/u/0/r\"",
-    "on-click-right": "omarchy-cmd-tzupdate",
-    "on-click-right_": "omarchy-launch-floating-terminal-with-presentation omarchy-tz-select",
+    "on-click": "gsimplecal",
+    "on-click-right": "cmd-tzupdate",
+    "on-click-right_": "launch-floating-terminal-with-presentation tz-select",
     "interval": 1
   },
   "network": {
@@ -116,7 +116,7 @@
     "tooltip-format-disconnected": "Disconnected",
     "interval": 3,
     "spacing": 1,
-    "on-click": "omarchy-launch-wifi"
+    "on-click": "launch-wifi"
   },
   "battery": {
     "format": "{icon} {capacity}%",
@@ -173,11 +173,11 @@
   {{- end -}}
     "format-no-controller": "",
     "tooltip-format": "Devices connected: {num_connections}",
-    "on-click": "omarchy-launch-bluetooth"
+    "on-click": "launch-bluetooth"
   },
   "pulseaudio": {
     "format": "{icon}",
-    "on-click": "omarchy-launch-audio",
+    "on-click": "launch-audio",
     "on-click-right": "pamixer -t",
     "tooltip-format": "Playing at {volume}%",
     "scroll-step": 5,
@@ -207,13 +207,13 @@
     "tooltip": false
   },
   "custom/screenrecording-indicator": {
-    "on-click": "omarchy-cmd-screenrecord",
+    "on-click": "cmd-screenrecord",
     "exec": "$OMARCHY_PATH/default/waybar/indicators/screen-recording.sh",
     "signal": 8,
     "return-type": "json"
   },
   "custom/voxtype": {
-    "exec": "omarchy-voxtype-status",
+    "exec": "voxtype-status",
     "return-type": "json",
     "format": "{icon}",
     "format-icons": {
@@ -222,8 +222,8 @@
       "transcribing": "\udb81\udd1f"
     },
     "tooltip": true,
-    "on-click-right": "omarchy-voxtype-config",
-    "on-click": "omarchy-voxtype-model"
+    "on-click-right": "voxtype-config",
+    "on-click": "voxtype-model"
   },
   "tray": {
     "icon-size": 18,
@@ -245,7 +245,7 @@
       "<span>\uefc5 </span>",
       "<span color='#985265'>\uefc5 </span>"
     ],
-    "on-click": "omarchy-launch-or-focus-tui btop"
+    "on-click": "launch-or-focus-tui btop"
   },
   "custom/claude-usage": {
     "exec": "waybar-ai-usage claude --waybar --browser brave --format '{?5h_reset}{5h_pct}%/{5h_reset}{/5h_reset}{?5h_reset&7d_reset} - {/}{?7d_reset}{7d_pct}%/{7d_reset}{/7d_reset}'",

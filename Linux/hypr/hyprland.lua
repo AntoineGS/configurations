@@ -15,8 +15,3 @@ require("bindings.apps")
 
 -- Bypass GTK portal for URI opening (enables custom URI scheme handlers)
 hl.env("GTK_USE_PORTAL", "0")
-
--- NVIDIA environment variables
-hl.env("NVD_BACKEND", "direct")
-hl.env("LIBVA_DRIVER_NAME", "nvidia")
-hl.env("__GLX_VENDOR_LIBRARY_NAME", "nvidia")
