@@ -8,4 +8,11 @@ if [[ $1 == "-y" ]] || update-confirm; then
   snapshot create || (($? == 127))
   update-git
   update-perform
+
+  # Keep the window open so the output can be reviewed before it closes.
+  if [[ -t 0 ]]; then
+    echo
+    read -n 1 -s -r -p "Press any key to close..."
+    echo
+  fi
 fi

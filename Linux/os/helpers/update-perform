@@ -5,9 +5,11 @@ set -e
 # Ensure screensaver/sleep doesn't set in during updates
 hyprctl eval 'hl.dispatch(hl.dsp.window.tag({tag="+noidle"}))' &>/dev/null || true
 
-# Capture update logs (CLICOLOR_FORCE keeps gum styled when stdout is piped through tee)
+# Capture update logs (CLICOLOR_FORCE keeps gum styled when stdout is piped through tee).
+# stdbuf -o0 keeps tee unbuffered so interactive pacman/yay prompts (which have no
+# trailing newline) show up immediately instead of getting stuck in tee's buffer.
 export CLICOLOR_FORCE=1
-exec > >(tee "/tmp/update.log") 2>&1
+exec > >(stdbuf -o0 tee "/tmp/update.log") 2>&1
 
 # Perform all update steps
 update-keyring
