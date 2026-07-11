@@ -626,6 +626,16 @@ applications:
         files:
           - hibernate-on-lid.conf
         sudo: true
+  - name: yay
+    description: AUR helper config (7-day minimum release-age hook)
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/yay
+        name: config
+        backup: ./Linux/yay
+        files:
+          - init.lua
   - name: os-files
     when: '{{ eq .OS "linux" }}'
     entries:
