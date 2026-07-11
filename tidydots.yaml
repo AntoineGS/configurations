@@ -1056,3 +1056,20 @@ applications:
         name: configs
         backup: ./Linux/Snapper/configs
         sudo: true
+  - name: tailscale-subnet-router
+    description: Advertise 192.168.1.0/24 via Tailscale so remote clients reach the RustDesk relay (server only)
+    when: '{{ eq .Hostname "server" }}'
+    entries:
+      - targets:
+          linux: /etc/sysctl.d
+        name: ip-forwarding
+        backup: ./Linux/tailscale
+        files:
+          - 99-tailscale.conf
+        sudo: true
+      - targets:
+          linux: ~/.local/share/helpers
+        name: setup script
+        backup: ./Linux/tailscale
+        files:
+          - setup-subnet-router.sh
