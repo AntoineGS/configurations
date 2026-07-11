@@ -2,7 +2,6 @@
 hl.bind("SUPER + SPACE",           hl.dsp.exec_cmd("vicinae toggle"),                                  { description = "Dashboard" })
 hl.bind("SUPER + CTRL + C",        hl.dsp.exec_cmd("menu capture"),                                    { description = "Capture menu" })
 hl.bind("SUPER + CTRL + O",        hl.dsp.exec_cmd("menu toggle"),                                     { description = "Toggle menu" })
-hl.bind("SUPER + ALT + SPACE",     hl.dsp.exec_cmd("menu"),                                            { description = "Omarchy menu" })
 hl.bind("SUPER + ESCAPE",          hl.dsp.exec_cmd("menu system"),                                     { description = "System menu" })
 -- vicinae 0.20.12: `vicinae vicinae://launch/power` registers the deeplink but
 -- doesn't raise the window (works fine for clipboard/emojis/calculator). Chain
