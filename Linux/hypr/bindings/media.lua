@@ -26,3 +26,11 @@ hl.bind("XF86AudioPrev",  hl.dsp.exec_cmd(osdclient .. " --playerctl previous"),
 
 -- Switch audio output with Super + Mute
 hl.bind("SUPER + XF86AudioMute", hl.dsp.exec_cmd("cmd-audio-switch"), { locked = true, description = "Switch audio output" })
+
+-- Super + F-key media controls. This laptop's F6-F10 keys emit plain F-keys
+-- (no XF86 media codes), so bind them here for brightness and volume.
+hl.bind("SUPER + F6",  hl.dsp.exec_cmd("brightness-display 5%-"),                    { locked = true, repeating = true, description = "Brightness down" })
+hl.bind("SUPER + F7",  hl.dsp.exec_cmd("brightness-display +5%"),                    { locked = true, repeating = true, description = "Brightness up" })
+hl.bind("SUPER + F8",  hl.dsp.exec_cmd(osdclient .. " --output-volume mute-toggle"), { locked = true, description = "Mute" })
+hl.bind("SUPER + F9",  hl.dsp.exec_cmd(osdclient .. " --output-volume lower"),       { locked = true, repeating = true, description = "Volume down" })
+hl.bind("SUPER + F10", hl.dsp.exec_cmd(osdclient .. " --output-volume raise"),       { locked = true, repeating = true, description = "Volume up" })
