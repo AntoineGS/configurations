@@ -587,11 +587,13 @@ applications:
         files:
           - config.yaml
   - name: modprobe
+    description: Blacklist the faulty Raydium touchscreen. Copied, not symlinked - modprobe.d is read before /home mounts, so a symlink into this repo is a dangling link at boot.
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
       - targets:
           linux: /etc/modprobe.d
         name: config
+        method: copy
         backup: ./Linux/modprobe
         files:
           - blacklist-raydium.conf
@@ -603,6 +605,7 @@ applications:
       - targets:
           linux: /etc/udev/rules.d
         name: rules
+        method: copy
         backup: ./Linux/udev
         files:
           - 90-disable-raydium.rules
