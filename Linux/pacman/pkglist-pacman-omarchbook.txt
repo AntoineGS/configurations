@@ -4,7 +4,6 @@ bluetui
 bolt
 brightnessctl
 btop
-clang
 cups-pdf
 delve
 docker-compose
@@ -15,7 +14,9 @@ fastfetch
 fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
+freecad
 ghostty
+gimp
 git-delta
 github-cli
 gnome-calculator
@@ -23,6 +24,7 @@ gnome-disk-utility
 gnome-themes-extra
 gopls
 gpu-screen-recorder
+gsimplecal
 gum
 hypridle
 hyprlock
@@ -35,6 +37,7 @@ inxi
 kdenlive
 lazydocker
 lazygit
+libmspack
 libreoffice-fresh
 luacheck
 luarocks
@@ -58,6 +61,7 @@ sddm
 signal-desktop
 socat
 starship
+steam
 swaybg
 swayosd
 system-config-printer
@@ -66,7 +70,7 @@ thermald
 tldr
 tree-sitter-cli
 uv
-waybar
+waypipe
 whois
 wiremix
 woff2-font-awesome
@@ -74,4 +78,3 @@ xmlstarlet
 yazi
 yq
 zram-generator
-zsh-autosuggestions
