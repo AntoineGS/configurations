@@ -10,6 +10,14 @@
 
 {
    "$schema": "https://vicinae.com/schemas/config.json",
+   // Monospace so the keybindings menu's padded two-column layout actually
+   // aligns (menu-keybindings pads with printf "%-30s"; proportional fonts
+   // make character padding look ragged).
+   "font": {
+      "normal": {
+         "family": "JetBrainsMono Nerd Font"
+      }
+   },
    "theme": {
       "dark": {
          "name": "catppuccin-mocha"
