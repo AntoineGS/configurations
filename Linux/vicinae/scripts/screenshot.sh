@@ -5,6 +5,7 @@
 # @vicinae.exec ["/bin/bash"]
 
 export PATH="$HOME/.local/share/helpers:$PATH"
+exec </dev/null # vicinae gives script commands a never-closing stdin; detach it so helpers do not hang
 
 # Silent-mode commands fire while Vicinae is still on screen, and cmd-screenshot
 # freezes the display (hyprpicker -r) the instant it launches — so the launcher

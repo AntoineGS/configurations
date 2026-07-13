@@ -1,8 +1,5 @@
 -- Menus
 hl.bind("SUPER + SPACE",           hl.dsp.exec_cmd("vicinae toggle"),                                  { description = "Dashboard" })
-hl.bind("SUPER + CTRL + C",        hl.dsp.exec_cmd("menu capture"),                                    { description = "Capture menu" })
-hl.bind("SUPER + CTRL + O",        hl.dsp.exec_cmd("menu toggle"),                                     { description = "Toggle menu" })
-hl.bind("SUPER + ESCAPE",          hl.dsp.exec_cmd("menu system"),                                     { description = "System menu" })
 -- vicinae 0.20.12: `vicinae vicinae://launch/power` registers the deeplink but
 -- doesn't raise the window (works fine for clipboard/emojis/calculator). Chain
 -- an explicit `open` so the window actually appears.
@@ -14,8 +11,6 @@ hl.bind("SUPER + CTRL + H",        hl.dsp.exec_cmd("restart-hyprctl"),          
 
 -- Aesthetics
 hl.bind("SUPER + SHIFT + SPACE",         hl.dsp.exec_cmd("toggle-waybar"),                                 { description = "Toggle top bar" })
-hl.bind("SUPER + CTRL + SPACE",          hl.dsp.exec_cmd("menu background"),                               { description = "Theme background menu" })
-hl.bind("SUPER + SHIFT + CTRL + SPACE",  hl.dsp.exec_cmd("menu theme"),                                    { description = "Theme menu" })
 hl.bind("SUPER + BACKSPACE",             hl.dsp.window.set_prop({ prop = "opaque", value = "toggle" }),    { description = "Toggle window transparency" })
 hl.bind("SUPER + SHIFT + BACKSPACE",     hl.dsp.exec_cmd("hyprland-window-gaps-toggle"),                   { description = "Toggle window gaps" })
 hl.bind("SUPER + CTRL + BACKSPACE",      hl.dsp.exec_cmd("hyprland-window-single-square-aspect-toggle"),   { description = "Toggle single-window square aspect" })
@@ -35,7 +30,6 @@ hl.bind("SUPER + CTRL + A",              hl.dsp.exec_cmd("launch-tui-large pkg-a
 
 -- Captures
 hl.bind("PRINT",                         hl.dsp.exec_cmd("cmd-screenshot"),                                { description = "Screenshot" })
-hl.bind("ALT + PRINT",                   hl.dsp.exec_cmd("menu screenrecord"),                             { description = "Screenrecording" })
 hl.bind("SUPER + PRINT",                 hl.dsp.exec_cmd("pkill hyprpicker || hyprpicker -a"),             { description = "Color picker" })
 
 -- Control panels

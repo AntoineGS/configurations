@@ -553,6 +553,10 @@ applications:
         backup: ./Linux/vicinae
         files:
           - settings.json
+      - targets:
+          linux: ~/.local/share/vicinae/scripts
+        name: scripts
+        backup: ./Linux/vicinae/scripts
   - name: autostart
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:

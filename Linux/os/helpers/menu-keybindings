@@ -78,21 +78,37 @@ parse_keycodes() {
 
 # Fetch dynamic keybindings from Hyprland
 #
+# NOTE: we parse the PLAIN `hyprctl binds` output, not `hyprctl -j binds`.
+# For scancode binds (e.g. `hl.bind("SUPER + code:10", ...)`) Hyprland's JSON
+# reports key:"" and keycode:0 — the key is lost entirely — while the plain
+# output still carries it. Hyprland also echoes the whole spec string back as
+# the key for those binds ("SUPER + code:10"), so we keep only the `code:NN`
+# part and let parse_keycodes() resolve it to a symbol.
+#
 # Also do some pre-processing:
-# - Remove standard Omarchy bin path prefix
 # - Remove uwsm prefix
 # - Map numeric modifier key mask to a textual rendition
 # - Output comma-separated values that the parser can understand
 dynamic_bindings() {
-  hyprctl -j binds |
-    jq -r '.[] | {modmask, key, keycode, description, dispatcher, arg} | "\(.modmask),\(.key)@\(.keycode),\(.description),\(.dispatcher),\(.arg)"' |
+  hyprctl binds |
+    awk '
+      function emit() {
+        if (!have) return
+        k = key
+        if (match(k, /code:[0-9]+/)) k = substr(k, RSTART, RLENGTH)
+        printf "%s,%s,%s,%s,%s\n", modmask, k, desc, disp, arg
+      }
+      /^bind/           { emit(); have = 1; modmask = ""; key = ""; desc = ""; disp = ""; arg = ""; next }
+      /^\tmodmask:/     { modmask = substr($0, index($0, ":") + 2) }
+      /^\tkey:/         { key     = substr($0, index($0, ":") + 2) }
+      /^\tdescription:/ { desc    = substr($0, index($0, ":") + 2) }
+      /^\tdispatcher:/  { disp    = substr($0, index($0, ":") + 2) }
+      /^\targ:/         { arg     = substr($0, index($0, ":") + 2) }
+      END               { emit() }
+    ' |
     sed -r \
-      -e 's/null//' \
-      -e 's,~/.local/share/omarchy/bin/,,' \
       -e 's,uwsm app -- ,,' \
       -e 's,uwsm-app -- ,,' \
-      -e 's/@0//' \
-      -e 's/,@/,code:/' \
       -e 's/^0,/,/' \
       -e 's/^1,/SHIFT,/' \
       -e 's/^4,/CTRL,/' \
@@ -156,8 +172,20 @@ parse_bindings() {
         gsub(/'"'"'/, "\\&apos;", action);
     }
 
+    # Under a Lua config EVERY bind dispatches to "__lua" with an internal
+    # callback id as its arg, so a bind with no description reconstructs to
+    # meaningless garbage like "__lua,115". Skip those instead of showing them
+    # (give the bind a `description` in the Hyprland config to make it appear).
+    if (action ~ /^__lua/) {
+        next;
+    }
+
     if (action != "") {
-        printf "%-35s → %s\n", key_combo, action;
+        # Padded into two columns. This only aligns visually because Vicinae is
+        # configured with a monospace font (see Linux/vicinae/settings.json);
+        # with a proportional font the padding would look ragged.
+        # 30 = longest current key combo (27) + a small gutter.
+        printf "%-30s → %s\n", key_combo, action;
     }
 }'
 }
