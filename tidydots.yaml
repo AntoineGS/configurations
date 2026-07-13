@@ -134,7 +134,7 @@ applications:
       managers:
         brew: carapace
         winget: rsteube.Carapace
-        yay: carapace
+        yay: carapace-bin
     name: carapace
     entries:
       - targets:
