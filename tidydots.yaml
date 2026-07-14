@@ -1129,6 +1129,13 @@ applications:
         name: configs
         backup: ./Linux/Snapper/configs
         sudo: true
+      - targets:
+          linux: /etc/conf.d
+        name: registered-configs
+        backup: ./Linux/Snapper/conf.d
+        files:
+          - snapper
+        sudo: true
       - name: enable-timers
         check:
           linux: systemctl is-enabled --quiet snapper-timeline.timer && systemctl is-enabled --quiet snapper-cleanup.timer
