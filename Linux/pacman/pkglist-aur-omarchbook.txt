@@ -3,7 +3,6 @@
 asdcontrol
 brave-bin
 carapace-bin
-carapace-bin-debug
 critique
 elegoo-slicer-bin
 fzf-tab-completion-git
@@ -29,6 +28,5 @@ waybar-git
 xdg-terminal-exec
 yaru-icon-theme
 yay-bin
-yay-bin-debug
 zsh-transient-prompt-git
 zsh-vi-mode
