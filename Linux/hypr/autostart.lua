@@ -17,7 +17,6 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("hyprpm reload -n")
     hl.exec_cmd("signal")
     hl.exec_cmd("teams-for-linux")
-    hl.exec_cmd("vicinae server")
 
     -- Ensure all persistent workspaces are on correct monitors.
     -- Legacy `hyprctl dispatch <name> <args>` strings are rejected by the Lua parser; route through `hyprctl eval`.
