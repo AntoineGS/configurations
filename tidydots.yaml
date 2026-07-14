@@ -310,6 +310,12 @@ applications:
           linux: ~/.local/share/zsh/completions
         name: completions
         backup: ./Linux/zsh/completions
+      - name: default-shell
+        check:
+          linux: 'test "$(getent passwd "$USER" | cut -d: -f7)" = /usr/bin/zsh'
+        run:
+          linux: 'chsh -s /usr/bin/zsh "$SUDO_USER"'
+        sudo: true
   - package:
       managers:
         apt: tmux
@@ -372,6 +378,22 @@ applications:
         backup: ./Linux/hypr
         files:
           - watch-rustdesk-submap.service
+      - name: enable-rustdesk-service
+        check:
+          linux: systemctl --user is-enabled --quiet watch-rustdesk-submap.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now watch-rustdesk-submap.service
+      - targets:
+          linux: ~/.config/systemd/user
+        name: external-keyboard-service
+        backup: ./Linux/hypr
+        files:
+          - watch-external-keyboard.service
+      - name: enable-external-keyboard-service
+        check:
+          linux: systemctl --user is-enabled --quiet watch-external-keyboard.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
   - package:
       managers:
         pacman: waybar
@@ -557,6 +579,11 @@ applications:
           linux: ~/.local/share/vicinae/scripts
         name: scripts
         backup: ./Linux/vicinae/scripts
+      - name: enable-service
+        check:
+          linux: systemctl --user is-enabled --quiet vicinae.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now vicinae.service
   - name: autostart
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
@@ -610,6 +637,12 @@ applications:
         files:
           - 90-disable-raydium.rules
         sudo: true
+      - name: apply-rules
+        check:
+          linux: 'test ! -e /sys/bus/i2c/drivers/raydium_ts/i2c-RAYD0001:00'
+        run:
+          linux: 'udevadm control --reload-rules && udevadm trigger --subsystem-match=i2c'
+        sudo: true
   - name: system-sleep-hooks
     description: Post-resume hooks (e.g. rebind elan_i2c touchpad to avoid dmesg flood + fan ramp)
     when: '{{ eq .Hostname "omarchbook" }}'
@@ -632,6 +665,12 @@ applications:
         backup: ./Linux/systemd/logind.conf.d
         files:
           - hibernate-on-lid.conf
+        sudo: true
+      - name: reload-logind
+        check:
+          linux: 'busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandleLidSwitch | grep -q hibernate'
+        run:
+          linux: 'systemctl reload systemd-logind'
         sudo: true
   - name: yay
     description: AUR helper config (7-day minimum release-age hook)
@@ -708,6 +747,11 @@ applications:
         backup: ./Linux/ssh-agent
         files:
           - config
+      - name: enable-socket
+        check:
+          linux: systemctl --user is-enabled --quiet ssh-agent.socket
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now ssh-agent.socket
   - name: systemd-units
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -718,6 +762,12 @@ applications:
         files:
           - units-backup.service
           - units-backup.timer
+        sudo: true
+      - name: enable-backup-timer
+        check:
+          linux: systemctl is-enabled --quiet units-backup.timer
+        run:
+          linux: systemctl daemon-reload && systemctl enable --now units-backup.timer
         sudo: true
   - package:
       managers:
@@ -1054,6 +1104,12 @@ applications:
         files:
           - limine
         sudo: true
+      - name: enable-snapper-sync
+        check:
+          linux: systemctl is-enabled --quiet limine-snapper-sync.service
+        run:
+          linux: systemctl daemon-reload && systemctl enable --now limine-snapper-sync.service
+        sudo: true
   - package:
       managers:
         git:
@@ -1073,6 +1129,12 @@ applications:
         name: configs
         backup: ./Linux/Snapper/configs
         sudo: true
+      - name: enable-timers
+        check:
+          linux: systemctl is-enabled --quiet snapper-timeline.timer && systemctl is-enabled --quiet snapper-cleanup.timer
+        run:
+          linux: systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+        sudo: true
   - name: tailscale-subnet-router
     description: Advertise 192.168.1.0/24 via Tailscale so remote clients reach the RustDesk relay (server only)
     when: '{{ eq .Hostname "server" }}'
@@ -1090,3 +1152,8 @@ applications:
         backup: ./Linux/tailscale
         files:
           - setup-subnet-router.sh
+      - name: advertise-subnet-route
+        check:
+          linux: tailscale debug prefs | grep -q '192.168.1.0/24'
+        run:
+          linux: ~/.local/share/helpers/setup-subnet-router.sh
