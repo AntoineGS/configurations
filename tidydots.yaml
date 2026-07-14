@@ -83,7 +83,7 @@ applications:
         winget: Nushell.Nushell
     name: nushell
     description: A new type of shell
-    when: '{{ eq .Os "windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           linux: ~/.config/nushell
@@ -910,7 +910,7 @@ applications:
       managers:
         winget: Microsoft.OpenJDF.21
     name: java
-    when: '{{ eq .Os "windows" }}'
+    when: '{{ eq .OS "windows" }}'
     entries: []
   - package:
       managers:
