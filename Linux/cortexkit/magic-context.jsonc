@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cortexkit/magic-context/master/assets/magic-context.schema.json",
+  // Force queued context ops to execute earlier (30%) on Opus 4.8 only; everything else keeps the 65% default.
+  "execute_threshold_percentage": {
+    "default": 65,
+    "anthropic/claude-opus-4-8": 30
+  }
+}
