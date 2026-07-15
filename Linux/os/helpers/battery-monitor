@@ -1,23 +1,43 @@
 #!/bin/bash
 
-# Designed to be run by systemd timer every 30 seconds and alerts if battery is low
+# Designed to be run by a systemd timer every 30 seconds; alerts when the
+# battery gets low while discharging. Two thresholds fire one notification
+# each per discharge cycle: a low warning at 20% and a critical warning at
+# 10%. The per-threshold flags reset whenever the battery stops discharging
+# (charging or on AC), so the warnings fire again on the next discharge.
 
-BATTERY_THRESHOLD=10
-NOTIFICATION_FLAG="/run/user/$UID/omarchy_battery_notified"
+LOW_THRESHOLD=20
+CRITICAL_THRESHOLD=10
+LOW_FLAG="/run/user/$UID/battery_notified_low"
+CRITICAL_FLAG="/run/user/$UID/battery_notified_critical"
+
 BATTERY_LEVEL=$(battery-remaining)
-BATTERY_STATE=$(upower -i $(upower -e | grep 'BAT') | grep -E "state" | awk '{print $2}')
+BATTERY_STATE=$(upower -i "$(upower -e | grep 'BAT')" | grep -E "state" | awk '{print $2}')
 
-send_notification() {
+notify_low() {
+  notify-send -u normal "󰁹 Battery low" "Battery is down to ${1}% — consider plugging in" -i battery-caution -t 30000
+}
+
+notify_critical() {
   notify-send -u critical "󱐋 Time to recharge!" "Battery is down to ${1}%" -i battery-caution -t 30000
 }
 
 if [[ -n $BATTERY_LEVEL && $BATTERY_LEVEL =~ ^[0-9]+$ ]]; then
-  if [[ $BATTERY_STATE == "discharging" ]] && (( BATTERY_LEVEL <= BATTERY_THRESHOLD )); then
-    if [[ ! -f $NOTIFICATION_FLAG ]]; then
-      send_notification $BATTERY_LEVEL
-      touch $NOTIFICATION_FLAG
+  if [[ $BATTERY_STATE == "discharging" ]]; then
+    if (( BATTERY_LEVEL <= CRITICAL_THRESHOLD )); then
+      if [[ ! -f $CRITICAL_FLAG ]]; then
+        notify_critical "$BATTERY_LEVEL"
+        # Mark the low warning as sent too, so a fast drop straight past 20%
+        # does not emit a late, redundant low warning after the critical one.
+        touch "$CRITICAL_FLAG" "$LOW_FLAG"
+      fi
+    elif (( BATTERY_LEVEL <= LOW_THRESHOLD )); then
+      if [[ ! -f $LOW_FLAG ]]; then
+        notify_low "$BATTERY_LEVEL"
+        touch "$LOW_FLAG"
+      fi
     fi
   else
-    rm -f $NOTIFICATION_FLAG
+    rm -f "$LOW_FLAG" "$CRITICAL_FLAG"
   fi
 fi
