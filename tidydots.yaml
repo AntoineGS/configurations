@@ -777,7 +777,7 @@ applications:
         sudo: true
       - name: enable-backup-timer
         check:
-          linux: systemctl is-enabled --quiet units-backup.timer
+          linux: systemctl is-active --quiet units-backup.timer
         run:
           linux: systemctl daemon-reload && systemctl enable --now units-backup.timer
         sudo: true
