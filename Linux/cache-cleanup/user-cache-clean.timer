@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly clean of yay/AUR and Go caches
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

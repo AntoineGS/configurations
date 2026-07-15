@@ -1,0 +1,10 @@
+[Unit]
+Description=Deep-clean pacman package cache
+Documentation=man:paccache(8)
+
+[Service]
+Type=oneshot
+# Keep the 2 most recent versions of installed packages...
+ExecStart=/usr/bin/paccache -rk2
+# ...and drop every cached version of packages no longer installed.
+ExecStart=/usr/bin/paccache -ruk0

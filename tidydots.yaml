@@ -1282,3 +1282,39 @@ applications:
           linux: tailscale debug prefs | grep -q '192.168.1.0/24'
         run:
           linux: ~/.local/share/helpers/setup-subnet-router.sh
+  - name: cache-cleanup
+    description: Weekly reclamation of pacman, yay/AUR and Go caches (laptop disk-pressure mitigation)
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/system
+        name: pacman-cache-units
+        backup: ./Linux/cache-cleanup
+        files:
+          - pacman-cache-clean.service
+          - pacman-cache-clean.timer
+        sudo: true
+      - name: enable-pacman-cache-timer
+        check:
+          linux: systemctl is-enabled --quiet pacman-cache-clean.timer
+        run:
+          linux: systemctl daemon-reload && systemctl enable --now pacman-cache-clean.timer
+        sudo: true
+      - targets:
+          linux: ~/.local/bin
+        name: user-cache-script
+        backup: ./Linux/cache-cleanup
+        files:
+          - clean-user-cache
+      - targets:
+          linux: ~/.config/systemd/user
+        name: user-cache-units
+        backup: ./Linux/cache-cleanup
+        files:
+          - user-cache-clean.service
+          - user-cache-clean.timer
+      - name: enable-user-cache-timer
+        check:
+          linux: systemctl --user is-enabled --quiet user-cache-clean.timer
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now user-cache-clean.timer
