@@ -1228,11 +1228,37 @@ applications:
         files:
           - snapper
         sudo: true
-      - name: enable-timers
+  - name: snapshots-enabled
+    description: Enable btrfs snapshots + limine boot-menu sync on every Linux host except the laptop (omarchbook keeps them off for disk space)
+    when: '{{ and (eq .OS "linux") (ne .Hostname "omarchbook") }}'
+    entries:
+      - name: enable-snapper-timers
         check:
           linux: systemctl is-enabled --quiet snapper-timeline.timer && systemctl is-enabled --quiet snapper-cleanup.timer
         run:
           linux: systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+        sudo: true
+      - name: enable-snapper-sync
+        check:
+          linux: systemctl is-enabled --quiet limine-snapper-sync.service
+        run:
+          linux: systemctl daemon-reload && systemctl enable --now limine-snapper-sync.service
+        sudo: true
+  - name: snapshots-disabled
+    description: Keep btrfs snapshots + limine sync off on the laptop to conserve disk space (snapper/limine stay installed, just dormant)
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - name: disable-snapper-timers
+        check:
+          linux: '! systemctl is-enabled --quiet snapper-timeline.timer && ! systemctl is-enabled --quiet snapper-cleanup.timer'
+        run:
+          linux: systemctl disable --now snapper-timeline.timer snapper-cleanup.timer
+        sudo: true
+      - name: disable-snapper-sync
+        check:
+          linux: '! systemctl is-enabled --quiet limine-snapper-sync.service'
+        run:
+          linux: systemctl disable --now limine-snapper-sync.service
         sudo: true
   - name: tailscale-subnet-router
     description: Advertise 192.168.1.0/24 via Tailscale so remote clients reach the RustDesk relay (server only)
