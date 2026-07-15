@@ -1,0 +1,12 @@
+# Ignore everything by default, un-ignore tracked items
+*
+!.gitignore
+!opencode.json
+!tui.json
+!regenerate.sh
+!agents/
+!agents/**
+!commands/
+!commands/**
+!skills/
+!skills/**
