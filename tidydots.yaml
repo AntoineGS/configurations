@@ -699,6 +699,18 @@ applications:
           linux: ~/.local/share/applications
         name: .desktop files
         backup: ./Linux/os/applications
+      - targets:
+          linux: ~/.config/systemd/user
+        name: battery-monitor-service
+        backup: ./Linux/os/systemd
+        files:
+          - battery-monitor.service
+          - battery-monitor.timer
+      - name: enable-battery-monitor
+        check:
+          linux: systemctl --user is-active --quiet battery-monitor.timer
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
