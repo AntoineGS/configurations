@@ -789,6 +789,72 @@ applications:
             linux: /usr/share/oh-my-zsh
           sudo: true
         yay: oh-my-zsh-git
+  - name: enable-laptop-services
+    description: Enable services tied to this laptop's hardware (thermal, wifi)
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - name: enable-thermald
+        check:
+          linux: systemctl is-enabled --quiet thermald.service
+        run:
+          linux: systemctl enable --now thermald.service
+        sudo: true
+      - name: enable-iwd
+        check:
+          linux: systemctl is-enabled --quiet iwd.service
+        run:
+          linux: systemctl enable --now iwd.service
+        sudo: true
+  - name: enable-desktop-services
+    description: Enable services that only make sense on a graphical Linux host
+    when: '{{ and (eq .OS "linux") .HasDisplay (not .IsWSL) }}'
+    entries:
+      - name: enable-sddm
+        check:
+          linux: systemctl is-enabled --quiet sddm.service
+        run:
+          linux: systemctl enable sddm.service
+        sudo: true
+      - name: enable-cups
+        check:
+          linux: systemctl is-enabled --quiet cups.service
+        run:
+          linux: systemctl enable --now cups.service cups.socket cups-browsed.service
+        sudo: true
+      - name: enable-avahi
+        check:
+          linux: systemctl is-enabled --quiet avahi-daemon.service
+        run:
+          linux: systemctl enable --now avahi-daemon.service avahi-daemon.socket
+        sudo: true
+  - name: enable-linux-services
+    description: Enable services wanted on every real (non-WSL) Linux machine
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - name: enable-ufw
+        check:
+          linux: systemctl is-enabled --quiet ufw.service
+        run:
+          linux: systemctl enable --now ufw.service
+        sudo: true
+      - name: enable-docker
+        check:
+          linux: systemctl is-enabled --quiet docker.service
+        run:
+          linux: systemctl enable --now docker.service
+        sudo: true
+      - name: enable-tailscaled
+        check:
+          linux: systemctl is-enabled --quiet tailscaled.service
+        run:
+          linux: systemctl enable --now tailscaled.service
+        sudo: true
+      - name: enable-bluetooth
+        check:
+          linux: systemctl is-enabled --quiet bluetooth.service
+        run:
+          linux: systemctl enable --now bluetooth.service
+        sudo: true
     name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
     when: '{{ eq .OS "linux" }}'
