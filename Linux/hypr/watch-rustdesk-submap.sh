@@ -5,7 +5,34 @@
 set -euo pipefail
 
 SOCAT=${SOCAT:-socat}
-HYPR_SOCKET_PATH="$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"
+: "${XDG_RUNTIME_DIR:=/run/user/$UID}"
+HYPR_DIR="$XDG_RUNTIME_DIR/hypr"
+
+# Resolve the running Hyprland instance before doing anything else. Under UWSM
+# this systemd user unit can start before the compositor environment
+# (HYPRLAND_INSTANCE_SIGNATURE) is imported into the session, and a process only
+# ever sees the environment it was spawned with -- so waiting on the env var
+# alone would hang forever. Prefer the env var when it points at a live instance
+# socket; otherwise discover the newest instance from the runtime socket dir.
+# Block until a live event socket exists, then adopt it (exported so the hyprctl
+# calls below inherit it too).
+sig=""
+while :; do
+  if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} \
+    && -S "$HYPR_DIR/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock" ]]; then
+    sig=$HYPRLAND_INSTANCE_SIGNATURE
+    break
+  fi
+  candidate=$(ls -t "$HYPR_DIR" 2>/dev/null | head -1 || true)
+  if [[ -n $candidate && -S "$HYPR_DIR/$candidate/.socket2.sock" ]]; then
+    sig=$candidate
+    break
+  fi
+  sleep 2
+done
+export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+
+HYPR_SOCKET_PATH="$HYPR_DIR/$sig/.socket2.sock"
 ACTIVATED_CLEAN_WORKSPACE=false
 RIGHTMOST_MONITOR="DP-2"
 
