@@ -126,6 +126,34 @@ git:
 
 If the target has a `.git/`, tidydots runs `git pull`; otherwise it clones.
 
+## custom / url install (siblings of managers)
+
+`custom:` and `url:` sit directly under `package:` — NOT inside `managers:`
+(unlike `installer`, which is a manager). tidydots selects an install method
+by availability: package `managers` first, then `custom`, then `url`.
+
+`custom:` maps OS → shell command:
+
+```yaml
+package:
+  name: mytool
+  custom:
+    linux: cargo install mytool
+    windows: scoop install mytool
+```
+
+`url:` maps OS → a download-and-run spec. `command` runs after download; use
+`{file}` as the placeholder for the downloaded file path:
+
+```yaml
+package:
+  name: mytool
+  url:
+    linux:
+      url: https://example.com/mytool-linux
+      command: install -m755 {file} ~/.local/bin/mytool
+```
+
 ## Templating
 
 `.tmpl` files (e.g. `.zshrc.tmpl`) render on restore to a sibling
