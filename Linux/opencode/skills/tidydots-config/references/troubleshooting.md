@@ -8,10 +8,13 @@ wrong, fix the config before running the real command.
 
 ## Symlink conflict / existing file at target
 
-If a target path already exists as a real file (not the expected symlink),
-restore backs it up rather than clobbering it. Inspect the target:
-`ls -l <target>`. If it should be managed, confirm the backed-up copy matches
-the repo, then let restore create the symlink.
+Default restore (merge mode) automatically adopts a pre-existing real file at
+the target in one pass: it moves the file's contents into the backup source in
+the repo, auto-resolves any collision by renaming the conflicting file (never
+overwriting), removes the target, and creates the symlink. Data is moved into
+the repo, not destroyed — if a rename happened, inspect the backup dir in the
+repo afterward (and `ls -l <target>`) to reconcile. Only the non-default
+NoMerge mode refuses on a pre-existing file, which then requires `--force`.
 
 ## Template conflict markers
 
@@ -32,7 +35,9 @@ values (`tidydots list` shows what's active) — common causes: `.OS`,
 
 tidydots picks the first manager present in `manager_priority` that the app
 defines. If it chose an unexpected one, either reorder `manager_priority` or
-remove the manager entry you don't want on this machine.
+remove the manager entry you don't want on this machine. A top-level
+`default_manager:`, when set, acts as a lower-priority fallback in addition to
+the `manager_priority` ordering.
 
 ## sudo entries
 
