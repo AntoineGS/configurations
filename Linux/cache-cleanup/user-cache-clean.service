@@ -1,0 +1,6 @@
+[Unit]
+Description=Clean yay/AUR and Go build/module caches
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/clean-user-cache

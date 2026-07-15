@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Reclaim disk space from user-owned build caches: yay (AUR) and Go.
+# Invoked weekly by the user-cache-clean.timer systemd --user unit.
+#
+# yay:  ~/.cache/yay holds cloned AUR sources + built package tarballs; they
+#       are re-created on the next AUR build, so the whole tree is safe to drop.
+# go:   the build cache (GOCACHE) is rebuilt on demand; the module cache
+#       (GOMODCACHE) is re-downloaded on the next build. Both are safe to drop.
+set -euo pipefail
+
+log() { printf '%s clean-user-cache: %s\n' "$(date -Is)" "$*"; }
+
+# --- yay / AUR cache -------------------------------------------------------
+yay_cache="${XDG_CACHE_HOME:-$HOME/.cache}/yay"
+if [ -d "$yay_cache" ]; then
+  log "clearing yay cache ($yay_cache)"
+  find "$yay_cache" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+else
+  log "no yay cache at $yay_cache, skipping"
+fi
+
+# --- Go build + module caches ---------------------------------------------
+if command -v go >/dev/null 2>&1; then
+  log "cleaning Go build cache"
+  go clean -cache
+  log "cleaning Go module cache"
+  go clean -modcache
+else
+  log "go not on PATH, skipping Go caches"
+fi
+
+log "done"
