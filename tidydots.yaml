@@ -38,7 +38,7 @@ applications:
         yay: opencode-bin
         brew: opencode
     name: opencode
-    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin
+    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; magic-context plugin for self-managing context/memory
     entries:
       - name: claude-plugin
         check:
