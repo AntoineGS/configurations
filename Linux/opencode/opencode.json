@@ -4,8 +4,13 @@
   "plugin": [
     "opencode-with-claude",
     "superpowers@git+https://github.com/obra/superpowers.git",
-    "cc-safety-net"
+    "cc-safety-net",
+    "@cortexkit/opencode-magic-context"
   ],
+  "compaction": {
+    "auto": false,
+    "prune": false
+  },
   "provider": {
     "anthropic": {
       "options": {
