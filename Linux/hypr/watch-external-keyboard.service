@@ -1,0 +1,12 @@
+[Unit]
+Description=Disable internal keyboard/touchpad while the Keyball44 (Bluetooth) is connected
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/hypr/watch-external-keyboard.sh
+Restart=on-failure
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
