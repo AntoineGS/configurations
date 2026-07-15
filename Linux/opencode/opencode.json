@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "plugin": [
+    "opencode-with-claude",
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "cc-safety-net"
+  ],
+  "provider": {
+    "anthropic": {
+      "options": {
+        "baseURL": "http://127.0.0.1:3456",
+        "apiKey": "dummy"
+      }
+    }
+  }
+}
