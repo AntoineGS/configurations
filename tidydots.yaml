@@ -49,6 +49,12 @@ applications:
           linux: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
+      - targets:
+          linux: ~/.config/cortexkit
+        name: magic-context config
+        backup: ./Linux/cortexkit
+        files:
+          - magic-context.jsonc
   - package:
       managers:
         apt: neovim
