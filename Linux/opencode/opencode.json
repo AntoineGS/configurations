@@ -11,6 +11,11 @@
     "auto": false,
     "prune": false
   },
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "webfetch": "allow"
+  },
   "provider": {
     "anthropic": {
       "options": {
