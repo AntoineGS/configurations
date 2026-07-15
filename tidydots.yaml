@@ -35,6 +35,22 @@ applications:
           - settings.json
   - package:
       managers:
+        yay: opencode-bin
+        brew: opencode
+    name: opencode
+    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin
+    entries:
+      - name: claude-plugin
+        check:
+          linux: npm ls -g opencode-with-claude >/dev/null 2>&1
+        run:
+          linux: npm install -g opencode-with-claude
+      - targets:
+          linux: ~/.config/opencode
+        name: config
+        backup: ./Linux/opencode
+  - package:
+      managers:
         apt: neovim
         brew: neovim
         pacman: neovim
@@ -711,6 +727,10 @@ applications:
           linux: systemctl --user is-active --quiet battery-monitor.timer
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
+      - targets:
+          linux: ~/.local/share/applications
+        name: .desktop files
+        backup: ./Linux/os/applications
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -781,14 +801,6 @@ applications:
         run:
           linux: systemctl daemon-reload && systemctl enable --now units-backup.timer
         sudo: true
-  - package:
-      managers:
-        git:
-          url: https://github.com/ohmyzsh/ohmyzsh.git
-          targets:
-            linux: /usr/share/oh-my-zsh
-          sudo: true
-        yay: oh-my-zsh-git
   - name: enable-laptop-services
     description: Enable services tied to this laptop's hardware (thermal, wifi)
     when: '{{ eq .Hostname "omarchbook" }}'
@@ -855,6 +867,14 @@ applications:
         run:
           linux: systemctl enable --now bluetooth.service
         sudo: true
+  - package:
+      managers:
+        git:
+          url: https://github.com/ohmyzsh/ohmyzsh.git
+          targets:
+            linux: /usr/share/oh-my-zsh
+          sudo: true
+        yay: oh-my-zsh-git
     name: oh-my-zsh
     description: Zsh framework (skip on Arch - use oh-my-zsh-git)
     when: '{{ eq .OS "linux" }}'
@@ -1181,12 +1201,6 @@ applications:
         backup: ./Linux/limine/
         files:
           - limine
-        sudo: true
-      - name: enable-snapper-sync
-        check:
-          linux: systemctl is-enabled --quiet limine-snapper-sync.service
-        run:
-          linux: systemctl daemon-reload && systemctl enable --now limine-snapper-sync.service
         sudo: true
   - package:
       managers:
