@@ -771,9 +771,12 @@ alias gu = gitui
 alias guw = gitui --watcher
 alias clauded = claude --dangerously-skip-permissions
 
+$env._ZO_FZF_OPTS = "--style=full --layout=reverse --preview='~/.config/fzf/fzf-preview.sh {2..}' --preview-window=right:50%:wrap"
+
 source ~/.zoxide.nu
 source ~/.cache/carapace/init.nu
 source ./themes/catppuccin_mocha.nu
 use ~/.cache/starship/init.nu
 
 alias cd = z
+alias cdi = zi
