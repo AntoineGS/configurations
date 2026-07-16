@@ -3,7 +3,6 @@
 asdcontrol
 brave-bin
 carapace-bin
-critique
 elegoo-slicer-bin
 fzf-tab-completion-git
 golangci-lint-bin
@@ -11,6 +10,7 @@ hyprland-preview-share-picker
 insync
 limine-snapper-sync
 oh-my-zsh-git
+opencode-bin
 pinta
 posting
 python-terminaltexteffects
