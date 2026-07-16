@@ -25,12 +25,91 @@ source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
 source /usr/share/fzf/completion.zsh
 
+_zoxide_tab_or_complete() {
+    if [[ -z $BUFFER ]]; then
+        local dir
+        dir=$(zoxide query --interactive 2>/dev/null) || { zle redisplay; return 0; }
+        if [[ -n $dir ]]; then
+            zle push-line
+            BUFFER="builtin cd -- ${(q)dir}"
+            zle accept-line
+            zle reset-prompt
+        else
+            zle redisplay
+        fi
+    else
+        zle fzf_completion
+    fi
+}
+zle -N _zoxide_tab_or_complete
+
+_fzf_cd_navigate() {
+    emulate -L zsh
+    local saved=$BUFFER scursor=$CURSOR
+    local dir=$PWD
+    local tempfile=${TMPDIR:-/tmp}/fzf-cd-${$}-${RANDOM}
+    while true; do
+        {
+            fd --base-directory "$dir" --type d --max-depth 1 --hidden \
+                --color=always 2>/dev/null | sort
+            echo
+        } | fzf --ansi --style=full --layout=reverse --print-query \
+            --prompt "${dir%/}/ " \
+            --expect=ctrl-l,ctrl-h \
+            --preview "eza -la --color=always --group-directories-first -- ${(q)dir}/{} 2>/dev/null" \
+            --preview-window=right:50%:wrap >$tempfile
+        local ret=$?
+        if [[ $ret -ne 0 ]]; then
+            BUFFER=$saved CURSOR=$scursor
+            rm -f $tempfile
+            zle redisplay
+            return 0
+        fi
+        local out=$(<$tempfile)
+        local -a lines=("${(@f)out}")
+        local query=${lines[1]} key=${lines[2]} name=${lines[3]%/}
+        case $key in
+            ctrl-l)
+                [[ -z $name ]] && continue
+                dir=$dir/$name
+                ;;
+            ctrl-h)
+                dir=${dir:h}
+                ;;
+            *)
+                local target=$dir
+                if [[ -n $query ]]; then
+                    if [[ $query == /* ]]; then
+                        target=$query
+                    else
+                        target=$dir/$query
+                    fi
+                fi
+                BUFFER="builtin cd -- ${(q)target}"
+                rm -f $tempfile
+                zle accept-line
+                return 0
+                ;;
+        esac
+    done
+}
+zle -N _fzf_cd_navigate
+
+_cd_space_autopicker() {
+    zle magic-space
+    if [[ $BUFFER == "cd " && $CURSOR -eq 3 ]]; then
+        zle _fzf_cd_navigate
+    fi
+}
+zle -N _cd_space_autopicker
+
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
-    bindkey '^I' fzf_completion
+    source /usr/share/fzf/key-bindings.zsh
+    bindkey '^I' _zoxide_tab_or_complete
+    bindkey ' ' _cd_space_autopicker
     bindkey '^P' autosuggest-accept
     bindkey '^[k' clear-screen
-    source /usr/share/fzf/key-bindings.zsh
 }
 
 # Carapace
