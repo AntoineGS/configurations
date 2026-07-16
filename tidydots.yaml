@@ -757,10 +757,6 @@ applications:
           linux: systemctl --user is-active --quiet battery-monitor.timer
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
-      - targets:
-          linux: ~/.local/share/applications
-        name: .desktop files
-        backup: ./Linux/os/applications
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
