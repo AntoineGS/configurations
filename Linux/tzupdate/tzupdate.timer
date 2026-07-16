@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically update timezone from geolocation (tzupdate)
+
+[Timer]
+# Shortly after boot (covers "booted in a new city"), then hourly. iwd exposes
+# no connection-up hook, so polling is how travel gets picked up day-to-day;
+# the resume hook handles the common close-lid/travel/open-lid case promptly.
+OnBootSec=2min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

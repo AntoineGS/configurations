@@ -1,0 +1,24 @@
+#!/bin/bash
+# Refresh the system timezone on resume. Closing the lid, travelling, and
+# reopening in a new city is the common way this laptop changes timezone, and
+# iwd exposes no connection-up hook to catch it. The timer polls hourly as a
+# backstop; this fires tzupdate promptly once Wi-Fi is back.
+#
+# Started with --no-block so we never delay resume; tzupdate.service retries
+# internally while iwd finishes reassociating.
+
+set -u
+
+action="${1:-}"
+sleep_state="${2:-}"
+
+[ "$action" = "post" ] || exit 0
+
+case "$sleep_state" in
+  suspend|hibernate|hybrid-sleep|suspend-then-hibernate) ;;
+  *) exit 0 ;;
+esac
+
+systemctl start --no-block tzupdate.service 2>/dev/null || true
+
+exit 0

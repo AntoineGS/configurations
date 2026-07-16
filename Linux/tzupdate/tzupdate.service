@@ -1,0 +1,11 @@
+[Unit]
+Description=Update system timezone from geolocation (tzupdate)
+Documentation=man:tzupdate(1)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Retry a few times so a post-resume run still succeeds while Wi-Fi is still
+# reassociating (the resume hook starts this service before iwd is back online).
+ExecStart=/bin/sh -c 'for i in 1 2 3 4 5 6; do /usr/bin/tzupdate && exit 0; sleep 10; done; exit 1'
