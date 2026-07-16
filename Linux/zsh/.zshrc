@@ -116,3 +116,4 @@ headless-ssh() {
 
 # needs to be here or 1password changes it after zshenv
 export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/ssh-agent.socket"
+export PATH="/home/antoinegs/.ocv/bin:$PATH"
