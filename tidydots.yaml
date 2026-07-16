@@ -676,6 +676,30 @@ applications:
         files:
           - elan-i2c-rebind
           - atkbd-rebind
+          - tzupdate-resume
+        sudo: true
+  - package:
+      managers:
+        yay: tzupdate
+        apt: tzupdate
+        brew: tzupdate
+    name: tzupdate
+    description: Auto-set the system timezone from IP geolocation. Timer polls on boot + hourly; the system-sleep resume hook (in system-sleep-hooks) fires it promptly after travel. iwd exposes no connection-up hook and NetworkManager isn't used on this host, hence polling.
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/system
+        name: units
+        backup: ./Linux/tzupdate
+        files:
+          - tzupdate.service
+          - tzupdate.timer
+        sudo: true
+      - name: enable-tzupdate-timer
+        check:
+          linux: systemctl is-enabled --quiet tzupdate.timer
+        run:
+          linux: systemctl daemon-reload && systemctl enable --now tzupdate.timer
         sudo: true
   - name: logind-config
     description: Hibernate on lid close (workaround for ballistic fan in S3)
