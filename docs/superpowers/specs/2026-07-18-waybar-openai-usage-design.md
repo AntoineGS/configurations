@@ -1,14 +1,14 @@
-# Waybar OpenAI Usage Design
+# Waybar AI Usage Design
 
 ## Goal
 
-Show OpenAI Codex subscription usage beside Claude Code usage in Waybar. Use `codexbar` for reliable Codex CLI OAuth, API-window handling, caching, and error recovery while keeping the visible readout compact.
+Show Claude and OpenAI Codex subscription usage as adjacent, visually matched Waybar modules. Use `claudebar` and `codexbar` for CLI OAuth, current API handling, caching, and rich provider-specific tooltips.
 
 ## Current State
 
-The source Waybar template exposes `custom/claude-usage`, backed by `waybar-ai-usage claude`. The Waybar package declaration already retains `waybar-ai-usage-go` for that module.
+The persistent Waybar template uses `waybar-ai-usage` for Claude and has an uncommitted codexbar module for OpenAI. The combined tool relies on browser cookies and its declared tidydots package name is stale.
 
-An earlier uncommitted implementation used `waybar-ai-usage codex` for OpenAI. This design replaces that OpenAI command and module with `codexbar`; it does not replace the Claude integration.
+This design replaces both provider modules with the matched `claudebar` and `codexbar` tools. Both AUR packages are installed and return live usage JSON on this machine.
 
 The relevant files are:
 
@@ -18,69 +18,93 @@ The relevant files are:
 - `Linux/waybar/style.css`: shared Waybar styling
 - `tidydots.yaml`: Waybar package dependencies
 
-## Design
+## Modules
 
-Add `custom/codexbar` immediately after `custom/claude-usage` in the right-side module list. Use this command:
+Place `custom/claudebar` and `custom/codexbar` first in `modules-right`, followed by the tray expander.
+
+### Claude
+
+Use this visible format:
 
 ```text
-codexbar --format '{weekly_pct}% · {weekly_reset}'
+{session_pct}%/{session_reset} - {weekly_pct}%/{weekly_reset}
 ```
 
-The fixed bar text shows weekly usage and its reset countdown. The native codexbar tooltip remains enabled and unmodified so it can adapt to API changes and show the Codex plan, real window labels, model-specific limits, code review usage, credits, pacing, and stale-data status.
+Configure `custom/claudebar` with:
 
-Configure the module with:
+- Waybar JSON return type
+- 300-second polling interval
+- signal 13
+- native rich tooltip enabled
+- click action opening `https://claude.ai/settings/usage`
+
+### Codex
+
+Use this visible format, matching the weekly half of Claude:
+
+```text
+{weekly_pct}%/{weekly_reset}
+```
+
+Configure `custom/codexbar` with:
 
 - Waybar JSON return type
 - 300-second polling interval
 - signal 12
-- tooltip enabled
+- native rich tooltip enabled
 - click action opening `https://chatgpt.com/codex/settings/usage`
 
-Keep the existing compact Claude bar format. Add an explicit Claude tooltip headed `Claude`, followed by its 5-hour and 7-day percentages and reset times, so both adjacent readouts identify their provider on hover.
+## Appearance
 
-Expand the existing Claude usage CSS selector to include `#custom-codexbar`, giving both modules the same right margin and subdued opacity.
+Both tools normally embed severity colors in their bar text as Pango markup, which overrides CSS foreground colors. Pass all four bar-color options to both commands with Waybar's inherited foreground color:
 
-Add `codexbar` to the Waybar application's existing Yay dependency list in `tidydots.yaml`. Keep `waybar-ai-usage-go` because Claude still depends on it. No wrapper script or vendored codexbar source is needed.
+```text
+--color-low '#cdd6f4' --color-mid '#cdd6f4' --color-high '#cdd6f4' --color-critical '#cdd6f4'
+```
+
+Apply the existing `margin-right: 12px` and `opacity: 0.6` rule to `#custom-claudebar` and `#custom-codexbar`. This makes both readouts match the previous subdued Claude appearance. The color overrides affect only bar text; native tooltip progress bars remain severity-colored and adaptive.
+
+## Dependencies
+
+Replace the obsolete `waybar-ai-usage-go` dependency with the AUR packages `claudebar` and `codexbar`. Do not vendor either script. Their Bash, curl, jq, and Waybar dependencies are handled by the AUR packages.
+
+`waybar-ai-usage` is no longer needed by Waybar after both modules migrate. Existing installed copies and package inventory files are outside this change; tidydots simply stops declaring it as a Waybar dependency.
 
 ## Data Flow
 
-1. Waybar invokes `codexbar` every 300 seconds.
-2. `codexbar` reads Codex CLI OAuth credentials from `~/.codex/auth.json`, created by `codex login`.
-3. It refreshes expiring OAuth tokens, fetches ChatGPT Codex usage, and caches successful responses for 60 seconds.
-4. It maps the current API window shape to the weekly placeholders and emits Waybar JSON.
-5. Waybar renders the fixed weekly text and codexbar's adaptive rich tooltip.
+1. Waybar invokes each provider module every 300 seconds.
+2. `claudebar` reads and refreshes Claude CLI OAuth credentials from `~/.claude/.credentials.json`.
+3. `codexbar` reads and refreshes Codex CLI OAuth credentials from `~/.codex/auth.json`.
+4. Each tool fetches its provider's usage endpoint and caches successful responses for 60 seconds.
+5. Each tool emits independent Waybar JSON containing fixed bar text, a native rich tooltip, and a severity class.
 
-Claude continues to use its existing independent command, interval, signal, and error region.
+The 300-second Claude interval follows claudebar's documented minimum and avoids unnecessary pressure on Anthropic's aggressively rate-limited usage endpoint.
 
 ## Error Handling
 
-Use codexbar's native states without additional wrapping:
+Use each tool's native behavior without wrappers:
 
-- loading output when no cache is available during a transient network failure
+- loading output when no cache is available during a transient failure
 - stale cached output when a prior response remains usable
-- authentication guidance when Codex CLI credentials are absent or invalid
-- token refresh and cache locking for concurrent Waybar invocations
-
-The OpenAI module can fail or display stale data without preventing Claude from updating.
-
-## Installation
-
-Manage `codexbar` through the AUR package named `codexbar`. Its required Bash, curl, jq, and Waybar dependencies are declared by that package. The user must already be authenticated with `codex login`; tidydots will not automate account login.
+- OAuth refresh before token expiry
+- provider-specific authentication guidance when CLI credentials are absent or invalid
+- independent failure regions so one provider does not prevent the other from updating
 
 ## Validation
 
-- Confirm `tidydots.yaml` parses and lists both `waybar-ai-usage-go` and `codexbar` for Waybar.
-- Run `tidydots restore -n` and confirm it renders the Waybar template without applying unrelated changes.
-- Parse the active and rendered JSON configurations and verify module ordering and exact codexbar settings.
-- Run `codexbar --format '{weekly_pct}% · {weekly_reset}'` and verify valid Waybar JSON with non-empty text and tooltip fields.
+- Confirm `tidydots.yaml` parses and lists `claudebar` and `codexbar` for Waybar, with no `waybar-ai-usage-go` dependency.
+- Run `tidydots restore -n` and confirm it renders the Waybar template.
+- Parse the active and rendered JSON configurations and verify module ordering and exact settings.
+- Run each configured command and verify valid Waybar JSON with non-empty text, tooltip, and class fields.
+- Verify both bar outputs use foreground `#cdd6f4` while their native tooltips remain present.
 - Confirm the active and rendered usage-module definitions are equivalent.
-- Run `git diff --check` on the persistent source files.
-- Restart Waybar and visually verify adjacent readouts and provider-specific hover regions when a graphical session is available.
+- Run `git diff --check` on persistent source files.
+- Restart Waybar and visually verify matching gray readouts, rich provider tooltips, and usage-page click actions when a graphical session is available.
 
 ## Out of Scope
 
-- OpenAI API billing or credit accounting outside codexbar's native subscription tooltip
-- Replacing the Claude usage provider
-- Vendoring or modifying codexbar
-- Automating `codex login`
-- Customizing codexbar's native rich tooltip
+- Vendoring or modifying claudebar or codexbar
+- Automating `claude` or `codex login`
+- Customizing either native rich tooltip
+- Removing already installed `waybar-ai-usage` packages from machines
+- Editing generated package inventory files
