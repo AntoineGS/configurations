@@ -11,11 +11,7 @@
     "auto": false,
     "prune": false
   },
-  "permission": {
-    "edit": "allow",
-    "bash": "allow",
-    "webfetch": "allow"
-  },
+  "permission": "allow",
   "provider": {
     "anthropic": {
       "options": {
