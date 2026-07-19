@@ -14,7 +14,8 @@
     "custom/screenrecording-indicator"
   ],
   "modules-right": [
-    "custom/claude-usage",
+    "custom/claudebar",
+    "custom/codexbar",
     "group/tray-expander",
     "network",
     "pulseaudio",
@@ -247,12 +248,20 @@
     ],
     "on-click": "launch-or-focus-tui btop"
   },
-  "custom/claude-usage": {
-    "exec": "waybar-ai-usage claude --waybar --browser brave --format '{?5h_reset}{5h_pct}%/{5h_reset}{/5h_reset}{?5h_reset&7d_reset} - {/}{?7d_reset}{7d_pct}%/{7d_reset}{/7d_reset}'",
+  "custom/claudebar": {
+    "exec": "claudebar --format '{session_pct}%/{session_reset} - {weekly_pct}%/{weekly_reset}' --color-low '#cdd6f4' --color-mid '#cdd6f4' --color-high '#cdd6f4' --color-critical '#cdd6f4' | jq -c '.text |= gsub(\"d \"; \"d\")'",
     "return-type": "json",
-    "interval": 120,
+    "interval": 300,
+    "signal": 13,
     "tooltip": true,
-    "on-click": "pkill -RTMIN+8 waybar",
-    "signal": 8
+    "on-click": "xdg-open https://claude.ai/settings/usage"
+  },
+  "custom/codexbar": {
+    "exec": "codexbar --format '{weekly_pct}%/{weekly_reset}' --color-low '#cdd6f4' --color-mid '#cdd6f4' --color-high '#cdd6f4' --color-critical '#cdd6f4' | jq -c '.text |= gsub(\"d \"; \"d\")'",
+    "return-type": "json",
+    "interval": 300,
+    "signal": 12,
+    "tooltip": true,
+    "on-click": "xdg-open https://chatgpt.com/codex/settings/usage"
   }
 }

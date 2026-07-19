@@ -421,7 +421,8 @@ applications:
         pacman: waybar
         yay:
           deps:
-            - waybar-ai-usage-go
+            - claudebar
+            - codexbar
     name: waybar
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
