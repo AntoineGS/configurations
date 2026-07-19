@@ -64,6 +64,16 @@ Both tools normally embed severity colors in their bar text as Pango markup, whi
 
 Apply the existing `margin-right: 12px` and `opacity: 0.6` rule to `#custom-claudebar` and `#custom-codexbar`. This makes both readouts match the previous subdued Claude appearance. The color overrides affect only bar text; native tooltip progress bars remain severity-colored and adaptive.
 
+## Compact Reset Times
+
+Both tools format multi-day countdowns with a space, such as `6d 20h`. Pipe each tool's Waybar JSON through this filter:
+
+```text
+jq -c '.text |= gsub("d "; "d")'
+```
+
+The filter changes only the top-level Waybar `text` field, producing `6d20h` in both provider readouts. It does not alter tooltips or hour/minute countdowns such as `1h 30m`. Loading, stale, and authentication messages remain unchanged because they do not contain the `d ` sequence.
+
 ## Dependencies
 
 Replace the obsolete `waybar-ai-usage-go` dependency with the AUR packages `claudebar` and `codexbar`. Do not vendor either script. Their Bash, curl, jq, and Waybar dependencies are handled by the AUR packages.
@@ -77,6 +87,7 @@ Replace the obsolete `waybar-ai-usage-go` dependency with the AUR packages `clau
 3. `codexbar` reads and refreshes Codex CLI OAuth credentials from `~/.codex/auth.json`.
 4. Each tool fetches its provider's usage endpoint and caches successful responses for 60 seconds.
 5. Each tool emits independent Waybar JSON containing fixed bar text, a native rich tooltip, and a severity class.
+6. The final `jq` filter compacts day/hour spacing in the bar text before Waybar renders it.
 
 The 300-second Claude interval follows claudebar's documented minimum and avoids unnecessary pressure on Anthropic's aggressively rate-limited usage endpoint.
 
@@ -97,6 +108,7 @@ Use each tool's native behavior without wrappers:
 - Parse the active and rendered JSON configurations and verify module ordering and exact settings.
 - Run each configured command and verify valid Waybar JSON with non-empty text, tooltip, and class fields.
 - Verify both bar outputs use foreground `#cdd6f4` while their native tooltips remain present.
+- Verify neither bar text contains an `Nd Nh` pattern and both native tooltips preserve spaced day/hour values.
 - Confirm the active and rendered usage-module definitions are equivalent.
 - Run `git diff --check` on persistent source files.
 - Restart Waybar and visually verify matching gray readouts, rich provider tooltips, and usage-page click actions when a graphical session is available.
