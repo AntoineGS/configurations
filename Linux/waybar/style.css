@@ -74,7 +74,8 @@ window#waybar {
   margin: 0 7.5px;
 }
 
-#custom-claude-usage {
+#custom-claudebar,
+#custom-codexbar {
   margin-right: 12px;
   opacity: 0.6;
 }

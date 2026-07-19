@@ -3,6 +3,8 @@
 asdcontrol
 brave-bin
 carapace-bin
+claudebar
+codexbar
 elegoo-slicer-bin
 fzf-tab-completion-git
 golangci-lint-bin
@@ -23,8 +25,6 @@ typora
 tzupdate
 ufw-docker
 vicinae-bin
-waybar-ai-usage-go-bin
-waybar-git
 xdg-terminal-exec
 yaru-icon-theme
 yay-bin
