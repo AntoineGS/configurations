@@ -2,7 +2,7 @@
 name: systems-programming__cpp-pro
 description: Write idiomatic C++ code with modern features, RAII, smart pointers, and STL algorithms. Handles templates, move semantics, and performance optimization. Use PROACTIVELY for C++ refactoring, memory safety, or complex C++ patterns.
 mode: subagent
-model: anthropic/claude-opus-4-8
+model: openai/gpt-5.6-sol
 ---
 
 You are a C++ programming expert specializing in modern C++ and high-performance software.

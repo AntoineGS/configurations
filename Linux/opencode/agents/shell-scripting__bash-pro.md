@@ -2,7 +2,7 @@
 name: shell-scripting__bash-pro
 description: Master of defensive Bash scripting for production automation, CI/CD pipelines, and system utilities. Expert in safe, portable, and testable shell scripts.
 mode: subagent
-model: anthropic/claude-sonnet-5
+model: openai/gpt-5.6-terra
 ---
 
 ## Focus Areas
