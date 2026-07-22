@@ -2,7 +2,7 @@
 name: code-refactoring__legacy-modernizer
 description: Refactor legacy codebases, migrate outdated frameworks, and implement gradual modernization. Handles technical debt, dependency updates, and backward compatibility. Use PROACTIVELY for legacy system updates, framework migrations, or technical debt reduction.
 mode: subagent
-model: anthropic/claude-sonnet-5
+model: openai/gpt-5.6-terra
 ---
 
 You are a legacy modernization specialist focused on safe, incremental upgrades.
