@@ -1321,11 +1321,18 @@ applications:
           - pacman-cache-clean.service
           - pacman-cache-clean.timer
         sudo: true
-      - name: enable-pacman-cache-timer
-        check:
+      - targets:
+          linux: /etc/pacman.d/hooks
+        name: prune-all-cache-hook
+        backup: ./Linux/cache-cleanup
+        files:
+          - clean-cache.hook
+        sudo: true
+      - check:
           linux: systemctl is-enabled --quiet pacman-cache-clean.timer
         run:
           linux: systemctl daemon-reload && systemctl enable --now pacman-cache-clean.timer
+        name: enable-pacman-cache-timer
         sudo: true
       - targets:
           linux: ~/.local/bin
