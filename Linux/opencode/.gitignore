@@ -2,6 +2,7 @@
 *
 !.gitignore
 !opencode.json
+!lsp-first.md
 !tui.json
 !regenerate.sh
 !agents/

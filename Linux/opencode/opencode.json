@@ -3,7 +3,8 @@
   "autoupdate": false,
   "lsp": true,
   "instructions": [
-    "/home/antoinegs/.config/opencode/no-plan-commits.md"
+    "/home/antoinegs/.config/opencode/no-plan-commits.md",
+    "/home/antoinegs/.config/opencode/lsp-first.md"
   ],
   "plugin": [
     "opencode-with-claude",
