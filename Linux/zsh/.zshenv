@@ -1,7 +1,7 @@
 export FZF_DEFAULT_OPTS="--style full --preview='~/.config/fzf/fzf-preview.sh {}'"
 export _ZO_FZF_OPTS="--style=full --layout=reverse --preview='~/.config/fzf/fzf-preview.sh {2..}' --preview-window=right:50%:wrap"
 export FZF_DEFAULT_COMMAND="fd --type f"
-export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
+export FZF_CTRL_R_OPTS="--layout=reverse --preview 'echo {}' --preview-window down:3:hidden:wrap --bind '?:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --group-directories-first --color=always {} | head -200'"
 export ZSH="/usr/share/oh-my-zsh"
 export MANPAGER="sh -c 'awk '\''{ gsub(/\x1B\[[0-9;]*m/, \"\", \$0); gsub(/.\x08/, \"\", \$0); print }'\'' | bat -p -lman'"
