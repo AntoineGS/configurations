@@ -4,22 +4,26 @@
 # Handles: files, directories, images, PDFs, videos, audio, archives, markdown
 # Dependencies (optional): bat, chafa, pdftoppm, ffmpegthumbnailer, glow
 
-if [[ $# -ne 1 ]]; then
-  >&2 echo "usage: $0 FILENAME[:LINENO][:IGNORED]"
+literal=0
+if [[ $1 == --literal && $# -eq 2 ]]; then
+  literal=1
+  shift
+elif [[ $# -ne 1 ]]; then
+  >&2 echo "usage: $0 [--literal] FILENAME[:LINENO][:IGNORED]"
   exit 1
 fi
 
-# fzf-tab-completion passes data in format: fullvalue SEP value SEP index SEP ...
-# where SEP is U+00A0 (non-breaking space)
-# We want field 2 (the actual value)
-_FZF_COMPLETION_SEP=$'\u00a0'
-
-# Split by non-breaking space and extract field 2
-IFS="$_FZF_COMPLETION_SEP" read -r -A fields <<< "$1"
-if (( ${#fields[@]} >= 2 )); then
-    extracted="${fields[2]}"
+if (( literal )); then
+  extracted=$1
 else
+  # fzf-tab-completion passes: fullvalue SEP value SEP index SEP ...
+  _FZF_COMPLETION_SEP=$'\u00a0'
+  IFS="$_FZF_COMPLETION_SEP" read -r -A fields <<< "$1"
+  if (( ${#fields[@]} >= 2 )); then
+    extracted="${fields[2]}"
+  else
     extracted="$1"
+  fi
 fi
 
 # Apply tilde expansion
@@ -36,9 +40,11 @@ if [[ ! -r $file ]]; then
   fi
 fi
 
-# Strip all backslashes and trailing whitespace (fzf-tab-completion escaping)
-file=${file//\\/}
-file=${file%% }
+# Strip fzf-tab-completion escaping unless the caller supplied a literal path.
+if (( ! literal )); then
+  file=${file//\\/}
+  file=${file%% }
+fi
 
 # --- Cache setup ---
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/fzf-preview"
