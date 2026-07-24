@@ -40,11 +40,16 @@ applications:
     name: opencode
     description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; magic-context plugin for self-managing context/memory
     entries:
-      - name: claude-plugin
-        check:
+      - check:
           linux: npm ls -g opencode-with-claude >/dev/null 2>&1
         run:
           linux: npm install -g opencode-with-claude
+        name: claude-plugin
+      - check:
+          linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
+        run:
+          linux: mkdir -p ~/.local/bin && ln -sf ~/.ocv/bin/ocv ~/.local/bin/opencode-v
+        name: opencode-v symlink
       - targets:
           linux: ~/.config/opencode
         name: config
