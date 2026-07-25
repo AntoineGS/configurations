@@ -6,6 +6,7 @@ setopt pipe_fail
 
 script_dir=${0:A:h}
 candidate_script=${script_dir:h}/fzf-picker-candidates.zsh
+batch_encoder=${script_dir:h}/fzf-batch-encode.pl
 preview_script=${script_dir:h}/fzf-preview.sh
 zshrc_script=${script_dir:h:h}/zsh/.zshrc
 tmp_dir=$(mktemp -d)
@@ -53,6 +54,7 @@ test_codec() {
     '-leading'
     $'control\x01name'
     $'ending-newline\n'
+    "apostrophe'path"
   )
   local -a displays=(
     'tab\tname'
@@ -63,6 +65,7 @@ test_codec() {
     '-leading'
     'control\x01name'
     'ending-newline\n'
+    "apostrophe\\'path"
   )
   local -A records
   integer i record_count=0
@@ -118,6 +121,28 @@ test_codec() {
     fail "decode0 accepted a malformed payload"
   fi
 
+}
+
+test_batch_encoder() {
+  local input=$tmp_dir/batch-encoder-input actual=$tmp_dir/batch-encoder-actual
+  local expected=$tmp_dir/batch-encoder-expected
+
+  print -rl -- 'plain path' $'tab\tname' 'back\slash' $'control\x01name' 'trailing ' 'café' $'invalid-\xFF' >| "$input"
+  PERL_UNICODE=S "$batch_encoder" < "$input" >| "$actual" || fail "batch encoder rejected valid paths"
+  printf '%s\0%s\0' \
+    'cGxhaW4gcGF0aA==' 'plain path' \
+    'dGFiCW5hbWU=' $'tab\tname' \
+    'YmFja1xzbGFzaA==' 'back\slash' \
+    'Y29udHJvbAFuYW1l' $'control\x01name' \
+    'dHJhaWxpbmcg' 'trailing ' \
+    'Y2Fmw6k=' 'café' \
+    'aW52YWxpZC3/' $'invalid-\xFF' >| "$expected"
+  assert_file_equal "$expected" "$actual" "batch encoder changed payload or path bytes"
+
+  (( ++assertions ))
+  if print -r -- test | PERL5OPT=-MThisModuleMustNotExist "$batch_encoder" >| "$actual" 2>/dev/null; then
+    fail "batch encoder hid a Perl module load failure"
+  fi
 }
 
 test_directory_enumeration() {
@@ -192,6 +217,8 @@ test_cd_merged() {
   local root=$tmp_dir/cd-merged-root fake_bin=$tmp_dir/cd-merged-bin
   local external_one=$tmp_dir/zoxide-one external_two=$tmp_dir/zoxide-two
   local output=$tmp_dir/cd-merged-output failed_output=$tmp_dir/cd-merged-failed
+  local failing_encoder=$tmp_dir/failing-batch-encoder partial_encoder=$tmp_dir/partial-batch-encoder
+  local missing_encoder=$tmp_dir/missing-batch-encoder
   local record payload decoded_path
   local -a fields kinds displays decoded expected_paths expected_kinds expected_displays
 
@@ -234,6 +261,48 @@ test_cd_merged() {
     fail "zoxide failure prevented local cd generation"
   "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
   assert_file_equal "$output" "$failed_output" "zoxide failure changed local cd candidates"
+
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_ONE"' >> "$fake_bin/zoxide"
+  print -r -- 'exit 7' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+  FZF_PICKER_TEST_ZOXIDE_ONE=$external_one PATH="$fake_bin:$PATH" \
+    "$candidate_script" cd "$root" >| "$failed_output" || fail "partial zoxide failure prevented local generation"
+  "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
+  assert_file_equal "$output" "$failed_output" "partial zoxide failure leaked zoxide candidates"
+
+  print -r -- '#!/usr/bin/env zsh' >| "$failing_encoder"
+  print -r -- 'exit 7' >> "$failing_encoder"
+  chmod +x -- "$failing_encoder"
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_LOCAL_DUPLICATE"' >> "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_ONE"' >> "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_TWO"' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+  FZF_PICKER_BATCH_ENCODER=$failing_encoder PATH="$fake_bin:$PATH" \
+    "$candidate_script" cd "$root" >| "$failed_output" || fail "batch encoder failure prevented local generation"
+  "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
+  assert_file_equal "$output" "$failed_output" "batch encoder failure changed local candidates"
+
+  print -r -- '#!/usr/bin/env zsh' >| "$partial_encoder"
+  print -r -- 'printf "%s\0%s\0" "$FZF_PICKER_TEST_ZOXIDE_PAYLOAD" "$FZF_PICKER_TEST_ZOXIDE_ONE"' \
+    >> "$partial_encoder"
+  print -r -- 'exit 7' >> "$partial_encoder"
+  chmod +x -- "$partial_encoder"
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_ONE"' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+  payload=$("$candidate_script" encode "$external_one") || fail "encode rejected partial encoder path"
+  FZF_PICKER_BATCH_ENCODER=$partial_encoder FZF_PICKER_TEST_ZOXIDE_ONE=$external_one \
+    FZF_PICKER_TEST_ZOXIDE_PAYLOAD=$payload PATH="$fake_bin:$PATH" \
+    "$candidate_script" cd "$root" >| "$failed_output" || fail "partial encoder failure prevented local generation"
+  "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
+  assert_file_equal "$output" "$failed_output" "partial encoder failure leaked zoxide candidates"
+
+  FZF_PICKER_BATCH_ENCODER=$missing_encoder FZF_PICKER_TEST_ZOXIDE_ONE=$external_one PATH="$fake_bin:$PATH" \
+    "$candidate_script" cd "$root" >| "$failed_output" || fail "missing batch encoder prevented local generation"
+  "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
+  assert_file_equal "$output" "$failed_output" "missing batch encoder changed local candidates"
 }
 
 test_operations() {
@@ -389,6 +458,95 @@ test_operations() {
   fi
   (( ++assertions ))
   [[ ! -e $preview_output ]] || fail "invalid picker invoked preview seam"
+}
+
+test_slash() {
+  local root=$tmp_dir/slash-root child=$tmp_dir/slash-root/child fake_bin=$tmp_dir/slash-bin
+  local root_payload child_payload fs_root_payload picker actions
+  local dir_file prompt_file candidates_file keymap_mode_file before actions_output
+
+  mkdir -p -- "$child" "$fake_bin"
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'exit 0' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+  root_payload=$("$candidate_script" encode "$root") || fail "encode rejected slash root"
+  child_payload=$("$candidate_script" encode "$child") || fail "encode rejected slash child"
+  fs_root_payload=$("$candidate_script" encode /) || fail "encode rejected filesystem root"
+
+  for picker in cd cp; do
+    dir_file=$tmp_dir/slash-$picker-dir
+    prompt_file=$tmp_dir/slash-$picker-prompt
+    candidates_file=$tmp_dir/slash-$picker-candidates
+    keymap_mode_file=$tmp_dir/slash-$picker-keymap
+    before=$tmp_dir/slash-$picker-before
+
+    print -r -- "$child_payload" >| "$dir_file"
+    print -r -- stale >| "$prompt_file"
+    print -r -- stale >| "$candidates_file"
+    print -r -- insert >| "$keymap_mode_file"
+    actions=$(PATH="$fake_bin:$PATH" "$candidate_script" slash "$picker" .. "$root_payload" "$dir_file" \
+      "$prompt_file" - "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected exact parent query"
+    assert_equal "$root_payload" "$(<"$dir_file")" "$picker slash did not navigate to the parent"
+    assert_contains 'reload-sync' "$actions" "$picker slash did not reload parent candidates"
+    assert_contains 'clear-query' "$actions" "$picker slash did not clear the exact parent query"
+
+    print -r -- "$fs_root_payload" >| "$dir_file"
+    actions=$(PATH="$fake_bin:$PATH" "$candidate_script" slash "$picker" .. "$fs_root_payload" "$dir_file" \
+      "$prompt_file" - "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected parent query at root"
+    assert_equal "$fs_root_payload" "$(<"$dir_file")" "$picker slash moved above root"
+    assert_contains 'clear-query' "$actions" "$picker slash did not clear the parent query at root"
+
+    print -r -- "$child_payload" >| "$dir_file"
+    print -r -- stale >| "$candidates_file"
+    cp -- "$candidates_file" "$before"
+    print -r -- insert >| "$keymap_mode_file"
+    actions=$("$candidate_script" slash "$picker" path.. "$root_payload" "$dir_file" "$prompt_file" - \
+      "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected an ordinary query"
+    assert_equal 'put(/)' "$actions" "$picker slash interpreted a non-exact parent query"
+    assert_equal "$child_payload" "$(<"$dir_file")" "$picker ordinary slash changed directory state"
+    assert_file_equal "$before" "$candidates_file" "$picker ordinary slash changed candidates"
+
+    print -r -- add >| "$keymap_mode_file"
+    actions=$("$candidate_script" slash "$picker" .. "$root_payload" "$dir_file" "$prompt_file" - \
+      "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected Add mode"
+    assert_equal 'put(/)' "$actions" "$picker slash navigated in Add mode"
+
+    print -r -- normal >| "$keymap_mode_file"
+    actions=$("$candidate_script" slash "$picker" .. "$root_payload" "$dir_file" "$prompt_file" - \
+      "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected Normal mode query"
+    assert_equal ignore "$actions" "$picker slash did not ignore a Normal mode query"
+
+    print -r -- "$child_payload" >| "$dir_file"
+    actions=$(PATH="$fake_bin:$PATH" "$candidate_script" slash "$picker" '' "$root_payload" "$dir_file" \
+      "$prompt_file" - "$candidates_file" "$keymap_mode_file") || fail "$picker slash rejected empty Normal mode query"
+    assert_equal "$root_payload" "$(<"$dir_file")" "$picker slash did not preserve empty-query root navigation"
+    assert_contains 'clear-query' "$actions" "$picker empty-query root navigation did not clear the query"
+  done
+
+  actions_output=$tmp_dir/slash-actions
+  print -r -- insert >| "$keymap_mode_file"
+  cp -- "$candidates_file" "$before"
+  if "$candidate_script" slash invalid .. "$root_payload" "$dir_file" "$prompt_file" - \
+    "$candidates_file" "$keymap_mode_file" >| "$actions_output" 2>/dev/null; then
+    fail "slash accepted an unknown picker"
+  fi
+  assert_equal '' "$(<"$actions_output")" "unknown slash picker emitted an action"
+  assert_file_equal "$before" "$candidates_file" "unknown slash picker changed candidates"
+
+  rm -f -- "$dir_file"
+  if "$candidate_script" slash cd .. "$root_payload" "$dir_file" "$prompt_file" - \
+    "$candidates_file" "$keymap_mode_file" >| "$actions_output" 2>/dev/null; then
+    fail "slash accepted missing directory state"
+  fi
+  assert_equal '' "$(<"$actions_output")" "missing slash state emitted an action"
+
+  print -r -- "$child_payload" >| "$dir_file"
+  rm -f -- "$keymap_mode_file"
+  if "$candidate_script" slash cp .. "$root_payload" "$dir_file" "$prompt_file" - \
+    "$candidates_file" "$keymap_mode_file" >| "$actions_output" 2>/dev/null; then
+    fail "slash accepted missing keymap state"
+  fi
+  assert_equal '' "$(<"$actions_output")" "missing slash keymap emitted an action"
 }
 
 test_modal() {
@@ -558,24 +716,37 @@ test_zshrc_cd() {
     "cd picker did not precompute the encoded home directory"
   assert_contains '${(q)candidate_helper} escape cd' "$cd_picker" "cd picker Esc did not use helper escape mode"
   assert_contains '${(q)candidate_helper} enter cd {q}' "$cd_picker" "cd picker Enter did not use helper enter mode"
+  assert_contains '${(q)candidate_helper} slash cd {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}' "$cd_picker" \
+    "cd picker slash binding did not delegate to shared helper behavior"
   assert_contains '${(q)candidate_helper} modal add' "$cd_picker" "cd picker Normal a did not enter Add mode"
   assert_contains 'start:unbind(h,j,k,l,i,a,q,space)' "$cd_picker" \
     "cd picker initial keymap did not unbind Normal a"
+  assert_contains '$candidate_helper cd "$PWD" >| $candidates_file' "$cd_picker" \
+    "cd picker did not initialize merged candidates"
+  assert_not_contains 'cd-local' "$cd_picker" "cd picker retained a local-only source"
+  assert_not_contains 'cd-zoxide' "$cd_picker" "cd picker retained a zoxide-only source"
+  assert_not_contains 'source_mode_file' "$cd_picker" "cd picker retained source-mode state"
+  assert_not_contains '--bind "shift-tab:' "$cd_picker" "cd picker retained source switching"
+  assert_not_contains 'toggle-sort' "$cd_picker" "cd picker retained source-specific sorting"
+  assert_contains '< $candidates_file >| $output_file' "$cd_picker" \
+    "cd picker did not feed merged candidates to fzf"
 
   marker='{3}'
   stripped=${cd_picker//$marker/}
-  assert_equal 3 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
-    "cd picker did not restrict field three to two navigation inputs and helper preview"
+  assert_equal 2 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
+    "cd picker did not restrict field three to forward navigation and preview"
   marker='target={3}'
   stripped=${cd_picker//$marker/}
-  assert_equal 2 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
-    "cd picker did not assign both field-three navigation inputs as encoded payloads"
+  assert_equal 1 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
+    "cd picker did not assign only forward navigation from field three"
   marker='${(q)candidate_helper} navigate cd \"\$target\"'
   stripped=${cd_picker//$marker/}
   assert_equal 2 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
-    "cd picker did not route both field-three navigation payloads through helper navigate"
+    "cd picker did not route forward and parent navigation through helper navigate"
   assert_contains '${(q)candidate_helper} parent \"\$target\"' "$cd_picker" \
     "cd picker left action did not use helper parent mode"
+  assert_contains 'target=\$(<${(q)dir_file})' "$cd_picker" \
+    "cd picker left navigation did not start from the current picker directory"
   assert_contains '${(q)candidate_helper} preview cd {3}' "$cd_picker" \
     "cd picker preview did not use encoded helper mode"
   assert_contains 'target_payload=${fields[3]}' "$cd_picker" \
@@ -583,10 +754,10 @@ test_zshrc_cd() {
 
   marker='${(q)candidate_helper} navigate cd '
   stripped=${cd_picker//$marker/}
-  assert_equal 4 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
+  assert_equal 3 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
     "cd picker contains an unexpected navigation destination"
-  assert_contains '${(q)candidate_helper} navigate cd ${(q)root_payload}' "$cd_picker" \
-    "cd picker root binding did not navigate with the precomputed payload"
+  assert_not_contains '${(q)candidate_helper} navigate cd ${(q)root_payload}' "$cd_picker" \
+    "cd picker root slash behavior bypassed the shared helper"
   assert_contains '${(q)candidate_helper} navigate cd ${(q)home_payload}' "$cd_picker" \
     "cd picker home binding did not navigate with the precomputed payload"
   assert_not_contains '${(q)candidate_helper} navigate cd /' "$cd_picker" \
@@ -608,8 +779,6 @@ test_zshrc_cd() {
     "cd picker did not construct cd from the decoded target"
   assert_contains '--multi=1' "$cd_picker" "cd picker lost single-selection mode"
   assert_contains '--sort --print-query' "$cd_picker" "cd picker lost query output"
-  assert_contains 'clear-multi+toggle-sort+reload-sync' "$cd_picker" \
-    "cd picker source switching did not clear marks"
   fzf_call='    fzf '
   without_fzf=${cd_picker//$fzf_call/}
   assert_equal 1 $(( (${#cd_picker} - ${#without_fzf}) / ${#fzf_call} )) \
@@ -620,8 +789,7 @@ test_zshrc_cd() {
   print -r -- '#!/usr/bin/env zsh' >| "$picker_helper"
   print -r -- 'emulate -L zsh' >> "$picker_helper"
   print -r -- 'case $1 in' >> "$picker_helper"
-  print -r -- '  cd-local) print -r -- $'"'"'local\tvisible\tencoded-target'"'"' ;;' >> "$picker_helper"
-  print -r -- '  cd-zoxide) ;;' >> "$picker_helper"
+  print -r -- '  cd) print -r -- $'"'"'local\tvisible\tencoded-target'"'"' ;;' >> "$picker_helper"
   print -r -- '  encode) print -r -- encoded-directory ;;' >> "$picker_helper"
   print -r -- '  modal)' >> "$picker_helper"
   print -r -- '    print -r -- "$2" >| "$5"' >> "$picker_helper"
@@ -688,6 +856,8 @@ test_zshrc_cp() {
   assert_not_contains '--multi=1' "$cp_picker" "cp picker retained single-selection mode"
   assert_contains '${(q)candidate_helper} escape cp' "$cp_picker" "cp picker Esc did not use helper escape mode"
   assert_contains '${(q)candidate_helper} enter cp {q}' "$cp_picker" "cp picker Enter did not use helper enter mode"
+  assert_contains '${(q)candidate_helper} slash cp {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}' "$cp_picker" \
+    "cp picker slash binding did not delegate to shared helper behavior"
   assert_contains '${(q)candidate_helper} modal add' "$cp_picker" "cp picker Normal a did not enter Add mode"
   assert_contains 'space:toggle' "$cp_picker" "cp picker Normal Space did not toggle marks"
   assert_not_contains 'space:clear-multi+toggle' "$cp_picker" "cp picker Normal Space still cleared existing marks"
@@ -696,14 +866,14 @@ test_zshrc_cp() {
 
   marker='${(q)candidate_helper} navigate cp '
   stripped=${cp_picker//$marker/}
-  assert_equal 4 $(( (${#cp_picker} - ${#stripped}) / ${#marker} )) \
+  assert_equal 3 $(( (${#cp_picker} - ${#stripped}) / ${#marker} )) \
     "cp picker contains an unexpected navigation destination"
   assert_contains '${(q)candidate_helper} navigate cp \"\$target\"' "$cp_picker" \
     "cp picker did not route field-three navigation through helper navigate"
   assert_contains '${(q)candidate_helper} parent \"\$target\"' "$cp_picker" \
     "cp picker left action did not use helper parent mode"
-  assert_contains '${(q)candidate_helper} navigate cp ${(q)root_payload}' "$cp_picker" \
-    "cp picker root binding did not navigate with the precomputed payload"
+  assert_not_contains '${(q)candidate_helper} navigate cp ${(q)root_payload}' "$cp_picker" \
+    "cp picker root slash behavior bypassed the shared helper"
   assert_contains '${(q)candidate_helper} navigate cp ${(q)home_payload}' "$cp_picker" \
     "cp picker home binding did not navigate with the precomputed payload"
   assert_not_contains '${(q)candidate_helper} navigate cp /' "$cp_picker" \
@@ -843,9 +1013,13 @@ test_zshrc_add_mode_query_bindings() {
     fi
   done
 
+  assert_contains '${(q)candidate_helper} slash cd {q}' "$cd_picker" \
+    "cd slash binding bypassed shared query handling"
+  assert_contains '${(q)candidate_helper} slash cp {q}' "$cp_picker" \
+    "cp slash binding bypassed shared query handling"
   for picker in "$cd_picker" "$cp_picker"; do
-    assert_contains $'--bind "/:transform:\n            if [[ \\$(<${(q)keymap_mode_file}) == add ]]; then\n                print -r -- \'put(/)\'\n            elif [[ \\$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then' \
-      "$picker" "slash binding does not handle Add mode before navigation"
+    assert_not_contains $'--bind "/:transform:\n            if [[' "$picker" \
+      "picker retained inline slash query handling"
     assert_contains $'--bind "~:transform:\n            if [[ \\$(<${(q)keymap_mode_file}) == add ]]; then\n                print -r -- \'put(~)\'\n            elif [[ \\$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then' \
       "$picker" "tilde binding does not handle Add mode before navigation"
   done
@@ -884,21 +1058,21 @@ test_zshrc_add_mode_navigation_bindings() {
       "picker has a parent-navigation binding that bypasses dynamic mode actions"
   done
 
-  marker='--bind "shift-tab:transform:'
-  stripped=${cd_picker//$marker/}
-  assert_equal 1 $(( (${#cd_picker} - ${#stripped}) / ${#marker} )) \
-    "cd picker has a source-switching binding that bypasses dynamic mode actions"
+  assert_not_contains '--bind "shift-tab:' "$cd_picker" \
+    "cd picker unexpectedly retained source switching"
   assert_not_contains '--bind "shift-tab:' "$cp_picker" \
     "cp picker unexpectedly binds source switching outside dynamic mode actions"
 }
 
-(( $# > 0 )) || set -- codec directory-enumeration cd-merged operations modal create preview zshrc-cd zshrc-cp zshrc-add-mode-query-bindings zshrc-add-mode-navigation-bindings
+(( $# > 0 )) || set -- codec batch-encoder directory-enumeration cd-merged operations slash modal create preview zshrc-cd zshrc-cp zshrc-add-mode-query-bindings zshrc-add-mode-navigation-bindings
 for suite in "$@"; do
   case $suite in
     codec) test_codec ;;
+    batch-encoder) test_batch_encoder ;;
     directory-enumeration) test_directory_enumeration ;;
     cd-merged) test_cd_merged ;;
     operations) test_operations ;;
+    slash) test_slash ;;
     modal) test_modal ;;
     create) test_create ;;
     preview) test_preview ;;
@@ -906,7 +1080,7 @@ for suite in "$@"; do
     zshrc-cp) test_zshrc_cp ;;
     zshrc-add-mode-query-bindings) test_zshrc_add_mode_query_bindings ;;
     zshrc-add-mode-navigation-bindings) test_zshrc_add_mode_navigation_bindings ;;
-    *) fail "usage: $0 {codec|directory-enumeration|cd-merged|operations|modal|create|preview|zshrc-cd|zshrc-cp|zshrc-add-mode-query-bindings|zshrc-add-mode-navigation-bindings}..." ;;
+    *) fail "usage: $0 {codec|directory-enumeration|cd-merged|operations|slash|modal|create|preview|zshrc-cd|zshrc-cp|zshrc-add-mode-query-bindings|zshrc-add-mode-navigation-bindings}..." ;;
   esac
 done
 print -r -- "PASS: $assertions assertions"
