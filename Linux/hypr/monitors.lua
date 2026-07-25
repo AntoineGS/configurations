@@ -41,4 +41,5 @@ else
     hl.window_rule({ name = "windowrule-5", match = { class = "com.mitchellh.ghostty" },   workspace = "5" })
     hl.window_rule({ name = "windowrule-6", match = { class = "GitKraken" },               workspace = "6" })
     hl.window_rule({ name = "windowrule-7", match = { class = "brave-browser" },           workspace = "7" })
+    hl.window_rule({ name = "windowrule-8", match = { class = "org.float-large.yazi" },     workspace = "10" })
 end
