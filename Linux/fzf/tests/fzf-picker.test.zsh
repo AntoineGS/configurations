@@ -289,6 +289,21 @@ test_operations() {
   assert_equal "${(j:$'\0':)expected_candidates}" "${(j:$'\0':)decoded_candidates}" \
     "navigate reloaded candidates from the wrong directory"
 
+  local cd_candidates_file=$tmp_dir/cd-candidates cd_actions=$tmp_dir/cd-actions
+  local zoxide_target=$tmp_dir/navigation-zoxide fake_zoxide_bin=$tmp_dir/navigation-zoxide-bin
+  mkdir -p -- "$zoxide_target" "$fake_zoxide_bin"
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_zoxide_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_TARGET"' >> "$fake_zoxide_bin/zoxide"
+  chmod +x -- "$fake_zoxide_bin/zoxide"
+  print -r -- stale >| "$cd_candidates_file"
+  PATH="$fake_zoxide_bin:$PATH" FZF_PICKER_TEST_ZOXIDE_TARGET=$zoxide_target \
+    "$candidate_script" navigate cd "$dir_payload" "$dir_file" "$prompt_file" - \
+    "$cd_candidates_file" "$keymap_mode_file" >| "$cd_actions" || fail "cd merged navigation failed"
+  assert_contains 'reload-sync' "$(<"$cd_actions")" "cd navigation did not reload candidates"
+  assert_not_contains 'toggle-sort' "$(<"$cd_actions")" "cd navigation retained source-specific sorting"
+  payload=$("$candidate_script" encode "$zoxide_target")
+  assert_contains "$payload" "$(<"$cd_candidates_file")" "cd navigation did not include zoxide candidates"
+
   payload=$("$candidate_script" encode "$child")
   parent_payload=$("$candidate_script" encode "$dash_child")
   : >| "$tmp_dir/not-a-directory"

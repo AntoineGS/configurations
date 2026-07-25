@@ -234,9 +234,8 @@ case $mode in
       mode_next=$mode_file.next
       next_files+=("$mode_next")
     fi
-    [[ $mode_file == - ]] || previous_mode=$(<"$mode_file")
     case $picker in
-      cd) candidate_mode=cd-local ;;
+      cd) candidate_mode=cd ;;
       cp) candidate_mode=cp ;;
       *) exit 2 ;;
     esac
@@ -277,7 +276,6 @@ case $mode in
       exit 1
     }
     actions="clear-multi+reload-sync(cat ${(q)candidates_file})+transform-prompt(cat ${(q)prompt_file})+clear-query+wait+first"
-    [[ $previous_mode == zoxide ]] && actions=toggle-sort+$actions
     print -r -- "$actions"
     ;;
   parent)
