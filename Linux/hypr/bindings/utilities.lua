@@ -30,6 +30,7 @@ hl.bind("SUPER + CTRL + A",              hl.dsp.exec_cmd("launch-tui-large pkg-a
 
 -- Captures
 hl.bind("PRINT",                         hl.dsp.exec_cmd("cmd-screenshot"),                                { description = "Screenshot" })
+hl.bind("ALT + PRINT",                   hl.dsp.exec_cmd("menu screenrecord"),                             { description = "Screenrecording" })
 hl.bind("SUPER + PRINT",                 hl.dsp.exec_cmd("pkill hyprpicker || hyprpicker -a"),             { description = "Color picker" })
 
 -- Control panels
