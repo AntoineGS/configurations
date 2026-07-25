@@ -11,3 +11,5 @@
 !commands/**
 !skills/
 !skills/**
+!plugins/
+!plugins/opencode-tmux-agent-indicator.js
