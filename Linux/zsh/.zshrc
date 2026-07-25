@@ -33,42 +33,38 @@ _fzf_cd_navigate() {
     local tempdir
     tempdir=$(mktemp -d "$temp_root/fzf-cd-${$}-XXXXXX") || { zle redisplay; return 0; }
     local output_file=$tempdir/output
-    local local_file=$tempdir/local
-    local zoxide_file=$tempdir/zoxide
-    local source_mode_file=$tempdir/mode
+    local candidates_file=$tempdir/candidates
     local dir_file=$tempdir/dir
     local prompt_file=$tempdir/prompt
     local keymap_mode_file=$tempdir/keymap-mode
     local root_payload home_payload
 
-    $candidate_helper cd-local "$PWD" >| $local_file || {
-        rm -f -- $local_file
+    $candidate_helper cd "$PWD" >| $candidates_file || {
+        rm -f -- $candidates_file
         rmdir -- $tempdir
         zle redisplay
         return 0
     }
-    $candidate_helper cd-zoxide >| $zoxide_file
-    print -r -- local >| $source_mode_file
     $candidate_helper encode "$PWD" >| $dir_file || {
-        rm -f -- $local_file $zoxide_file $source_mode_file $dir_file
+        rm -f -- $candidates_file $dir_file
         rmdir -- $tempdir
         zle redisplay
         return 0
     }
     root_payload=$($candidate_helper encode /) || {
-        rm -f -- $local_file $zoxide_file $source_mode_file $dir_file
+        rm -f -- $candidates_file $dir_file
         rmdir -- $tempdir
         zle redisplay
         return 0
     }
     home_payload=$($candidate_helper encode "$HOME") || {
-        rm -f -- $local_file $zoxide_file $source_mode_file $dir_file
+        rm -f -- $candidates_file $dir_file
         rmdir -- $tempdir
         zle redisplay
         return 0
     }
     $candidate_helper modal insert "$dir_file" "$prompt_file" "$keymap_mode_file" >/dev/null || {
-        rm -f -- $local_file $zoxide_file $source_mode_file $dir_file $prompt_file $keymap_mode_file
+        rm -f -- $candidates_file $dir_file $prompt_file $keymap_mode_file
         rmdir -- $tempdir
         zle redisplay
         return 0
@@ -78,7 +74,7 @@ _fzf_cd_navigate() {
         --delimiter=$'\t' --with-nth=2 \
         --multi=1 \
         --prompt "$(<$prompt_file)" \
-        --bind "enter:transform:${(q)candidate_helper} enter cd {q} ${(q)dir_file} ${(q)prompt_file} ${(q)source_mode_file} ${(q)local_file} ${(q)keymap_mode_file}" \
+        --bind "enter:transform:${(q)candidate_helper} enter cd {q} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "esc:transform:${(q)candidate_helper} escape cd ${(q)dir_file} ${(q)prompt_file} ${(q)keymap_mode_file}" \
         --bind "i:transform:${(q)candidate_helper} modal insert ${(q)dir_file} ${(q)prompt_file} ${(q)keymap_mode_file}" \
         --bind "a:transform:${(q)candidate_helper} modal add ${(q)dir_file} ${(q)prompt_file} ${(q)keymap_mode_file}" \
@@ -86,26 +82,12 @@ _fzf_cd_navigate() {
         --bind 'start:unbind(h,j,k,l,i,a,q,space)' \
         --bind "ctrl-l,tab,right:transform:
             target={3}
-            [[ -n \$target ]] && ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} ${(q)source_mode_file} ${(q)local_file} ${(q)keymap_mode_file}" \
+            [[ -n \$target ]] && ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "ctrl-h,left:transform:
-            if [[ \$(<${(q)source_mode_file}) == zoxide ]]; then
-                target={3}
-                [[ -n \$target ]] || exit 0
-            else
-                target=\$(<${(q)dir_file})
-            fi
+            target=\$(<${(q)dir_file})
             target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
-            ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} ${(q)source_mode_file} ${(q)local_file} ${(q)keymap_mode_file}" \
-        --bind "/:transform:
-            if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
-                print -r -- 'put(/)'
-            elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
-                print -r -- ignore
-            elif [[ -n {q} ]]; then
-                print -r -- 'put(/)'
-            else
-                ${(q)candidate_helper} navigate cd ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} ${(q)source_mode_file} ${(q)local_file} ${(q)keymap_mode_file}
-            fi" \
+            ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
+        --bind "/:transform:${(q)candidate_helper} slash cd {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "~:transform:
             if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
                 print -r -- 'put(~)'
@@ -114,19 +96,11 @@ _fzf_cd_navigate() {
             elif [[ -n {q} ]]; then
                 print -r -- 'put(~)'
             else
-                ${(q)candidate_helper} navigate cd ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} ${(q)source_mode_file} ${(q)local_file} ${(q)keymap_mode_file}
-            fi" \
-        --bind "shift-tab:transform:
-            if [[ \$(<${(q)source_mode_file}) == local ]]; then
-                print -r -- zoxide > ${(q)source_mode_file}
-                print -r -- 'clear-multi+toggle-sort+reload-sync(cat ${(q)zoxide_file})'
-            else
-                print -r -- local > ${(q)source_mode_file}
-                print -r -- 'clear-multi+toggle-sort+reload-sync(cat ${(q)local_file})'
+                ${(q)candidate_helper} navigate cd ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
             fi" \
         --preview "${(q)candidate_helper} preview cd {3} 2>/dev/null" \
         --preview-window=right:50%:wrap \
-        < $local_file >| $output_file
+        < $candidates_file >| $output_file
     local ret=$?
     $candidate_helper cursor insert
     local ignored_query key record target_payload target decoded_target
@@ -145,7 +119,7 @@ _fzf_cd_navigate() {
             target=$decoded_target
         done < <($candidate_helper decode0 "$target_payload")
     fi
-    rm -f -- $output_file $local_file $local_file.next $zoxide_file $source_mode_file $dir_file $prompt_file $keymap_mode_file
+    rm -f -- $output_file $candidates_file $candidates_file.next $dir_file $prompt_file $keymap_mode_file
     rmdir -- $tempdir
     if [[ $ret -ne 0 || $key != enter || -z $target_payload ]] || (( target_count != 1 )); then
         BUFFER=$saved CURSOR=$scursor
@@ -221,16 +195,7 @@ _fzf_cp_complete() {
             target=\$(<${(q)dir_file})
             target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
             ${(q)candidate_helper} navigate cp \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
-        --bind "/:transform:
-            if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
-                print -r -- 'put(/)'
-            elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
-                print -r -- ignore
-            elif [[ -n {q} ]]; then
-                print -r -- 'put(/)'
-            else
-                ${(q)candidate_helper} navigate cp ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
-            fi" \
+        --bind "/:transform:${(q)candidate_helper} slash cp {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "~:transform:
             if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
                 print -r -- 'put(~)'

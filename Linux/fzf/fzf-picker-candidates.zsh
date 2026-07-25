@@ -26,6 +26,10 @@ decode_path() {
 }
 
 escape_display() {
+  if [[ $1 != *[\\\']* && $1 != *[[:cntrl:]]* ]]; then
+    reply=$1
+    return
+  fi
   local quoted=${(qqqq)1}
   reply=${quoted[3,-2]}
   local normalized= octal hex
@@ -53,10 +57,15 @@ escape_display() {
   reply=$normalized
 }
 
+emit_candidate_with_payload() {
+  local kind=$1 display=$2 payload=$3
+  escape_display "$display"
+  print -r -- "$kind"$'\t'"$reply"$'\t'"$payload"
+}
+
 emit_candidate() {
   local kind=$1 display=$2 raw_path=$3
-  escape_display "$display"
-  print -r -- "$kind"$'\t'"$reply"$'\t'"$(encode_path "$raw_path")"
+  emit_candidate_with_payload "$kind" "$display" "$(encode_path "$raw_path")"
 }
 
 emit_cd_local_candidates() {
@@ -154,6 +163,47 @@ case $mode in
         ;;
       *) exit 2 ;;
     esac
+    ;;
+  slash)
+    picker=$2
+    query=$3
+    root_payload=$4
+    dir_file=$5
+    prompt_file=$6
+    mode_file=$7
+    candidates_file=$8
+    keymap_mode_file=$9
+    case $picker in
+      cd|cp) ;;
+      *) exit 2 ;;
+    esac
+    [[ -r $keymap_mode_file ]] || exit 1
+    keymap_mode=$(<"$keymap_mode_file")
+    case $keymap_mode in
+      add)
+        print -r -- 'put(/)'
+        return
+        ;;
+      normal)
+        if [[ -n $query ]]; then
+          print -r -- ignore
+          return
+        fi
+        ;;
+      insert) ;;
+      *) exit 2 ;;
+    esac
+    if [[ -z $query ]]; then
+      target_payload=$root_payload
+    elif [[ $query == .. ]]; then
+      [[ -r $dir_file ]] || exit 1
+      target_payload=$("$0" parent "$(<"$dir_file")") || exit 1
+    else
+      print -r -- 'put(/)'
+      return
+    fi
+    "$0" navigate "$picker" "$target_payload" "$dir_file" "$prompt_file" "$mode_file" \
+      "$candidates_file" "$keymap_mode_file"
     ;;
   enter)
     picker=$2
@@ -325,23 +375,24 @@ case $mode in
     local_output=$(emit_cd_local_candidates "$dir") || exit 1
     typeset -A seen_paths
     typeset -a local_records fields
+    batch_encoder=${FZF_PICKER_BATCH_ENCODER:-${0:A:h}/fzf-batch-encode.pl}
+    zoxide_output=$(mktemp "${TMPDIR:-/tmp}/fzf-picker-zoxide.XXXXXX") || zoxide_output=
     local_records=("${(@f)local_output}")
     for record in "${local_records[@]}"; do
       fields=("${(@ps:\t:)record}")
       seen_paths[${fields[3]}]=1
       print -r -- "$record"
     done
-    while IFS= read -r dir_path; do
-      payload=$(encode_path "$dir_path") || exit 1
-      (( ${+seen_paths[$payload]} )) && continue
-      seen_paths[$payload]=1
-      emit_candidate zoxide "$dir_path" "$dir_path"
-    done < <(zoxide query --list 2>/dev/null)
-    ;;
-  cd-zoxide)
-    while IFS= read -r dir_path; do
-      emit_candidate zoxide "$dir_path" "$dir_path"
-    done < <(zoxide query --list 2>/dev/null)
+    if [[ -n $zoxide_output ]]; then
+      if (setopt pipe_fail; zoxide query --list 2>/dev/null | "$batch_encoder" 2>/dev/null >| "$zoxide_output"); then
+        while IFS= read -r -d $'\0' payload && IFS= read -r -d $'\0' dir_path; do
+          (( ${+seen_paths[$payload]} )) && continue
+          seen_paths[$payload]=1
+          emit_candidate_with_payload zoxide "$dir_path" "$payload"
+        done < "$zoxide_output"
+      fi
+      rm -f -- "$zoxide_output"
+    fi
     ;;
   cp)
     [[ -d $dir ]] || exit 1
@@ -372,7 +423,7 @@ case $mode in
     ;;
   *)
     print -ru2 -- \
-      "usage: $0 {encode|decode0|parent|preview|relative0|cd|cd-local|cd-zoxide|cp|navigate|modal|escape|enter|cursor} [ARGUMENTS...]"
+      "usage: $0 {encode|decode0|parent|preview|relative0|cd|cd-local|cp|navigate|modal|escape|slash|enter|cursor} [ARGUMENTS...]"
     exit 2
     ;;
 esac
