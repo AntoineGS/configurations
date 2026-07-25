@@ -5,5 +5,5 @@
 # @vicinae.exec ["/bin/bash"]
 
 export PATH="$HOME/.local/share/helpers:$PATH"
-exec </dev/null # vicinae gives script commands a never-closing stdin; detach it so helpers do not hang
+exec </dev/null >/dev/null 2>&1 # Vicinae closes command pipes on exit; descendants must not inherit them
 menu screenrecord

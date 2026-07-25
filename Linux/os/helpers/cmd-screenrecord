@@ -17,9 +17,11 @@ DESKTOP_AUDIO="false"
 MICROPHONE_AUDIO="false"
 WEBCAM="false"
 WEBCAM_DEVICE=""
+CAPTURE_MODE="portal"
+CAPTURE_TARGET="portal"
 RESOLUTION=""
 STOP_RECORDING="false"
-RECORDING_FILE="/tmp/screenrecord-filename"
+RECORDING_FILE="${SCREENRECORD_STATE_FILE:-/tmp/screenrecord-filename}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -27,6 +29,7 @@ for arg in "$@"; do
   --with-microphone-audio) MICROPHONE_AUDIO="true" ;;
   --with-webcam) WEBCAM="true" ;;
   --webcam-device=*) WEBCAM_DEVICE="${arg#*=}" ;;
+  --region) CAPTURE_MODE="region" ;;
   --resolution=*) RESOLUTION="${arg#*=}" ;;
   --stop-recording) STOP_RECORDING="true" ;;
   esac
@@ -86,6 +89,13 @@ default_resolution() {
   fi
 }
 
+select_capture_target() {
+  if [[ $CAPTURE_MODE == "region" ]]; then
+    CAPTURE_TARGET=$(slurp -f "%wx%h+%x+%y" 2>/dev/null) || return 1
+    [[ -n $CAPTURE_TARGET ]] || return 1
+  fi
+}
+
 start_screenrecording() {
   local filename="$OUTPUT_DIR/screenrecording-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
   local audio_devices=""
@@ -102,8 +112,7 @@ start_screenrecording() {
   [[ -n $audio_devices ]] && audio_args+=(-a "$audio_devices" -ac aac)
 
   local resolution="${RESOLUTION:-$(default_resolution)}"
-
-  gpu-screen-recorder -w portal -k auto -s "$resolution" -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" &
+  gpu-screen-recorder -w "$CAPTURE_TARGET" -k auto -s "$resolution" -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" &
   local pid=$!
 
   # Wait for recording to actually start (file appears after portal selection)
@@ -178,6 +187,7 @@ if screenrecording_active; then
 elif [[ $STOP_RECORDING == "true" ]]; then
   exit 1
 else
+  select_capture_target || exit 0
   [[ $WEBCAM == "true" ]] && start_webcam_overlay
 
   start_screenrecording || cleanup_webcam
