@@ -59,6 +59,26 @@ emit_candidate() {
   print -r -- "$kind"$'\t'"$reply"$'\t'"$(encode_path "$raw_path")"
 }
 
+emit_cd_local_candidates() {
+  local dir=$1 name
+  [[ -d $dir ]] || return 1
+  typeset -a hidden_dirs dirs
+  hidden_dirs=()
+  dirs=()
+  emit_candidate local . "$dir"
+  emit_candidate local .. "${dir:h}"
+  fd --base-directory "$dir" --type d --max-depth 1 --hidden --color=never --print0 2>/dev/null |
+    while IFS= read -r -d $'\0' name; do
+      [[ $name == ./* ]] && name=${name[3,-1]}
+      name=${name%/}
+      [[ $name == .* ]] && hidden_dirs+=("$name") || dirs+=("$name")
+    done
+  (( pipestatus[1] == 0 )) || return 1
+  for name in "${(@oi)hidden_dirs}" "${(@oi)dirs}"; do
+    emit_candidate local "$name" "${dir%/}/$name"
+  done
+}
+
 mode=$1
 dir=$2
 
@@ -301,22 +321,24 @@ case $mode in
     done
     ;;
   cd-local)
-    [[ -d $dir ]] || exit 1
-    typeset -a hidden_dirs dirs
-    hidden_dirs=()
-    dirs=()
-    emit_candidate local . "$dir"
-    emit_candidate local .. "${dir:h}"
-    fd --base-directory "$dir" --type d --max-depth 1 --hidden --color=never --print0 2>/dev/null |
-      while IFS= read -r -d $'\0' name; do
-        [[ $name == ./* ]] && name=${name[3,-1]}
-        name=${name%/}
-        [[ $name == .* ]] && hidden_dirs+=("$name") || dirs+=("$name")
-      done
-    (( pipestatus[1] == 0 )) || exit 1
-    for name in "${(@oi)hidden_dirs}" "${(@oi)dirs}"; do
-      emit_candidate local "$name" "${dir%/}/$name"
+    emit_cd_local_candidates "$dir"
+    ;;
+  cd)
+    local_output=$(emit_cd_local_candidates "$dir") || exit 1
+    typeset -A seen_paths
+    typeset -a local_records fields
+    local_records=("${(@f)local_output}")
+    for record in "${local_records[@]}"; do
+      fields=("${(@ps:\t:)record}")
+      seen_paths[${fields[3]}]=1
+      print -r -- "$record"
     done
+    while IFS= read -r dir_path; do
+      payload=$(encode_path "$dir_path") || exit 1
+      (( ${+seen_paths[$payload]} )) && continue
+      seen_paths[$payload]=1
+      emit_candidate zoxide "$dir_path" "$dir_path"
+    done < <(zoxide query --list 2>/dev/null)
     ;;
   cd-zoxide)
     while IFS= read -r dir_path; do
@@ -352,7 +374,7 @@ case $mode in
     ;;
   *)
     print -ru2 -- \
-      "usage: $0 {encode|decode0|parent|preview|relative0|cd-local|cd-zoxide|cp|navigate|modal|escape|enter|cursor} [ARGUMENTS...]"
+      "usage: $0 {encode|decode0|parent|preview|relative0|cd|cd-local|cd-zoxide|cp|navigate|modal|escape|enter|cursor} [ARGUMENTS...]"
     exit 2
     ;;
 esac

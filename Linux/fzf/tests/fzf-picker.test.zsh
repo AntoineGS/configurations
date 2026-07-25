@@ -188,6 +188,54 @@ test_directory_enumeration() {
   done
 }
 
+test_cd_merged() {
+  local root=$tmp_dir/cd-merged-root fake_bin=$tmp_dir/cd-merged-bin
+  local external_one=$tmp_dir/zoxide-one external_two=$tmp_dir/zoxide-two
+  local output=$tmp_dir/cd-merged-output failed_output=$tmp_dir/cd-merged-failed
+  local record payload decoded_path
+  local -a fields kinds displays decoded expected_paths expected_kinds expected_displays
+
+  mkdir -p -- "$root/.hidden" "$root/visible" "$external_one" "$external_two" "$fake_bin"
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_LOCAL_DUPLICATE"' >> "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_ONE"' >> "$fake_bin/zoxide"
+  print -r -- 'print -r -- "$FZF_PICKER_TEST_ZOXIDE_TWO"' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+
+  FZF_PICKER_TEST_LOCAL_DUPLICATE=$root/visible \
+    FZF_PICKER_TEST_ZOXIDE_ONE=$external_one \
+    FZF_PICKER_TEST_ZOXIDE_TWO=$external_two \
+    PATH="$fake_bin:$PATH" "$candidate_script" cd "$root" >| "$output" || fail "merged cd generation failed"
+
+  while IFS= read -r record; do
+    fields=("${(@ps:\t:)record}")
+    kinds+=("${fields[1]}")
+    displays+=("${fields[2]}")
+    payload=${fields[3]}
+    IFS= read -r -d $'\0' decoded_path < <("$candidate_script" decode0 "$payload") || \
+      fail "merged cd emitted an invalid payload"
+    decoded+=("$decoded_path")
+  done < "$output"
+
+  expected_paths=("$root" "${root:h}" "$root/.hidden" "$root/visible" "$external_one" "$external_two")
+  expected_kinds=(local local local local zoxide zoxide)
+  expected_displays=(. .. .hidden visible "$external_one" "$external_two")
+  assert_equal "${(j:$'\0':)expected_paths}" "${(j:$'\0':)decoded}" \
+    "merged cd did not preserve local-first deduplicated path order"
+  assert_equal "${(j:$'\0':)expected_kinds}" "${(j:$'\0':)kinds}" \
+    "merged cd emitted incorrect candidate kinds"
+  assert_equal "${(j:$'\0':)expected_displays}" "${(j:$'\0':)displays}" \
+    "merged cd emitted incorrect displays"
+
+  print -r -- '#!/usr/bin/env zsh' >| "$fake_bin/zoxide"
+  print -r -- 'exit 7' >> "$fake_bin/zoxide"
+  chmod +x -- "$fake_bin/zoxide"
+  PATH="$fake_bin:$PATH" "$candidate_script" cd "$root" >| "$failed_output" || \
+    fail "zoxide failure prevented local cd generation"
+  "$candidate_script" cd-local "$root" >| "$output" || fail "local comparison generation failed"
+  assert_file_equal "$output" "$failed_output" "zoxide failure changed local cd candidates"
+}
+
 test_operations() {
   local root=$tmp_dir/operations-root raw_dir child dash_child missing dir_payload child_payload parent_payload decoded
   local dir_file=$tmp_dir/dir prompt_file=$tmp_dir/prompt source_mode_file=$tmp_dir/source-mode
@@ -829,11 +877,12 @@ test_zshrc_add_mode_navigation_bindings() {
     "cp picker unexpectedly binds source switching outside dynamic mode actions"
 }
 
-(( $# > 0 )) || set -- codec directory-enumeration operations modal create preview zshrc-cd zshrc-cp zshrc-add-mode-query-bindings zshrc-add-mode-navigation-bindings
+(( $# > 0 )) || set -- codec directory-enumeration cd-merged operations modal create preview zshrc-cd zshrc-cp zshrc-add-mode-query-bindings zshrc-add-mode-navigation-bindings
 for suite in "$@"; do
   case $suite in
     codec) test_codec ;;
     directory-enumeration) test_directory_enumeration ;;
+    cd-merged) test_cd_merged ;;
     operations) test_operations ;;
     modal) test_modal ;;
     create) test_create ;;
@@ -842,7 +891,7 @@ for suite in "$@"; do
     zshrc-cp) test_zshrc_cp ;;
     zshrc-add-mode-query-bindings) test_zshrc_add_mode_query_bindings ;;
     zshrc-add-mode-navigation-bindings) test_zshrc_add_mode_navigation_bindings ;;
-    *) fail "usage: $0 {codec|directory-enumeration|operations|modal|create|preview|zshrc-cd|zshrc-cp|zshrc-add-mode-query-bindings|zshrc-add-mode-navigation-bindings}..." ;;
+    *) fail "usage: $0 {codec|directory-enumeration|cd-merged|operations|modal|create|preview|zshrc-cd|zshrc-cp|zshrc-add-mode-query-bindings|zshrc-add-mode-navigation-bindings}..." ;;
   esac
 done
 print -r -- "PASS: $assertions assertions"
