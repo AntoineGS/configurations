@@ -1,0 +1,47 @@
+#!/bin/sh
+set -u
+
+real_wl_paste=${WL_PASTE_REAL:-/usr/bin/wl-paste}
+
+if [ -n "${TMUX-}" ] && [ -n "${TMUX_PANE-}" ] && command -v tmux >/dev/null 2>&1; then
+  session=$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null) || session=
+
+  if [ -n "$session" ]; then
+    display=$(tmux show-environment -t "$session" WAYLAND_DISPLAY 2>/dev/null) || display=
+    runtime=$(tmux show-environment -t "$session" XDG_RUNTIME_DIR 2>/dev/null) || runtime=
+
+    case $display in
+      WAYLAND_DISPLAY=*) display=${display#WAYLAND_DISPLAY=} ;;
+      *) display= ;;
+    esac
+
+    case $runtime in
+      XDG_RUNTIME_DIR=*) runtime=${runtime#XDG_RUNTIME_DIR=} ;;
+      *) runtime= ;;
+    esac
+
+    case $display in
+      /*) socket=$display ;;
+      "") socket= ;;
+      *)
+        if [ -n "$runtime" ]; then
+          socket=$runtime/$display
+        else
+          socket=
+        fi
+        ;;
+    esac
+
+    if [ -n "$socket" ] && [ -S "$socket" ]; then
+      WAYLAND_DISPLAY=$display
+      export WAYLAND_DISPLAY
+
+      if [ -n "$runtime" ]; then
+        XDG_RUNTIME_DIR=$runtime
+        export XDG_RUNTIME_DIR
+      fi
+    fi
+  fi
+fi
+
+exec "$real_wl_paste" "$@"
