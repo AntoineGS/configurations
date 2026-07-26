@@ -80,24 +80,24 @@ _fzf_cd_navigate() {
         --bind "a:transform:${(q)candidate_helper} modal add ${(q)dir_file} ${(q)prompt_file} ${(q)keymap_mode_file}" \
         --bind 'j:down,k:up,h:trigger(ctrl-h),l:trigger(tab),q:abort,space:clear-multi+toggle' \
         --bind 'start:unbind(h,j,k,l,i,a,q,space)' \
-        --bind "ctrl-l,tab,right:transform:
+    --bind "ctrl-l,tab,right:transform:
             target={3}
             [[ -n \$target ]] && ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "ctrl-h,left:transform:
-            target=\$(<${(q)dir_file})
-            target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
-            ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
+    target=\$(<${(q)dir_file})
+    target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
+    ${(q)candidate_helper} navigate cd \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "/:transform:${(q)candidate_helper} slash cd {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "~:transform:
-            if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
-                print -r -- 'put(~)'
-            elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
-                print -r -- ignore
-            elif [[ -n {q} ]]; then
-                print -r -- 'put(~)'
-            else
-                ${(q)candidate_helper} navigate cd ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
-            fi" \
+    if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
+        print -r -- 'put(~)'
+    elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
+        print -r -- ignore
+    elif [[ -n {q} ]]; then
+        print -r -- 'put(~)'
+    else
+        ${(q)candidate_helper} navigate cd ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
+    fi" \
         --preview "${(q)candidate_helper} preview cd {3} 2>/dev/null" \
         --preview-window=right:50%:wrap \
         < $candidates_file >| $output_file
@@ -187,25 +187,25 @@ _fzf_cp_complete() {
         --bind "a:transform:${(q)candidate_helper} modal add ${(q)dir_file} ${(q)prompt_file} ${(q)keymap_mode_file}" \
         --bind 'j:down,k:up,h:trigger(ctrl-h),l:trigger(tab),q:abort,space:toggle' \
         --bind 'start:unbind(h,j,k,l,i,a,q,space)' \
-        --bind "ctrl-l,tab,right:transform:
+    --bind "ctrl-l,tab,right:transform:
             kind={1}
             target={3}
             [[ \$kind == directory && -n \$target ]] && ${(q)candidate_helper} navigate cp \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "ctrl-h,left:transform:
-            target=\$(<${(q)dir_file})
-            target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
-            ${(q)candidate_helper} navigate cp \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
+    target=\$(<${(q)dir_file})
+    target=\$(${(q)candidate_helper} parent \"\$target\") || exit 0
+    ${(q)candidate_helper} navigate cp \"\$target\" ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "/:transform:${(q)candidate_helper} slash cp {q} ${(q)root_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}" \
         --bind "~:transform:
-            if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
-                print -r -- 'put(~)'
-            elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
-                print -r -- ignore
-            elif [[ -n {q} ]]; then
-                print -r -- 'put(~)'
-            else
-                ${(q)candidate_helper} navigate cp ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
-            fi" \
+    if [[ \$(<${(q)keymap_mode_file}) == add ]]; then
+        print -r -- 'put(~)'
+    elif [[ \$(<${(q)keymap_mode_file}) == normal && -n {q} ]]; then
+        print -r -- ignore
+    elif [[ -n {q} ]]; then
+        print -r -- 'put(~)'
+    else
+        ${(q)candidate_helper} navigate cp ${(q)home_payload} ${(q)dir_file} ${(q)prompt_file} - ${(q)candidates_file} ${(q)keymap_mode_file}
+    fi" \
         --preview "${(q)candidate_helper} preview cp {3} 2>/dev/null" \
         --preview-window=right:50%:wrap \
         < $candidates_file >| $output_file
@@ -334,6 +334,7 @@ alias y="yazi"
 alias lg="lazygit"
 alias gu="gitui"
 alias guw="gitui --watcher"
+alias ocv="opencode"
 alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
