@@ -13,3 +13,4 @@
 !skills/**
 !plugins/
 !plugins/opencode-tmux-agent-indicator.js
+!plugins/opencode-tmux-agent-indicator.test.mjs
