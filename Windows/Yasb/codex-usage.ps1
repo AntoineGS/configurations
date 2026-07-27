@@ -271,3 +271,115 @@ function Get-CodexUsageFallback {
     }
   }
 }
+
+function Read-AppServerResponse {
+  param(
+    [Parameter(Mandatory)][Diagnostics.Process]$Process,
+    [Parameter(Mandatory)][int]$ResponseId,
+    [Parameter(Mandatory)][DateTimeOffset]$Deadline
+  )
+
+  while ([DateTimeOffset]::UtcNow -lt $Deadline) {
+    $remainingMs = [math]::Max(1, [int]($Deadline - [DateTimeOffset]::UtcNow).TotalMilliseconds)
+    $readTask = $Process.StandardOutput.ReadLineAsync()
+    if (-not $readTask.Wait($remainingMs)) {
+      throw "Codex app-server timed out."
+    }
+
+    $line = $readTask.Result
+    if ($null -eq $line) {
+      throw "Codex app-server closed before response $ResponseId."
+    }
+    try {
+      $message = $line | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      continue
+    }
+    if ($null -eq $message) {
+      continue
+    }
+
+    $idProperty = $message.PSObject.Properties["id"]
+    if ($null -eq $idProperty -or $idProperty.Value -ne $ResponseId) {
+      continue
+    }
+
+    $errorProperty = $message.PSObject.Properties["error"]
+    if ($null -ne $errorProperty -and $null -ne $errorProperty.Value) {
+      $errorMessageProperty = $errorProperty.Value.PSObject.Properties["message"]
+      $errorMessage = if ($null -eq $errorMessageProperty) { "unknown error" } else { $errorMessageProperty.Value }
+      throw "Codex app-server error: $errorMessage"
+    }
+    return $message
+  }
+
+  throw "Codex app-server timed out."
+}
+
+function Invoke-CodexRateLimits {
+  param([ValidateRange(1, 120)][int]$TimeoutSeconds = 15)
+
+  $startInfo = [Diagnostics.ProcessStartInfo]::new("codex")
+  $startInfo.ArgumentList.Add("app-server")
+  $startInfo.ArgumentList.Add("--stdio")
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = [Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+
+  try {
+    if (-not $process.Start()) {
+      throw "Could not start Codex app-server."
+    }
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $initialize = [ordered]@{
+      method = "initialize"
+      id = 0
+      params = @{ clientInfo = @{ name = "yasb_codex_usage"; title = "YASB Codex Usage"; version = "1" } }
+    }
+    $process.StandardInput.WriteLine(($initialize | ConvertTo-Json -Compress -Depth 8))
+    $process.StandardInput.Flush()
+    $null = Read-AppServerResponse -Process $process -ResponseId 0 -Deadline $deadline
+
+    $initialized = @{ method = "initialized"; params = @{} }
+    $rateLimitsRequest = @{ method = "account/rateLimits/read"; id = 1; params = @{} }
+    $process.StandardInput.WriteLine(($initialized | ConvertTo-Json -Compress))
+    $process.StandardInput.WriteLine(($rateLimitsRequest | ConvertTo-Json -Compress))
+    $process.StandardInput.Flush()
+    $response = Read-AppServerResponse -Process $process -ResponseId 1 -Deadline $deadline
+    $resultProperty = $response.PSObject.Properties["result"]
+    $rateLimitsProperty = if ($null -eq $resultProperty -or $null -eq $resultProperty.Value) {
+      $null
+    } else {
+      $resultProperty.Value.PSObject.Properties["rateLimits"]
+    }
+    if ($null -eq $rateLimitsProperty -or $null -eq $rateLimitsProperty.Value) {
+      throw "Codex app-server returned no rate limits."
+    }
+    $rateLimitsProperty.Value
+  } finally {
+    try { $process.StandardInput.Close() } catch {}
+    try {
+      if (-not $process.HasExited) {
+        $process.Kill($true)
+      }
+    } catch {}
+    try { $null = $process.WaitForExit(2000) } catch {}
+    $process.Dispose()
+  }
+}
+
+if (-not $LibraryOnly) {
+  try {
+    $rateLimits = Invoke-CodexRateLimits -TimeoutSeconds $TimeoutSeconds
+    $output = ConvertTo-CodexUsageOutput -RateLimits $rateLimits
+    Write-CodexUsageCache -Output $output -CachePath $CachePath
+  } catch {
+    $output = Get-CodexUsageFallback -ErrorMessage $_.Exception.Message -CachePath $CachePath
+  }
+  $output | ConvertTo-Json -Compress -Depth 6
+}
