@@ -545,7 +545,8 @@ widgets:
       tooltip: true
       tooltip_label: "{data[tooltip]}"
       exec_options:
-        run_cmd: "pwsh.exe -NoProfile -NonInteractive -File %USERPROFILE%\\.config\\yasb\\codex-usage.ps1"
+        # Decodes to: & (Join-Path $env:USERPROFILE '.config\yasb\codex-usage.ps1')
+        run_cmd: "pwsh.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAVQBTAEUAUgBQAFIATwBGAEkATABFACAAJwAuAGMAbwBuAGYAaQBnAFwAeQBhAHMAYgBcAGMAbwBkAGUAeAAtAHUAcwBhAGcAZQAuAHAAcwAxACcAKQA="
         run_interval: 300000
         return_format: "json"
         hide_empty: false
@@ -587,12 +588,12 @@ Do not alter or stage unrelated existing changes in `tidydots.yaml`.
 Run:
 
 ```powershell
-python -c "import yaml; c=yaml.safe_load(open('Windows/Yasb/config.yaml', encoding='utf-8')); assert c['widgets']['codex_usage']['type'] == 'yasb.custom.CustomWidget'; assert c['bars']['primary-bar']['widgets']['right'][0] == 'codex_usage'; assert c['widgets']['codex_usage']['options']['exec_options']['run_interval'] == 300000"
+python -c "import base64, yaml; c=yaml.safe_load(open('Windows/Yasb/config.yaml', encoding='utf-8')); e=c['widgets']['codex_usage']['options']['exec_options']; p='JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAVQBTAEUAUgBQAFIATwBGAEkATABFACAAJwAuAGMAbwBuAGYAaQBnAFwAeQBhAHMAYgBcAGMAbwBkAGUAeAAtAHUAcwBhAGcAZQAuAHAAcwAxACcAKQA='; d='& (Join-Path `$env:USERPROFILE ' + chr(39) + '.config\\yasb\\codex-usage.ps1' + chr(39) + ')'; assert c['widgets']['codex_usage']['type'] == 'yasb.custom.CustomWidget'; assert c['bars']['primary-bar']['widgets']['right'][0] == 'codex_usage'; assert e['run_cmd'] == 'pwsh.exe -NoProfile -NonInteractive -EncodedCommand ' + p; assert base64.b64decode(p).decode('utf-16le') == d; assert e['run_interval'] == 300000"
 tidydots list
 tidydots restore -n
 ```
 
-Expected: YAML assertion exits zero; `tidydots list` parses the v3 configuration; dry-run includes `codex-usage.ps1` under the Windows YASB target and makes no filesystem changes. Ignore unrelated dry-run entries that predate this feature.
+Expected: YAML assertions exit zero, including exact `run_cmd` and decoded-command checks; `tidydots list` parses the v3 configuration; dry-run includes `codex-usage.ps1` under the Windows YASB target and makes no filesystem changes. Ignore unrelated dry-run entries that predate this feature.
 
 - [ ] **Step 6: Commit files without unrelated working-tree changes**
 
