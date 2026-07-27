@@ -6,65 +6,6 @@
     "commit": "",
     "pr": ""
   },
-  "enabledPlugins": {
-    "gopls-lsp@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
-    "code-documentation@claude-code-workflows": true,
-    "comprehensive-review@claude-code-workflows": true,
-    "code-refactoring@claude-code-workflows": true,
-    "codebase-cleanup@claude-code-workflows": true,
-    "database-design@claude-code-workflows": true,
-    "database-migrations@claude-code-workflows": true,
-    "debugging-toolkit@claude-code-workflows": true,
-    "dependency-management@claude-code-workflows": true,
-    "deployment-strategies@claude-code-workflows": true,
-    "deployment-validation@claude-code-workflows": true,
-    "framework-migration@claude-code-workflows": true,
-    "full-stack-orchestration@claude-code-workflows": true,
-    "javascript-typescript@claude-code-workflows": true,
-    "performance-testing-review@claude-code-workflows": true,
-    "security-scanning@claude-code-workflows": true,
-    "shell-scripting@claude-code-workflows": true,
-    "systems-programming@claude-code-workflows": true,
-    "tdd-workflows@claude-code-workflows": true,
-    "ui-design@claude-code-workflows": true,
-    "unit-testing@claude-code-workflows": true,
-    "openviking-memory@openviking-local": true,
-    "safety-net@cc-marketplace": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "clangd-lsp@claude-plugins-official": true
-  },
-  "extraKnownMarketplaces": {
-    "claude-code-workflows": {
-      "source": {
-        "source": "github",
-        "repo": "wshobson/agents"
-      },
-      "autoUpdate": true
-    },
-    "openviking-local": {
-      "source": {
-        "source": "directory",
-        "path": "/home/antoinegs/.local/share/openviking-marketplace"
-      },
-      "autoUpdate": true
-    },
-    "cc-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "kenryu42/cc-marketplace"
-      },
-      "autoUpdate": true
-    }
-  },
-  "effortLevel": "xhigh",
-  "skipDangerousModePermissionPrompt": true,
-  "theme": "auto",
-  "editorMode": "vim",
-  "statusLine": {
-    "type": "command",
-    "command": "npx -y ccstatusline@latest",
-    "padding": 0
   "hooks": {
     "Notification": [
       {
@@ -103,5 +44,74 @@
           }
         ]
       }
-  }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "code-documentation@claude-code-workflows": true,
+    "comprehensive-review@claude-code-workflows": true,
+    "code-refactoring@claude-code-workflows": true,
+    "codebase-cleanup@claude-code-workflows": true,
+    "database-design@claude-code-workflows": true,
+    "database-migrations@claude-code-workflows": true,
+    "debugging-toolkit@claude-code-workflows": true,
+    "dependency-management@claude-code-workflows": true,
+    "deployment-strategies@claude-code-workflows": true,
+    "deployment-validation@claude-code-workflows": true,
+    "framework-migration@claude-code-workflows": true,
+    "full-stack-orchestration@claude-code-workflows": true,
+    "javascript-typescript@claude-code-workflows": true,
+    "performance-testing-review@claude-code-workflows": true,
+    "security-scanning@claude-code-workflows": true,
+    "shell-scripting@claude-code-workflows": true,
+    "systems-programming@claude-code-workflows": true,
+    "tdd-workflows@claude-code-workflows": true,
+    "ui-design@claude-code-workflows": true,
+    "unit-testing@claude-code-workflows": true,
+    "openviking-memory@openviking-local": true,
+    "safety-net@cc-marketplace": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "clangd-lsp@claude-plugins-official": true,
+    "rdbg-debugger@rdbg": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-code-workflows": {
+      "source": {
+        "source": "github",
+        "repo": "wshobson/agents"
+      },
+      "autoUpdate": true
+    },
+    "openviking-local": {
+      "source": {
+        "source": "directory",
+        "path": "/home/antoinegs/.local/share/openviking-marketplace"
+      },
+      "autoUpdate": true
+    },
+    "cc-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "kenryu42/cc-marketplace"
+      },
+      "autoUpdate": true
+    },
+    "rdbg": {
+      "source": {
+        "source": "url",
+        "url": "https://sundaymorning.app/rdbg/.claude-plugin/marketplace.json"
+      }
+    }
+  },
+  "effortLevel": "xhigh",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "auto",
+  "editorMode": "vim",
+  "tui": "fullscreen"
 }
