@@ -12,7 +12,7 @@ The Linux Waybar configuration runs `codexbar` every 300 seconds and renders:
 {weekly_pct}%/{weekly_reset}
 ```
 
-The Windows configuration uses YASB 2.0.5. This release has no native Codex usage widget, but `yasb.custom.CustomWidget` can periodically run a command and render JSON fields. Codex CLI 0.145.0 is installed and exposes the `codex app-server` stdio transport and `account/rateLimits/read` request.
+The Windows configuration uses YASB 2.0.5. This release has no native Codex usage widget, but `yasb.custom.CustomWidget` can periodically run a command and render JSON fields. Codex CLI 0.145.0 is installed and exposes the `codex app-server` stdio transport and `account/rateLimits/read` request. A live request on this machine returns one seven-day `primary` window and a null `secondary` window.
 
 The relevant files are:
 
@@ -36,16 +36,20 @@ A custom YASB build based on the unreleased Codex widget pull request is also re
 Successful output contains:
 
 - `label`: preformatted weekly percentage and reset text
-- `weekly_percent`: secondary-window usage percentage
-- `weekly_reset`: compact secondary-window countdown, such as `6d20h`
+- `weekly_percent`: selected weekly-window usage percentage
+- `weekly_reset`: compact weekly-window countdown, such as `6d20h`
 - `primary_percent`: primary-window usage percentage
 - `primary_reset`: compact primary-window countdown
-- `tooltip`: a two-line primary and weekly usage summary
+- `tooltip`: a one- or two-line usage summary without duplicate windows
 - `stale`: `false`
 
-The Codex response names windows `primary` and `secondary`; the widget must not assume fixed durations when formatting the tooltip. It labels the secondary window `Weekly` to match the current Waybar display, while including the server-provided duration when it differs from seven days.
+The Codex response names windows `primary` and `secondary`, but those names do not guarantee fixed durations. Match `codexbar`'s behavior:
 
-The secondary window is required for a successful refresh because it supplies the requested weekly label. A response with no secondary window follows the normal cache or unavailable fallback path, even when primary-window data is present.
+1. When `secondary` exists, use it for the weekly display and show `primary` as a separate tooltip line.
+2. When `secondary` is null and `primary.windowDurationMins` is within five percent of 10,080 minutes, mirror `primary` into the weekly display and omit a duplicate primary tooltip line.
+3. Otherwise, treat the response as missing weekly data and follow the normal cache or unavailable fallback path.
+
+Tooltip labels derive from each window's actual duration. The selected weekly window is labeled `Weekly` when it is approximately seven days; any nonstandard secondary duration is included in its label rather than being silently described as seven days.
 
 Reset timestamps are Unix seconds. Countdown formatting uses the largest two non-zero units from days, hours, and minutes, removes spacing between units, and clamps elapsed resets to `now` rather than producing negative values.
 
@@ -89,7 +93,8 @@ The cache is not given an age-based expiry. A stale tooltip includes the cache t
 
 Test response normalization and countdown formatting against fixture objects before wiring the live process. Cover:
 
-- normal primary and secondary windows
+- normal five-hour primary and seven-day secondary windows
+- single seven-day primary window with null secondary data
 - null reset timestamps
 - elapsed reset timestamps
 - alternate secondary duration
