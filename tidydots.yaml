@@ -35,8 +35,8 @@ applications:
           - settings.json
   - package:
       managers:
-        yay: opencode-bin
         brew: opencode
+        yay: opencode-bin
     name: opencode
     description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; magic-context plugin for self-managing context/memory
     entries:
@@ -57,13 +57,6 @@ applications:
           windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
-      - targets:
-          linux: ~/.config/cortexkit
-          windows: ~/.config/cortexkit
-        name: magic-context config
-        backup: ./Linux/cortexkit
-        files:
-          - magic-context.jsonc
   - package:
       managers:
         apt: neovim
@@ -210,6 +203,7 @@ applications:
     entries:
       - targets:
           linux: ~/.config/posting
+          windows: ~/.config/posting
         name: config
         backup: ./Both/posting
   - name: xcompose
@@ -217,38 +211,10 @@ applications:
     entries:
       - targets:
           linux: "~"
-          windows: "~"
         name: config
         backup: ./Linux/Xcompose
         files:
           - .Xcompose
-  - name: ideavim
-    entries:
-      - targets:
-          windows: "~"
-        name: config
-        backup: ./Both/IntelliJ
-        files:
-          - .ideavimrc
-  - name: vscode
-    when: '{{ false }}'
-    entries:
-      - targets:
-          windows: ~/AppData/Roaming/Code/User
-        name: config
-        backup: ./Both/VSCode/User
-        files:
-          - settings.json
-          - keybindings.json
-  - name: glazewm
-    when: '{{ eq .OS "windows" }}'
-    entries:
-      - targets:
-          windows: ~/.glzr/glazewm
-        name: config
-        backup: ./Both/GlazeWM
-        files:
-          - config.yaml
   - name: powershell
     when: '{{ eq .OS "windows" }}'
     entries:
@@ -256,7 +222,10 @@ applications:
           windows: "~"
         name: config
         backup: ./Windows/PowerShell
-  - name: komorebi
+  - package:
+      managers:
+        winget: LGUG2Z.komorebi
+    name: komorebi
     when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
@@ -265,15 +234,6 @@ applications:
         backup: ./Windows/Komorebi
         files:
           - komorebi.json
-  - name: whkd
-    when: '{{ eq .OS "windows" }}'
-    entries:
-      - targets:
-          windows: ~/.config
-        name: config
-        backup: ./Windows/Komorebi
-        files:
-          - whkdrc
   - package:
       managers:
         winget: AmN.yasb
@@ -297,26 +257,12 @@ applications:
         backup: ./Windows/WindowsTerminal
         files:
           - settings.json
-  - name: total-commander
-    when: '{{ eq .OS "windows" }}'
-    entries:
-      - targets:
-          windows: ~/AppData/Roaming/GHISLER
-        name: config
-        backup: ./Windows/TotalCommander
-        files:
-          - wincmd.ini
-      - targets:
-          windows: ~/AppData/Roaming/Everything
-        name: everything
-        backup: ./Windows/TotalCommander
-        files:
-          - Everything-1.5a.ini
   - package:
       managers:
         apt: bash
         pacman: bash
     name: bash
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: "~"
@@ -330,6 +276,7 @@ applications:
         brew: zsh
         pacman: zsh
     name: zsh
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: "~"
@@ -342,11 +289,11 @@ applications:
           linux: ~/.local/share/zsh/completions
         name: completions
         backup: ./Linux/zsh/completions
-      - name: default-shell
-        check:
+      - check:
           linux: 'test "$(getent passwd "$USER" | cut -d: -f7)" = /usr/bin/zsh'
         run:
-          linux: 'chsh -s /usr/bin/zsh "$SUDO_USER"'
+          linux: chsh -s /usr/bin/zsh "$SUDO_USER"
+        name: default-shell
         sudo: true
   - package:
       managers:
@@ -404,22 +351,22 @@ applications:
         backup: ./Linux/hypr
         files:
           - watch-rustdesk-submap.service
-      - name: enable-rustdesk-service
-        check:
+      - check:
           linux: systemctl --user is-enabled --quiet watch-rustdesk-submap.service
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-rustdesk-submap.service
+        name: enable-rustdesk-service
       - targets:
           linux: ~/.config/systemd/user
         name: external-keyboard-service
         backup: ./Linux/hypr
         files:
           - watch-external-keyboard.service
-      - name: enable-external-keyboard-service
-        check:
+      - check:
           linux: systemctl --user is-enabled --quiet watch-external-keyboard.service
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
+        name: enable-external-keyboard-service
   - package:
       managers:
         pacman: waybar
@@ -470,15 +417,6 @@ applications:
           linux: ~/qmk_firmware/keyboards/sofle_choc/keymaps/AntoineGS
         name: sofle
         backup: ./Linux/QMK/sofle_choc/AntoineGS
-  - name: warp
-    when: '{{ false }}'
-    entries:
-      - targets:
-          linux: ~/.config/warp-terminal
-        name: config
-        backup: ./Linux/Warp
-        files:
-          - user_preferences.json
   - package:
       managers:
         apt: teams-for-linux
@@ -607,11 +545,11 @@ applications:
           linux: ~/.local/share/vicinae/scripts
         name: scripts
         backup: ./Linux/vicinae/scripts
-      - name: enable-service
-        check:
+      - check:
           linux: systemctl --user is-enabled --quiet vicinae.service
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now vicinae.service
+        name: enable-service
   - name: autostart
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
@@ -665,11 +603,11 @@ applications:
         files:
           - 90-disable-raydium.rules
         sudo: true
-      - name: apply-rules
-        check:
-          linux: 'test ! -e /sys/bus/i2c/drivers/raydium_ts/i2c-RAYD0001:00'
+      - check:
+          linux: test ! -e /sys/bus/i2c/drivers/raydium_ts/i2c-RAYD0001:00
         run:
-          linux: 'udevadm control --reload-rules && udevadm trigger --subsystem-match=i2c'
+          linux: udevadm control --reload-rules && udevadm trigger --subsystem-match=i2c
+        name: apply-rules
         sudo: true
   - name: system-sleep-hooks
     description: Post-resume hooks (e.g. rebind elan_i2c touchpad to avoid dmesg flood + fan ramp)
@@ -686,9 +624,9 @@ applications:
         sudo: true
   - package:
       managers:
-        yay: tzupdate
         apt: tzupdate
         brew: tzupdate
+        yay: tzupdate
     name: tzupdate
     description: Auto-set the system timezone from IP geolocation. Timer polls on boot + hourly; the system-sleep resume hook (in system-sleep-hooks) fires it promptly after travel. iwd exposes no connection-up hook and NetworkManager isn't used on this host, hence polling.
     when: '{{ eq .Hostname "omarchbook" }}'
@@ -701,11 +639,11 @@ applications:
           - tzupdate.service
           - tzupdate.timer
         sudo: true
-      - name: enable-tzupdate-timer
-        check:
+      - check:
           linux: systemctl is-enabled --quiet tzupdate.timer
         run:
           linux: systemctl daemon-reload && systemctl enable --now tzupdate.timer
+        name: enable-tzupdate-timer
         sudo: true
   - name: logind-config
     description: Hibernate on lid close (workaround for ballistic fan in S3)
@@ -718,11 +656,11 @@ applications:
         files:
           - hibernate-on-lid.conf
         sudo: true
-      - name: reload-logind
-        check:
-          linux: 'busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandleLidSwitch | grep -q hibernate'
+      - check:
+          linux: busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandleLidSwitch | grep -q hibernate
         run:
-          linux: 'systemctl reload systemd-logind'
+          linux: systemctl reload systemd-logind
+        name: reload-logind
         sudo: true
   - name: yay
     description: AUR helper config (7-day minimum release-age hook)
@@ -758,11 +696,11 @@ applications:
         files:
           - battery-monitor.service
           - battery-monitor.timer
-      - name: enable-battery-monitor
-        check:
+      - check:
           linux: systemctl --user is-active --quiet battery-monitor.timer
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
+        name: enable-battery-monitor
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -811,11 +749,11 @@ applications:
         backup: ./Linux/ssh-agent
         files:
           - config
-      - name: enable-socket
-        check:
+      - check:
           linux: systemctl --user is-enabled --quiet ssh-agent.socket
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now ssh-agent.socket
+        name: enable-socket
   - name: systemd-units
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -827,77 +765,77 @@ applications:
           - units-backup.service
           - units-backup.timer
         sudo: true
-      - name: enable-backup-timer
-        check:
+      - check:
           linux: systemctl is-active --quiet units-backup.timer
         run:
           linux: systemctl daemon-reload && systemctl enable --now units-backup.timer
+        name: enable-backup-timer
         sudo: true
   - name: enable-laptop-services
     description: Enable services tied to this laptop's hardware (thermal, wifi)
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
-      - name: enable-thermald
-        check:
+      - check:
           linux: systemctl is-enabled --quiet thermald.service
         run:
           linux: systemctl enable --now thermald.service
+        name: enable-thermald
         sudo: true
-      - name: enable-iwd
-        check:
+      - check:
           linux: systemctl is-enabled --quiet iwd.service
         run:
           linux: systemctl enable --now iwd.service
+        name: enable-iwd
         sudo: true
   - name: enable-desktop-services
     description: Enable services that only make sense on a graphical Linux host
     when: '{{ and (eq .OS "linux") .HasDisplay (not .IsWSL) }}'
     entries:
-      - name: enable-sddm
-        check:
+      - check:
           linux: systemctl is-enabled --quiet sddm.service
         run:
           linux: systemctl enable sddm.service
+        name: enable-sddm
         sudo: true
-      - name: enable-cups
-        check:
+      - check:
           linux: systemctl is-enabled --quiet cups.service
         run:
           linux: systemctl enable --now cups.service cups.socket cups-browsed.service
+        name: enable-cups
         sudo: true
-      - name: enable-avahi
-        check:
+      - check:
           linux: systemctl is-enabled --quiet avahi-daemon.service
         run:
           linux: systemctl enable --now avahi-daemon.service avahi-daemon.socket
+        name: enable-avahi
         sudo: true
   - name: enable-linux-services
     description: Enable services wanted on every real (non-WSL) Linux machine
     when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
     entries:
-      - name: enable-ufw
-        check:
+      - check:
           linux: systemctl is-enabled --quiet ufw.service
         run:
           linux: systemctl enable --now ufw.service
+        name: enable-ufw
         sudo: true
-      - name: enable-docker
-        check:
+      - check:
           linux: systemctl is-enabled --quiet docker.service
         run:
           linux: systemctl enable --now docker.service
+        name: enable-docker
         sudo: true
-      - name: enable-tailscaled
-        check:
+      - check:
           linux: systemctl is-enabled --quiet tailscaled.service
         run:
           linux: systemctl enable --now tailscaled.service
+        name: enable-tailscaled
         sudo: true
-      - name: enable-bluetooth
-        check:
+      - check:
           linux: systemctl is-enabled --quiet bluetooth.service
         run:
           linux: systemctl enable --now bluetooth.service
+        name: enable-bluetooth
         sudo: true
   - package:
       managers:
@@ -978,6 +916,7 @@ applications:
     entries:
       - targets:
           linux: "~"
+          windows: "~"
         name: config
         backup: Both/Ripgrep/
         files:
@@ -1010,7 +949,7 @@ applications:
       managers:
         apt: git
         pacman: git
-        winget: git
+        winget: Git.Git
     name: git
     entries:
       - targets:
@@ -1132,7 +1071,7 @@ applications:
         backup: ./Windows/btop4win/themes
   - package:
       managers:
-        winget: gsudo
+        winget: gerardog.gsudo
     name: gsudo
     when: '{{ eq .OS "windows" }}'
     entries: []
@@ -1145,17 +1084,10 @@ applications:
   - package:
       managers:
         git:
-          url: https://github.com/catppuccin/lazygit
-          targets:
-            linux: ~/.local/share/catppuccin/lazygit
-    name: catppuccin - lazygit
-    entries: []
-  - package:
-      managers:
-        git:
           url: https://github.com/catppuccin/delta
           targets:
             linux: ~/.local/share/catppuccin/delta
+            windows: ~/.local/share/catppuccin/delta
     name: catppuccin - delta
     entries: []
   - package:
@@ -1164,16 +1096,19 @@ applications:
           url: https://github.com/catppuccin/bat
           targets:
             linux: ~/.local/share/catppuccin/bat
+            windows: ~/.local/share/catppuccin/bat
     name: catppuccin - bat
     entries:
       - targets:
           linux: ~/.config/bat/themes
+          windows: ~/AppData/Roaming/bat/themes
         name: themes
         backup: ~/.local/share/catppuccin/bat/themes
   - package:
       managers:
         apt: bat
         pacman: bat
+        winget: sharkdp.bat
     name: bat
     entries:
       - targets:
@@ -1196,6 +1131,7 @@ applications:
       managers:
         brew: delta
         pacman: git-delta
+        winget: dandavison.delta
     name: delta
     entries: []
   - package:
@@ -1217,6 +1153,7 @@ applications:
       managers:
         pacman: limine
     name: limine
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: /etc/
@@ -1239,6 +1176,7 @@ applications:
           targets:
             linux: ~/.local/share/zsh/zsh-claudecode-completion
     name: zsh-claudecode-completion
+    when: '{{ eq .OS "linux" }}'
     entries: []
   - package:
       managers:
@@ -1262,33 +1200,33 @@ applications:
     description: Enable btrfs snapshots + limine boot-menu sync on every Linux host except the laptop (omarchbook keeps them off for disk space)
     when: '{{ and (eq .OS "linux") (ne .Hostname "omarchbook") }}'
     entries:
-      - name: enable-snapper-timers
-        check:
+      - check:
           linux: systemctl is-enabled --quiet snapper-timeline.timer && systemctl is-enabled --quiet snapper-cleanup.timer
         run:
           linux: systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+        name: enable-snapper-timers
         sudo: true
-      - name: enable-snapper-sync
-        check:
+      - check:
           linux: systemctl is-enabled --quiet limine-snapper-sync.service
         run:
           linux: systemctl daemon-reload && systemctl enable --now limine-snapper-sync.service
+        name: enable-snapper-sync
         sudo: true
   - name: snapshots-disabled
     description: Keep btrfs snapshots + limine sync off on the laptop to conserve disk space (snapper/limine stay installed, just dormant)
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
-      - name: disable-snapper-timers
-        check:
+      - check:
           linux: '! systemctl is-enabled --quiet snapper-timeline.timer && ! systemctl is-enabled --quiet snapper-cleanup.timer'
         run:
           linux: systemctl disable --now snapper-timeline.timer snapper-cleanup.timer
+        name: disable-snapper-timers
         sudo: true
-      - name: disable-snapper-sync
-        check:
+      - check:
           linux: '! systemctl is-enabled --quiet limine-snapper-sync.service'
         run:
           linux: systemctl disable --now limine-snapper-sync.service
+        name: disable-snapper-sync
         sudo: true
   - name: tailscale-subnet-router
     description: Advertise 192.168.1.0/24 via Tailscale so remote clients reach the RustDesk relay (server only)
@@ -1307,11 +1245,11 @@ applications:
         backup: ./Linux/tailscale
         files:
           - setup-subnet-router.sh
-      - name: advertise-subnet-route
-        check:
+      - check:
           linux: tailscale debug prefs | grep -q '192.168.1.0/24'
         run:
           linux: ~/.local/share/helpers/setup-subnet-router.sh
+        name: advertise-subnet-route
   - name: cache-cleanup
     description: Weekly reclamation of pacman, yay/AUR and Go caches (laptop disk-pressure mitigation)
     when: '{{ eq .Hostname "omarchbook" }}'
@@ -1350,8 +1288,8 @@ applications:
         files:
           - user-cache-clean.service
           - user-cache-clean.timer
-      - name: enable-user-cache-timer
-        check:
+      - check:
           linux: systemctl --user is-enabled --quiet user-cache-clean.timer
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now user-cache-clean.timer
+        name: enable-user-cache-timer
