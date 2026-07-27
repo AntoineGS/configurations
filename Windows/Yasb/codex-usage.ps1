@@ -56,6 +56,23 @@ function Get-WindowLabel {
   "Usage (${duration}m)"
 }
 
+function ConvertTo-UsagePercent {
+  param(
+    [AllowNull()][object]$Value,
+    [string]$WindowName
+  )
+
+  $numericTypes = @(
+    [byte], [sbyte], [short], [ushort], [int], [uint], [long], [ulong], [float], [double], [decimal]
+  )
+  $isNumeric = $null -ne $Value -and $Value.GetType() -in $numericTypes
+  if (-not $isNumeric -or $Value -lt 0 -or $Value -gt 100 -or ($Value % 1) -ne 0) {
+    throw "Codex $WindowName usedPercent must be a numeric integer from 0 to 100."
+  }
+
+  [int]$Value
+}
+
 function ConvertTo-CodexUsageOutput {
   param(
     [Parameter(Mandatory)][psobject]$RateLimits,
@@ -81,21 +98,28 @@ function ConvertTo-CodexUsageOutput {
     }
   }
 
+  $primaryPercent = ConvertTo-UsagePercent -Value $primary.usedPercent -WindowName "primary"
+  if ($mirrorPrimary) {
+    $weeklyPercent = $primaryPercent
+  } else {
+    $weeklyPercent = ConvertTo-UsagePercent -Value $weekly.usedPercent -WindowName "weekly"
+  }
+
   $primaryReset = Format-ResetCountdown -ResetAt $primary.resetsAt -Now $Now
   $weeklyReset = Format-ResetCountdown -ResetAt $weekly.resetsAt -Now $Now
   $lines = [System.Collections.Generic.List[string]]::new()
   if (-not $mirrorPrimary) {
     $primaryLabel = Get-WindowLabel -DurationMinutes $primary.windowDurationMins
-    $lines.Add("${primaryLabel}: $($primary.usedPercent)% (resets in $primaryReset)")
+    $lines.Add("${primaryLabel}: ${primaryPercent}% (resets in $primaryReset)")
   }
   $weeklyLabel = Get-WindowLabel -DurationMinutes $weekly.windowDurationMins -Secondary
-  $lines.Add("${weeklyLabel}: $($weekly.usedPercent)% (resets in $weeklyReset)")
+  $lines.Add("${weeklyLabel}: ${weeklyPercent}% (resets in $weeklyReset)")
 
   [ordered]@{
-    label = "$($weekly.usedPercent)%/$weeklyReset"
-    weekly_percent = [int]$weekly.usedPercent
+    label = "${weeklyPercent}%/$weeklyReset"
+    weekly_percent = $weeklyPercent
     weekly_reset = $weeklyReset
-    primary_percent = [int]$primary.usedPercent
+    primary_percent = $primaryPercent
     primary_reset = $primaryReset
     tooltip = $lines -join "`n"
     stale = $false
