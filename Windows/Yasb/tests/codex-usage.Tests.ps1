@@ -16,13 +16,43 @@ function New-TestWindow {
 }
 
 Describe "Script entry contract" {
+  $scriptAst = (Get-Command $scriptPath).ScriptBlock.Ast
+
   It "loads as a library without emitting output" {
     @(& $scriptPath -LibraryOnly).Count | Should Be 0
+  }
+
+  It "uses the required cache path and timeout defaults" {
+    $cachePathParameter = $scriptAst.ParamBlock.Parameters |
+      Where-Object { $_.Name.VariablePath.UserPath -eq "CachePath" }
+    $timeoutParameter = $scriptAst.ParamBlock.Parameters |
+      Where-Object { $_.Name.VariablePath.UserPath -eq "TimeoutSeconds" }
+
+    $cachePathParameter.DefaultValue.Extent.Text |
+      Should Be '(Join-Path $env:LOCALAPPDATA "yasb\codex-usage.json")'
+    $timeoutParameter.DefaultValue.Extent.Text | Should Be "15"
   }
 
   It "validates the timeout range" {
     { & $scriptPath -LibraryOnly -TimeoutSeconds 0 } | Should Throw "TimeoutSeconds"
     { & $scriptPath -LibraryOnly -TimeoutSeconds 121 } | Should Throw "TimeoutSeconds"
+  }
+
+  It "enables strict mode latest" {
+    {
+      Set-StrictMode -Off
+      . $scriptPath -LibraryOnly
+      $values = @(1)
+      $values[1]
+    } | Should Throw "outside the bounds"
+  }
+
+  It "stops on non-terminating errors" {
+    {
+      $ErrorActionPreference = "Continue"
+      . $scriptPath -LibraryOnly
+      Write-Error "script contract probe"
+    } | Should Throw "script contract probe"
   }
 }
 
