@@ -47,6 +47,10 @@ Describe "Script entry contract" {
     } | Should Throw "outside the bounds"
   }
 
+  It "declares strict mode latest literally" {
+    $scriptAst.Extent.Text | Should Match "(?im)^\s*Set-StrictMode\s+-Version\s+Latest\s*$"
+  }
+
   It "stops on non-terminating errors" {
     {
       $ErrorActionPreference = "Continue"
