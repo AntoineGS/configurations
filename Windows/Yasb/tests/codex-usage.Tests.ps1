@@ -29,6 +29,30 @@ function New-TestOutput {
   }
 }
 
+function Get-TestCacheFallback {
+  param(
+    [object]$Output,
+    [DateTimeOffset]$Now
+  )
+
+  $cachePath = Join-Path $TestDrive "$([guid]::NewGuid()).json"
+  $Output | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $cachePath
+  Get-CodexUsageFallback -ErrorMessage "offline" -CachePath $cachePath -Now $Now
+}
+
+function Assert-UnavailableUsageOutput {
+  param([object]$Result)
+
+  ($Result.Keys -join ",") | Should Be "label,weekly_percent,weekly_reset,primary_percent,primary_reset,tooltip,stale"
+  $Result.label | Should Be "Codex ?"
+  $Result.weekly_percent | Should Be $null
+  $Result.weekly_reset | Should Be "--"
+  $Result.primary_percent | Should Be $null
+  $Result.primary_reset | Should Be "--"
+  $Result.tooltip | Should Be "Codex usage unavailable: offline"
+  $Result.stale | Should Be $true
+}
+
 function Assert-InvalidUsagePercent {
   param(
     [AllowNull()][object]$UsedPercent,
@@ -418,6 +442,76 @@ Describe "Get-CodexUsageFallback" {
     $result.primary_percent | Should Be $null
     $result.primary_reset | Should Be "--"
     $result.tooltip | Should Be "Codex usage unavailable: offline"
+    $result.stale | Should Be $true
+  }
+
+  It "returns unavailable output when the cache has an extra field" {
+    $cached = New-TestOutput
+    $cached.extra = "unexpected"
+
+    $result = Get-TestCacheFallback -Output $cached -Now $now
+
+    Assert-UnavailableUsageOutput -Result $result
+  }
+
+  $invalidStringFields = @(
+    @{ Field = "label"; Value = 34 },
+    @{ Field = "weekly_reset"; Value = @("6d", "7d") },
+    @{ Field = "primary_reset"; Value = @{ value = "2h30m" } },
+    @{ Field = "tooltip"; Value = @("line one", "line two") }
+  )
+  It "returns unavailable output when <Field> is not a scalar string" -TestCases $invalidStringFields {
+    param($Field, $Value)
+    $cached = New-TestOutput
+    $cached[$Field] = $Value
+
+    $result = Get-TestCacheFallback -Output $cached -Now $now
+
+    Assert-UnavailableUsageOutput -Result $result
+  }
+
+  $invalidPercentages = @(
+    @{ Field = "weekly_percent"; Value = 999 },
+    @{ Field = "primary_percent"; Value = -4 },
+    @{ Field = "weekly_percent"; Value = 12.5 },
+    @{ Field = "primary_percent"; Value = "12" },
+    @{ Field = "weekly_percent"; Value = @(34, 35) }
+  )
+  It "returns unavailable output when <Field> is not an integral percentage: <Value>" -TestCases $invalidPercentages {
+    param($Field, $Value)
+    $cached = New-TestOutput
+    $cached[$Field] = $Value
+
+    $result = Get-TestCacheFallback -Output $cached -Now $now
+
+    Assert-UnavailableUsageOutput -Result $result
+  }
+
+  $invalidStaleValues = @(
+    @{ Value = "false" },
+    @{ Value = $true },
+    @{ Value = @($false, $false) }
+  )
+  It "returns unavailable output when stale is not scalar false: <Value>" -TestCases $invalidStaleValues {
+    param($Value)
+    $cached = New-TestOutput
+    $cached.stale = $Value
+
+    $result = Get-TestCacheFallback -Output $cached -Now $now
+
+    Assert-UnavailableUsageOutput -Result $result
+  }
+
+  It "accepts valid percentage boundary values" {
+    $cached = New-TestOutput
+    $cached.weekly_percent = 100
+    $cached.primary_percent = 0
+
+    $result = Get-TestCacheFallback -Output $cached -Now $now
+
+    $result.label | Should Be "34%/6d20h"
+    $result.weekly_percent | Should Be 100
+    $result.primary_percent | Should Be 0
     $result.stale | Should Be $true
   }
 

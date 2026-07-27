@@ -164,6 +164,46 @@ function Get-CodexUsageProperty {
   $property.Value
 }
 
+function ConvertTo-CodexUsageCacheOutput {
+  param([AllowNull()][object]$InputObject)
+
+  $fieldNames = @(
+    "label", "weekly_percent", "weekly_reset", "primary_percent", "primary_reset", "tooltip", "stale"
+  )
+  if ($InputObject -is [System.Collections.IDictionary]) {
+    $actualFieldNames = @($InputObject.Keys | ForEach-Object { [string]$_ })
+  } elseif ($null -ne $InputObject) {
+    $actualFieldNames = @($InputObject.PSObject.Properties.Name)
+  } else {
+    $actualFieldNames = @()
+  }
+  if (
+    $actualFieldNames.Count -ne $fieldNames.Count -or
+    @($actualFieldNames | Where-Object { $fieldNames -cnotcontains $_ }).Count -gt 0
+  ) {
+    throw "Codex usage cache fields are invalid."
+  }
+
+  $normalized = [ordered]@{}
+  foreach ($fieldName in $fieldNames) {
+    $normalized[$fieldName] = Get-CodexUsageProperty -InputObject $InputObject -Name $fieldName
+  }
+  foreach ($fieldName in @("label", "weekly_reset", "primary_reset", "tooltip")) {
+    $value = $normalized[$fieldName]
+    if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
+      throw "Codex usage cache $fieldName must be a nonblank string."
+    }
+  }
+
+  $normalized.weekly_percent = ConvertTo-UsagePercent -Value $normalized.weekly_percent -WindowName "weekly"
+  $normalized.primary_percent = ConvertTo-UsagePercent -Value $normalized.primary_percent -WindowName "primary"
+  if ($normalized.stale -isnot [bool] -or $normalized.stale) {
+    throw "Codex usage cache stale must be false."
+  }
+
+  $normalized
+}
+
 function Write-CodexUsageCache {
   param(
     [Parameter(Mandatory)][object]$Output,
@@ -213,21 +253,7 @@ function Get-CodexUsageFallback {
   try {
     $cacheFile = Get-Item -LiteralPath $CachePath -ErrorAction Stop
     $cache = Get-Content -Raw -LiteralPath $CachePath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    $fieldNames = @(
-      "label", "weekly_percent", "weekly_reset", "primary_percent", "primary_reset", "tooltip", "stale"
-    )
-    $normalized = [ordered]@{}
-    foreach ($fieldName in $fieldNames) {
-      $normalized[$fieldName] = Get-CodexUsageProperty -InputObject $cache -Name $fieldName
-    }
-    if (
-      [string]::IsNullOrWhiteSpace([string]$normalized.label) -or
-      [string]::IsNullOrWhiteSpace([string]$normalized.tooltip) -or
-      $null -eq $normalized.weekly_percent -or
-      $null -eq $normalized.primary_percent
-    ) {
-      throw "Codex usage cache has empty usage data."
-    }
+    $normalized = ConvertTo-CodexUsageCacheOutput -InputObject $cache
 
     $age = Format-CacheAge -CacheTime ([DateTimeOffset]$cacheFile.LastWriteTimeUtc) -Now $Now
     $normalized.tooltip = "Stale (${age}): $reason`n$($normalized.tooltip)"
