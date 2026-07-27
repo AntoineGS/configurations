@@ -45,6 +45,8 @@ Successful output contains:
 
 The Codex response names windows `primary` and `secondary`; the widget must not assume fixed durations when formatting the tooltip. It labels the secondary window `Weekly` to match the current Waybar display, while including the server-provided duration when it differs from seven days.
 
+The secondary window is required for a successful refresh because it supplies the requested weekly label. A response with no secondary window follows the normal cache or unavailable fallback path, even when primary-window data is present.
+
 Reset timestamps are Unix seconds. Countdown formatting uses the largest two non-zero units from days, hours, and minutes, removes spacing between units, and clamps elapsed resets to `now` rather than producing negative values.
 
 ## YASB Widget
@@ -79,7 +81,7 @@ When app-server startup, initialization, response parsing, or the rate-limit req
 3. Set `stale` to `true`.
 4. If no cache exists, return a valid fallback object whose visible label becomes `Codex ?` and whose tooltip describes the failure.
 
-The helper has a finite timeout for the complete app-server exchange and always terminates the child process. A failed refresh must still exit successfully after emitting valid fallback JSON so YASB can render the stale or unavailable state.
+The helper allows 15 seconds for the complete app-server exchange and always terminates the child process. A failed refresh must still exit successfully after emitting valid fallback JSON so YASB can render the stale or unavailable state.
 
 The cache is not given an age-based expiry. A stale tooltip includes the cache timestamp so the user can judge its age, and the next scheduled poll always retries Codex.
 
