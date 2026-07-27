@@ -767,8 +767,7 @@ def --env y [...args] {
 alias ll = ls -al
 alias :q = exit
 alias lg = lazygit
-alias gu = gitui
-alias guw = gitui --watcher
+alias ocv = opencode
 alias clauded = claude --dangerously-skip-permissions
 
 $env._ZO_FZF_OPTS = "--style=full --layout=reverse --preview='~/.config/fzf/fzf-preview.sh {2..}' --preview-window=right:50%:wrap"
