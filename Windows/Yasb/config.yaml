@@ -63,7 +63,7 @@ widgets:
       tooltip: true
       tooltip_label: "{data[tooltip]}"
       exec_options:
-        run_cmd: "pwsh.exe -NoProfile -NonInteractive -File %USERPROFILE%\\.config\\yasb\\codex-usage.ps1"
+        run_cmd: "pwsh.exe -NoProfile -NonInteractive -File \"%USERPROFILE%\\.config\\yasb\\codex-usage.ps1\""
         run_interval: 300000
         return_format: "json"
         hide_empty: false
