@@ -220,6 +220,14 @@ function Get-CodexUsageFallback {
     foreach ($fieldName in $fieldNames) {
       $normalized[$fieldName] = Get-CodexUsageProperty -InputObject $cache -Name $fieldName
     }
+    if (
+      [string]::IsNullOrWhiteSpace([string]$normalized.label) -or
+      [string]::IsNullOrWhiteSpace([string]$normalized.tooltip) -or
+      $null -eq $normalized.weekly_percent -or
+      $null -eq $normalized.primary_percent
+    ) {
+      throw "Codex usage cache has empty usage data."
+    }
 
     $age = Format-CacheAge -CacheTime ([DateTimeOffset]$cacheFile.LastWriteTimeUtc) -Now $Now
     $normalized.tooltip = "Stale (${age}): $reason`n$($normalized.tooltip)"
