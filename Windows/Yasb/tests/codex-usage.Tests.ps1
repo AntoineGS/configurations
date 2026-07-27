@@ -3,7 +3,7 @@ $scriptPath = Join-Path $PSScriptRoot "..\codex-usage.ps1"
 
 function New-TestWindow {
   param(
-    [int]$UsedPercent,
+    [AllowNull()][object]$UsedPercent,
     [AllowNull()][object]$ResetsAt,
     [AllowNull()][object]$WindowDurationMins
   )
@@ -13,6 +13,27 @@ function New-TestWindow {
     resetsAt = $ResetsAt
     windowDurationMins = $WindowDurationMins
   }
+}
+
+function Assert-InvalidUsagePercent {
+  param(
+    [AllowNull()][object]$UsedPercent,
+    [DateTimeOffset]$Now
+  )
+
+  $primaryLimits = [pscustomobject]@{
+    primary = New-TestWindow $UsedPercent $null 300
+    secondary = New-TestWindow 20 $null 10080
+  }
+  $weeklyLimits = [pscustomobject]@{
+    primary = New-TestWindow 10 $null 300
+    secondary = New-TestWindow $UsedPercent $null 10080
+  }
+
+  { ConvertTo-CodexUsageOutput -RateLimits $primaryLimits -Now $Now } |
+    Should Throw "primary usedPercent must be a numeric integer from 0 to 100"
+  { ConvertTo-CodexUsageOutput -RateLimits $weeklyLimits -Now $Now } |
+    Should Throw "weekly usedPercent must be a numeric integer from 0 to 100"
 }
 
 Describe "Script entry contract" {
@@ -190,6 +211,26 @@ Describe "ConvertTo-CodexUsageOutput" {
     $result = ConvertTo-CodexUsageOutput -RateLimits $limits -Now $now
 
     $result.tooltip | Should Be "Session: 10% (resets in 1h)`nUsage (2d): 44% (resets in 1d1h)"
+  }
+
+  It "rejects null usage percentages" {
+    Assert-InvalidUsagePercent -UsedPercent $null -Now $now
+  }
+
+  It "rejects fractional usage percentages" {
+    Assert-InvalidUsagePercent -UsedPercent 12.5 -Now $now
+  }
+
+  It "rejects nonnumeric usage percentages" {
+    Assert-InvalidUsagePercent -UsedPercent "12" -Now $now
+  }
+
+  It "rejects usage percentages below zero" {
+    Assert-InvalidUsagePercent -UsedPercent (-1) -Now $now
+  }
+
+  It "rejects usage percentages above 100" {
+    Assert-InvalidUsagePercent -UsedPercent 101 -Now $now
   }
 
   It "requires a primary window" {
