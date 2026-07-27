@@ -125,3 +125,115 @@ function ConvertTo-CodexUsageOutput {
     stale = $false
   }
 }
+
+function Format-CacheAge {
+  param(
+    [DateTimeOffset]$CacheTime,
+    [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow
+  )
+
+  $age = $Now - $CacheTime
+  if ($age.TotalMinutes -lt 1) { return "just now" }
+  if ($age.TotalHours -lt 1) { return "$([math]::Floor($age.TotalMinutes))m old" }
+  if ($age.TotalDays -lt 1) { return "$([math]::Floor($age.TotalHours))h old" }
+
+  "$([math]::Floor($age.TotalDays))d old"
+}
+
+function Get-CodexUsageProperty {
+  param(
+    [AllowNull()][object]$InputObject,
+    [string]$Name
+  )
+
+  if ($null -eq $InputObject) {
+    throw "Codex usage cache is empty."
+  }
+  if ($InputObject -is [System.Collections.IDictionary]) {
+    if (-not $InputObject.Contains($Name)) {
+      throw "Codex usage cache is missing $Name."
+    }
+    return $InputObject[$Name]
+  }
+
+  $property = $InputObject.PSObject.Properties[$Name]
+  if ($null -eq $property) {
+    throw "Codex usage cache is missing $Name."
+  }
+
+  $property.Value
+}
+
+function Write-CodexUsageCache {
+  param(
+    [Parameter(Mandatory)][object]$Output,
+    [Parameter(Mandatory)][string]$CachePath
+  )
+
+  if ((Get-CodexUsageProperty -InputObject $Output -Name "stale") -eq $true) {
+    return
+  }
+
+  $fieldNames = @(
+    "label", "weekly_percent", "weekly_reset", "primary_percent", "primary_reset", "tooltip", "stale"
+  )
+  $normalized = [ordered]@{}
+  foreach ($fieldName in $fieldNames) {
+    $normalized[$fieldName] = Get-CodexUsageProperty -InputObject $Output -Name $fieldName
+  }
+
+  $fullCachePath = [System.IO.Path]::GetFullPath($CachePath)
+  $parentPath = [System.IO.Path]::GetDirectoryName($fullCachePath)
+  [System.IO.Directory]::CreateDirectory($parentPath) | Out-Null
+  $temporaryPath = Join-Path $parentPath ".$([System.IO.Path]::GetFileName($fullCachePath)).$([guid]::NewGuid()).tmp"
+
+  try {
+    $json = $normalized | ConvertTo-Json -Compress
+    [System.IO.File]::WriteAllText($temporaryPath, $json, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::Move($temporaryPath, $fullCachePath, $true)
+  } finally {
+    if ([System.IO.File]::Exists($temporaryPath)) {
+      [System.IO.File]::Delete($temporaryPath)
+    }
+  }
+}
+
+function Get-CodexUsageFallback {
+  param(
+    [AllowNull()][object]$ErrorMessage,
+    [Parameter(Mandatory)][string]$CachePath,
+    [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow
+  )
+
+  $reason = ([string]$ErrorMessage) -replace "\r\n|\r|\n", " "
+  if ($reason.Length -gt 160) {
+    $reason = $reason.Substring(0, 160)
+  }
+
+  try {
+    $cacheFile = Get-Item -LiteralPath $CachePath -ErrorAction Stop
+    $cache = Get-Content -Raw -LiteralPath $CachePath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    $fieldNames = @(
+      "label", "weekly_percent", "weekly_reset", "primary_percent", "primary_reset", "tooltip", "stale"
+    )
+    $normalized = [ordered]@{}
+    foreach ($fieldName in $fieldNames) {
+      $normalized[$fieldName] = Get-CodexUsageProperty -InputObject $cache -Name $fieldName
+    }
+
+    $age = Format-CacheAge -CacheTime ([DateTimeOffset]$cacheFile.LastWriteTimeUtc) -Now $Now
+    $normalized.tooltip = "Stale (${age}): $reason`n$($normalized.tooltip)"
+    $normalized.stale = $true
+    return $normalized
+  } catch {
+    return [ordered]@{
+      label = "Codex ?"
+      weekly_percent = $null
+      weekly_reset = "--"
+      primary_percent = $null
+      primary_reset = "--"
+      tooltip = "Codex usage unavailable: $reason"
+      stale = $true
+    }
+  }
+}
