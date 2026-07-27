@@ -42,8 +42,10 @@ applications:
     entries:
       - check:
           linux: npm ls -g opencode-with-claude >/dev/null 2>&1
+          windows: npm ls -g opencode-with-claude *> $null
         run:
           linux: npm install -g opencode-with-claude
+          windows: npm install -g opencode-with-claude
         name: claude-plugin
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
@@ -52,10 +54,12 @@ applications:
         name: opencode-v symlink
       - targets:
           linux: ~/.config/opencode
+          windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
       - targets:
           linux: ~/.config/cortexkit
+          windows: ~/.config/cortexkit
         name: magic-context config
         backup: ./Linux/cortexkit
         files:
@@ -1101,14 +1105,14 @@ applications:
     entries:
       - targets:
           linux: ~/.config/btop
-          windows: ~/.config/btop
+          windows: ~/AppData/Local/Microsoft/WinGet/Links
         name: config
         backup: ./Linux/btop
         files:
           - btop.conf
       - targets:
           linux: ~/.config/btop/themes
-          windows: ~/config/btop/themes
+          windows: ~/AppData/Local/Microsoft/Winget/Links/themes
         name: themes
         backup: ./Linux/btop/themes
   - package:
