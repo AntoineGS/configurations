@@ -70,7 +70,7 @@ Style the widget with the existing dim text color and spacing used for subdued b
 
 ## Deployment
 
-Add `codex-usage.ps1` to the existing YASB tidydots entry so it is restored beside `config.yaml` and `styles.css` under `~/.config/yasb`. The YASB command invokes this deployed path with PowerShell 7 using `pwsh.exe -NoProfile -NonInteractive -File`.
+Add `codex-usage.ps1` to the existing YASB tidydots entry so it is restored beside `config.yaml` and `styles.css` under `~/.config/yasb`. YASB 2.0.5 naively splits `run_cmd` on spaces before list-form shell execution, so a quoted `-File` path is not reliable. The widget instead uses `pwsh.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAVQBTAEUAUgBQAFIATwBGAEkATABFACAAJwAuAGMAbwBuAGYAaQBnAFwAeQBhAHMAYgBcAGMAbwBkAGUAeAAtAHUAcwBhAGcAZQAuAHAAcwAxACcAKQA=`, whose UTF-16LE payload decodes to `& (Join-Path $env:USERPROFILE '.config\yasb\codex-usage.ps1')`.
 
 Codex remains an external prerequisite. This change does not install Codex CLI or automate `codex login`.
 

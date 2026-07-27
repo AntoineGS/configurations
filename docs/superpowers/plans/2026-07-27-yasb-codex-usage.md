@@ -545,7 +545,8 @@ widgets:
       tooltip: true
       tooltip_label: "{data[tooltip]}"
       exec_options:
-        run_cmd: "pwsh.exe -NoProfile -NonInteractive -File %USERPROFILE%\\.config\\yasb\\codex-usage.ps1"
+        # Decodes to: & (Join-Path $env:USERPROFILE '.config\yasb\codex-usage.ps1')
+        run_cmd: "pwsh.exe -NoProfile -NonInteractive -EncodedCommand JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAVQBTAEUAUgBQAFIATwBGAEkATABFACAAJwAuAGMAbwBuAGYAaQBnAFwAeQBhAHMAYgBcAGMAbwBkAGUAeAAtAHUAcwBhAGcAZQAuAHAAcwAxACcAKQA="
         run_interval: 300000
         return_format: "json"
         hide_empty: false
@@ -580,29 +581,29 @@ Add only this line beneath `styles.css` in the existing YASB entry:
           - codex-usage.ps1
 ```
 
-Do not alter or stage unrelated existing changes in `tidydots.yaml`.
+In the isolated worktree, keep this as the only `tidydots.yaml` change.
 
 - [ ] **Step 5: Validate YAML and tidydots without changing the system**
 
 Run:
 
 ```powershell
-python -c "import yaml; c=yaml.safe_load(open('Windows/Yasb/config.yaml', encoding='utf-8')); assert c['widgets']['codex_usage']['type'] == 'yasb.custom.CustomWidget'; assert c['bars']['primary-bar']['widgets']['right'][0] == 'codex_usage'; assert c['widgets']['codex_usage']['options']['exec_options']['run_interval'] == 300000"
-tidydots list
-tidydots restore -n
+python -c "import base64, yaml; c=yaml.safe_load(open('Windows/Yasb/config.yaml', encoding='utf-8')); e=c['widgets']['codex_usage']['options']['exec_options']; p='JgAgACgASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAVQBTAEUAUgBQAFIATwBGAEkATABFACAAJwAuAGMAbwBuAGYAaQBnAFwAeQBhAHMAYgBcAGMAbwBkAGUAeAAtAHUAcwBhAGcAZQAuAHAAcwAxACcAKQA='; d='& (Join-Path `$env:USERPROFILE ' + chr(39) + '.config\\yasb\\codex-usage.ps1' + chr(39) + ')'; assert c['widgets']['codex_usage']['type'] == 'yasb.custom.CustomWidget'; assert c['bars']['primary-bar']['widgets']['right'][0] == 'codex_usage'; assert e['run_cmd'] == 'pwsh.exe -NoProfile -NonInteractive -EncodedCommand ' + p; assert base64.b64decode(p).decode('utf-16le') == d; assert e['run_interval'] == 300000"
+tidydots --dir . list
+tidydots --dir . restore -n
 ```
 
-Expected: YAML assertion exits zero; `tidydots list` parses the v3 configuration; dry-run includes `codex-usage.ps1` under the Windows YASB target and makes no filesystem changes. Ignore unrelated dry-run entries that predate this feature.
+Expected: YAML assertions exit zero, including exact `run_cmd` and decoded-command checks; `tidydots --dir . list` parses the worktree's v3 configuration; `tidydots --dir . restore -n` includes `codex-usage.ps1` under the Windows YASB target and makes no filesystem changes. Ignore unrelated dry-run entries that predate this feature.
 
 - [ ] **Step 6: Commit files without unrelated working-tree changes**
 
-Inspect `git status --short` and `git diff` first. Commit only YASB files that contain no pre-existing user edits:
+Inspect `git status --short` and `git diff` first. In the isolated worktree, commit the widget configuration, styling, and helper mapping together:
 
 ```powershell
-git commit --only Windows/Yasb/config.yaml Windows/Yasb/styles.css -m "feat(yasb): display Codex usage"
+git commit --only Windows/Yasb/config.yaml Windows/Yasb/styles.css tidydots.yaml -m "feat(yasb): display Codex usage"
 ```
 
-Leave `tidydots.yaml` uncommitted because it already had unrelated user changes before this feature. Keep the one-line helper mapping in the working tree.
+The feature mapping in `tidydots.yaml` is committed on this branch. During integration, preserve any unrelated `tidydots.yaml` changes that remain in the main checkout.
 
 ### Task 5: Deployment And End-To-End Verification
 
@@ -620,26 +621,27 @@ Run:
 pwsh -NoProfile -NonInteractive -Command '$result = Invoke-Pester -Script Windows/Yasb/tests/codex-usage.Tests.ps1 -PassThru; if ($result.FailedCount -gt 0) { exit 1 }'
 python -c "import yaml; yaml.safe_load(open('Windows/Yasb/config.yaml', encoding='utf-8')); yaml.safe_load(open('tidydots.yaml', encoding='utf-8'))"
 pwsh -NoProfile -NonInteractive -Command '$lines = @(& ./Windows/Yasb/codex-usage.ps1); if ($lines.Count -ne 1) { throw "Expected one JSON line, got $($lines.Count)" }; $value = $lines[0] | ConvertFrom-Json; if ([string]::IsNullOrWhiteSpace($value.label) -or [string]::IsNullOrWhiteSpace($value.tooltip)) { throw "Missing widget output" }'
-tidydots restore -n
+tidydots --dir . list
+tidydots --dir . restore -n
 git diff --check
 ```
 
-Expected: Pester has zero failures, both YAML files parse, helper emits one valid JSON line, tidydots shows only planned changes, and `git diff --check` emits no errors.
+Expected: Pester has zero failures, both YAML files parse, helper emits one valid JSON line, worktree-scoped tidydots list and dry-run show only planned changes, and `git diff --check` emits no errors.
 
 - [ ] **Step 2: Show the dry-run and obtain confirmation before restore**
 
-Summarize the `tidydots restore -n` YASB changes to the user. Do not run a real restore until the user explicitly confirms it, as required by the repository's tidydots safety workflow.
+Summarize the `tidydots --dir . restore -n` YASB changes to the user. Do not run a real restore until the branch is integrated into main and the user explicitly confirms it, as required by the repository's tidydots safety workflow.
 
 - [ ] **Step 3: Restore after confirmation and verify the deployed helper**
 
-After explicit confirmation, run:
+After the branch is integrated, switch to the main checkout. After explicit confirmation, run there:
 
 ```powershell
 tidydots restore
 pwsh -NoProfile -NonInteractive -Command '$path = Join-Path $HOME ".config\yasb\codex-usage.ps1"; if (-not (Test-Path -LiteralPath $path)) { throw "Helper was not deployed" }; & $path | ConvertFrom-Json | Select-Object label, stale, tooltip'
 ```
 
-Expected: tidydots deploys the helper and the deployed command returns a populated object.
+Expected: main's integrated tidydots configuration deploys the helper and the deployed command returns a populated object.
 
 - [ ] **Step 4: Reload YASB and inspect runtime logs**
 
@@ -655,4 +657,4 @@ Expected: the bar reloads with a dim `<percentage>%/<reset>` Codex label before 
 
 - [ ] **Step 5: Report final status and residual constraints**
 
-Report the exact verification outputs, note that `tidydots.yaml` remains uncommitted with the user's pre-existing changes, and state that the integration depends on the experimental Codex app-server protocol available in Codex CLI 0.145.0.
+Report the exact verification outputs, note that the feature's `tidydots.yaml` mapping was committed on the feature branch, preserve any unrelated main-checkout changes during integration, and state that the integration depends on the experimental Codex app-server protocol available in Codex CLI 0.145.0.

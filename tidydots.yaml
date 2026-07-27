@@ -286,6 +286,7 @@ applications:
         backup: ./Windows/Yasb
         files:
           - config.yaml
+          - codex-usage.ps1
           - styles.css
   - name: windows-terminal
     when: '{{ eq .OS "linux" }}'

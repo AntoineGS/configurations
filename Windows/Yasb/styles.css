@@ -48,6 +48,14 @@
   padding: 0;
 }
 
+/* ==================== Codex usage ==================== */
+.codex-usage-widget {
+  margin-right: 10px;
+}
+.codex-usage-widget .label {
+  color: var(--text-dim);
+}
+
 /* ==================== Workspaces ==================== */
 .komorebi-workspaces {
   background-color: transparent;
