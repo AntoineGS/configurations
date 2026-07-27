@@ -15,6 +15,20 @@ function New-TestWindow {
   }
 }
 
+function New-TestOutput {
+  param([bool]$Stale = $false)
+
+  [ordered]@{
+    label = "34%/6d20h"
+    weekly_percent = 34
+    weekly_reset = "6d20h"
+    primary_percent = 12
+    primary_reset = "2h30m"
+    tooltip = "Session: 12% (resets in 2h30m)`nWeekly: 34% (resets in 6d20h)"
+    stale = $Stale
+  }
+}
+
 function Assert-InvalidUsagePercent {
   param(
     [AllowNull()][object]$UsedPercent,
@@ -249,5 +263,146 @@ Describe "ConvertTo-CodexUsageOutput" {
     }
 
     { ConvertTo-CodexUsageOutput -RateLimits $limits -Now $now } | Should Throw "weekly usage window"
+  }
+}
+
+Describe "Format-CacheAge" {
+  $now = [DateTimeOffset]::Parse("2026-07-27T12:00:00Z")
+
+  It "formats cache age boundaries using whole units" {
+    Format-CacheAge -CacheTime $now.AddSeconds(-59) -Now $now | Should Be "just now"
+    Format-CacheAge -CacheTime $now.AddMinutes(-1) -Now $now | Should Be "1m old"
+    Format-CacheAge -CacheTime $now.AddSeconds(-3599) -Now $now | Should Be "59m old"
+    Format-CacheAge -CacheTime $now.AddHours(-1) -Now $now | Should Be "1h old"
+    Format-CacheAge -CacheTime $now.AddSeconds(-86399) -Now $now | Should Be "23h old"
+    Format-CacheAge -CacheTime $now.AddDays(-1) -Now $now | Should Be "1d old"
+  }
+
+  It "treats a future cache timestamp as just now" {
+    Format-CacheAge -CacheTime $now.AddMinutes(5) -Now $now | Should Be "just now"
+  }
+}
+
+Describe "Write-CodexUsageCache" {
+  It "atomically replaces the cache with normalized output" {
+    $cachePath = Join-Path $TestDrive "replace\codex-usage.json"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $cachePath) | Out-Null
+    "old cache" | Set-Content -LiteralPath $cachePath
+
+    Write-CodexUsageCache -Output (New-TestOutput) -CachePath $cachePath
+
+    $cached = Get-Content -Raw -LiteralPath $cachePath | ConvertFrom-Json
+    $cached.label | Should Be "34%/6d20h"
+    $cached.weekly_percent | Should Be 34
+    $cached.stale | Should Be $false
+  }
+
+  It "creates the cache parent directory" {
+    $cachePath = Join-Path $TestDrive "new\nested\codex-usage.json"
+
+    Write-CodexUsageCache -Output (New-TestOutput) -CachePath $cachePath
+
+    Test-Path -LiteralPath $cachePath | Should Be $true
+  }
+
+  It "writes exactly the seven allowed normalized fields" {
+    $cachePath = Join-Path $TestDrive "allowed\codex-usage.json"
+    $output = New-TestOutput
+    $output.credentials = "secret"
+    $output.app_server_message = "upstream message"
+    $output.upstream_response = @{ access_token = "token" }
+
+    Write-CodexUsageCache -Output $output -CachePath $cachePath
+
+    $cached = Get-Content -Raw -LiteralPath $cachePath | ConvertFrom-Json
+    ($cached.PSObject.Properties.Name -join ",") |
+      Should Be "label,weekly_percent,weekly_reset,primary_percent,primary_reset,tooltip,stale"
+  }
+
+  It "does not leave a same-directory temporary file" {
+    $cachePath = Join-Path $TestDrive "cleanup\codex-usage.json"
+
+    Write-CodexUsageCache -Output (New-TestOutput) -CachePath $cachePath
+
+    @(Get-ChildItem -LiteralPath (Split-Path -Parent $cachePath) -File).Count | Should Be 1
+  }
+
+  It "does not overwrite the cache with stale fallback modifications" {
+    $cachePath = Join-Path $TestDrive "fresh-only\codex-usage.json"
+    Write-CodexUsageCache -Output (New-TestOutput) -CachePath $cachePath
+    $original = Get-Content -Raw -LiteralPath $cachePath
+    $fallback = New-TestOutput -Stale $true
+    $fallback.tooltip = "Stale (1h old): failed`n$($fallback.tooltip)"
+
+    Write-CodexUsageCache -Output $fallback -CachePath $cachePath
+
+    Get-Content -Raw -LiteralPath $cachePath | Should Be $original
+  }
+}
+
+Describe "Get-CodexUsageFallback" {
+  $now = [DateTimeOffset]::Parse("2026-07-27T12:00:00Z")
+
+  It "returns cached normalized data marked stale with its age and reason" {
+    $cachePath = Join-Path $TestDrive "valid\codex-usage.json"
+    Write-CodexUsageCache -Output (New-TestOutput) -CachePath $cachePath
+    [System.IO.File]::SetLastWriteTimeUtc($cachePath, $now.AddHours(-1).UtcDateTime)
+
+    $result = Get-CodexUsageFallback -ErrorMessage "request failed" -CachePath $cachePath -Now $now
+
+    ($result.Keys -join ",") | Should Be "label,weekly_percent,weekly_reset,primary_percent,primary_reset,tooltip,stale"
+    $result.label | Should Be "34%/6d20h"
+    $result.weekly_percent | Should Be 34
+    $result.weekly_reset | Should Be "6d20h"
+    $result.primary_percent | Should Be 12
+    $result.primary_reset | Should Be "2h30m"
+    $result.tooltip | Should Be "Stale (1h old): request failed`nSession: 12% (resets in 2h30m)`nWeekly: 34% (resets in 6d20h)"
+    $result.stale | Should Be $true
+  }
+
+  It "returns unavailable output when no cache exists" {
+    $result = Get-CodexUsageFallback -ErrorMessage "not signed in" -CachePath (Join-Path $TestDrive "missing.json") -Now $now
+
+    ($result.Keys -join ",") | Should Be "label,weekly_percent,weekly_reset,primary_percent,primary_reset,tooltip,stale"
+    $result.label | Should Be "Codex ?"
+    $result.weekly_percent | Should Be $null
+    $result.weekly_reset | Should Be "--"
+    $result.primary_percent | Should Be $null
+    $result.primary_reset | Should Be "--"
+    $result.tooltip | Should Be "Codex usage unavailable: not signed in"
+    $result.stale | Should Be $true
+  }
+
+  It "returns unavailable output for malformed cache JSON" {
+    $cachePath = Join-Path $TestDrive "malformed.json"
+    "{not json" | Set-Content -LiteralPath $cachePath
+
+    $result = Get-CodexUsageFallback -ErrorMessage "offline" -CachePath $cachePath -Now $now
+
+    $result.label | Should Be "Codex ?"
+    $result.tooltip | Should Be "Codex usage unavailable: offline"
+  }
+
+  It "returns unavailable output when a normalized field is missing" {
+    $cachePath = Join-Path $TestDrive "missing-field.json"
+    $incomplete = New-TestOutput
+    $incomplete.Remove("primary_reset")
+    $incomplete | ConvertTo-Json | Set-Content -LiteralPath $cachePath
+
+    $result = Get-CodexUsageFallback -ErrorMessage "offline" -CachePath $cachePath -Now $now
+
+    $result.label | Should Be "Codex ?"
+    $result.primary_reset | Should Be "--"
+    $result.tooltip | Should Be "Codex usage unavailable: offline"
+  }
+
+  It "replaces reason newlines and limits the displayed reason to 160 characters" {
+    $reason = ("x" * 80) + "`r`n" + ("y" * 100)
+    $expectedReason = (($reason -replace "`r`n|`r|`n", " ").Substring(0, 160))
+
+    $result = Get-CodexUsageFallback -ErrorMessage $reason -CachePath (Join-Path $TestDrive "sanitized.json") -Now $now
+
+    $result.tooltip | Should Be "Codex usage unavailable: $expectedReason"
+    $result.tooltip | Should Not Match "`r|`n"
   }
 }
