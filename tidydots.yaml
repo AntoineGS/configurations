@@ -1100,21 +1100,35 @@ applications:
   - package:
       managers:
         pacman: btop
-        winget: aristocratos.btop4win
     name: btop
+    when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
           linux: ~/.config/btop
-          windows: ~/AppData/Local/Microsoft/WinGet/Links
         name: config
         backup: ./Linux/btop
         files:
           - btop.conf
       - targets:
           linux: ~/.config/btop/themes
-          windows: ~/AppData/Local/Microsoft/Winget/Links/themes
         name: themes
         backup: ./Linux/btop/themes
+  - package:
+      managers:
+        winget: aristocratos.btop4win
+    name: btop4win
+    when: '{{ eq .OS "windows" }}'
+    entries:
+      - targets:
+          windows: ~/AppData/Local/Microsoft/WinGet/Links
+        name: config
+        backup: ./Windows/btop4win
+        files:
+          - btop.conf
+      - targets:
+          windows: ~/AppData/Local/Microsoft/WinGet/Links/themes
+        name: themes
+        backup: ./Windows/btop4win/themes
   - package:
       managers:
         winget: gsudo
