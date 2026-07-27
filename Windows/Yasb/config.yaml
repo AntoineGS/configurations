@@ -36,13 +36,14 @@ bars:
       # Waybar-inspired layout:
       # Left: workspaces
       # Center: clock
-      # Right: systray, traffic, volume, disk, memory, cpu
+      # Right: Codex usage, systray, traffic, volume, disk, memory, cpu
       left:
         - "komorebi_workspaces"
         # - "komorebi_active_layout"
       center:
         - "clock"
       right:
+        - "codex_usage"
         - "systray"
         # - "traffic"
         - "volume"
@@ -53,6 +54,24 @@ bars:
         - "cpu"
         # - "home"
 widgets:
+  codex_usage:
+    type: "yasb.custom.CustomWidget"
+    options:
+      label: "{data[label]}"
+      label_placeholder: "Codex..."
+      class_name: "codex-usage-widget"
+      tooltip: true
+      tooltip_label: "{data[tooltip]}"
+      exec_options:
+        run_cmd: "pwsh.exe -NoProfile -NonInteractive -File %USERPROFILE%\\.config\\yasb\\codex-usage.ps1"
+        run_interval: 300000
+        return_format: "json"
+        hide_empty: false
+        use_shell: true
+      callbacks:
+        on_left: "exec cmd.exe /c start https://chatgpt.com/codex/settings/usage"
+        on_middle: "do_nothing"
+        on_right: "do_nothing"
   clock:
     type: "yasb.clock.ClockWidget"
     options:
