@@ -396,6 +396,31 @@ Describe "Get-CodexUsageFallback" {
     $result.tooltip | Should Be "Codex usage unavailable: offline"
   }
 
+  It "returns unavailable output when all cache fields exist but usage data is empty" {
+    $cachePath = Join-Path $TestDrive "empty-fields.json"
+    $empty = [ordered]@{
+      label = "   "
+      weekly_percent = $null
+      weekly_reset = "--"
+      primary_percent = $null
+      primary_reset = "--"
+      tooltip = ""
+      stale = $false
+    }
+    $empty | ConvertTo-Json | Set-Content -LiteralPath $cachePath
+
+    $result = Get-CodexUsageFallback -ErrorMessage "offline" -CachePath $cachePath -Now $now
+
+    ($result.Keys -join ",") | Should Be "label,weekly_percent,weekly_reset,primary_percent,primary_reset,tooltip,stale"
+    $result.label | Should Be "Codex ?"
+    $result.weekly_percent | Should Be $null
+    $result.weekly_reset | Should Be "--"
+    $result.primary_percent | Should Be $null
+    $result.primary_reset | Should Be "--"
+    $result.tooltip | Should Be "Codex usage unavailable: offline"
+    $result.stale | Should Be $true
+  }
+
   It "replaces reason newlines and limits the displayed reason to 160 characters" {
     $reason = ("x" * 80) + "`r`n" + ("y" * 100)
     $expectedReason = (($reason -replace "`r`n|`r|`n", " ").Substring(0, 160))
