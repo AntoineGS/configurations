@@ -74,6 +74,36 @@ function Assert-InvalidUsagePercent {
     Should Throw "weekly usedPercent must be a numeric integer from 0 to 100"
 }
 
+function Start-TestOutputProcess {
+  param([Parameter(Mandatory)][string]$Script)
+
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Script))
+  $startInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME "pwsh.exe"))
+  $startInfo.ArgumentList.Add("-NoProfile")
+  $startInfo.ArgumentList.Add("-NonInteractive")
+  $startInfo.ArgumentList.Add("-EncodedCommand")
+  $startInfo.ArgumentList.Add($encoded)
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = [Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  $null = $process.Start()
+  $null = $process.StandardError.ReadToEndAsync()
+  $process
+}
+
+function Stop-TestOutputProcess {
+  param([Parameter(Mandatory)][Diagnostics.Process]$Process)
+
+  if (-not $Process.HasExited) {
+    $Process.Kill($true)
+  }
+  $Process.WaitForExit()
+  $Process.Dispose()
+}
+
 Describe "Script entry contract" {
   $scriptAst = (Get-Command $scriptPath).ScriptBlock.Ast
 
@@ -116,6 +146,102 @@ Describe "Script entry contract" {
       . $scriptPath -LibraryOnly
       Write-Error "script contract probe"
     } | Should Throw "script contract probe"
+  }
+
+  It "emits one unavailable JSON line and exits successfully when Codex cannot start" {
+    $cachePath = Join-Path $TestDrive "entry-fallback.json"
+    $emptyPath = Join-Path $TestDrive "empty-path"
+    New-Item -ItemType Directory -Path $emptyPath | Out-Null
+    $startInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME "pwsh.exe"))
+    foreach ($argument in @(
+      "-NoProfile", "-NonInteractive", "-File", $scriptPath,
+      "-CachePath", $cachePath, "-TimeoutSeconds", "1"
+    )) {
+      $startInfo.ArgumentList.Add($argument)
+    }
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Environment["PATH"] = $emptyPath
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+
+    try {
+      $null = $process.Start()
+      $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+      $stderrTask = $process.StandardError.ReadToEndAsync()
+      $process.WaitForExit(10000) | Should Be $true
+      $stdout = $stdoutTask.Result
+      $null = $stderrTask.Result
+
+      $process.ExitCode | Should Be 0
+      $lines = @($stdout -split "\r?\n" | Where-Object { $_.Length -gt 0 })
+      $lines.Count | Should Be 1
+      $result = $lines[0] | ConvertFrom-Json
+      $result.label | Should Be "Codex ?"
+      $result.stale | Should Be $true
+      Test-Path -LiteralPath $cachePath | Should Be $false
+    } finally {
+      if (-not $process.HasExited) {
+        $process.Kill($true)
+      }
+      $process.Dispose()
+    }
+  }
+}
+
+Describe "Read-AppServerResponse" {
+  It "ignores non-JSON lines and notifications before the requested response" {
+    $process = Start-TestOutputProcess -Script @'
+[Console]::Out.WriteLine("diagnostic text")
+[Console]::Out.WriteLine('{"method":"account/rateLimits/updated","params":{}}')
+[Console]::Out.WriteLine('{"id":0,"result":{"ready":true}}')
+'@
+
+    try {
+      $response = Read-AppServerResponse -Process $process -ResponseId 0 -Deadline ([DateTimeOffset]::UtcNow.AddSeconds(2))
+      $response.result.ready | Should Be $true
+    } finally {
+      Stop-TestOutputProcess -Process $process
+    }
+  }
+
+  It "throws a matching JSON-RPC error" {
+    $process = Start-TestOutputProcess -Script @'
+[Console]::Out.WriteLine('{"id":1,"error":{"code":-32000,"message":"not signed in"}}')
+'@
+
+    try {
+      { Read-AppServerResponse -Process $process -ResponseId 1 -Deadline ([DateTimeOffset]::UtcNow.AddSeconds(2)) } |
+        Should Throw "Codex app-server error: not signed in"
+    } finally {
+      Stop-TestOutputProcess -Process $process
+    }
+  }
+
+  It "throws when stdout closes before the requested response" {
+    $process = Start-TestOutputProcess -Script @'
+[Console]::Out.WriteLine('{"method":"initialized"}')
+'@
+
+    try {
+      { Read-AppServerResponse -Process $process -ResponseId 1 -Deadline ([DateTimeOffset]::UtcNow.AddSeconds(2)) } |
+        Should Throw "closed before response 1"
+    } finally {
+      Stop-TestOutputProcess -Process $process
+    }
+  }
+
+  It "throws when the deadline expires while waiting for stdout" {
+    $process = Start-TestOutputProcess -Script 'Start-Sleep -Seconds 5'
+
+    try {
+      { Read-AppServerResponse -Process $process -ResponseId 1 -Deadline ([DateTimeOffset]::UtcNow.AddMilliseconds(100)) } |
+        Should Throw "timed out"
+    } finally {
+      Stop-TestOutputProcess -Process $process
+    }
   }
 }
 
