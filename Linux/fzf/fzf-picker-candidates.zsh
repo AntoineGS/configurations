@@ -76,7 +76,7 @@ emit_cd_local_candidates() {
   dirs=()
   emit_candidate local . "$dir"
   emit_candidate local .. "${dir:h}"
-  fd --base-directory "$dir" --type d --max-depth 1 --hidden --color=never --print0 2>/dev/null |
+  fd --base-directory "$dir" --type d --max-depth 1 --hidden --no-ignore --color=never --print0 2>/dev/null |
     while IFS= read -r -d $'\0' name; do
       [[ $name == ./* ]] && name=${name[3,-1]}
       name=${name%/}
