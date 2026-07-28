@@ -448,6 +448,17 @@ applications:
           linux: ~/.config/fzf
         name: config
         backup: ./Linux/fzf
+      - targets:
+          windows: ~/.config/fzf
+        name: windows defaults
+        backup: ./Windows/fzf
+        files:
+          - fzfrc
+      - check:
+          windows: 'if ([Environment]::GetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", "User") -eq [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc")) { exit 0 } else { exit 1 }'
+        run:
+          windows: '[Environment]::SetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc"), "User")'
+        name: configure FZF_DEFAULT_OPTS_FILE
   - package:
       managers:
         pacman: ghostty
@@ -921,6 +932,11 @@ applications:
         backup: Both/Ripgrep/
         files:
           - .ripgreprc
+      - check:
+          windows: 'if ([Environment]::GetEnvironmentVariable("RIPGREP_CONFIG_PATH", "User") -eq [IO.Path]::Combine($HOME, ".ripgreprc")) { exit 0 } else { exit 1 }'
+        run:
+          windows: '[Environment]::SetEnvironmentVariable("RIPGREP_CONFIG_PATH", [IO.Path]::Combine($HOME, ".ripgreprc"), "User")'
+        name: configure RIPGREP_CONFIG_PATH
   - package:
       managers:
         apt: fd-find
@@ -1113,6 +1129,7 @@ applications:
     entries:
       - targets:
           linux: ~/.config/bat
+          windows: ~/AppData/Roaming/bat
         name: config
         backup: ./Linux/bat
         files:
@@ -1146,6 +1163,7 @@ applications:
           url: https://github.com/junegunn/fzf
           targets:
             linux: /usr/share/fzf
+            windows: ~/.local/share/fzf
           sudo: true
     name: fzf-repo
     entries: []
