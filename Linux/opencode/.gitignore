@@ -3,6 +3,7 @@
 !.gitignore
 !opencode.json
 !lsp-first.md
+!worktree-preferences.md
 !tui.json
 !regenerate.sh
 !agents/

@@ -3,7 +3,8 @@
   "autoupdate": false,
   "lsp": true,
   "instructions": [
-    "~/.config/opencode/lsp-first.md"
+    "~/.config/opencode/lsp-first.md",
+    "~/.config/opencode/worktree-preferences.md"
   ],
   "plugin": [
     "opencode-with-claude",
