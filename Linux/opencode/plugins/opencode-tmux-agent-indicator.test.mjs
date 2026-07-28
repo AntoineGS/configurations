@@ -5,7 +5,17 @@ import test from "node:test"
 const source = await readFile(new URL("./opencode-tmux-agent-indicator.js", import.meta.url), "utf8")
 const { TmuxAgentIndicator } = await import(`data:text/javascript,${encodeURIComponent(source)}`)
 
-async function createHarness(sessions = {}) {
+async function withPlatform(platform, callback) {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(process, "platform")
+  Object.defineProperty(process, "platform", { configurable: true, value: platform })
+  try {
+    return await callback()
+  } finally {
+    Object.defineProperty(process, "platform", originalDescriptor)
+  }
+}
+
+async function createHarness(sessions = {}, platform = "linux") {
   const states = []
   const lookups = []
   const $ = (strings, ...values) => {
@@ -23,9 +33,17 @@ async function createHarness(sessions = {}) {
       },
     },
   }
-  const hooks = await TmuxAgentIndicator({ $, client })
+  const hooks = await withPlatform(platform, () => TmuxAgentIndicator({ $, client }))
   return { hooks, lookups, states }
 }
+
+test("registers no hooks on Windows", async () => {
+  const { hooks, lookups, states } = await createHarness({}, "win32")
+
+  assert.deepEqual(hooks, {})
+  assert.deepEqual(lookups, [])
+  assert.deepEqual(states, [])
+})
 
 test("ignores child session idle while root idle marks done", async () => {
   const { hooks, states } = await createHarness({
