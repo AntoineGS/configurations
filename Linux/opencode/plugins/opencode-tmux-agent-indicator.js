@@ -16,7 +16,7 @@ export const TmuxAgentIndicator = async ({ $, client }) => {
     if (rootSessions.has(sessionID)) return rootSessions.get(sessionID);
 
     try {
-      const result = await client.session.get({ sessionID });
+      const result = await client.session.get({ path: { id: sessionID } });
       if (!result.data) return false;
       const root = !result.data.parentID;
       rootSessions.set(sessionID, root);

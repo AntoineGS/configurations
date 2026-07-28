@@ -15,9 +15,9 @@ async function createHarness(sessions = {}) {
   }
   const client = {
     session: {
-      get: async ({ sessionID }) => {
-        lookups.push(sessionID)
-        const value = sessions[sessionID]
+      get: async ({ path: { id } }) => {
+        lookups.push(id)
+        const value = sessions[id]
         if (value instanceof Error) throw value
         return { data: value }
       },
