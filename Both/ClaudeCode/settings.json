@@ -1,63 +1,16 @@
 {
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  },
   "attribution": {
     "commit": "",
     "pr": ""
   },
-  "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/tmux-mark-window.sh waiting"
-          },
-          {
-            "type": "command",
-            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::waiting::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/tmux-mark-window.sh completed"
-          },
-          {
-            "type": "command",
-            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::completed::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/tmux-mark-window.sh clear"
-          }
-        ]
-      }
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "npx -y ccstatusline@latest",
-    "padding": 0
-  },
+  "editorMode": "vim",
+  "effortLevel": "xhigh",
   "enabledPlugins": {
-    "gopls-lsp@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
+    "clangd-lsp@claude-plugins-official": true,
     "code-documentation@claude-code-workflows": true,
-    "comprehensive-review@claude-code-workflows": true,
     "code-refactoring@claude-code-workflows": true,
     "codebase-cleanup@claude-code-workflows": true,
+    "comprehensive-review@claude-code-workflows": true,
     "database-design@claude-code-workflows": true,
     "database-migrations@claude-code-workflows": true,
     "debugging-toolkit@claude-code-workflows": true,
@@ -66,41 +19,45 @@
     "deployment-validation@claude-code-workflows": true,
     "framework-migration@claude-code-workflows": true,
     "full-stack-orchestration@claude-code-workflows": true,
+    "gopls-lsp@claude-plugins-official": true,
     "javascript-typescript@claude-code-workflows": true,
+    "openviking-memory@openviking-local": true,
     "performance-testing-review@claude-code-workflows": true,
+    "rdbg-debugger@rdbg": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "safety-net@cc-marketplace": true,
     "security-scanning@claude-code-workflows": true,
     "shell-scripting@claude-code-workflows": true,
+    "superpowers@claude-plugins-official": true,
     "systems-programming@claude-code-workflows": true,
     "tdd-workflows@claude-code-workflows": true,
     "ui-design@claude-code-workflows": true,
-    "unit-testing@claude-code-workflows": true,
-    "openviking-memory@openviking-local": true,
-    "safety-net@cc-marketplace": true,
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "clangd-lsp@claude-plugins-official": true,
-    "rdbg-debugger@rdbg": true
+    "unit-testing@claude-code-workflows": true
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "extraKnownMarketplaces": {
-    "claude-code-workflows": {
+    "cc-marketplace": {
+      "autoUpdate": true,
       "source": {
-        "source": "github",
-        "repo": "wshobson/agents"
-      },
-      "autoUpdate": true
+        "repo": "kenryu42/cc-marketplace",
+        "source": "github"
+      }
+    },
+    "claude-code-workflows": {
+      "autoUpdate": true,
+      "source": {
+        "repo": "wshobson/agents",
+        "source": "github"
+      }
     },
     "openviking-local": {
+      "autoUpdate": true,
       "source": {
-        "source": "directory",
-        "path": "/home/antoinegs/.local/share/openviking-marketplace"
-      },
-      "autoUpdate": true
-    },
-    "cc-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "kenryu42/cc-marketplace"
-      },
-      "autoUpdate": true
+        "path": "/home/antoinegs/.local/share/openviking-marketplace",
+        "source": "directory"
+      }
     },
     "rdbg": {
       "source": {
@@ -109,9 +66,64 @@
       }
     }
   },
-  "effortLevel": "xhigh",
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "~/.claude/hooks/tmux-mark-window.sh waiting",
+            "type": "command"
+          },
+          {
+            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::waiting::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\a.simard.MULTIDEV\\.claude\\hooks\\herdr-agent-state.ps1\" session",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "~/.claude/hooks/tmux-mark-window.sh completed",
+            "type": "command"
+          },
+          {
+            "command": "[ -n \"$ZELLIJ\" ] && zellij pipe --name \"zellij-attention::completed::$ZELLIJ_PANE_ID\" >/dev/null 2>&1; true",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "~/.claude/hooks/tmux-mark-window.sh clear",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
   "skipDangerousModePermissionPrompt": true,
+  "statusLine": {
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0,
+    "type": "command"
+  },
   "theme": "auto",
-  "editorMode": "vim",
   "tui": "fullscreen"
 }
