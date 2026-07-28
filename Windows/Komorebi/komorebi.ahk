@@ -219,7 +219,6 @@ ExitResizeMode() {
     Run('powershell -Command "komorebic stop; gsudo komorebic start"',, "Hide")
     SetTimer ApplyNamedWorkspacesOnce, -3000
 }
-#p::Komorebic("toggle-pause")
 
 ; --- Layouts ---------------------------------------------------------------
 
@@ -227,6 +226,9 @@ ExitResizeMode() {
 #y::Komorebic("flip-layout vertical")
 
 ; --- Workspaces ------------------------------------------------------------
+
+#n::Komorebic("cycle-workspace next")
+#p::Komorebic("cycle-workspace previous")
 
 #2::Komorebic('focus-named-workspace "main"')
 #5::Komorebic('focus-named-workspace "shell"')
