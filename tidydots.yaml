@@ -1327,13 +1327,6 @@ applications:
     entries:
       - targets:
           linux: ~/.config/herdr
-        name: linux config
-        backup: ./Linux/Herdr
-        files:
-          - config.toml
-      - targets:
           windows: ~/AppData/Roaming/herdr
-        name: windows config
-        backup: ./Windows/Herdr
-        files:
-          - config.toml
+        name: config
+        backup: ./Both/Herdr
