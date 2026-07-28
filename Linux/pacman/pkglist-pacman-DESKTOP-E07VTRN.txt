@@ -16,7 +16,6 @@ deno
 discord
 docker-compose
 doctest
-dotnet-runtime-9.0
 dust
 electron
 expac
@@ -24,7 +23,7 @@ fastfetch
 fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
-fprintd
+freecad
 ghostty
 gimp
 github-cli
@@ -35,7 +34,6 @@ gopls
 gpsd
 gpu-screen-recorder
 gtk-doc
-gtkmm3
 gum
 htop
 hypridle
@@ -52,7 +50,7 @@ itstool
 kdenlive
 lazydocker
 lazygit
-libmpdclient
+libmspack
 libva-nvidia-driver
 luacheck
 luarocks
@@ -65,12 +63,14 @@ namcap
 ncdu
 nwg-hello
 obsidian
+openai-codex
 pamixer
 partitionmanager
 plymouth
 pnpm
 polkit-gnome
 power-profiles-daemon
+python-langchain
 python-pylint
 rapidfuzz-cpp
 rebuild-detector
