@@ -1311,3 +1311,24 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now user-cache-clean.timer
         name: enable-user-cache-timer
+  - package:
+      managers:
+        installer:
+          command:
+            linux: curl -fsSL https://herdr.dev/install.sh | sh
+            windows: powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"
+          binary: herdr
+    name: herdr
+    entries:
+      - targets:
+          linux: ~/.config/herdr
+        name: linux config
+        backup: ./Linux/Herdr
+        files:
+          - config.toml
+      - targets:
+          windows: ~/AppData/Roaming/herdr
+        name: windows config
+        backup: ./Windows/Herdr
+        files:
+          - config.toml
