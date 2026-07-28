@@ -338,13 +338,8 @@ alias ocv="opencode"
 alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
-if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
-    first_session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | head -1)
-    if [[ -n "$first_session" ]]; then
-        tmux attach-session -d -t "$first_session"
-    else
-        tmux new-session -s ssh_tmux
-    fi
+if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]]; then
+    herdr
 fi
 
 # Pull fresh env (WAYLAND_DISPLAY etc.) from tmux session on every prompt so
