@@ -5,17 +5,19 @@ import test from "node:test"
 const source = await readFile(new URL("./opencode-tmux-agent-indicator.js", import.meta.url), "utf8")
 const { TmuxAgentIndicator } = await import(`data:text/javascript,${encodeURIComponent(source)}`)
 
-async function withPlatform(platform, callback) {
-  const originalDescriptor = Object.getOwnPropertyDescriptor(process, "platform")
-  Object.defineProperty(process, "platform", { configurable: true, value: platform })
+async function withTmux(tmux, callback) {
+  const originalTmux = process.env.TMUX
+  if (tmux === null) delete process.env.TMUX
+  else process.env.TMUX = tmux
   try {
     return await callback()
   } finally {
-    Object.defineProperty(process, "platform", originalDescriptor)
+    if (originalTmux === undefined) delete process.env.TMUX
+    else process.env.TMUX = originalTmux
   }
 }
 
-async function createHarness(sessions = {}, platform = "linux") {
+async function createHarness(sessions = {}, tmux = "/tmp/tmux-1000/default,1,0") {
   const states = []
   const lookups = []
   const $ = (strings, ...values) => {
@@ -33,12 +35,12 @@ async function createHarness(sessions = {}, platform = "linux") {
       },
     },
   }
-  const hooks = await withPlatform(platform, () => TmuxAgentIndicator({ $, client }))
+  const hooks = await withTmux(tmux, () => TmuxAgentIndicator({ $, client }))
   return { hooks, lookups, states }
 }
 
-test("registers no hooks on Windows", async () => {
-  const { hooks, lookups, states } = await createHarness({}, "win32")
+test("registers no hooks outside tmux", async () => {
+  const { hooks, lookups, states } = await createHarness({}, null)
 
   assert.deepEqual(hooks, {})
   assert.deepEqual(lookups, [])

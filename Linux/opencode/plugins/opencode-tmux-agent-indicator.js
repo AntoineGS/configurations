@@ -3,7 +3,7 @@
 // Tracks session state and calls agent-state.sh to update tmux pane visuals.
 
 export const TmuxAgentIndicator = async ({ $, client }) => {
-  if (process.platform !== "linux") return {};
+  if (!process.env.TMUX) return {};
 
   const dir = process.env.TMUX_AGENT_INDICATOR_DIR
     || `${process.env.HOME}/.tmux/plugins/tmux-agent-indicator`;

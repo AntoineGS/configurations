@@ -13,5 +13,10 @@
 !skills/
 !skills/**
 !plugins/
+!plugins/context-usage.ts
+!plugins/context-usage.test.mjs
+!plugins/tokenizer-aliases.json
+!plugins/tokenizer-registry.d.ts
+!plugins/tokenizer-registry.mjs
 !plugins/opencode-tmux-agent-indicator.js
 !plugins/opencode-tmux-agent-indicator.test.mjs

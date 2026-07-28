@@ -38,7 +38,7 @@ applications:
         brew: opencode
         yay: opencode-bin
     name: opencode
-    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; magic-context plugin for self-managing context/memory
+    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; context analysis and magic-context plugins
     entries:
       - check:
           linux: npm ls -g opencode-with-claude >/dev/null 2>&1
@@ -57,6 +57,13 @@ applications:
           windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
+      - check:
+          linux: test -f ~/.config/opencode/plugins/vendor/node_modules/js-tiktoken/package.json && test -f ~/.config/opencode/plugins/vendor/node_modules/@huggingface/transformers/package.json
+          windows: 'if ((Test-Path -LiteralPath "$HOME/.config/opencode/plugins/vendor/node_modules/js-tiktoken/package.json") -and (Test-Path -LiteralPath "$HOME/.config/opencode/plugins/vendor/node_modules/@huggingface/transformers/package.json")) { exit 0 } else { exit 1 }'
+        run:
+          linux: npm install js-tiktoken@latest @huggingface/transformers@^3.3.3 --omit=dev --no-audit --loglevel=error --prefix ~/.config/opencode/plugins/vendor
+          windows: 'npm install "js-tiktoken@latest" "@huggingface/transformers@^3.3.3" --omit=dev --no-audit --loglevel=error --prefix "$HOME/.config/opencode/plugins/vendor"'
+        name: context-analysis tokenizers
   - package:
       managers:
         apt: neovim
