@@ -980,8 +980,6 @@ applications:
           windows: ~/.config/git
         name: config
         backup: ./Both/Git
-        files:
-          - config
   - package:
       managers:
         apt: gh
