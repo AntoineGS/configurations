@@ -341,7 +341,7 @@ alias clauded="claude --dangerously-skip-permissions"
 if [[ $- =~ i ]] && [[ -z "$TMUX" ]] && [[ -n "$SSH_TTY" ]]; then
     first_session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | head -1)
     if [[ -n "$first_session" ]]; then
-        tmux attach-session -t "$first_session"
+        tmux attach-session -d -t "$first_session"
     else
         tmux new-session -s ssh_tmux
     fi
@@ -396,3 +396,5 @@ export PATH="/home/antoinegs/.ocv/bin:$PATH"
 
 # bun completions
 [ -s "/tmp/opencode/bun-latest/_bun" ] && source "/tmp/opencode/bun-latest/_bun"
+
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv zsh)"
