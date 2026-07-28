@@ -211,6 +211,21 @@ test_directory_enumeration() {
       assert_file_equal "$expected" "$decoded" "$picker payload changed directory bytes for ${(qqq)names[i]}"
     done
   done
+
+  mkdir -- "$root/.git" "$root/.worktrees"
+  print -r -- .worktrees >| "$root/.gitignore"
+  records=()
+  while IFS= read -r record; do
+    fields=("${(@ps:\t:)record}")
+    records[${fields[3]}]=$record
+  done < <("$candidate_script" cd-local "$root")
+  raw_path=$root/.worktrees
+  payload=$("$candidate_script" encode "$raw_path") || fail "cd-local encode rejected ignored directory"
+  record=${records[$payload]-}
+  [[ -n $record ]] || fail "cd-local candidate missing for ignored directory .worktrees"
+  fields=("${(@ps:\t:)record}")
+  assert_equal local "${fields[1]}" "cd-local kind for ignored directory .worktrees"
+  assert_equal .worktrees "${fields[2]}" "cd-local display for ignored directory .worktrees"
 }
 
 test_cd_merged() {
