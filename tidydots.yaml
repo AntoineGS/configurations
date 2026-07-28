@@ -1330,3 +1330,8 @@ applications:
           windows: ~/AppData/Roaming/herdr
         name: config
         backup: ./Both/Herdr
+      - check:
+          linux: herdr plugin action list --plugin vim-herdr-navigation | jq -e '.result.actions | length == 4' >/dev/null
+        run:
+          linux: herdr plugin install paulbkim-dev/vim-herdr-navigation --yes
+        name: vim-navigation-plugin
