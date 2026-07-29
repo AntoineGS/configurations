@@ -67,9 +67,15 @@ assert_file_equals $'eval\nhl.dispatch(hl.dsp.dpms({action="off"}))' "$HYPRCTL_L
 run_helper 2.5
 assert_file_equals '2.5' "$SLEEP_LOG"
 
-for invalid in -1 nope 1s; do
+for invalid in -1 nope 1s ""; do
   if PATH="$BIN:$PATH" "$HELPER" "$invalid" 2>"$TEST_ROOT/error"; then
     printf 'accepted invalid delay: %s\n' "$invalid" >&2
+    exit 1
+  else
+    status=$?
+  fi
+  if ((status != 2)); then
+    printf 'invalid delay returned status %d: %s\n' "$status" "$invalid" >&2
     exit 1
   fi
   assert_file_equals 'turn-off-screens: seconds must be a non-negative number' "$TEST_ROOT/error"
