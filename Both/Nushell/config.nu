@@ -779,3 +779,7 @@ use ~/.cache/starship/init.nu
 
 alias cd = z
 alias cdi = zi
+
+if $nu.is-interactive and ('SSH_TTY' in $env) and (($env.HERDR_ENV? | default '') != '1') {
+    herdr
+}
