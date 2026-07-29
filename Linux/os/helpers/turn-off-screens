@@ -5,7 +5,7 @@ if (($# > 1)); then
   exit 2
 fi
 
-delay=${1:-0}
+delay=${1-0}
 if [[ ! $delay =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   printf '%s\n' 'turn-off-screens: seconds must be a non-negative number' >&2
   exit 2
