@@ -2,18 +2,19 @@
 
 minutes=${1:-}
 
-if [[ ! $minutes =~ ^0*[1-9][0-9]*$ ]]; then
+if (( $# != 1 )) || [[ ! $minutes =~ ^0*[1-9][0-9]*$ ]]; then
   notify-send -a "vicinae" -u critical "Suspend not scheduled" "Enter a positive whole number of minutes."
-  exit 1
-fi
-
-if ! suspend_at=$(date --date="+$minutes minutes" "+%H:%M"); then
-  notify-send -a "vicinae" -u critical "Suspend not scheduled" "The requested delay is too large."
   exit 1
 fi
 
 if ! exec {lock_fd}>"$XDG_RUNTIME_DIR/vicinae-suspend.lock" || ! flock "$lock_fd"; then
   notify-send -a "vicinae" -u critical "Suspend not scheduled" "Could not lock the suspend timer."
+  exit 1
+fi
+
+if ! suspend_at=$(date --date="+$minutes minutes" "+%H:%M"); then
+  exec {lock_fd}>&-
+  notify-send -a "vicinae" -u critical "Suspend not scheduled" "The requested delay is too large."
   exit 1
 fi
 
