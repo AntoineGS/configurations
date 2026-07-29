@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if (($# > 1)); then
+  printf '%s\n' 'usage: turn-off-screens [seconds]' >&2
+  exit 2
+fi
+
+delay=${1:-0}
+if [[ ! $delay =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  printf '%s\n' 'turn-off-screens: seconds must be a non-negative number' >&2
+  exit 2
+fi
+
+nohup bash -c 'sleep "$1"; shift; exec "$@"' _ "$delay" \
+  hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="off"}))' \
+  </dev/null >/dev/null 2>&1 &

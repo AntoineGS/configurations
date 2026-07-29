@@ -4,5 +4,6 @@
 # @vicinae.mode silent
 # @vicinae.exec ["/bin/bash"]
 
-exec </dev/null # vicinae gives script commands a never-closing stdin; detach it so hyprctl does not hang
-nohup bash -c "sleep 2; exec hyprctl eval 'hl.dispatch(hl.dsp.dpms({action=\"off\"}))'" >/dev/null 2>&1 &
+export PATH="$HOME/.local/share/helpers:$PATH"
+exec </dev/null # vicinae gives script commands a never-closing stdin; detach it so helpers do not hang
+turn-off-screens 2
