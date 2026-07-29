@@ -66,13 +66,23 @@ fi
 printf '23:45\n'
 EOF
 
+REAL_FLOCK=$(command -v flock)
+export REAL_FLOCK
+cat >"$BIN/flock" <<'EOF'
+#!/bin/bash
+if [[ -v FLOCK_ENTERED ]]; then
+  : >"$FLOCK_ENTERED"
+fi
+exec "$REAL_FLOCK" "$@"
+EOF
+
 cat >"$BIN/notify-send" <<'EOF'
 #!/bin/bash
 printf 'notify-send %s\n' "$*" >>"$EVENT_LOG"
 exit "${NOTIFY_SEND_EXIT:-0}"
 EOF
 
-chmod +x "$BIN/systemctl" "$BIN/systemd-run" "$BIN/date" "$BIN/notify-send"
+chmod +x "$BIN/systemctl" "$BIN/systemd-run" "$BIN/date" "$BIN/flock" "$BIN/notify-send"
 export PATH="$BIN:/usr/bin:/bin"
 
 fail() {
@@ -127,21 +137,19 @@ assert_file_equals $'systemctl --user stop vicinae-suspend.timer vicinae-suspend
 reset_logs
 export SYSTEMD_RUN_ENTERED="$TEST_ROOT/entered"
 export DATE_SECOND_ENTERED="$TEST_ROOT/date-second-entered"
-export SYSTEMD_RUN_SECOND_ENTERED="$TEST_ROOT/second-entered"
 export SYSTEMD_RUN_RELEASE="$TEST_ROOT/release"
-"$HELPER" 10 &
+FLOCK_ENTERED="$TEST_ROOT/first-flock-entered" "$HELPER" 10 &
 first_pid=$!
 wait_for_file "$SYSTEMD_RUN_ENTERED" || fail "first invocation did not reach scheduler"
-"$HELPER" 20 &
+FLOCK_ENTERED="$TEST_ROOT/second-flock-entered" "$HELPER" 20 &
 second_pid=$!
-wait_for_file "$DATE_SECOND_ENTERED" || fail "second invocation did not reach timer replacement"
-if wait_for_file "$SYSTEMD_RUN_SECOND_ENTERED"; then
-  fail "concurrent replacement was not serialized"
-fi
+wait_for_file "$TEST_ROOT/second-flock-entered" || fail "second invocation did not attempt replacement lock"
+[[ ! -e $DATE_SECOND_ENTERED ]] || fail "second invocation calculated target time before acquiring replacement lock"
 : >"$SYSTEMD_RUN_RELEASE"
 wait "$first_pid" || fail "first concurrent invocation failed"
+wait_for_file "$DATE_SECOND_ENTERED" || fail "second invocation did not calculate target time after acquiring replacement lock"
 wait "$second_pid" || fail "second concurrent invocation failed"
-unset SYSTEMD_RUN_ENTERED DATE_SECOND_ENTERED SYSTEMD_RUN_SECOND_ENTERED SYSTEMD_RUN_RELEASE
+unset SYSTEMD_RUN_ENTERED DATE_SECOND_ENTERED SYSTEMD_RUN_RELEASE
 assert_replacement_events $'systemctl --user stop vicinae-suspend.timer vicinae-suspend.service\nsystemctl --user reset-failed vicinae-suspend.timer vicinae-suspend.service\nsystemd-run --user --unit=vicinae-suspend --on-active=10m --collect systemctl suspend\nsystemctl --user stop vicinae-suspend.timer vicinae-suspend.service\nsystemctl --user reset-failed vicinae-suspend.timer vicinae-suspend.service\nsystemd-run --user --unit=vicinae-suspend --on-active=20m --collect systemctl suspend'
 
 for value in "" 0 -1 1.5 later; do
@@ -153,6 +161,14 @@ for value in "" 0 -1 1.5 later; do
   [[ $(<"$EVENT_LOG") != *"systemctl"* ]] || fail "invalid delay '$value' changed timer state"
   [[ $(<"$EVENT_LOG") != *"systemd-run"* ]] || fail "invalid delay '$value' scheduled a timer"
 done
+
+reset_logs
+if "$HELPER" 15 extra; then
+  fail "extra arguments were accepted"
+fi
+[[ $(<"$EVENT_LOG") == *"Suspend not scheduled Enter a positive whole number of minutes."* ]] || fail "extra argument notification missing"
+[[ $(<"$EVENT_LOG") != *"systemctl"* ]] || fail "extra arguments changed timer state"
+[[ $(<"$EVENT_LOG") != *"systemd-run"* ]] || fail "extra arguments scheduled a timer"
 
 reset_logs
 export DATE_EXIT=1
