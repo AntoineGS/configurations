@@ -68,14 +68,81 @@ alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
 if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]]; then
+    herdr-waypipe-env publish 2>/dev/null || true
     herdr
 fi
 
-# Pull fresh env (WAYLAND_DISPLAY etc.) from tmux session on every prompt so
-# long-running panes self-heal after an SSH reconnect with a new waypipe socket.
-if [[ -n "$TMUX" ]]; then
-    _tmux_refresh_env() { eval "$(tmux show-environment -s 2>/dev/null | grep -v SSH_AUTH_SOCK)" }
-    precmd_functions+=(_tmux_refresh_env)
+# Pull fresh Waypipe variables into existing Herdr panes after an SSH reconnect.
+if [[ "${HERDR_ENV:-}" == 1 ]]; then
+    _herdr_refresh_waypipe_env() {
+        local snapshot line name value read_status
+        local wayland_display xdg_runtime_dir display
+        local -i record=0 valid=1
+        local -i seen_wayland_display=0 seen_xdg_runtime_dir=0 seen_display=0
+
+        snapshot=$(
+            herdr-waypipe-env read 2>/dev/null
+            read_status=$?
+            printf x
+            exit "$read_status"
+        ) || return
+        snapshot=${snapshot%x}
+
+        while IFS= read -r line; do
+            (( record++ ))
+            if [[ "$line" != *=* ]]; then
+                valid=0
+                break
+            fi
+
+            name=${line%%=*}
+            value=${line#*=}
+
+            case "$name" in
+                WAYLAND_DISPLAY)
+                    if (( record != 1 || seen_wayland_display )) || [[ -z "$value" ]]; then
+                        valid=0
+                        break
+                    fi
+                    wayland_display=$value
+                    seen_wayland_display=1
+                    ;;
+                XDG_RUNTIME_DIR)
+                    if (( record != 2 || seen_xdg_runtime_dir )) || [[ -z "$value" ]]; then
+                        valid=0
+                        break
+                    fi
+                    xdg_runtime_dir=$value
+                    seen_xdg_runtime_dir=1
+                    ;;
+                DISPLAY)
+                    if (( record != 3 || seen_display )); then
+                        valid=0
+                        break
+                    fi
+                    display=$value
+                    seen_display=1
+                    ;;
+                *)
+                    valid=0
+                    break
+                    ;;
+            esac
+        done < <(printf %s "$snapshot")
+
+        if (( ! valid || record != 3 || ! seen_wayland_display || ! seen_xdg_runtime_dir || ! seen_display )); then
+            return 1
+        fi
+
+        export WAYLAND_DISPLAY="$wayland_display"
+        export XDG_RUNTIME_DIR="$xdg_runtime_dir"
+        if [[ -n "$display" ]]; then
+            export DISPLAY="$display"
+        else
+            unset DISPLAY
+        fi
+    }
+    precmd_functions+=(_herdr_refresh_waypipe_env)
 fi
 
 git-https-to-ssh() {

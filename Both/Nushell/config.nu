@@ -784,5 +784,44 @@ source ~/.config/shell-picker/shell-picker.nu
 shell-picker-bind-nushell
 
 if $nu.is-interactive and ('SSH_TTY' in $env) and (($env.HERDR_ENV? | default '') != '1') {
+    if not (which herdr-waypipe-env | is-empty) {
+        ^herdr-waypipe-env publish | complete | ignore
+    }
     herdr
 }
+
+def --env _herdr_refresh_waypipe_env [] {
+    if (($env.HERDR_ENV? | default '') != '1') or (which herdr-waypipe-env | is-empty) {
+        return
+    }
+
+    let result = (^herdr-waypipe-env read | complete)
+    if $result.exit_code != 0 {
+        return
+    }
+
+    let values = (
+        $result.stdout
+        | lines
+        | parse --regex '^(?<name>WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DISPLAY)=(?<value>.*)$'
+    )
+    if (($values | length) != 3) or (($values.name | uniq | length) != 3) {
+        return
+    }
+
+    let wayland_display = ($values | where name == "WAYLAND_DISPLAY" | get value.0)
+    let xdg_runtime_dir = ($values | where name == "XDG_RUNTIME_DIR" | get value.0)
+    let display = ($values | where name == "DISPLAY" | get value.0)
+
+    load-env {
+        WAYLAND_DISPLAY: $wayland_display
+        XDG_RUNTIME_DIR: $xdg_runtime_dir
+    }
+    if ($display == '') and ('DISPLAY' in $env) {
+        hide-env DISPLAY
+    } else if $display != '' {
+        load-env { DISPLAY: $display }
+    }
+}
+
+$env.config.hooks.pre_prompt = ($env.config.hooks.pre_prompt | append { _herdr_refresh_waypipe_env })

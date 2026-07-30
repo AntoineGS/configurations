@@ -3,42 +3,62 @@ set -u
 
 real_wl_paste=${WL_PASTE_REAL:-/usr/bin/wl-paste}
 
-if [ -n "${TMUX-}" ] && [ -n "${TMUX_PANE-}" ] && command -v tmux >/dev/null 2>&1; then
-  session=$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null) || session=
-
-  if [ -n "$session" ]; then
-    display=$(tmux show-environment -t "$session" WAYLAND_DISPLAY 2>/dev/null) || display=
-    runtime=$(tmux show-environment -t "$session" XDG_RUNTIME_DIR 2>/dev/null) || runtime=
-
-    case $display in
-      WAYLAND_DISPLAY=*) display=${display#WAYLAND_DISPLAY=} ;;
-      *) display= ;;
-    esac
-
-    case $runtime in
-      XDG_RUNTIME_DIR=*) runtime=${runtime#XDG_RUNTIME_DIR=} ;;
-      *) runtime= ;;
-    esac
-
-    case $display in
-      /*) socket=$display ;;
-      "") socket= ;;
-      *)
-        if [ -n "$runtime" ]; then
-          socket=$runtime/$display
-        else
-          socket=
-        fi
+if [ "${HERDR_ENV-}" = 1 ] && command -v herdr-waypipe-env >/dev/null 2>&1; then
+  newline='
+'
+  if snapshot=$(
+    herdr-waypipe-env read 2>/dev/null
+    read_status=$?
+    printf x || exit 1
+    exit "$read_status"
+  ); then
+    snapshot=${snapshot%x}
+    case $snapshot in
+      *"$newline"*)
+        line1=${snapshot%%"$newline"*}
+        remainder=${snapshot#*"$newline"}
+        case $remainder in
+          *"$newline"*)
+            line2=${remainder%%"$newline"*}
+            remainder=${remainder#*"$newline"}
+            case $remainder in
+              *"$newline"*)
+                line3=${remainder%%"$newline"*}
+                remainder=${remainder#*"$newline"}
+                [ -z "$remainder" ] || line3=
+                ;;
+              *) line3= ;;
+            esac
+            ;;
+          *) line2=; line3= ;;
+        esac
         ;;
+      *) line1=; line2=; line3= ;;
     esac
 
-    if [ -n "$socket" ] && [ -S "$socket" ]; then
-      WAYLAND_DISPLAY=$display
-      export WAYLAND_DISPLAY
+    case $line1 in
+      WAYLAND_DISPLAY=*) wayland_display=${line1#WAYLAND_DISPLAY=} ;;
+      *) wayland_display= ;;
+    esac
+    case $line2 in
+      XDG_RUNTIME_DIR=*) xdg_runtime_dir=${line2#XDG_RUNTIME_DIR=} ;;
+      *) xdg_runtime_dir= ;;
+    esac
+    case $line3 in
+      DISPLAY=*) display=${line3#DISPLAY=} ;;
+      *) line3= ;;
+    esac
 
-      if [ -n "$runtime" ]; then
-        XDG_RUNTIME_DIR=$runtime
-        export XDG_RUNTIME_DIR
+    if [ -n "$wayland_display" ] && [ -n "$xdg_runtime_dir" ] && [ -n "$line3" ]; then
+      WAYLAND_DISPLAY=$wayland_display
+      XDG_RUNTIME_DIR=$xdg_runtime_dir
+      export WAYLAND_DISPLAY XDG_RUNTIME_DIR
+
+      if [ -n "$display" ]; then
+        DISPLAY=$display
+        export DISPLAY
+      else
+        unset DISPLAY
       fi
     fi
   fi
