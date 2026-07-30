@@ -1,0 +1,119 @@
+#!/bin/sh
+set -u
+
+state_file=${HERDR_WAYPIPE_ENV_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr/waypipe.env}
+newline='
+'
+tab=$(printf '\t')
+carriage_return=$(printf '\r')
+
+contains_control_character() {
+  case $1 in
+    *"$newline"* | *"$tab"* | *"$carriage_return"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+socket_path() {
+  case $1 in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s/%s\n' "$2" "$1" ;;
+  esac
+}
+
+publish() {
+  wayland_display=${WAYLAND_DISPLAY-}
+  xdg_runtime_dir=${XDG_RUNTIME_DIR-}
+  display=${DISPLAY-}
+
+  if [ -z "$wayland_display" ] ||
+    [ -z "$xdg_runtime_dir" ] ||
+    contains_control_character "$wayland_display" ||
+    contains_control_character "$xdg_runtime_dir" ||
+    contains_control_character "$display"; then
+    return 1
+  fi
+
+  socket=$(socket_path "$wayland_display" "$xdg_runtime_dir")
+  [ -S "$socket" ] || return 1
+
+  case $state_file in
+    /*/*) ;;
+    *) return 1 ;;
+  esac
+  case $state_file in
+    */ | *//* | */./* | */../* | */. | */..) return 1 ;;
+  esac
+
+  case $state_file in
+    */*) state_dir=${state_file%/*} ;;
+  esac
+
+  [ ! -L "$state_dir" ] || return 1
+  umask 077
+  mkdir -p "$state_dir" || return 1
+  [ ! -L "$state_dir" ] || return 1
+  chmod 700 "$state_dir" || return 1
+  temporary=$(mktemp "$state_file.XXXXXX") || return 1
+  trap 'rm -f "$temporary"' 0 HUP INT TERM
+
+  if ! printf 'WAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\nDISPLAY=%s\n' \
+    "$wayland_display" "$xdg_runtime_dir" "$display" >"$temporary"; then
+    return 1
+  fi
+  chmod 600 "$temporary" || return 1
+  mv -f "$temporary" "$state_file" || return 1
+  trap - 0 HUP INT TERM
+}
+
+read_state() {
+  if ! { exec 3<"$state_file"; } 2>/dev/null; then
+    return 1
+  fi
+
+  line1=
+  line2=
+  line3=
+  extra=
+  IFS= read -r line1 <&3 || return 1
+  IFS= read -r line2 <&3 || return 1
+  IFS= read -r line3 <&3 || return 1
+  if IFS= read -r extra <&3 || [ -n "$extra" ]; then
+    return 1
+  fi
+
+  case $line1 in
+    WAYLAND_DISPLAY=*) wayland_display=${line1#WAYLAND_DISPLAY=} ;;
+    *) return 1 ;;
+  esac
+  case $line2 in
+    XDG_RUNTIME_DIR=*) xdg_runtime_dir=${line2#XDG_RUNTIME_DIR=} ;;
+    *) return 1 ;;
+  esac
+  case $line3 in
+    DISPLAY=*) display=${line3#DISPLAY=} ;;
+    *) return 1 ;;
+  esac
+
+  if [ -z "$wayland_display" ] ||
+    [ -z "$xdg_runtime_dir" ] ||
+    contains_control_character "$wayland_display" ||
+    contains_control_character "$xdg_runtime_dir" ||
+    contains_control_character "$display"; then
+    return 1
+  fi
+
+  socket=$(socket_path "$wayland_display" "$xdg_runtime_dir")
+  [ -S "$socket" ] || return 1
+  printf 'WAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\nDISPLAY=%s\n' \
+    "$wayland_display" "$xdg_runtime_dir" "$display"
+}
+
+case ${1-} in
+  publish) publish ;;
+  read) read_state ;;
+  *)
+    printf '%s\n' 'usage: herdr-waypipe-env {publish|read}' >&2
+    exit 2
+    ;;
+esac
