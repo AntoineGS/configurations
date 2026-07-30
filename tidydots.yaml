@@ -109,11 +109,9 @@ applications:
           - init.nu
   - package:
       managers:
-        installer:
-          command:
-            linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
-          binary: nu
         winget: Nushell.Nushell
+      custom:
+        linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
     name: nushell
     description: A new type of shell
     entries:
