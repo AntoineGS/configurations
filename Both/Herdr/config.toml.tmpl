@@ -1,5 +1,16 @@
 onboarding = false
 
+{{ if eq .OS "windows" -}}
+[terminal]
+default_shell = "nu"
+
+[ui]
+host_cursor = "native"
+{{ end -}}
+
+[theme.custom]
+surface_dim = "#313244"
+
 [keys]
 prefix = "ctrl+b"
 help = "prefix+?"
@@ -88,7 +99,7 @@ description = "navigate right (vim/herdr)"
 key = "prefix+ctrl+p"
 type = "popup"
 {{ if eq .OS "windows" -}}
-command = "powershell.exe -NoLogo"
+command = "nu"
 {{ else -}}
 command = "exec \"${SHELL:-sh}\""
 {{ end -}}
