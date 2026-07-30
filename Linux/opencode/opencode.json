@@ -4,7 +4,8 @@
   "lsp": true,
   "instructions": [
     "~/.config/opencode/lsp-first.md",
-    "~/.config/opencode/worktree-preferences.md"
+    "~/.config/opencode/worktree-preferences.md",
+    "~/.config/opencode/commit-exclusions.md"
   ],
   "plugin": [
     "opencode-with-claude",
