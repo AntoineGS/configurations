@@ -144,6 +144,7 @@ ExitResizeMode() {
 ; --- Reload ----------------------------------------------------------------
 
 #!r::Reload
+#^w::Run "yasbc reload",, "Hide"
 #i::Komorebic("toggle-shortcuts")
 
 ; --- App shortcuts (focus or launch) ---------------------------------------
