@@ -148,10 +148,11 @@ Describe "Script entry contract" {
     } | Should Throw "script contract probe"
   }
 
-  It "emits one unavailable JSON line and exits successfully when Codex cannot start" {
+  It "emits one unavailable JSON line and exits successfully when Codex app-server fails" {
     $cachePath = Join-Path $TestDrive "entry-fallback.json"
     $emptyPath = Join-Path $TestDrive "empty-path"
     New-Item -ItemType Directory -Path $emptyPath | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSHOME "pwsh.exe") -Destination (Join-Path $emptyPath "codex.exe")
     $startInfo = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME "pwsh.exe"))
     foreach ($argument in @(
       "-NoProfile", "-NonInteractive", "-File", $scriptPath,
@@ -188,6 +189,32 @@ Describe "Script entry contract" {
       }
       $process.Dispose()
     }
+  }
+}
+
+Describe "Resolve-CodexExecutable" {
+  It "finds codex in a later supplied path value" {
+    $missingPath = Join-Path $TestDrive "missing"
+    $codexDirectory = Join-Path $TestDrive "registered-codex"
+    New-Item -ItemType Directory -Path $codexDirectory | Out-Null
+    $codexPath = Join-Path $codexDirectory "codex.exe"
+    [IO.File]::WriteAllText($codexPath, "test executable")
+
+    Resolve-CodexExecutable -PathValues @($missingPath, $codexDirectory) |
+      Should Be ([IO.Path]::GetFullPath($codexPath))
+  }
+
+  It "throws a concise error when codex is absent" {
+    { Resolve-CodexExecutable -PathValues @((Join-Path $TestDrive "missing")) } |
+      Should Throw "Codex executable was not found in PATH"
+  }
+}
+
+Describe "Invoke-CodexRateLimits" {
+  It "constructs ProcessStartInfo with the resolved Codex executable" {
+    $functionText = (Get-Command Invoke-CodexRateLimits).ScriptBlock.Ast.Extent.Text
+
+    $functionText | Should Match '\[Diagnostics\.ProcessStartInfo\]::new\(\(Resolve-CodexExecutable\)\)'
   }
 }
 
