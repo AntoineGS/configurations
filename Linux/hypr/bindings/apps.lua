@@ -1,7 +1,7 @@
 -- App launchers. The `##` escape for `#` in URLs is unnecessary in Lua strings
 -- (no comment parsing on strings), but we don't have any such URLs here anyway.
 
-hl.bind("SUPER + RETURN",         hl.dsp.exec_cmd("uwsm-app -- xdg-terminal-exec herdr"), { description = "Terminal" })
+hl.bind("SUPER + RETURN",         hl.dsp.exec_cmd("uwsm-app -- env HERDR_NAV_PASSTHROUGH_RE='^(shell-picker|fzf)$' xdg-terminal-exec herdr"), { description = "Terminal" })
 hl.bind("SUPER + SHIFT + RETURN", hl.dsp.exec_cmd("uwsm-app -- xdg-terminal-exec"),                                              { description = "Terminal (no tmux)" })
 hl.bind("SUPER + ALT + F",        hl.dsp.exec_cmd("vicinae vicinae://extensions/vicinae/file/search"),                          { description = "Search" })
 hl.bind("SUPER + ALT + Y",        hl.dsp.exec_cmd("launch-tui-large yazi"),                                                     { description = "File manager" })

@@ -8,6 +8,7 @@ export MANPAGER="sh -c 'awk '\''{ gsub(/\x1B\[[0-9;]*m/, \"\", \$0); gsub(/.\x08
 export EDITOR=nvim
 export VISUAL=nvim
 export GIT_EDITOR=nvim
+export HERDR_NAV_PASSTHROUGH_RE='^(shell-picker|fzf)$'
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
