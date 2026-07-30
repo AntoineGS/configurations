@@ -20,6 +20,9 @@ bindkey " " magic-space
 
 # Oh My Zsh
 source "$ZSH/oh-my-zsh.sh"
+zvm_config() {
+    ZVM_LINE_INIT_MODE=$ZVM_MODE_INSERT
+}
 source /usr/share/zsh/plugins/zsh-vi-mode/zsh-vi-mode.plugin.zsh
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
