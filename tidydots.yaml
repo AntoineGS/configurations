@@ -109,12 +109,13 @@ applications:
           - init.nu
   - package:
       managers:
-        brew: nushell
-        pacman: nushell
+        installer:
+          command:
+            linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
+          binary: nu
         winget: Nushell.Nushell
     name: nushell
     description: A new type of shell
-    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           linux: ~/.config/nushell
@@ -129,6 +130,11 @@ applications:
           windows: ~/AppData/Roaming/nushell/themes
         name: themes
         backup: ./Both/Nushell/themes
+      - check:
+          linux: 'test -x "$HOME/.local/bin/nu" && test "$("$HOME/.local/bin/nu" --version 2>/dev/null)" = 0.113.1'
+        run:
+          linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
+        name: exact-linux-version
   - package:
       managers:
         brew: wezterm
@@ -466,6 +472,29 @@ applications:
         run:
           windows: '[Environment]::SetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc"), "User")'
         name: configure FZF_DEFAULT_OPTS_FILE
+  - name: shell-picker
+    description: Cross-platform fzf backend and shell adapters
+    entries:
+      - targets:
+          linux: ~/.config/shell-picker
+          windows: ~/.config/shell-picker
+        name: adapters
+        backup: ./Both/ShellPicker
+      - check:
+          linux: 'source="$HOME/gits/shell-picker"; test -x "$HOME/.local/bin/shell-picker" && version="$(git -C "$source" rev-parse --short=12 HEAD 2>/dev/null)" && test "$("$HOME/.local/bin/shell-picker" version 2>/dev/null)" = "shell-picker $version"'
+        run:
+          linux: >-
+            set -eu;
+            source="$HOME/gits/shell-picker";
+            version="$(git -C "$source" rev-parse --short=12 HEAD)";
+            mkdir -p "$HOME/.local/bin";
+            output="$(mktemp "$HOME/.local/bin/.shell-picker.XXXXXX")";
+            trap 'rm -f "$output"' EXIT;
+            (cd "$source" && go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$output" ./cmd/shell-picker);
+            chmod 0755 "$output";
+            mv -f "$output" "$HOME/.local/bin/shell-picker";
+            trap - EXIT
+        name: binary
   - package:
       managers:
         pacman: ghostty
