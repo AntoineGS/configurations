@@ -3,8 +3,11 @@ onboarding = false
 {{ if eq .OS "windows" -}}
 [terminal]
 default_shell = "nu"
+{{ end -}}
 
 [ui]
+hide_tab_bar_when_single_tab = true
+{{ if eq .OS "windows" -}}
 host_cursor = "native"
 {{ end -}}
 
