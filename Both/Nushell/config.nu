@@ -780,6 +780,9 @@ use ~/.cache/starship/init.nu
 alias cd = z
 alias cdi = zi
 
+source ~/.config/shell-picker/shell-picker.nu
+shell-picker-bind-nushell
+
 if $nu.is-interactive and ('SSH_TTY' in $env) and (($env.HERDR_ENV? | default '') != '1') {
     herdr
 }
