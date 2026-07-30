@@ -316,10 +316,37 @@ function Read-AppServerResponse {
   throw "Codex app-server timed out."
 }
 
+function Resolve-CodexExecutable {
+  param(
+    [string[]]$PathValues = @(
+      [Environment]::GetEnvironmentVariable("Path", "Process"),
+      [Environment]::GetEnvironmentVariable("Path", "Machine"),
+      [Environment]::GetEnvironmentVariable("Path", "User")
+    )
+  )
+
+  $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  foreach ($pathValue in $PathValues) {
+    foreach ($directory in ([string]$pathValue -split [IO.Path]::PathSeparator)) {
+      $expandedDirectory = [Environment]::ExpandEnvironmentVariables($directory.Trim().Trim('"'))
+      if ([string]::IsNullOrWhiteSpace($expandedDirectory) -or -not $seen.Add($expandedDirectory)) {
+        continue
+      }
+
+      $candidate = [IO.Path]::Combine($expandedDirectory, "codex.exe")
+      if ([IO.File]::Exists($candidate)) {
+        return [IO.Path]::GetFullPath($candidate)
+      }
+    }
+  }
+
+  throw "Codex executable was not found in PATH."
+}
+
 function Invoke-CodexRateLimits {
   param([ValidateRange(1, 120)][int]$TimeoutSeconds = 15)
 
-  $startInfo = [Diagnostics.ProcessStartInfo]::new("codex")
+  $startInfo = [Diagnostics.ProcessStartInfo]::new((Resolve-CodexExecutable))
   $startInfo.ArgumentList.Add("app-server")
   $startInfo.ArgumentList.Add("--stdio")
   $startInfo.UseShellExecute = $false
