@@ -33,6 +33,15 @@ MUST be previewed first:
 Never run a real `restore`/`install`/delete without showing the dry-run plan
 first.
 
+Prefer the narrowest restore scope. `tidydots restore <app>` restores one
+application, while `tidydots restore <app> <entry>` restores one entry. Apply
+the same positional arguments to the dry run first, for example:
+
+```sh
+tidydots restore herdr -n
+tidydots restore herdr
+```
+
 ## Common tasks
 
 Read `references/schema.md` for full field details before authoring anything
@@ -65,7 +74,8 @@ non-trivial. Quick recipes:
 ## Verify after editing
 
 1. `tidydots list` — confirms the config parses and shows apps/entries.
-2. `tidydots restore -n` — dry-run to confirm the intended changes.
+2. `tidydots restore [app [entry]] -n` — dry-run the narrowest applicable
+   scope to confirm the intended changes.
 3. Commit the config repo when the change is confirmed.
 
 See `references/troubleshooting.md` when something misbehaves.
