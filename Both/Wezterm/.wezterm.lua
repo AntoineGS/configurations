@@ -118,7 +118,7 @@ config.keys = {
 	{ key = "DownArrow", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
 }
 
-config.default_prog = { "zellij" }
+config.default_prog = { "herdr" }
 
 if is_windows then
 	-- WezTerm auto-discovers WSL distros as domains,
