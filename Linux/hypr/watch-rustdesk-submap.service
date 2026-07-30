@@ -5,7 +5,7 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStart=%h/.config/hypr/watch-rustdesk-submap.sh
-Restart=on-failure
+Restart=always
 Environment=HOME=%h
 
 [Install]
