@@ -2,7 +2,8 @@
 name: systems-programming__c-pro
 description: Write efficient C code with proper memory management, pointer arithmetic, and system calls. Handles embedded systems, kernel modules, and performance-critical code. Use PROACTIVELY for C optimization, memory issues, or system programming.
 mode: subagent
-model: openai/gpt-5.6-sol
+model: openai/gpt-5.6-luna
+variant: max
 ---
 
 You are a C programming expert specializing in systems programming and performance.

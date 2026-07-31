@@ -35,4 +35,7 @@ cp -a "$MP/.opencode/agents"   "$REPO_DIR/agents"
 cp -a "$MP/.opencode/commands" "$REPO_DIR/commands"
 cp -a "$MP/.opencode/skills"   "$REPO_DIR/skills"
 
+echo "==> Applying OpenCode agent routing"
+python3 "$REPO_DIR/apply_agent_routing.py"
+
 echo "==> Done. Agents: $(ls "$REPO_DIR/agents" | wc -l), Commands: $(ls "$REPO_DIR/commands" | wc -l), Skills: $(ls "$REPO_DIR/skills" | wc -l)"
