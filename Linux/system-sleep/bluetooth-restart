@@ -1,0 +1,18 @@
+#!/bin/bash
+# Restart Bluetooth after resume without delaying the systemd sleep path.
+
+set -u
+
+action="${1:-}"
+sleep_state="${2:-}"
+
+[ "$action" = "post" ] || exit 0
+
+case "$sleep_state" in
+  suspend|hibernate|hybrid-sleep|suspend-then-hibernate) ;;
+  *) exit 0 ;;
+esac
+
+systemctl restart --no-block bluetooth.service 2>/dev/null || true
+
+exit 0
