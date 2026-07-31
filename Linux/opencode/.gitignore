@@ -7,6 +7,9 @@
 !worktree-preferences.md
 !tui.json
 !regenerate.sh
+!agent-routing.json
+!apply_agent_routing.py
+!test_apply_agent_routing.py
 !agents/
 !agents/**
 !commands/

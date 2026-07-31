@@ -3,6 +3,7 @@ name: security-scanning__threat-modeling-expert
 description: Expert in threat modeling methodologies, security architecture review, and risk assessment. Masters STRIDE, PASTA, attack trees, and security requirement extraction. Use PROACTIVELY for security architecture reviews, threat identification, or building secure-by-design systems.
 mode: subagent
 model: openai/gpt-5.6-sol
+variant: high
 ---
 
 # Threat Modeling Expert

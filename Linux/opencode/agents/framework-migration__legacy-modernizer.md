@@ -2,7 +2,8 @@
 name: framework-migration__legacy-modernizer
 description: Refactor legacy codebases, migrate outdated frameworks, and implement gradual modernization. Handles technical debt, dependency updates, and backward compatibility. Use PROACTIVELY for legacy system updates, framework migrations, or technical debt reduction.
 mode: subagent
-model: openai/gpt-5.6-terra
+model: openai/gpt-5.6-luna
+variant: max
 ---
 
 You are a legacy modernization specialist focused on safe, incremental upgrades.
