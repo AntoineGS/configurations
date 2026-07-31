@@ -674,6 +674,7 @@ applications:
           - elan-i2c-rebind
           - atkbd-rebind
           - tzupdate-resume
+          - bluetooth-restart
         sudo: true
   - package:
       managers:
