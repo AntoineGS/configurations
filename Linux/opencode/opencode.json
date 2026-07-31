@@ -13,8 +13,8 @@
     "cc-safety-net"
   ],
   "compaction": {
-    "auto": false,
-    "prune": false
+    "auto": true,
+    "prune": true
   },
   "permission": "allow",
   "provider": {
