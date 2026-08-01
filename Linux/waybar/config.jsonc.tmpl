@@ -26,7 +26,11 @@
   ],
   "hyprland/workspaces": {
     "on-click": "activate",
+{{- if eq .Hostname "DESKTOP-E07VTRN" }}
     "format": "{icon}",
+{{- else }}
+    "format": "{name}",
+{{- end }}
     "format-icons": {
       "default": "\uea71"
 {{- if eq .Hostname "DESKTOP-E07VTRN" }},
