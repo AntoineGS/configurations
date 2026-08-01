@@ -23,5 +23,9 @@ listener {
 listener {
     timeout = 630
     on-timeout = hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="off"}))'                   # screen off shortly after lock
+    {{- if eq .Hostname "omarchbook" }}
+    on-resume = recover-keyball-bluetooth >/dev/null 2>&1 & hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on"}))' && brightnessctl -r # recover Keyball without delaying screen wake
+    {{- else }}
     on-resume = hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on"}))' && brightnessctl -r # screen on when activity is detected
+    {{- end }}
 }

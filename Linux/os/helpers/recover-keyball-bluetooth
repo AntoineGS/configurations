@@ -1,0 +1,37 @@
+#!/bin/bash
+# Recover a Keyball44 connection which BlueZ reports as connected without HID devices.
+
+set -Eeuo pipefail
+
+device_name="Keyball44"
+input_devices_file="${KEYBALL_INPUT_DEVICES_FILE:-/proc/bus/input/devices}"
+delay_seconds="${KEYBALL_RECOVERY_DELAY_SECONDS:-2}"
+
+sleep "$delay_seconds"
+
+[[ -r "$input_devices_file" ]] || exit 0
+if grep -Fqi -- "$device_name" "$input_devices_file"; then
+  exit 0
+fi
+
+ghost_connected=false
+while IFS= read -r device_path; do
+  [[ $device_path =~ ^/org/bluez/hci[0-9]+/dev_[[:xdigit:]_]+$ ]] || continue
+
+  name="$(busctl get-property org.bluez "$device_path" org.bluez.Device1 Name 2>/dev/null)" || continue
+  [[ $name == "s \"$device_name\"" ]] || continue
+
+  connected="$(busctl get-property org.bluez "$device_path" org.bluez.Device1 Connected 2>/dev/null)" || continue
+  if [[ $connected == "b true" ]]; then
+    ghost_connected=true
+    break
+  fi
+done < <(busctl tree --list org.bluez 2>/dev/null || true)
+
+[[ $ghost_connected == true ]] || exit 0
+
+if ! sudo -n /usr/bin/systemctl restart bluetooth.service; then
+  logger -t recover-keyball-bluetooth "Failed to restart bluetooth.service for ghost Keyball44 connection"
+fi
+
+exit 0

@@ -1,0 +1,1 @@
+antoinegs ALL=(root) NOPASSWD: /usr/bin/systemctl restart bluetooth.service

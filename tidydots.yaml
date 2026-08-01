@@ -676,6 +676,18 @@ applications:
           - tzupdate-resume
           - bluetooth-restart
         sudo: true
+  - name: keyball-bluetooth-recovery
+    description: Allow conditional BlueZ recovery when the Keyball44 wakes without HID devices
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/sudoers.d
+        name: sudoers
+        method: copy
+        backup: ./Linux/sudoers
+        files:
+          - 90-keyball-bluetooth-restart
+        sudo: true
   - package:
       managers:
         apt: tzupdate
