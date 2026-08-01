@@ -524,6 +524,19 @@ applications:
           linux: ~/.config/fastfetch
         name: config
         backup: ./Linux/fastfetch
+  - package:
+      managers:
+        pacman: fcitx5
+    name: fcitx5
+    description: Input method framework
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/fcitx5/conf
+        name: unicode shortcut
+        backup: ./Linux/fcitx5/conf
+        files:
+          - unicode.conf
   - name: fontconfig
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
