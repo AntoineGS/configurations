@@ -1,0 +1,10 @@
+#!/bin/bash
+
+workspace_id=$(hyprctl activeworkspace -j | jq -r '.id')
+current_name=$(hyprctl activeworkspace -j | jq -r '.name')
+new_name=$(printf '' | vicinae dmenu --navigation-title "Rename Workspace" --placeholder "Workspace name" --query "$current_name" --no-section --no-quick-look)
+
+[[ -n $workspace_id && -n $new_name ]] || exit 0
+
+encoded_name=$(jq -Rn --arg value "$new_name" '$value')
+hyprctl eval "hl.dispatch(hl.dsp.workspace.rename({workspace=$workspace_id, name=$encoded_name}))"

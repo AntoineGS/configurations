@@ -16,11 +16,13 @@ hl.bind("SUPER + SHIFT + BACKSPACE",     hl.dsp.exec_cmd("hyprland-window-gaps-t
 hl.bind("SUPER + CTRL + BACKSPACE",      hl.dsp.exec_cmd("hyprland-window-single-square-aspect-toggle"),   { description = "Toggle single-window square aspect" })
 
 -- Notifications
-hl.bind("SUPER + COMMA",                 hl.dsp.exec_cmd("makoctl dismiss"),                               { description = "Dismiss last notification" })
 hl.bind("SUPER + SHIFT + COMMA",         hl.dsp.exec_cmd("makoctl dismiss --all"),                         { description = "Dismiss all notifications" })
 hl.bind("SUPER + CTRL + COMMA",          hl.dsp.exec_cmd("toggle-notification-silencing"),                 { description = "Toggle silencing notifications" })
 hl.bind("SUPER + ALT + COMMA",           hl.dsp.exec_cmd("makoctl invoke"),                                { description = "Invoke last notification" })
 hl.bind("SUPER + SHIFT + ALT + COMMA",   hl.dsp.exec_cmd("makoctl restore"),                               { description = "Restore last notification" })
+
+-- Workspaces
+hl.bind("SUPER + COMMA",                 hl.dsp.exec_cmd("hyprland-workspace-rename"),                         { description = "Rename workspace" })
 
 -- Pacman
 hl.bind("SUPER + CTRL + I",              hl.dsp.exec_cmd("launch-tui-large pkg-install"),                  { description = "Install packages" })
