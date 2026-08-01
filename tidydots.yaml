@@ -11,6 +11,15 @@ applications:
       managers:
         installer:
           command:
+            linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          binary: brew
+    name: homebrew
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
+        installer:
+          command:
             linux: curl -fsSL https://claude.ai/install.sh | bash
             windows: irm https://claude.ai/install.ps1 | iex
           binary: claude
