@@ -6,6 +6,7 @@
 !agents/**
 !hooks/
 !hooks/**
+hooks/herdr-agent-state.sh
 !rules/
 !rules/**
 !skills/
