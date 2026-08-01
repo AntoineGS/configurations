@@ -10,7 +10,6 @@ hl.bind("SUPER + W",          hl.dsp.window.close(),                            
 hl.bind("CTRL + ALT + DELETE", hl.dsp.exec_cmd("hyprland-window-close-all"),               { description = "Close all windows" })
 
 -- Control tiling
-hl.bind("SUPER + P",         hl.dsp.window.pseudo(),                                      { description = "Pseudo window" })
 hl.bind("SUPER + SHIFT + V", hl.dsp.window.float({ action = "toggle" }),                  { description = "Toggle window floating/tiling" })
 
 -- Switch workspaces with SUPER + [0-9] (via scancode)
