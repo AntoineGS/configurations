@@ -16,6 +16,9 @@
 
 ; --- Helpers ---------------------------------------------------------------
 
+komorebiRestartInProgress := false
+RegisterKomorebiSessionNotifications()
+
 FocusOrLaunch(windowTitle, execPath) {
     if WinExist(windowTitle) {
         WinActivate
@@ -53,14 +56,56 @@ Komorebic(args) {
     Run "komorebic " args,, "Hide"
 }
 
-; komorebi's `komorebic start` doesn't apply monitors[].workspaces[].name
-; from komorebi.json on fresh start (verified v0.1.41) — a follow-up
-; replace-configuration against the running daemon does. Used by the
-; manual restart binding below; deferred via SetTimer so the daemon has
-; time to come up before we talk to it.
-ApplyNamedWorkspacesOnce() {
+; Komorebi enumerates monitors only when its daemon starts. Refresh it after
+; RDP/console transitions, then reapply the config to restore workspace names.
+RegisterKomorebiSessionNotifications() {
+    if !DllCall("Wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", 0, "Int")
+        return
+
+    OnMessage(0x02B1, OnWtsSessionChange)
+    OnExit UnregisterKomorebiSessionNotifications
+}
+
+UnregisterKomorebiSessionNotifications(*) {
+    try DllCall("Wtsapi32\WTSUnRegisterSessionNotification", "Ptr", A_ScriptHwnd)
+}
+
+OnWtsSessionChange(eventType, *) {
+    if eventType != 0x1 && eventType != 0x3 && eventType != 0x8 && eventType != 0xF
+        return
+
+    ; Related connect/unlock/desktop-ready events reset this one-shot timer.
+    SetTimer RestartKomorebiForDisplayChange, -3000
+}
+
+RestartKomorebiForDisplayChange(*) {
+    global komorebiRestartInProgress
+    if komorebiRestartInProgress
+        return
+
+    komorebiRestartInProgress := true
+    try {
+        exitCode := RunWait(
+            'powershell -NoProfile -NonInteractive -Command "komorebic stop; gsudo komorebic start"',
+            ,
+            "Hide"
+        )
+        if exitCode != 0 {
+            komorebiRestartInProgress := false
+            return
+        }
+
+        SetTimer CompleteKomorebiRestart, -3000
+    } catch {
+        komorebiRestartInProgress := false
+    }
+}
+
+CompleteKomorebiRestart(*) {
+    global komorebiRestartInProgress
     configPath := EnvGet("USERPROFILE") "\komorebi.json"
-    Komorebic('replace-configuration "' configPath '"')
+    try RunWait('komorebic replace-configuration "' configPath '"',, "Hide")
+    finally komorebiRestartInProgress := false
 }
 
 ; Run a program unelevated from an elevated AHK script by borrowing
@@ -214,12 +259,8 @@ ExitResizeMode() {
 
 ; --- Window manager options ------------------------------------------------
 
-; Full restart that also re-applies named workspaces (works around the
-; startup-time names bug that breaks `focus-named-workspace` in-office).
-#^k::{
-    Run('powershell -Command "komorebic stop; gsudo komorebic start"',, "Hide")
-    SetTimer ApplyNamedWorkspacesOnce, -3000
-}
+; Manual recovery path for display transitions that Windows does not report.
+#^k::RestartKomorebiForDisplayChange()
 
 ; --- Layouts ---------------------------------------------------------------
 
