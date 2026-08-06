@@ -1,0 +1,77 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "lsp": true,
+  "instructions": [
+    "~/.config/opencode/lsp-first.md",
+    "~/.config/opencode/worktree-preferences.md",
+    "~/.config/opencode/commit-exclusions.md"
+  ],
+  "plugin": [
+{{ if eq .Hostname "ANTOINEWS" }}
+    "opencode-with-claude",
+{{ end }}
+    "superpowers@git+https://github.com/obra/superpowers.git",
+    "cc-safety-net"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "agent": {
+    "plan": { "model": "openai/gpt-5.6-sol", "variant": "high" },
+    "general": { "model": "openai/gpt-5.6-luna", "variant": "max" },
+    "explore": { "model": "openai/gpt-5.6-luna", "variant": "low" }
+  },
+{{ if eq .Hostname "ANTOINEWS" }}
+  "mcp": {
+    "interbase": {
+      "type": "local",
+      "command": [
+        "C:\\Multidev\\Projects\\Tools\\MCP\\IBX_MCP\\IBX_MCP.exe"
+      ],
+      "enabled": true
+    },
+    "rdbg": {
+      "type": "local",
+      "command": [
+        "C:\\Users\\a.simard.MULTIDEV\\.claude\\plugins\\cache\\rdbg\\rdbg-debugger\\0.19.31\\bin\\rdbg-mcp.exe"
+      ],
+      "enabled": false,
+      "environment": {
+        "CLAUDE_PLUGIN_ROOT": "C:\\Users\\a.simard.MULTIDEV\\.claude\\plugins\\cache\\rdbg\\rdbg-debugger\\0.19.31",
+        "CLAUDE_PLUGIN_DATA": "C:\\Users\\a.simard.MULTIDEV\\.claude\\plugins\\data\\rdbg-debugger-rdbg",
+        "RDBG_HOST": "127.0.0.1",
+        "RDBG_DEFAULT_BITNESS": "x64",
+        "RDBG_AUTO_START": "true",
+        "RDBG_DAEMON_PATH_X64": "C:\\Users\\a.simard.MULTIDEV\\.claude\\plugins\\cache\\rdbg\\rdbg-debugger\\0.19.31\\bin\\rdbgd64.exe",
+        "RDBG_DAEMON_PATH_X86": "C:\\Users\\a.simard.MULTIDEV\\.claude\\plugins\\cache\\rdbg\\rdbg-debugger\\0.19.31\\bin\\rdbgd32.exe",
+        "RDBG_PORT_X64": "5902",
+        "RDBG_PORT_X86": "5903",
+        "RDBG_DAEMON_ARGS": ""
+      }
+    },
+    "dxdocs": {
+      "type": "remote",
+      "url": "https://api.devexpress.com/mcp/docs",
+      "enabled": false
+    },
+    "outline": {
+      "type": "remote",
+      "url": "https://docs.multidev.com/mcp",
+      "enabled": false
+    }
+  },
+{{ end }}
+  "permission": "allow"
+{{ if eq .Hostname "ANTOINEWS" }},
+  "provider": {
+    "anthropic": {
+      "options": {
+        "baseURL": "http://127.0.0.1:3456",
+        "apiKey": "dummy"
+      }
+    }
+  }
+{{ end }}
+}

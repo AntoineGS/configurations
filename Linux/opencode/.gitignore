@@ -2,6 +2,7 @@
 *
 !.gitignore
 !opencode.json
+!opencode.json.tmpl
 !commit-exclusions.md
 !lsp-first.md
 !worktree-preferences.md
