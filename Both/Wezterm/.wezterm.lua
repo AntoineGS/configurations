@@ -103,11 +103,11 @@ config.keys = {
 	},
 
 	-- Misc
-	{ key = "d", mods = "CTRL|SHIFT", action = act.ShowDebugOverlay },
 	{ key = "l", mods = "ALT", action = act.ShowLauncher },
 
 	--- Ignores
 	{ key = "Enter", mods = "ALT", action = act.DisableDefaultAssignment },
+	{ key = "u", mods = "CTRL|SHIFT", action = act.DisableDefaultAssignment },
 	{ key = "LeftArrow", mods = "CTRL|SHIFT|ALT", action = act.DisableDefaultAssignment },
 	{ key = "RightArrow", mods = "CTRL|SHIFT|ALT", action = act.DisableDefaultAssignment },
 	{ key = "UpArrow", mods = "CTRL|SHIFT|ALT", action = act.DisableDefaultAssignment },
