@@ -15,15 +15,19 @@ function Get-ChildItemUnix {
 }
 New-Alias ll Get-ChildItemUnix
 
-Invoke-Expression (&starship init powershell)
+Invoke-Expression (&starship init powershell --print-full-init | Out-String)
 Enable-TransientPrompt
 
-# Import the Chocolatey Profile that contains the necessary code to enable
-# tab-completions to function for `choco`.
-# Be aware that if you are missing these lines from your profile, tab completion
-# for `choco` will not function.
-# See https://ch0.co/tab-completion for details.
-$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
-if (Test-Path($ChocolateyProfile)) {
-  Import-Module "$ChocolateyProfile"
+function refreshenv {
+  if ([string]::IsNullOrEmpty($env:ChocolateyInstall)) {
+    throw "ChocolateyInstall is not set; cannot load the Chocolatey PowerShell profile."
+  }
+
+  $chocolateyProfile = Join-Path $env:ChocolateyInstall "helpers\chocolateyProfile.psm1"
+  if (!(Test-Path -LiteralPath $chocolateyProfile)) {
+    throw "Chocolatey PowerShell profile not found at '$chocolateyProfile'."
+  }
+
+  Import-Module $chocolateyProfile -Global
+  Update-SessionEnvironment
 }
