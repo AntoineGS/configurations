@@ -254,6 +254,12 @@ applications:
         backup: ./Windows/PowerShell
         files:
           - Microsoft.PowerShell_profile.ps1
+          - Set-PowerShellOpenSsh.ps1
+      - check:
+          windows: 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1" -Check'
+        run:
+          windows: 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1"'
+        name: openssh
   - package:
       managers:
         winget: LGUG2Z.komorebi

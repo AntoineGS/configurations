@@ -2,7 +2,7 @@ onboarding = false
 
 {{ if eq .OS "windows" -}}
 [terminal]
-default_shell = "nu"
+default_shell = 'C:\Program Files\PowerShell\7\pwsh.exe'
 {{ end -}}
 
 [ui]
@@ -106,7 +106,7 @@ description = "navigate right (vim/herdr)"
 key = "prefix+ctrl+p"
 type = "popup"
 {{ if eq .OS "windows" -}}
-command = "nu"
+command = '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo'
 {{ else -}}
 command = "exec \"${SHELL:-sh}\""
 {{ end -}}
