@@ -287,7 +287,7 @@ applications:
           - codex-usage.ps1
           - styles.css
   - name: windows-terminal
-    when: '{{ eq .OS "linux" }}'
+    when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
           windows: ~/AppData/Local/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState
