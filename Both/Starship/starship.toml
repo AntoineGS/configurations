@@ -215,6 +215,10 @@ format = '[$state ($progress_current/$progress_total)]($style) '
 
 [git_status]
 format = '([$all_status$ahead_behind]($style)) '
+ahead = ""
+behind = ""
+diverged = ""
+up_to_date = ""
 
 [gleam]
 format = '[$symbol($version)]($style) '

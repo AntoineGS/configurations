@@ -240,9 +240,11 @@ applications:
     when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
-          windows: "~"
+          windows: "~/Documents/PowerShell"
         name: config
         backup: ./Windows/PowerShell
+        files:
+          - Microsoft.PowerShell_profile.ps1
   - package:
       managers:
         winget: LGUG2Z.komorebi
