@@ -9,6 +9,15 @@ manager_priority:
 applications:
   - package:
       managers:
+        apt: jq
+        brew: jq
+        pacman: jq
+    name: jq
+    description: JSON processor used by Herdr SSH automation
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
         installer:
           command:
             linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"

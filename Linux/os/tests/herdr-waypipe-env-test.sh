@@ -110,6 +110,17 @@ if ! cmp "$tmp/expected-output" "$tmp/read-output" >/dev/null 2>&1; then
   exit 1
 fi
 
+HERDR_WAYPIPE_ENV_FILE="$state" "$helper" clear
+if [ -e "$state" ]; then
+  printf 'clear did not remove the Waypipe snapshot\n' >&2
+  exit 1
+fi
+assert_read_rejected_silently "$state"
+env -u DISPLAY HERDR_WAYPIPE_ENV_FILE="$state" \
+  WAYLAND_DISPLAY="$absolute_display" XDG_RUNTIME_DIR="$tmp/runtime replacement" \
+  "$helper" publish
+HERDR_WAYPIPE_ENV_FILE="$state" "$helper" read >"$tmp/expected-output"
+
 relative_parent=$tmp/relative-parent
 mkdir "$relative_parent"
 chmod 755 "$relative_parent"
@@ -259,6 +270,6 @@ else
   status=$?
 fi
 assert_equal "$status" 2
-assert_equal "$(cat "$tmp/error")" 'usage: herdr-waypipe-env {publish|read}'
+assert_equal "$(cat "$tmp/error")" 'usage: herdr-waypipe-env {publish|read|clear}'
 
 printf '%s\n' 'herdr waypipe environment tests passed'

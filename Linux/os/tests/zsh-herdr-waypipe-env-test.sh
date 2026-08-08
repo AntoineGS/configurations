@@ -8,7 +8,8 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 mkdir -p "$tmp/home"
 
-CONFIG="$config" HOME="$tmp/home" HERDR_ENV=1 XDG_RUNTIME_DIR=/run/original \
+CONFIG="$config" HOME="$tmp/home" HERDR_ENV=1 WAYLAND_DISPLAY=wayland-original \
+  XDG_RUNTIME_DIR=/run/original DISPLAY=:0 \
   zsh -df >"$tmp/zsh-output" <<'ZSH'
 typeset -ga precmd_functions=()
 typeset snapshot_output=
@@ -60,6 +61,14 @@ assert_rejected_without_mutation() {
 snapshot_output=$'WAYLAND_DISPLAY=wayland-new\nXDG_RUNTIME_DIR=/run/new path\nDISPLAY=localhost:12.0=screen\n'
 _herdr_refresh_waypipe_env
 assert_environment valid wayland-new '/run/new path' 'localhost:12.0=screen'
+
+snapshot_status=1
+if _herdr_refresh_waypipe_env; then
+    print -u2 -- 'cleared snapshot was unexpectedly accepted'
+    exit 1
+fi
+assert_environment restored-after-clear wayland-original /run/original :0
+snapshot_status=0
 
 assert_rejected_without_mutation missing \
   $'WAYLAND_DISPLAY=wayland-new\nXDG_RUNTIME_DIR=/run/new\n'

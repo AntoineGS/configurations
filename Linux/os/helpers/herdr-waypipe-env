@@ -21,6 +21,18 @@ socket_path() {
   esac
 }
 
+state_directory() {
+  case $state_file in
+    /*/*) ;;
+    *) return 1 ;;
+  esac
+  case $state_file in
+    */ | *//* | */./* | */../* | */. | */..) return 1 ;;
+  esac
+
+  printf '%s\n' "${state_file%/*}"
+}
+
 publish() {
   wayland_display=${WAYLAND_DISPLAY-}
   xdg_runtime_dir=${XDG_RUNTIME_DIR-}
@@ -37,17 +49,7 @@ publish() {
   socket=$(socket_path "$wayland_display" "$xdg_runtime_dir")
   [ -S "$socket" ] || return 1
 
-  case $state_file in
-    /*/*) ;;
-    *) return 1 ;;
-  esac
-  case $state_file in
-    */ | *//* | */./* | */../* | */. | */..) return 1 ;;
-  esac
-
-  case $state_file in
-    */*) state_dir=${state_file%/*} ;;
-  esac
+  state_dir=$(state_directory) || return 1
 
   [ ! -L "$state_dir" ] || return 1
   umask 077
@@ -64,6 +66,13 @@ publish() {
   chmod 600 "$temporary" || return 1
   mv -f "$temporary" "$state_file" || return 1
   trap - 0 HUP INT TERM
+}
+
+clear_state() {
+  state_dir=$(state_directory) || return 1
+  [ ! -L "$state_dir" ] || return 1
+  [ ! -L "$state_file" ] || return 1
+  rm -f -- "$state_file"
 }
 
 read_state() {
@@ -112,8 +121,9 @@ read_state() {
 case ${1-} in
   publish) publish ;;
   read) read_state ;;
+  clear) clear_state ;;
   *)
-    printf '%s\n' 'usage: herdr-waypipe-env {publish|read}' >&2
+    printf '%s\n' 'usage: herdr-waypipe-env {publish|read|clear}' >&2
     exit 2
     ;;
 esac
