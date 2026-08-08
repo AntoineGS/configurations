@@ -236,7 +236,8 @@ $script:ViCursorHandler = {
 Set-PSReadLineOption -ViModeIndicator Script -ViModeChangeHandler $script:ViCursorHandler
 if (-not $pwshNonInteractive -and
     -not $pwshScriptMode -and
-    -not [Console]::IsOutputRedirected) {
+    -not [Console]::IsOutputRedirected -and
+    -not [Console]::IsInputRedirected) {
   & $script:ViCursorHandler ([Microsoft.PowerShell.ViMode]::Insert)
 }
 Enable-TransientPrompt
