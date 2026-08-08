@@ -213,20 +213,52 @@ function Update-HerdrWaypipeEnvironment {
 
 function Invoke-Starship-PreCommand {
   Update-HerdrWaypipeEnvironment
+
+  if (-not $pwshNonInteractive -and
+      -not $pwshScriptMode -and
+      -not [Console]::IsOutputRedirected -and
+      -not [Console]::IsInputRedirected) {
+    $mode = if ([Microsoft.PowerShell.PSConsoleReadLine]::InViCommandMode()) {
+      [Microsoft.PowerShell.ViMode]::Command
+    }
+    else {
+      [Microsoft.PowerShell.ViMode]::Insert
+    }
+    & $script:ViCursorHandler $mode
+  }
 }
 
 Import-Module "$HOME/.config/shell-picker/shell-picker.psd1" -ErrorAction Stop
 Register-ShellPicker -PickerPath (Get-Command shell-picker.exe -CommandType Application -ErrorAction Stop).Source
 
 $pwshArguments = [Environment]::GetCommandLineArgs()
-$pwshNonInteractive = $pwshArguments -contains '-NonInteractive' -or
-  $pwshArguments -contains '-noni'
-$pwshScriptMode = $pwshArguments | Where-Object {
-  $_ -in @(
-    '-Command', '-c', '-CommandWithArgs', '-cwa',
-    '-EncodedCommand', '-e', '-ec', '-enc', '-File', '-f'
-  )
+$pwshTerminalScriptOptions = @(
+  '-Command', '-c', '-CommandWithArgs', '-cwa', '-File', '-f'
+)
+$pwshEncodedCommandOptions = @('-EncodedCommand', '-e', '-ec', '-enc')
+$pwshNoExit = $false
+$pwshNonInteractive = $false
+$pwshScriptMode = $false
+for ($i = 1; $i -lt $pwshArguments.Count; $i++) {
+  $argument = $pwshArguments[$i]
+  if ($argument -eq '-NoExit' -or $argument -eq '-noe') {
+    $pwshNoExit = $true
+    continue
+  }
+  if ($argument -eq '-NonInteractive' -or $argument -eq '-noni') {
+    $pwshNonInteractive = $true
+    continue
+  }
+  if ($argument -in $pwshTerminalScriptOptions) {
+    $pwshScriptMode = $true
+    break
+  }
+  if ($argument -in $pwshEncodedCommandOptions) {
+    $pwshScriptMode = $true
+    $i++
+  }
 }
+$pwshScriptMode = $pwshScriptMode -and -not $pwshNoExit
 
 Invoke-Expression (&starship init powershell --print-full-init | Out-String)
 $script:ViCursorHandler = {
@@ -242,12 +274,6 @@ $script:ViCursorHandler = {
   }
 }
 Set-PSReadLineOption -ViModeIndicator Script -ViModeChangeHandler $script:ViCursorHandler
-if (-not $pwshNonInteractive -and
-    -not $pwshScriptMode -and
-    -not [Console]::IsOutputRedirected -and
-    -not [Console]::IsInputRedirected) {
-  & $script:ViCursorHandler ([Microsoft.PowerShell.ViMode]::Insert)
-}
 Enable-TransientPrompt
 
 $fzfApplication = Get-Command fzf -CommandType Application -ErrorAction SilentlyContinue
