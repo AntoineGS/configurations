@@ -210,8 +210,35 @@ function Invoke-Starship-PreCommand {
 Import-Module "$HOME/.config/shell-picker/shell-picker.psd1" -ErrorAction Stop
 Register-ShellPicker -PickerPath (Get-Command shell-picker.exe -CommandType Application -ErrorAction Stop).Source
 
+$pwshArguments = [Environment]::GetCommandLineArgs()
+$pwshNonInteractive = $pwshArguments -contains '-NonInteractive' -or
+  $pwshArguments -contains '-noni'
+$pwshScriptMode = $pwshArguments | Where-Object {
+  $_ -in @(
+    '-Command', '-c', '-CommandWithArgs', '-cwa',
+    '-EncodedCommand', '-e', '-ec', '-enc', '-File', '-f'
+  )
+}
+
 Invoke-Expression (&starship init powershell --print-full-init | Out-String)
-Set-PSReadLineOption -ViModeIndicator Cursor
+$script:ViCursorHandler = {
+  param(
+    [Microsoft.PowerShell.ViMode]$Mode
+  )
+
+  if ($Mode -eq [Microsoft.PowerShell.ViMode]::Command) {
+    [Console]::Write("`e[2 q")
+  }
+  else {
+    [Console]::Write("`e[6 q")
+  }
+}
+Set-PSReadLineOption -ViModeIndicator Script -ViModeChangeHandler $script:ViCursorHandler
+if (-not $pwshNonInteractive -and
+    -not $pwshScriptMode -and
+    -not [Console]::IsOutputRedirected) {
+  & $script:ViCursorHandler ([Microsoft.PowerShell.ViMode]::Insert)
+}
 Enable-TransientPrompt
 
 $fzfApplication = Get-Command fzf -CommandType Application -ErrorAction SilentlyContinue
@@ -333,16 +360,6 @@ function refreshenv {
 
   Import-Module $chocolateyProfile -Global
   Update-SessionEnvironment
-}
-
-$pwshArguments = [Environment]::GetCommandLineArgs()
-$pwshNonInteractive = $pwshArguments -contains '-NonInteractive' -or
-  $pwshArguments -contains '-noni'
-$pwshScriptMode = $pwshArguments | Where-Object {
-  $_ -in @(
-    '-Command', '-c', '-CommandWithArgs', '-cwa',
-    '-EncodedCommand', '-e', '-ec', '-enc', '-File', '-f'
-  )
 }
 
 if (-not [string]::IsNullOrEmpty($env:SSH_TTY) -and
