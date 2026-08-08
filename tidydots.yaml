@@ -506,22 +506,11 @@ applications:
         name: adapters
         backup: ./Both/ShellPicker
       - check:
-          linux: >-
-            source="$HOME/gits/shell-picker";
-            binary="$HOME/.local/bin/shell-picker";
-            test -x "$binary" &&
-            revision="$(git -C "$source" rev-parse HEAD 2>/dev/null)" &&
-            test "$("$binary" version 2>/dev/null)" = "shell-picker dev" &&
-            go version -m "$binary" 2>/dev/null | grep -Fq "vcs.revision=$revision"
-          windows: >-
-            powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { Set-StrictMode -Version Latest; `$ErrorActionPreference = 'Stop'; try { `$source = 'C:\Gits\shell-picker'; if (-not (Test-Path -LiteralPath `$source -PathType Container)) { exit 1 }; `$go = Get-Command go.exe -ErrorAction Stop; `$git = Get-Command git.exe -ErrorAction Stop; `$gopath = (& go.exe env GOPATH 2>`$null | Out-String).Trim(); `$goExitCode = `$LASTEXITCODE; if (`$goExitCode -ne 0 -or [string]::IsNullOrWhiteSpace(`$gopath)) { exit 1 }; `$binary = Join-Path `$gopath 'bin\shell-picker.exe'; if (-not (Test-Path -LiteralPath `$binary -PathType Leaf)) { exit 1 }; `$head = (& git.exe -C `$source rev-parse HEAD 2>`$null | Out-String).Trim(); `$gitExitCode = `$LASTEXITCODE; if (`$gitExitCode -ne 0 -or [string]::IsNullOrWhiteSpace(`$head)) { exit 1 }; `$version = (& `$binary version 2>`$null | Out-String).Trim(); `$versionExitCode = `$LASTEXITCODE; if (`$versionExitCode -ne 0 -or `$version -ne 'shell-picker dev') { exit 1 }; `$metadata = & go.exe version -m `$binary 2>`$null | Out-String; `$metadataExitCode = `$LASTEXITCODE; if (`$metadataExitCode -ne 0 -or -not `$metadata.Contains(('vcs.revision=' + `$head))) { exit 1 }; exit 0 } catch { exit 1 } }"
+          linux: 'bash "$HOME/.config/shell-picker/manage-binary.sh" check'
+          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\.config\shell-picker\Manage-ShellPickerBinary.ps1" -Check'
         run:
-          linux: >-
-            set -eu;
-            source="$HOME/gits/shell-picker";
-            (cd "$source" && make build && GOBIN="$HOME/.local/bin" make install)
-          windows: >-
-            powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { Set-StrictMode -Version Latest; `$ErrorActionPreference = 'Stop'; try { `$source = 'C:\Gits\shell-picker'; if (-not (Test-Path -LiteralPath `$source -PathType Container)) { exit 1 }; `$go = Get-Command go.exe -ErrorAction Stop; Push-Location -LiteralPath `$source; try { & go.exe install -trimpath ./cmd/shell-picker; `$installExitCode = `$LASTEXITCODE } finally { Pop-Location }; if (`$installExitCode -ne 0) { exit `$installExitCode }; `$gopath = (& go.exe env GOPATH 2>`$null | Out-String).Trim(); `$goExitCode = `$LASTEXITCODE; if (`$goExitCode -ne 0 -or [string]::IsNullOrWhiteSpace(`$gopath)) { exit 1 }; `$binary = Join-Path `$gopath 'bin\shell-picker.exe'; if (-not (Test-Path -LiteralPath `$binary -PathType Leaf)) { exit 1 }; exit 0 } catch { exit 1 } }"
+          linux: 'bash "$HOME/.config/shell-picker/manage-binary.sh" install'
+          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\.config\shell-picker\Manage-ShellPickerBinary.ps1"'
         name: binary
   - package:
       managers:
