@@ -17,11 +17,19 @@ function Invoke-Starship-TransientFunction {
   &starship module character
 }
 
-function Get-ChildItemUnix {
-  Get-ChildItem $Args[0] |
-  Format-Table Mode, @{N = 'Owner'; E = { (Get-Acl $_.FullName).Owner } }, Length, LastWriteTime, @{N = 'Name'; E = { if ($_.Target) { $_.Name + ' -> ' + $_.Target } else { $_.Name } } }
+$eza = Get-Command eza -CommandType Application -ErrorAction SilentlyContinue
+if ($null -ne $eza) {
+  $script:EzaPath = $eza.Source
+  Remove-Item Alias:ls, Alias:ll -Force -ErrorAction SilentlyContinue
+
+  function global:ls {
+    & $script:EzaPath --group-directories-first @args
+  }
+
+  function global:ll {
+    & $script:EzaPath -la --group-directories-first @args
+  }
 }
-Set-Alias -Name ll -Value Get-ChildItemUnix -Scope Global
 function :q { exit }
 
 if (Get-Command lazygit -ErrorAction SilentlyContinue) {
