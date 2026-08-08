@@ -22,6 +22,7 @@ function Get-ChildItemUnix {
   Format-Table Mode, @{N = 'Owner'; E = { (Get-Acl $_.FullName).Owner } }, Length, LastWriteTime, @{N = 'Name'; E = { if ($_.Target) { $_.Name + ' -> ' + $_.Target } else { $_.Name } } }
 }
 Set-Alias -Name ll -Value Get-ChildItemUnix -Scope Global
+function :q { exit }
 
 if (Get-Command lazygit -ErrorAction SilentlyContinue) {
   Set-Alias -Name lg -Value lazygit -Scope Global
@@ -210,7 +211,94 @@ Import-Module "$HOME/.config/shell-picker/shell-picker.psd1" -ErrorAction Stop
 Register-ShellPicker -PickerPath (Get-Command shell-picker.exe -CommandType Application -ErrorAction Stop).Source
 
 Invoke-Expression (&starship init powershell --print-full-init | Out-String)
+Set-PSReadLineOption -ViModeIndicator Cursor
 Enable-TransientPrompt
+
+$fzfApplication = Get-Command fzf -CommandType Application -ErrorAction SilentlyContinue
+if ($null -ne $fzfApplication) {
+  $script:fzfPath = $fzfApplication.Source
+  $script:fzfHistoryHandler = {
+    try {
+      $buffer = ''
+      $cursor = 0
+      [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$buffer, [ref]$cursor)
+      $escapedBuffer = $buffer.Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+
+      $candidates = @(
+        foreach ($historyItem in [Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()) {
+          $command = [string]$historyItem.CommandLine
+          if ([string]::IsNullOrWhiteSpace($command) -or
+              $command.IndexOf([char]0) -ge 0) {
+            continue
+          }
+
+          $display = $command.Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+          $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($command))
+          "$display`t$payload"
+        }
+      )
+      if ($candidates.Count -eq 0) {
+        return
+      }
+
+      $fzfArguments = @(
+        '--no-multi'
+        '--no-sort'
+        '--tac'
+        '--delimiter'
+        "`t"
+        '--nth'
+        '1'
+        '--with-nth'
+        '1'
+        '--bind'
+        'ctrl-c:abort'
+        '--query'
+        $escapedBuffer
+      )
+      $selection = @($candidates | & $script:fzfPath @fzfArguments 2>$null)
+      $exitCode = $LASTEXITCODE
+      if ($exitCode -ne 0 -or $selection.Count -ne 1) {
+        return
+      }
+
+      $selected = [string]$selection[0]
+      $delimiter = [char]9
+      $delimiterIndex = $selected.IndexOf($delimiter)
+      if ($delimiterIndex -lt 1 -or
+          $delimiterIndex -ne $selected.LastIndexOf($delimiter)) {
+        return
+      }
+
+      $display = $selected.Substring(0, $delimiterIndex)
+      $payload = $selected.Substring($delimiterIndex + 1)
+      if ([string]::IsNullOrEmpty($payload)) {
+        return
+      }
+
+      $bytes = [Convert]::FromBase64String($payload)
+      if ([Convert]::ToBase64String($bytes) -cne $payload) {
+        return
+      }
+      $command = [System.Text.Encoding]::UTF8.GetString($bytes)
+      if ([string]::IsNullOrWhiteSpace($command) -or
+          $command.IndexOf([char]0) -ge 0) {
+        return
+      }
+
+      $expectedDisplay = $command.Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+      if ($display -cne $expectedDisplay) {
+        return
+      }
+
+      [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $buffer.Length, $command)
+      [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($command.Length)
+    }
+    catch {
+    }
+  }
+  Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock $script:fzfHistoryHandler -BriefDescription fzf-history -ViMode Insert
+}
 
 $zoxide = Get-Command zoxide -CommandType Application -ErrorAction SilentlyContinue
 if ($null -ne $zoxide) {

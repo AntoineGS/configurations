@@ -91,7 +91,7 @@ $time\
 $status\
 $container\
 $netns\
-$shell
+$shell\
 """
 # palette = 'onedark' 
 
