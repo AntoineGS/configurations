@@ -100,6 +100,24 @@ actual=$(PATH="$tmp/bin:$PATH" \
   "$wrapper" --list-types)
 assert_equal "$actual" "$expected"
 
+expected='display=wayland-local
+runtime=/run/user/local
+xdisplay=:0
+arg=--type
+arg=text/plain'
+
+actual=$(PATH="$tmp/bin:$PATH" \
+  TEST_HERDR_WAYPIPE_ENV_REAL="$env_helper" \
+  TEST_HERDR_READ_RESULT=failure HERDR_ENV=1 \
+  HERDR_LOCAL_WAYLAND_ENV_CAPTURED=1 \
+  HERDR_LOCAL_WAYLAND_DISPLAY=wayland-local \
+  HERDR_LOCAL_XDG_RUNTIME_DIR=/run/user/local \
+  HERDR_LOCAL_DISPLAY=:0 HERDR_LOCAL_DISPLAY_SET=1 \
+  WAYLAND_DISPLAY=wayland-stale XDG_RUNTIME_DIR=/run/user/stale DISPLAY=:9 \
+  WL_PASTE_REAL="$tmp/bin/real-wl-paste" \
+  "$wrapper" --type text/plain)
+assert_equal "$actual" "$expected"
+
 cat >"$snapshot" <<EOF
 WAYLAND_DISPLAY=wayland-remote
 XDG_RUNTIME_DIR=$tmp/remote

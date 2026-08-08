@@ -787,7 +787,38 @@ if $nu.is-interactive and ('SSH_TTY' in $env) and (($env.HERDR_ENV? | default ''
     if not (which herdr-waypipe-env | is-empty) {
         ^herdr-waypipe-env publish | complete | ignore
     }
-    herdr
+    let ssh_wrapper = ($nu.home-path | path join '.config' 'herdr' 'ssh-session.sh')
+    if ($ssh_wrapper | path exists) {
+        ^sh $ssh_wrapper
+    } else {
+        herdr
+    }
+}
+
+if (($env.HERDR_ENV? | default '') == '1') and (($env.HERDR_LOCAL_WAYLAND_ENV_CAPTURED? | default '') != '1') {
+    load-env {
+        HERDR_LOCAL_WAYLAND_ENV_CAPTURED: '1'
+        HERDR_LOCAL_WAYLAND_DISPLAY: ($env.WAYLAND_DISPLAY? | default '')
+        HERDR_LOCAL_XDG_RUNTIME_DIR: ($env.XDG_RUNTIME_DIR? | default '')
+        HERDR_LOCAL_DISPLAY: ($env.DISPLAY? | default '')
+        HERDR_LOCAL_DISPLAY_SET: (if 'DISPLAY' in $env { '1' } else { '0' })
+    }
+}
+
+def --env _herdr_restore_local_wayland_env [] {
+    if (($env.HERDR_LOCAL_WAYLAND_ENV_CAPTURED? | default '') != '1') {
+        return
+    }
+
+    load-env {
+        WAYLAND_DISPLAY: $env.HERDR_LOCAL_WAYLAND_DISPLAY
+        XDG_RUNTIME_DIR: $env.HERDR_LOCAL_XDG_RUNTIME_DIR
+    }
+    if $env.HERDR_LOCAL_DISPLAY_SET == '1' {
+        load-env { DISPLAY: $env.HERDR_LOCAL_DISPLAY }
+    } else if 'DISPLAY' in $env {
+        hide-env DISPLAY
+    }
 }
 
 def --env _herdr_refresh_waypipe_env [] {
@@ -797,6 +828,7 @@ def --env _herdr_refresh_waypipe_env [] {
 
     let result = (^herdr-waypipe-env read | complete)
     if $result.exit_code != 0 {
+        _herdr_restore_local_wayland_env
         return
     }
 
@@ -806,6 +838,7 @@ def --env _herdr_refresh_waypipe_env [] {
         | parse --regex '^(?<name>WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DISPLAY)=(?<value>.*)$'
     )
     if (($values | length) != 3) or (($values.name | uniq | length) != 3) {
+        _herdr_restore_local_wayland_env
         return
     }
 

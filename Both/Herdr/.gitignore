@@ -2,3 +2,5 @@
 !.gitignore
 !config.toml
 !config.toml.tmpl
+!ssh-session.sh
+!ssh-session.ps1

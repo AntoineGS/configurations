@@ -69,11 +69,33 @@ alias clauded="claude --dangerously-skip-permissions"
 # Scripts
 if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]]; then
     herdr-waypipe-env publish 2>/dev/null || true
-    herdr
+    if [[ -r "$HOME/.config/herdr/ssh-session.sh" ]]; then
+        sh "$HOME/.config/herdr/ssh-session.sh"
+    else
+        herdr
+    fi
 fi
 
 # Pull fresh Waypipe variables into existing Herdr panes after an SSH reconnect.
 if [[ "${HERDR_ENV:-}" == 1 ]]; then
+    if [[ "${HERDR_LOCAL_WAYLAND_ENV_CAPTURED:-}" != 1 ]]; then
+        export HERDR_LOCAL_WAYLAND_ENV_CAPTURED=1
+        export HERDR_LOCAL_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
+        export HERDR_LOCAL_XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
+        export HERDR_LOCAL_DISPLAY="${DISPLAY:-}"
+        export HERDR_LOCAL_DISPLAY_SET="${+DISPLAY}"
+    fi
+
+    _herdr_restore_local_wayland_env() {
+        export WAYLAND_DISPLAY="$HERDR_LOCAL_WAYLAND_DISPLAY"
+        export XDG_RUNTIME_DIR="$HERDR_LOCAL_XDG_RUNTIME_DIR"
+        if [[ "$HERDR_LOCAL_DISPLAY_SET" == 1 ]]; then
+            export DISPLAY="$HERDR_LOCAL_DISPLAY"
+        else
+            unset DISPLAY
+        fi
+    }
+
     _herdr_refresh_waypipe_env() {
         local snapshot line name value read_status
         local wayland_display xdg_runtime_dir display
@@ -85,7 +107,10 @@ if [[ "${HERDR_ENV:-}" == 1 ]]; then
             read_status=$?
             printf x
             exit "$read_status"
-        ) || return
+        ) || {
+            _herdr_restore_local_wayland_env
+            return 1
+        }
         snapshot=${snapshot%x}
 
         while IFS= read -r line; do

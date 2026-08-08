@@ -31,3 +31,13 @@ function refreshenv {
   Import-Module $chocolateyProfile -Global
   Update-SessionEnvironment
 }
+
+if (![string]::IsNullOrEmpty($env:SSH_CONNECTION) -and $env:HERDR_ENV -ne '1') {
+  $sshWrapper = Join-Path $env:APPDATA 'herdr\ssh-session.ps1'
+  if (Test-Path -LiteralPath $sshWrapper) {
+    & $sshWrapper Attach
+  }
+  else {
+    & herdr
+  }
+}
