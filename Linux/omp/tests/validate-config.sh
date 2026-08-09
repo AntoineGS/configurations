@@ -124,7 +124,7 @@ validate_tidydots() {
     '        name: zsh-completion'
   )
 
-  app_count="$(awk '$0 == "    name: oh-my-pi" { count++ } END { print count + 0 }' "$config")"
+  app_count="$(awk '$0 == "  - name: oh-my-pi" || $0 == "    name: oh-my-pi" { count++ } END { print count + 0 }' "$config")"
   test "$app_count" -eq 1
 
   app_start="$(awk '
