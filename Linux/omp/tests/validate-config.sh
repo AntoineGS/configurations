@@ -123,6 +123,12 @@ validate_tidydots() {
     '          linux: herdr integration install omp'
     '        name: herdr-integration'
     '      - check:'
+    '          linux: >-'
+    '            omp plugin list --json | awk '\''BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "@andrewjacop\/pi-herdr",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'\'''
+    '        run:'
+    '          linux: omp plugin install @andrewjacop/pi-herdr'
+    '        name: pi-herdr'
+    '      - check:'
     '          linux: test -s ~/.local/share/zsh/completions/_omp'
     '        run:'
     '          linux: mkdir -p ~/.local/share/zsh/completions && omp completions zsh > ~/.local/share/zsh/completions/_omp'
@@ -164,6 +170,7 @@ validate_tidydots() {
   fi
 
   bash "$ROOT/Linux/omp/tests/test_superpowers_check.sh"
+  bash "$ROOT/Linux/omp/tests/test_pi_herdr_check.sh"
   test "$(rg -Fxc 'Linux/zsh/completions/_omp' "$ROOT/.gitignore" || printf '0')" -eq 1
 }
 
