@@ -27,16 +27,17 @@ validate_base() {
 }
 
 validate_agents() {
-  test "$(rg --files "$AGENT_DIR/agents" -g '*.md' | wc -l)" -eq 46
-  ! rg -n '^(mode|model|variant):' "$AGENT_DIR/agents"
+  mapfile -t agent_files < <(rg --files "$AGENT_DIR/agents" -g '*.md' | sort)
+  test "${#agent_files[@]}" -eq 46
+  ! rg -n '^(mode|model|variant):' "${agent_files[@]}"
 
-  while IFS= read -r agent; do
+  for agent in "${agent_files[@]}"; do
     test "$(rg --count --no-filename '^name:' "$agent" || printf '0')" -eq 1
     test "$(rg --count --no-filename '^description:' "$agent" || printf '0')" -eq 1
-  done < <(rg --files "$AGENT_DIR/agents" -g '*.md' | sort)
+  done
 
   test "$(
-    rg --no-filename '^name:' "$AGENT_DIR/agents" |
+    rg --no-filename '^name:' "${agent_files[@]}" |
       while IFS=: read -r _ value; do
         printf '%s\n' "${value# }"
       done |
