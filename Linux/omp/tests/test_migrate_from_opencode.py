@@ -46,6 +46,7 @@ subtask: true
 ---
 
 Use subagent_type: "suite-reviewer" with the Task tool.
+All `subagent_type` references use agents bundled with this plugin or `general-purpose`.
 AskUserQuestion tool is available, but do not use EnterPlanMode.
 Run /ui-design:create-component when needed.
 """,
@@ -84,9 +85,11 @@ Run /ui-design:create-component when needed.
     self.assertIn('agent: "suite__reviewer"', output)
     self.assertIn("`task` tool", output)
     self.assertIn("`ask` tool", output)
+    self.assertIn("All `agent` references use agents bundled with this plugin or `task`.", output)
     self.assertNotIn("subtask:", output)
     self.assertNotIn("argument-hint:", output)
     self.assertNotIn("subagent_type", output)
+    self.assertNotIn("general-purpose", output)
     self.assertNotIn("AskUserQuestion", output)
     self.assertNotIn("EnterPlanMode", output)
 
