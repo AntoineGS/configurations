@@ -72,22 +72,27 @@ Use the `task` tool with agent="framework-migration__legacy-modernizer":
 
 ```
 Task:
-  agent: "framework-migration__legacy-modernizer"
-  description: "Analyze legacy codebase for modernization readiness"
-  prompt: |
-    Analyze the legacy codebase at $TARGET. Document a technical debt inventory including:
-    - Outdated dependencies and deprecated APIs
-    - Security vulnerabilities and performance bottlenecks
-    - Architectural anti-patterns
+  context: |
+    This batch handles the workflow assignment: Analyze legacy codebase for modernization readiness.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "framework-migration__legacy-modernizer"
+      task: |
+        Analyze the legacy codebase at $TARGET. Document a technical debt inventory including:
+        - Outdated dependencies and deprecated APIs
+        - Security vulnerabilities and performance bottlenecks
+        - Architectural anti-patterns
 
-    Generate a modernization readiness report with:
-    - Component complexity scores (1-10)
-    - Dependency mapping between modules
-    - Database coupling analysis
-    - Quick wins vs complex refactoring targets
+        Generate a modernization readiness report with:
+        - Component complexity scores (1-10)
+        - Dependency mapping between modules
+        - Database coupling analysis
+        - Quick wins vs complex refactoring targets
 
-    Write your complete assessment as a single markdown document.
+        Write your complete assessment as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/01-legacy-assessment.md`.
 
@@ -101,23 +106,28 @@ Use the `task` tool with agent="framework-migration__architect-review":
 
 ```
 Task:
-  agent: "framework-migration__architect-review"
-  description: "Create dependency graph and integration point catalog"
-  prompt: |
-    Based on the legacy assessment report below, create a comprehensive dependency graph.
+  context: |
+    This batch handles the workflow assignment: Create dependency graph and integration point catalog.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "framework-migration__architect-review"
+      task: |
+        Based on the legacy assessment report below, create a comprehensive dependency graph.
 
-    ## Legacy Assessment
-    [Insert full contents of .legacy-modernize/01-legacy-assessment.md]
+        ## Legacy Assessment
+        [Insert full contents of .legacy-modernize/01-legacy-assessment.md]
 
-    ## Deliverables
-    1. Internal module dependencies
-    2. External service integrations
-    3. Shared database schemas and cross-system data flows
-    4. Integration points requiring facade patterns or adapter layers during migration
-    5. Circular dependencies and tight coupling that need resolution
+        ## Deliverables
+        1. Internal module dependencies
+        2. External service integrations
+        3. Shared database schemas and cross-system data flows
+        4. Integration points requiring facade patterns or adapter layers during migration
+        5. Circular dependencies and tight coupling that need resolution
 
-    Write your complete dependency analysis as a single markdown document.
+        Write your complete dependency analysis as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/02-dependency-map.md`.
 
@@ -131,27 +141,32 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Evaluate business impact and create migration roadmap"
-  prompt: |
-    You are a business analyst specializing in technology transformation and risk assessment.
+  context: |
+    This batch handles the workflow assignment: Evaluate business impact and create migration roadmap.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a business analyst specializing in technology transformation and risk assessment.
 
-    Evaluate the business impact of modernizing each component identified in the assessment and dependency analysis below.
+        Evaluate the business impact of modernizing each component identified in the assessment and dependency analysis below.
 
-    ## Legacy Assessment
-    [Insert contents of .legacy-modernize/01-legacy-assessment.md]
+        ## Legacy Assessment
+        [Insert contents of .legacy-modernize/01-legacy-assessment.md]
 
-    ## Dependency Map
-    [Insert contents of .legacy-modernize/02-dependency-map.md]
+        ## Dependency Map
+        [Insert contents of .legacy-modernize/02-dependency-map.md]
 
-    ## Deliverables
-    1. Risk assessment matrix considering: business criticality (revenue impact), user traffic patterns, data sensitivity, regulatory requirements, and fallback complexity
-    2. Prioritized components using weighted scoring: (Business Value x 0.4) + (Technical Risk x 0.3) + (Quick Win Potential x 0.3)
-    3. Rollback strategies for each component
-    4. Recommended migration order
+        ## Deliverables
+        1. Risk assessment matrix considering: business criticality (revenue impact), user traffic patterns, data sensitivity, regulatory requirements, and fallback complexity
+        2. Prioritized components using weighted scoring: (Business Value x 0.4) + (Technical Risk x 0.3) + (Quick Win Potential x 0.3)
+        3. Rollback strategies for each component
+        4. Recommended migration order
 
-    Write your complete business impact analysis as a single markdown document.
+        Write your complete business impact analysis as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/03-business-impact.md`.
 
@@ -190,27 +205,32 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Analyze and establish test coverage for legacy components"
-  prompt: |
-    You are a test automation engineer specializing in legacy system characterization testing.
+  context: |
+    This batch handles the workflow assignment: Analyze and establish test coverage for legacy components.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation engineer specializing in legacy system characterization testing.
 
-    Analyze existing test coverage for legacy components at $TARGET.
+        Analyze existing test coverage for legacy components at $TARGET.
 
-    ## Legacy Assessment
-    [Insert contents of .legacy-modernize/01-legacy-assessment.md]
+        ## Legacy Assessment
+        [Insert contents of .legacy-modernize/01-legacy-assessment.md]
 
-    ## Migration Priorities
-    [Insert contents of .legacy-modernize/03-business-impact.md]
+        ## Migration Priorities
+        [Insert contents of .legacy-modernize/03-business-impact.md]
 
-    ## Instructions
-    1. Use coverage tools to identify untested code paths, missing integration tests, and absent end-to-end scenarios
-    2. For components with <40% coverage, generate characterization tests that capture current behavior without modifying functionality
-    3. Create a test harness for safe refactoring
-    4. Follow existing test patterns and frameworks in the project
+        ## Instructions
+        1. Use coverage tools to identify untested code paths, missing integration tests, and absent end-to-end scenarios
+        2. For components with <40% coverage, generate characterization tests that capture current behavior without modifying functionality
+        3. Create a test harness for safe refactoring
+        4. Follow existing test patterns and frameworks in the project
 
-    Write all test files and report what was created. Provide a coverage summary.
+        Write all test files and report what was created. Provide a coverage summary.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/04-test-coverage.md`.
 
@@ -224,27 +244,32 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Implement contract tests for integration points"
-  prompt: |
-    You are a test automation engineer specializing in contract testing and API verification.
+  context: |
+    This batch handles the workflow assignment: Implement contract tests for integration points.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation engineer specializing in contract testing and API verification.
 
-    Implement contract tests for all integration points identified in the dependency mapping.
+        Implement contract tests for all integration points identified in the dependency mapping.
 
-    ## Dependency Map
-    [Insert contents of .legacy-modernize/02-dependency-map.md]
+        ## Dependency Map
+        [Insert contents of .legacy-modernize/02-dependency-map.md]
 
-    ## Existing Test Coverage
-    [Insert contents of .legacy-modernize/04-test-coverage.md]
+        ## Existing Test Coverage
+        [Insert contents of .legacy-modernize/04-test-coverage.md]
 
-    ## Instructions
-    1. Create consumer-driven contracts for APIs, message queue interactions, and database schemas
-    2. Set up contract verification in CI/CD pipeline
-    3. Generate performance baselines for response times and throughput to validate modernized components maintain SLAs
-    4. Follow existing test patterns and frameworks in the project
+        ## Instructions
+        1. Create consumer-driven contracts for APIs, message queue interactions, and database schemas
+        2. Set up contract verification in CI/CD pipeline
+        3. Generate performance baselines for response times and throughput to validate modernized components maintain SLAs
+        4. Follow existing test patterns and frameworks in the project
 
-    Write all test files and report what was created.
+        Write all test files and report what was created.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/05-contract-tests.md`.
 
@@ -258,27 +283,32 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Design test data management for parallel system operation"
-  prompt: |
-    You are a data engineer specializing in test data management and data pipeline design.
+  context: |
+    This batch handles the workflow assignment: Design test data management for parallel system operation.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a data engineer specializing in test data management and data pipeline design.
 
-    Design a test data management strategy for parallel system operation during migration.
+        Design a test data management strategy for parallel system operation during migration.
 
-    ## Dependency Map
-    [Insert contents of .legacy-modernize/02-dependency-map.md]
+        ## Dependency Map
+        [Insert contents of .legacy-modernize/02-dependency-map.md]
 
-    ## Test Coverage
-    [Insert contents of .legacy-modernize/04-test-coverage.md]
+        ## Test Coverage
+        [Insert contents of .legacy-modernize/04-test-coverage.md]
 
-    ## Instructions
-    1. Create data generation scripts for edge cases
-    2. Implement data masking for sensitive information
-    3. Establish test database refresh procedures
-    4. Set up monitoring for data consistency between legacy and modernized components during migration
+        ## Instructions
+        1. Create data generation scripts for edge cases
+        2. Implement data masking for sensitive information
+        3. Establish test database refresh procedures
+        4. Set up monitoring for data consistency between legacy and modernized components during migration
 
-    Write all configuration and script files. Report what was created.
+        Write all configuration and script files. Report what was created.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/06-test-data.md`.
 
@@ -315,29 +345,34 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Implement strangler fig infrastructure with API gateway and feature flags"
-  prompt: |
-    You are a backend architect specializing in distributed systems and migration infrastructure.
+  context: |
+    This batch handles the workflow assignment: Implement strangler fig infrastructure with API gateway and feature flags.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend architect specializing in distributed systems and migration infrastructure.
 
-    Implement strangler fig infrastructure for the legacy modernization.
+        Implement strangler fig infrastructure for the legacy modernization.
 
-    ## Dependency Map
-    [Insert contents of .legacy-modernize/02-dependency-map.md]
+        ## Dependency Map
+        [Insert contents of .legacy-modernize/02-dependency-map.md]
 
-    ## Migration Priorities
-    [Insert contents of .legacy-modernize/03-business-impact.md]
+        ## Migration Priorities
+        [Insert contents of .legacy-modernize/03-business-impact.md]
 
-    ## Instructions
-    1. Configure API gateway for traffic routing between legacy and modern components
-    2. Set up feature flags for gradual rollout using environment variables or feature management service
-    3. Implement proxy layer with request routing rules based on URL patterns, headers, or user segments
-    4. Implement circuit breakers and fallback mechanisms for resilience
-    5. Create observability dashboard for dual-system monitoring
-    6. Follow existing infrastructure patterns in the project
+        ## Instructions
+        1. Configure API gateway for traffic routing between legacy and modern components
+        2. Set up feature flags for gradual rollout using environment variables or feature management service
+        3. Implement proxy layer with request routing rules based on URL patterns, headers, or user segments
+        4. Implement circuit breakers and fallback mechanisms for resilience
+        5. Create observability dashboard for dual-system monitoring
+        6. Follow existing infrastructure patterns in the project
 
-    Write all configuration files. Report what was created/modified.
+        Write all configuration files. Report what was created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/07-infrastructure.md`.
 
@@ -351,37 +386,42 @@ Detect the target language/stack from the legacy assessment. Use the `task` tool
 
 ```
 Task:
-  agent: "task"
-  description: "Modernize first-wave components from legacy assessment"
-  prompt: |
-    You are an expert [DETECTED LANGUAGE] developer specializing in legacy code modernization
-    and migration to modern frameworks and patterns.
+  context: |
+    This batch handles the workflow assignment: Modernize first-wave components from legacy assessment.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are an expert [DETECTED LANGUAGE] developer specializing in legacy code modernization
+        and migration to modern frameworks and patterns.
 
-    Modernize first-wave components (quick wins identified in assessment).
+        Modernize first-wave components (quick wins identified in assessment).
 
-    ## Legacy Assessment
-    [Insert contents of .legacy-modernize/01-legacy-assessment.md]
+        ## Legacy Assessment
+        [Insert contents of .legacy-modernize/01-legacy-assessment.md]
 
-    ## Migration Priorities
-    [Insert contents of .legacy-modernize/03-business-impact.md]
+        ## Migration Priorities
+        [Insert contents of .legacy-modernize/03-business-impact.md]
 
-    ## Test Coverage
-    [Insert contents of .legacy-modernize/04-test-coverage.md]
+        ## Test Coverage
+        [Insert contents of .legacy-modernize/04-test-coverage.md]
 
-    ## Infrastructure
-    [Insert contents of .legacy-modernize/07-infrastructure.md]
+        ## Infrastructure
+        [Insert contents of .legacy-modernize/07-infrastructure.md]
 
-    ## Instructions
-    For each component in the first wave:
-    1. Extract business logic from legacy code
-    2. Implement using modern patterns (dependency injection, SOLID principles)
-    3. Ensure backward compatibility through adapter patterns
-    4. Maintain data consistency with event sourcing or dual writes
-    5. Follow 12-factor app principles
-    6. Run characterization tests to verify preserved behavior
+        ## Instructions
+        For each component in the first wave:
+        1. Extract business logic from legacy code
+        2. Implement using modern patterns (dependency injection, SOLID principles)
+        3. Ensure backward compatibility through adapter patterns
+        4. Maintain data consistency with event sourcing or dual writes
+        5. Follow 12-factor app principles
+        6. Run characterization tests to verify preserved behavior
 
-    Write all code files. Report what files were created/modified.
+        Write all code files. Report what files were created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 **Note:** Replace `[DETECTED LANGUAGE]` with the actual language detected from the legacy assessment (e.g., "Python", "TypeScript", "Go", "Rust", "Java"). If the codebase is polyglot, launch parallel agents for each language.
 
@@ -397,29 +437,34 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Security audit and hardening of modernized components"
-  prompt: |
-    You are a security engineer specializing in application security auditing,
-    OWASP compliance, and secure coding practices.
+  context: |
+    This batch handles the workflow assignment: Security audit and hardening of modernized components.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a security engineer specializing in application security auditing,
+        OWASP compliance, and secure coding practices.
 
-    Audit modernized components for security vulnerabilities and implement hardening.
+        Audit modernized components for security vulnerabilities and implement hardening.
 
-    ## Modernized Components
-    [Insert contents of .legacy-modernize/08-first-wave.md]
+        ## Modernized Components
+        [Insert contents of .legacy-modernize/08-first-wave.md]
 
-    ## Instructions
-    1. Implement OAuth 2.0/JWT authentication where applicable
-    2. Add role-based access control
-    3. Implement input validation and sanitization
-    4. Verify SQL injection prevention and XSS protection
-    5. Configure secrets management
-    6. Verify OWASP Top 10 compliance
-    7. Configure security headers and implement rate limiting
+        ## Instructions
+        1. Implement OAuth 2.0/JWT authentication where applicable
+        2. Add role-based access control
+        3. Implement input validation and sanitization
+        4. Verify SQL injection prevention and XSS protection
+        5. Configure secrets management
+        6. Verify OWASP Top 10 compliance
+        7. Configure security headers and implement rate limiting
 
-    Provide a security audit report with findings by severity (Critical/High/Medium/Low)
-    and list all hardening changes made. Write all code changes.
+        Provide a security audit report with findings by severity (Critical/High/Medium/Low)
+        and list all hardening changes made. Write all code changes.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/09-security.md`.
 
@@ -458,28 +503,33 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Performance testing of modernized vs legacy components"
-  prompt: |
-    You are a performance engineer specializing in load testing, benchmarking,
-    and application performance optimization.
+  context: |
+    This batch handles the workflow assignment: Performance testing of modernized vs legacy components.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a performance engineer specializing in load testing, benchmarking,
+        and application performance optimization.
 
-    Conduct performance testing comparing legacy vs modernized components.
+        Conduct performance testing comparing legacy vs modernized components.
 
-    ## Contract Tests and Baselines
-    [Insert contents of .legacy-modernize/05-contract-tests.md]
+        ## Contract Tests and Baselines
+        [Insert contents of .legacy-modernize/05-contract-tests.md]
 
-    ## Modernized Components
-    [Insert contents of .legacy-modernize/08-first-wave.md]
+        ## Modernized Components
+        [Insert contents of .legacy-modernize/08-first-wave.md]
 
-    ## Instructions
-    1. Run load tests simulating production traffic patterns
-    2. Measure response times, throughput, and resource utilization
-    3. Identify performance regressions and optimize: database queries with indexing, caching strategies, connection pooling, and async processing
-    4. Validate against SLA requirements (P95 latency within 110% of baseline)
+        ## Instructions
+        1. Run load tests simulating production traffic patterns
+        2. Measure response times, throughput, and resource utilization
+        3. Identify performance regressions and optimize: database queries with indexing, caching strategies, connection pooling, and async processing
+        4. Validate against SLA requirements (P95 latency within 110% of baseline)
 
-    Provide performance test results with comparison tables and optimization recommendations.
+        Provide performance test results with comparison tables and optimization recommendations.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/10-performance.md`.
 
@@ -493,29 +543,34 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Create progressive rollout strategy with automated safeguards"
-  prompt: |
-    You are a deployment engineer specializing in progressive delivery,
-    feature flag management, and production rollout strategies.
+  context: |
+    This batch handles the workflow assignment: Create progressive rollout strategy with automated safeguards.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a deployment engineer specializing in progressive delivery,
+        feature flag management, and production rollout strategies.
 
-    Implement a progressive rollout strategy for the modernized components.
+        Implement a progressive rollout strategy for the modernized components.
 
-    ## Infrastructure
-    [Insert contents of .legacy-modernize/07-infrastructure.md]
+        ## Infrastructure
+        [Insert contents of .legacy-modernize/07-infrastructure.md]
 
-    ## Performance Results
-    [Insert contents of .legacy-modernize/10-performance.md]
+        ## Performance Results
+        [Insert contents of .legacy-modernize/10-performance.md]
 
-    ## Instructions
-    1. Configure feature flags for traffic shifting: 5% -> 25% -> 50% -> 100%
-    2. Define automatic rollback triggers: error rate >1%, latency >2x baseline, or business metric degradation
-    3. Set 24-hour observation periods between each stage
-    4. Create runbook for the complete traffic shifting process
-    5. Include monitoring queries and dashboards for each stage
+        ## Instructions
+        1. Configure feature flags for traffic shifting: 5% -> 25% -> 50% -> 100%
+        2. Define automatic rollback triggers: error rate >1%, latency >2x baseline, or business metric degradation
+        3. Set 24-hour observation periods between each stage
+        4. Create runbook for the complete traffic shifting process
+        5. Include monitoring queries and dashboards for each stage
 
-    Write all configuration files and the rollout runbook.
+        Write all configuration files and the rollout runbook.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/11-rollout.md`.
 
@@ -553,29 +608,34 @@ Use the `task` tool with agent="framework-migration__legacy-modernizer":
 
 ```
 Task:
-  agent: "framework-migration__legacy-modernizer"
-  description: "Plan safe decommissioning of replaced legacy components"
-  prompt: |
-    Plan safe decommissioning of replaced legacy components.
+  context: |
+    This batch handles the workflow assignment: Plan safe decommissioning of replaced legacy components.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "framework-migration__legacy-modernizer"
+      task: |
+        Plan safe decommissioning of replaced legacy components.
 
-    ## Legacy Assessment
-    [Insert contents of .legacy-modernize/01-legacy-assessment.md]
+        ## Legacy Assessment
+        [Insert contents of .legacy-modernize/01-legacy-assessment.md]
 
-    ## Modernized Components
-    [Insert contents of .legacy-modernize/08-first-wave.md]
+        ## Modernized Components
+        [Insert contents of .legacy-modernize/08-first-wave.md]
 
-    ## Rollout Status
-    [Insert contents of .legacy-modernize/11-rollout.md]
+        ## Rollout Status
+        [Insert contents of .legacy-modernize/11-rollout.md]
 
-    ## Instructions
-    1. Verify no remaining dependencies through traffic analysis (minimum 30 days at 0% traffic)
-    2. Archive legacy code with documentation of original functionality
-    3. Update CI/CD pipelines to remove legacy builds
-    4. Clean up unused database tables and remove deprecated API endpoints
-    5. Document any retained legacy components with sunset timeline
+        ## Instructions
+        1. Verify no remaining dependencies through traffic analysis (minimum 30 days at 0% traffic)
+        2. Archive legacy code with documentation of original functionality
+        3. Update CI/CD pipelines to remove legacy builds
+        4. Clean up unused database tables and remove deprecated API endpoints
+        5. Document any retained legacy components with sunset timeline
 
-    Provide a decommissioning checklist and timeline.
+        Provide a decommissioning checklist and timeline.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/12-decommission.md`.
 
@@ -589,28 +649,33 @@ Use the `task` tool with agent="task":
 
 ```
 Task:
-  agent: "task"
-  description: "Create comprehensive modernization documentation package"
-  prompt: |
-    You are a technical writer specializing in system migration documentation
-    and developer knowledge transfer materials.
+  context: |
+    This batch handles the workflow assignment: Create comprehensive modernization documentation package.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a technical writer specializing in system migration documentation
+        and developer knowledge transfer materials.
 
-    Create comprehensive modernization documentation.
+        Create comprehensive modernization documentation.
 
-    ## All Migration Artifacts
-    [Insert contents of all .legacy-modernize/*.md files]
+        ## All Migration Artifacts
+        [Insert contents of all .legacy-modernize/*.md files]
 
-    ## Instructions
-    1. Create architectural diagrams (before/after)
-    2. Write API documentation with migration guides
-    3. Create runbooks for dual-system operation
-    4. Write troubleshooting guides for common issues
-    5. Create a lessons learned report
-    6. Generate developer onboarding guide for the modernized system
-    7. Document technical decisions and trade-offs made during migration
+        ## Instructions
+        1. Create architectural diagrams (before/after)
+        2. Write API documentation with migration guides
+        3. Create runbooks for dual-system operation
+        4. Write troubleshooting guides for common issues
+        5. Create a lessons learned report
+        6. Generate developer onboarding guide for the modernized system
+        7. Document technical decisions and trade-offs made during migration
 
-    Write all documentation files. Report what was created.
+        Write all documentation files. Report what was created.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.legacy-modernize/13-documentation.md`.
 
