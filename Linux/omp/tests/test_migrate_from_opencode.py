@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from Linux.omp import migrate_from_opencode
-from Linux.omp.migrate_from_opencode import migrate_component
+from Linux.omp.migrate_from_opencode import migrate_command, migrate_component
 
 
 class MigrationTests(unittest.TestCase):
@@ -49,6 +49,14 @@ Use subagent_type: "suite-reviewer" with the Task tool.
 All `subagent_type` references use agents bundled with this plugin or `general-purpose`.
 AskUserQuestion tool is available, but do not use EnterPlanMode.
 Run /ui-design:create-component when needed.
+
+```
+Task:
+  subagent_type: "suite-reviewer"
+  description: "Review the target"
+  prompt: |
+    Review the target thoroughly.
+```
 """,
       encoding="utf-8",
     )
@@ -93,9 +101,74 @@ Run /ui-design:create-component when needed.
     self.assertNotIn("AskUserQuestion", output)
     self.assertNotIn("EnterPlanMode", output)
 
+  def test_task_dispatch_uses_omp_batch_shape_and_waits_for_results(self):
+    migrate_component(self.source, self.destination, "commands")
+    output = (self.destination / "commands" / "suite__review.md").read_text()
+    self.assertIn(
+      "Task:\n"
+      "  context: |\n"
+      "    This batch handles the workflow assignment: Review the target.\n"
+      "    Use the current workspace and return the complete final result to the parent.\n"
+      "  tasks:\n"
+      '    - agent: "suite__reviewer"\n'
+      "      task: |\n"
+      "        Review the target thoroughly.\n",
+      output,
+    )
+    self.assertNotIn('  description: "Review the target"', output)
+    self.assertNotIn("  prompt: |", output)
+    self.assertIn(
+      "After this dispatch, use the `hub` tool with `op: \"wait\"` and the returned job ID(s) "
+      "(or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. "
+      "Associate each delivered result with this task before saving artifacts or advancing state.",
+      output,
+    )
+    self.assertTrue(output.endswith("\n"))
+
   def test_context_command_is_omitted_for_native_equivalent(self):
     migrate_component(self.source, self.destination, "commands")
     self.assertFalse((self.destination / "commands" / "context.md").exists())
+
+  def test_command_without_dispatch_preserves_terminal_newline(self):
+    output = migrate_command("---\ndescription: No dispatch\n---\n\nNo dispatch here.\n")
+    self.assertTrue(output.endswith("\n"))
+
+  def test_parallel_dispatch_waits_for_all_results_before_consolidating(self):
+    source = """---
+description: Parallel review
+---
+
+Run both agents in parallel.
+
+### Step A
+
+```
+Task:
+  subagent_type: "suite-reviewer"
+  description: "Review architecture"
+  prompt: |
+    Review architecture.
+```
+
+### Step B
+
+```
+Task:
+  subagent_type: "suite-reviewer"
+  description: "Review security"
+  prompt: |
+    Review security.
+```
+
+After both complete, consolidate into `.review/report.md`.
+"""
+    output = migrate_command(source)
+    self.assertEqual(output.count("  context: |"), 2)
+    self.assertEqual(output.count("  tasks:"), 2)
+    self.assertEqual(output.count("After dispatching this parallel group"), 1)
+    self.assertNotIn("After both complete", output)
+    self.assertNotIn("After this dispatch", output)
+    self.assertIn("Then consolidate into `.review/report.md`.", output)
 
   def test_cli_uses_native_agent_destination_root(self):
     with mock.patch.object(migrate_from_opencode, "migrate_component") as migrate:

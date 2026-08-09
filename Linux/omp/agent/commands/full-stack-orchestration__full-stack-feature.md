@@ -135,24 +135,29 @@ Use the `task` tool to launch a database architecture agent:
 
 ```
 Task:
-  agent: "task"
-  description: "Design database schema and data models for $FEATURE"
-  prompt: |
-    You are a database architect. Design the database schema and data models for this feature.
+  context: |
+    This batch handles the workflow assignment: Design database schema and data models for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a database architect. Design the database schema and data models for this feature.
 
-    ## Requirements
-    [Insert full contents of .full-stack-feature/01-requirements.md]
+        ## Requirements
+        [Insert full contents of .full-stack-feature/01-requirements.md]
 
-    ## Deliverables
-    1. **Entity relationship design**: Tables/collections, relationships, cardinality
-    2. **Schema definitions**: Column types, constraints, defaults, nullable fields
-    3. **Indexing strategy**: Which columns to index, index types, composite indexes
-    4. **Migration strategy**: How to safely add/modify schema in production
-    5. **Query patterns**: Expected read/write patterns and how the schema supports them
-    6. **Data access patterns**: Repository/DAO interface design
+        ## Deliverables
+        1. **Entity relationship design**: Tables/collections, relationships, cardinality
+        2. **Schema definitions**: Column types, constraints, defaults, nullable fields
+        3. **Indexing strategy**: Which columns to index, index types, composite indexes
+        4. **Migration strategy**: How to safely add/modify schema in production
+        5. **Query patterns**: Expected read/write patterns and how the schema supports them
+        6. **Data access patterns**: Repository/DAO interface design
 
-    Write your complete database design as a single markdown document.
+        Write your complete database design as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.full-stack-feature/02-database-design.md`.
 
@@ -166,38 +171,43 @@ Use the `task` tool to launch an architecture agent:
 
 ```
 Task:
-  agent: "task"
-  description: "Design full-stack architecture for $FEATURE"
-  prompt: |
-    You are a full-stack architect. Design the complete backend and frontend architecture for this feature.
+  context: |
+    This batch handles the workflow assignment: Design full-stack architecture for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a full-stack architect. Design the complete backend and frontend architecture for this feature.
 
-    ## Requirements
-    [Insert contents of .full-stack-feature/01-requirements.md]
+        ## Requirements
+        [Insert contents of .full-stack-feature/01-requirements.md]
 
-    ## Database Design
-    [Insert contents of .full-stack-feature/02-database-design.md]
+        ## Database Design
+        [Insert contents of .full-stack-feature/02-database-design.md]
 
-    ## Deliverables
+        ## Deliverables
 
-    ### Backend Architecture
-    1. **API design**: Endpoints/resolvers, request/response schemas, error handling, versioning
-    2. **Service layer**: Business logic components, their responsibilities, boundaries
-    3. **Authentication/authorization**: How auth applies to new endpoints
-    4. **Integration points**: How this connects to existing services/systems
+        ### Backend Architecture
+        1. **API design**: Endpoints/resolvers, request/response schemas, error handling, versioning
+        2. **Service layer**: Business logic components, their responsibilities, boundaries
+        3. **Authentication/authorization**: How auth applies to new endpoints
+        4. **Integration points**: How this connects to existing services/systems
 
-    ### Frontend Architecture
-    1. **Component hierarchy**: Page components, containers, presentational components
-    2. **State management**: What state is needed, where it lives, data flow
-    3. **Routing**: New routes, navigation structure, route guards
-    4. **API integration**: Data fetching strategy, caching, optimistic updates
+        ### Frontend Architecture
+        1. **Component hierarchy**: Page components, containers, presentational components
+        2. **State management**: What state is needed, where it lives, data flow
+        3. **Routing**: New routes, navigation structure, route guards
+        4. **API integration**: Data fetching strategy, caching, optimistic updates
 
-    ### Cross-Cutting Concerns
-    1. **Error handling**: Backend errors -> API responses -> frontend error states
-    2. **Security considerations**: Input validation, XSS prevention, CSRF, data protection
-    3. **Risk assessment**: Technical risks and mitigation strategies
+        ### Cross-Cutting Concerns
+        1. **Error handling**: Backend errors -> API responses -> frontend error states
+        2. **Security considerations**: Input validation, XSS prevention, CSRF, data protection
+        3. **Risk assessment**: Technical risks and mitigation strategies
 
-    Write your complete architecture design as a single markdown document.
+        Write your complete architecture design as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.full-stack-feature/03-architecture.md`.
 
@@ -235,27 +245,32 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement database layer for $FEATURE"
-  prompt: |
-    You are a database engineer. Implement the database layer for this feature.
+  context: |
+    This batch handles the workflow assignment: Implement database layer for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a database engineer. Implement the database layer for this feature.
 
-    ## Requirements
-    [Insert contents of .full-stack-feature/01-requirements.md]
+        ## Requirements
+        [Insert contents of .full-stack-feature/01-requirements.md]
 
-    ## Database Design
-    [Insert contents of .full-stack-feature/02-database-design.md]
+        ## Database Design
+        [Insert contents of .full-stack-feature/02-database-design.md]
 
-    ## Instructions
-    1. Create migration scripts for schema changes
-    2. Implement models/entities matching the schema design
-    3. Implement repository/data access layer with the designed query patterns
-    4. Add database-level validation constraints
-    5. Optimize queries with proper indexes as designed
-    6. Follow the project's existing ORM and migration patterns
+        ## Instructions
+        1. Create migration scripts for schema changes
+        2. Implement models/entities matching the schema design
+        3. Implement repository/data access layer with the designed query patterns
+        4. Add database-level validation constraints
+        5. Optimize queries with proper indexes as designed
+        6. Follow the project's existing ORM and migration patterns
 
-    Write all code files. Report what files were created/modified.
+        Write all code files. Report what files were created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save a summary to `.full-stack-feature/04-database-impl.md`.
 
@@ -269,31 +284,36 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement backend services for $FEATURE"
-  prompt: |
-    You are a backend developer. Implement the backend services for this feature based on the approved architecture.
+  context: |
+    This batch handles the workflow assignment: Implement backend services for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend developer. Implement the backend services for this feature based on the approved architecture.
 
-    ## Requirements
-    [Insert contents of .full-stack-feature/01-requirements.md]
+        ## Requirements
+        [Insert contents of .full-stack-feature/01-requirements.md]
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Database Implementation
-    [Insert contents of .full-stack-feature/04-database-impl.md]
+        ## Database Implementation
+        [Insert contents of .full-stack-feature/04-database-impl.md]
 
-    ## Instructions
-    1. Implement API endpoints/resolvers as designed in the architecture
-    2. Implement business logic in the service layer
-    3. Wire up the data access layer from the database implementation
-    4. Add input validation, error handling, and proper HTTP status codes
-    5. Implement authentication/authorization middleware as designed
-    6. Add structured logging and observability hooks
-    7. Follow the project's existing code patterns and conventions
+        ## Instructions
+        1. Implement API endpoints/resolvers as designed in the architecture
+        2. Implement business logic in the service layer
+        3. Wire up the data access layer from the database implementation
+        4. Add input validation, error handling, and proper HTTP status codes
+        5. Implement authentication/authorization middleware as designed
+        6. Add structured logging and observability hooks
+        7. Follow the project's existing code patterns and conventions
 
-    Write all code files. Report what files were created/modified.
+        Write all code files. Report what files were created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save a summary to `.full-stack-feature/05-backend-impl.md`.
 
@@ -307,31 +327,36 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement frontend for $FEATURE"
-  prompt: |
-    You are a frontend developer. Implement the frontend components for this feature.
+  context: |
+    This batch handles the workflow assignment: Implement frontend for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a frontend developer. Implement the frontend components for this feature.
 
-    ## Requirements
-    [Insert contents of .full-stack-feature/01-requirements.md]
+        ## Requirements
+        [Insert contents of .full-stack-feature/01-requirements.md]
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Backend Implementation
-    [Insert contents of .full-stack-feature/05-backend-impl.md]
+        ## Backend Implementation
+        [Insert contents of .full-stack-feature/05-backend-impl.md]
 
-    ## Instructions
-    1. Build UI components following the component hierarchy from the architecture
-    2. Implement state management and data flow as designed
-    3. Integrate with the backend API endpoints using the designed data fetching strategy
-    4. Implement form handling, validation, and error states
-    5. Add loading states and optimistic updates where appropriate
-    6. Ensure responsive design and accessibility basics (semantic HTML, ARIA labels, keyboard nav)
-    7. Follow the project's existing frontend patterns and component conventions
+        ## Instructions
+        1. Build UI components following the component hierarchy from the architecture
+        2. Implement state management and data flow as designed
+        3. Integrate with the backend API endpoints using the designed data fetching strategy
+        4. Implement form handling, validation, and error states
+        5. Add loading states and optimistic updates where appropriate
+        6. Ensure responsive design and accessibility basics (semantic HTML, ARIA labels, keyboard nav)
+        7. Follow the project's existing frontend patterns and component conventions
 
-    Write all code files. Report what files were created/modified.
+        Write all code files. Report what files were created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save a summary to `.full-stack-feature/06-frontend-impl.md`.
 
@@ -349,90 +374,101 @@ Launch three agents in parallel using multiple `task` tool calls in a single res
 
 ```
 Task:
-  agent: "full-stack-orchestration__test-automator"
-  description: "Create test suite for $FEATURE"
-  prompt: |
-    Create a comprehensive test suite for this full-stack feature.
+  context: |
+    This batch handles the workflow assignment: Create test suite for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "full-stack-orchestration__test-automator"
+      task: |
+        Create a comprehensive test suite for this full-stack feature.
 
-    ## What was implemented
-    ### Database
-    [Insert contents of .full-stack-feature/04-database-impl.md]
+        ## What was implemented
+        ### Database
+        [Insert contents of .full-stack-feature/04-database-impl.md]
 
-    ### Backend
-    [Insert contents of .full-stack-feature/05-backend-impl.md]
+        ### Backend
+        [Insert contents of .full-stack-feature/05-backend-impl.md]
 
-    ### Frontend
-    [Insert contents of .full-stack-feature/06-frontend-impl.md]
+        ### Frontend
+        [Insert contents of .full-stack-feature/06-frontend-impl.md]
 
-    ## Instructions
-    1. Write unit tests for all new backend functions/methods
-    2. Write integration tests for API endpoints
-    3. Write database tests for migrations and query patterns
-    4. Write frontend component tests if applicable
-    5. Cover: happy path, edge cases, error handling, boundary conditions
-    6. Follow existing test patterns and frameworks in the project
-    7. Target 80%+ code coverage for new code
+        ## Instructions
+        1. Write unit tests for all new backend functions/methods
+        2. Write integration tests for API endpoints
+        3. Write database tests for migrations and query patterns
+        4. Write frontend component tests if applicable
+        5. Cover: happy path, edge cases, error handling, boundary conditions
+        6. Follow existing test patterns and frameworks in the project
+        7. Target 80%+ code coverage for new code
 
-    Write all test files. Report what test files were created and what they cover.
+        Write all test files. Report what test files were created and what they cover.
 ```
 
 **7b. Security Review:**
 
 ```
 Task:
-  agent: "full-stack-orchestration__security-auditor"
-  description: "Security review of $FEATURE"
-  prompt: |
-    Perform a security review of this full-stack feature implementation.
+  context: |
+    This batch handles the workflow assignment: Security review of $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "full-stack-orchestration__security-auditor"
+      task: |
+        Perform a security review of this full-stack feature implementation.
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Database Implementation
-    [Insert contents of .full-stack-feature/04-database-impl.md]
+        ## Database Implementation
+        [Insert contents of .full-stack-feature/04-database-impl.md]
 
-    ## Backend Implementation
-    [Insert contents of .full-stack-feature/05-backend-impl.md]
+        ## Backend Implementation
+        [Insert contents of .full-stack-feature/05-backend-impl.md]
 
-    ## Frontend Implementation
-    [Insert contents of .full-stack-feature/06-frontend-impl.md]
+        ## Frontend Implementation
+        [Insert contents of .full-stack-feature/06-frontend-impl.md]
 
-    Review for: OWASP Top 10, authentication/authorization flaws, input validation gaps,
-    SQL injection risks, XSS/CSRF vulnerabilities, data protection issues, dependency vulnerabilities,
-    and any security anti-patterns.
+        Review for: OWASP Top 10, authentication/authorization flaws, input validation gaps,
+        SQL injection risks, XSS/CSRF vulnerabilities, data protection issues, dependency vulnerabilities,
+        and any security anti-patterns.
 
-    Provide findings with severity, location, and specific fix recommendations.
+        Provide findings with severity, location, and specific fix recommendations.
 ```
 
 **7c. Performance Review:**
 
 ```
 Task:
-  agent: "full-stack-orchestration__performance-engineer"
-  description: "Performance review of $FEATURE"
-  prompt: |
-    Review the performance of this full-stack feature implementation.
+  context: |
+    This batch handles the workflow assignment: Performance review of $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "full-stack-orchestration__performance-engineer"
+      task: |
+        Review the performance of this full-stack feature implementation.
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Database Implementation
-    [Insert contents of .full-stack-feature/04-database-impl.md]
+        ## Database Implementation
+        [Insert contents of .full-stack-feature/04-database-impl.md]
 
-    ## Backend Implementation
-    [Insert contents of .full-stack-feature/05-backend-impl.md]
+        ## Backend Implementation
+        [Insert contents of .full-stack-feature/05-backend-impl.md]
 
-    ## Frontend Implementation
-    [Insert contents of .full-stack-feature/06-frontend-impl.md]
+        ## Frontend Implementation
+        [Insert contents of .full-stack-feature/06-frontend-impl.md]
 
-    Review for: N+1 queries, missing indexes, unoptimized queries, memory leaks,
-    missing caching opportunities, large payloads, slow rendering paths,
-    bundle size concerns, unnecessary re-renders.
+        Review for: N+1 queries, missing indexes, unoptimized queries, memory leaks,
+        missing caching opportunities, large payloads, slow rendering paths,
+        bundle size concerns, unnecessary re-renders.
 
-    Provide findings with impact estimates and specific optimization recommendations.
+        Provide findings with impact estimates and specific optimization recommendations.
 ```
 
-After all three complete, consolidate results into `.full-stack-feature/07-testing.md`:
+After dispatching this parallel group, use the `hub` tool with `op: "wait"` and the returned job IDs (or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. Associate each delivered result with its task before consolidating the group or advancing state.
+
+Then consolidate results into `.full-stack-feature/07-testing.md`:
 
 ```markdown
 # Testing & Validation: $FEATURE
@@ -490,28 +526,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "full-stack-orchestration__deployment-engineer"
-  description: "Create deployment config for $FEATURE"
-  prompt: |
-    Create the deployment and infrastructure configuration for this full-stack feature.
+  context: |
+    This batch handles the workflow assignment: Create deployment config for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "full-stack-orchestration__deployment-engineer"
+      task: |
+        Create the deployment and infrastructure configuration for this full-stack feature.
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Testing Results
-    [Insert contents of .full-stack-feature/07-testing.md]
+        ## Testing Results
+        [Insert contents of .full-stack-feature/07-testing.md]
 
-    ## Instructions
-    1. Create or update CI/CD pipeline configuration for the new code
-    2. Add database migration steps to the deployment pipeline
-    3. Add feature flag configuration if the feature should be gradually rolled out
-    4. Define health checks and readiness probes for new services/endpoints
-    5. Create monitoring alerts for key metrics (error rate, latency, throughput)
-    6. Write a deployment runbook with rollback steps (including database rollback)
-    7. Follow existing deployment patterns in the project
+        ## Instructions
+        1. Create or update CI/CD pipeline configuration for the new code
+        2. Add database migration steps to the deployment pipeline
+        3. Add feature flag configuration if the feature should be gradually rolled out
+        4. Define health checks and readiness probes for new services/endpoints
+        5. Create monitoring alerts for key metrics (error rate, latency, throughput)
+        6. Write a deployment runbook with rollback steps (including database rollback)
+        7. Follow existing deployment patterns in the project
 
-    Write all configuration files. Report what was created/modified.
+        Write all configuration files. Report what was created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.full-stack-feature/08-deployment.md`.
 
@@ -525,34 +566,39 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Write documentation for $FEATURE"
-  prompt: |
-    You are a technical writer. Create documentation for this full-stack feature.
+  context: |
+    This batch handles the workflow assignment: Write documentation for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a technical writer. Create documentation for this full-stack feature.
 
-    ## Feature Context
-    [Insert contents of .full-stack-feature/01-requirements.md]
+        ## Feature Context
+        [Insert contents of .full-stack-feature/01-requirements.md]
 
-    ## Architecture
-    [Insert contents of .full-stack-feature/03-architecture.md]
+        ## Architecture
+        [Insert contents of .full-stack-feature/03-architecture.md]
 
-    ## Implementation Summary
-    ### Database: [Insert contents of .full-stack-feature/04-database-impl.md]
-    ### Backend: [Insert contents of .full-stack-feature/05-backend-impl.md]
-    ### Frontend: [Insert contents of .full-stack-feature/06-frontend-impl.md]
+        ## Implementation Summary
+        ### Database: [Insert contents of .full-stack-feature/04-database-impl.md]
+        ### Backend: [Insert contents of .full-stack-feature/05-backend-impl.md]
+        ### Frontend: [Insert contents of .full-stack-feature/06-frontend-impl.md]
 
-    ## Deployment
-    [Insert contents of .full-stack-feature/08-deployment.md]
+        ## Deployment
+        [Insert contents of .full-stack-feature/08-deployment.md]
 
-    ## Instructions
-    1. Write API documentation for new endpoints (request/response examples)
-    2. Document the database schema changes and migration notes
-    3. Update or create user-facing documentation if applicable
-    4. Write a brief architecture decision record (ADR) explaining key design choices
-    5. Create a handoff summary: what was built, how to test it, known limitations
+        ## Instructions
+        1. Write API documentation for new endpoints (request/response examples)
+        2. Document the database schema changes and migration notes
+        3. Update or create user-facing documentation if applicable
+        4. Write a brief architecture decision record (ADR) explaining key design choices
+        5. Create a handoff summary: what was built, how to test it, known limitations
 
-    Write documentation files. Report what was created/modified.
+        Write documentation files. Report what was created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.full-stack-feature/09-documentation.md`.
 

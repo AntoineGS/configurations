@@ -112,62 +112,70 @@ Run both agents in parallel using multiple `task` tool calls in a single respons
 
 ```
 Task:
-  agent: "comprehensive-review__code-reviewer"
-  description: "Code quality analysis for $ARGUMENTS"
-  prompt: |
-    Perform a comprehensive code quality review.
+  context: |
+    This batch handles the workflow assignment: Code quality analysis for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "comprehensive-review__code-reviewer"
+      task: |
+        Perform a comprehensive code quality review.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Instructions
-    Analyze the target code for:
-    1. **Code complexity**: Cyclomatic complexity, cognitive complexity, deeply nested logic
-    2. **Maintainability**: Naming conventions, function/method length, class cohesion
-    3. **Code duplication**: Copy-pasted logic, missed abstraction opportunities
-    4. **Clean Code principles**: SOLID violations, code smells, anti-patterns
-    5. **Technical debt**: Areas that will become increasingly costly to change
-    6. **Error handling**: Missing error handling, swallowed exceptions, unclear error messages
+        ## Instructions
+        Analyze the target code for:
+        1. **Code complexity**: Cyclomatic complexity, cognitive complexity, deeply nested logic
+        2. **Maintainability**: Naming conventions, function/method length, class cohesion
+        3. **Code duplication**: Copy-pasted logic, missed abstraction opportunities
+        4. **Clean Code principles**: SOLID violations, code smells, anti-patterns
+        5. **Technical debt**: Areas that will become increasingly costly to change
+        6. **Error handling**: Missing error handling, swallowed exceptions, unclear error messages
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - File and line location
-    - Description of the issue
-    - Specific fix recommendation with code example
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - File and line location
+        - Description of the issue
+        - Specific fix recommendation with code example
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
 ### Step 1B: Architecture & Design Review
 
 ```
 Task:
-  agent: "comprehensive-review__architect-review"
-  description: "Architecture review for $ARGUMENTS"
-  prompt: |
-    Review the architectural design and structural integrity of the target code.
+  context: |
+    This batch handles the workflow assignment: Architecture review for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "comprehensive-review__architect-review"
+      task: |
+        Review the architectural design and structural integrity of the target code.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Instructions
-    Evaluate the code for:
-    1. **Component boundaries**: Proper separation of concerns, module cohesion
-    2. **Dependency management**: Circular dependencies, inappropriate coupling, dependency direction
-    3. **API design**: Endpoint design, request/response schemas, error contracts, versioning
-    4. **Data model**: Schema design, relationships, data access patterns
-    5. **Design patterns**: Appropriate use of patterns, missing abstractions, over-engineering
-    6. **Architectural consistency**: Does the code follow the project's established patterns?
+        ## Instructions
+        Evaluate the code for:
+        1. **Component boundaries**: Proper separation of concerns, module cohesion
+        2. **Dependency management**: Circular dependencies, inappropriate coupling, dependency direction
+        3. **API design**: Endpoint design, request/response schemas, error contracts, versioning
+        4. **Data model**: Schema design, relationships, data access patterns
+        5. **Design patterns**: Appropriate use of patterns, missing abstractions, over-engineering
+        6. **Architectural consistency**: Does the code follow the project's established patterns?
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - Architectural impact assessment
-    - Specific improvement recommendation
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - Architectural impact assessment
+        - Specific improvement recommendation
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
-After both complete, consolidate into `.full-review/01-quality-architecture.md`:
+After dispatching this parallel group, use the `hub` tool with `op: "wait"` and the returned job IDs (or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. Associate each delivered result with its task before consolidating the group or advancing state.
+
+Then consolidate into `.full-review/01-quality-architecture.md`:
 
 ```markdown
 # Phase 1: Code Quality & Architecture Review
@@ -199,70 +207,78 @@ Run both agents in parallel using multiple `task` tool calls in a single respons
 
 ```
 Task:
-  agent: "comprehensive-review__security-auditor"
-  description: "Security audit for $ARGUMENTS"
-  prompt: |
-    Execute a comprehensive security audit on the target code.
+  context: |
+    This batch handles the workflow assignment: Security audit for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "comprehensive-review__security-auditor"
+      task: |
+        Execute a comprehensive security audit on the target code.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Phase 1 Context
-    [Insert contents of .full-review/01-quality-architecture.md -- focus on the "Critical Issues for Phase 2 Context" section]
+        ## Phase 1 Context
+        [Insert contents of .full-review/01-quality-architecture.md -- focus on the "Critical Issues for Phase 2 Context" section]
 
-    ## Instructions
-    Analyze for:
-    1. **OWASP Top 10**: Injection, broken auth, sensitive data exposure, XXE, broken access control, misconfig, XSS, insecure deserialization, vulnerable components, insufficient logging
-    2. **Input validation**: Missing sanitization, unvalidated redirects, path traversal
-    3. **Authentication/authorization**: Flawed auth logic, privilege escalation, session management
-    4. **Cryptographic issues**: Weak algorithms, hardcoded secrets, improper key management
-    5. **Dependency vulnerabilities**: Known CVEs in dependencies, outdated packages
-    6. **Configuration security**: Debug mode, verbose errors, permissive CORS, missing security headers
+        ## Instructions
+        Analyze for:
+        1. **OWASP Top 10**: Injection, broken auth, sensitive data exposure, XXE, broken access control, misconfig, XSS, insecure deserialization, vulnerable components, insufficient logging
+        2. **Input validation**: Missing sanitization, unvalidated redirects, path traversal
+        3. **Authentication/authorization**: Flawed auth logic, privilege escalation, session management
+        4. **Cryptographic issues**: Weak algorithms, hardcoded secrets, improper key management
+        5. **Dependency vulnerabilities**: Known CVEs in dependencies, outdated packages
+        6. **Configuration security**: Debug mode, verbose errors, permissive CORS, missing security headers
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low) with CVSS score if applicable
-    - CWE reference where applicable
-    - File and line location
-    - Proof of concept or attack scenario
-    - Specific remediation steps with code example
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low) with CVSS score if applicable
+        - CWE reference where applicable
+        - File and line location
+        - Proof of concept or attack scenario
+        - Specific remediation steps with code example
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
 ### Step 2B: Performance & Scalability Analysis
 
 ```
 Task:
-  agent: "task"
-  description: "Performance analysis for $ARGUMENTS"
-  prompt: |
-    You are a performance engineer. Conduct a performance and scalability analysis of the target code.
+  context: |
+    This batch handles the workflow assignment: Performance analysis for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a performance engineer. Conduct a performance and scalability analysis of the target code.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Phase 1 Context
-    [Insert contents of .full-review/01-quality-architecture.md -- focus on the "Critical Issues for Phase 2 Context" section]
+        ## Phase 1 Context
+        [Insert contents of .full-review/01-quality-architecture.md -- focus on the "Critical Issues for Phase 2 Context" section]
 
-    ## Instructions
-    Analyze for:
-    1. **Database performance**: N+1 queries, missing indexes, unoptimized queries, connection pool sizing
-    2. **Memory management**: Memory leaks, unbounded collections, large object allocation
-    3. **Caching opportunities**: Missing caching, stale cache risks, cache invalidation issues
-    4. **I/O bottlenecks**: Synchronous blocking calls, missing pagination, large payloads
-    5. **Concurrency issues**: Race conditions, deadlocks, thread safety
-    6. **Frontend performance**: Bundle size, render performance, unnecessary re-renders, missing lazy loading
-    7. **Scalability concerns**: Horizontal scaling barriers, stateful components, single points of failure
+        ## Instructions
+        Analyze for:
+        1. **Database performance**: N+1 queries, missing indexes, unoptimized queries, connection pool sizing
+        2. **Memory management**: Memory leaks, unbounded collections, large object allocation
+        3. **Caching opportunities**: Missing caching, stale cache risks, cache invalidation issues
+        4. **I/O bottlenecks**: Synchronous blocking calls, missing pagination, large payloads
+        5. **Concurrency issues**: Race conditions, deadlocks, thread safety
+        6. **Frontend performance**: Bundle size, render performance, unnecessary re-renders, missing lazy loading
+        7. **Scalability concerns**: Horizontal scaling barriers, stateful components, single points of failure
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - Estimated performance impact
-    - Specific optimization recommendation with code example
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - Estimated performance impact
+        - Specific optimization recommendation with code example
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
-After both complete, consolidate into `.full-review/02-security-performance.md`:
+After dispatching this parallel group, use the `hub` tool with `op: "wait"` and the returned job IDs (or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. Associate each delivered result with its task before consolidating the group or advancing state.
+
+Then consolidate into `.full-review/02-security-performance.md`:
 
 ```markdown
 # Phase 2: Security & Performance Review
@@ -322,68 +338,76 @@ Run both agents in parallel using multiple `task` tool calls in a single respons
 
 ```
 Task:
-  agent: "task"
-  description: "Test coverage analysis for $ARGUMENTS"
-  prompt: |
-    You are a test automation engineer. Evaluate the testing strategy and coverage for the target code.
+  context: |
+    This batch handles the workflow assignment: Test coverage analysis for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation engineer. Evaluate the testing strategy and coverage for the target code.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Prior Phase Context
-    [Insert security and performance findings from .full-review/02-security-performance.md that affect testing requirements]
+        ## Prior Phase Context
+        [Insert security and performance findings from .full-review/02-security-performance.md that affect testing requirements]
 
-    ## Instructions
-    Analyze:
-    1. **Test coverage**: Which code paths have tests? Which critical paths are untested?
-    2. **Test quality**: Are tests testing behavior or implementation? Assertion quality?
-    3. **Test pyramid adherence**: Unit vs integration vs E2E test ratio
-    4. **Edge cases**: Are boundary conditions, error paths, and concurrent scenarios tested?
-    5. **Test maintainability**: Test isolation, mock usage, flaky test indicators
-    6. **Security test gaps**: Are security-critical paths tested? Auth, input validation, etc.
-    7. **Performance test gaps**: Are performance-critical paths tested? Load testing?
+        ## Instructions
+        Analyze:
+        1. **Test coverage**: Which code paths have tests? Which critical paths are untested?
+        2. **Test quality**: Are tests testing behavior or implementation? Assertion quality?
+        3. **Test pyramid adherence**: Unit vs integration vs E2E test ratio
+        4. **Edge cases**: Are boundary conditions, error paths, and concurrent scenarios tested?
+        5. **Test maintainability**: Test isolation, mock usage, flaky test indicators
+        6. **Security test gaps**: Are security-critical paths tested? Auth, input validation, etc.
+        7. **Performance test gaps**: Are performance-critical paths tested? Load testing?
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - What is untested or poorly tested
-    - Specific test recommendations with example test code
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - What is untested or poorly tested
+        - Specific test recommendations with example test code
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
 ### Step 3B: Documentation & API Review
 
 ```
 Task:
-  agent: "task"
-  description: "Documentation review for $ARGUMENTS"
-  prompt: |
-    You are a technical documentation architect. Review documentation completeness and accuracy.
+  context: |
+    This batch handles the workflow assignment: Documentation review for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a technical documentation architect. Review documentation completeness and accuracy.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Prior Phase Context
-    [Insert key findings from .full-review/01-quality-architecture.md and .full-review/02-security-performance.md]
+        ## Prior Phase Context
+        [Insert key findings from .full-review/01-quality-architecture.md and .full-review/02-security-performance.md]
 
-    ## Instructions
-    Evaluate:
-    1. **Inline documentation**: Are complex algorithms and business logic explained?
-    2. **API documentation**: Are endpoints documented with examples? Request/response schemas?
-    3. **Architecture documentation**: ADRs, system diagrams, component documentation
-    4. **README completeness**: Setup instructions, development workflow, deployment guide
-    5. **Accuracy**: Does documentation match the actual implementation?
-    6. **Changelog/migration guides**: Are breaking changes documented?
+        ## Instructions
+        Evaluate:
+        1. **Inline documentation**: Are complex algorithms and business logic explained?
+        2. **API documentation**: Are endpoints documented with examples? Request/response schemas?
+        3. **Architecture documentation**: ADRs, system diagrams, component documentation
+        4. **README completeness**: Setup instructions, development workflow, deployment guide
+        5. **Accuracy**: Does documentation match the actual implementation?
+        6. **Changelog/migration guides**: Are breaking changes documented?
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - What is missing or inaccurate
-    - Specific documentation recommendation
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - What is missing or inaccurate
+        - Specific documentation recommendation
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
-After both complete, consolidate into `.full-review/03-testing-documentation.md`:
+After dispatching this parallel group, use the `hub` tool with `op: "wait"` and the returned job IDs (or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. Associate each delivered result with its task before consolidating the group or advancing state.
+
+Then consolidate into `.full-review/03-testing-documentation.md`:
 
 ```markdown
 # Phase 3: Testing & Documentation Review
@@ -411,67 +435,75 @@ Run both agents in parallel using multiple `task` tool calls in a single respons
 
 ```
 Task:
-  agent: "task"
-  description: "Framework best practices review for $ARGUMENTS"
-  prompt: |
-    You are an expert in modern framework and language best practices. Verify adherence to current standards.
+  context: |
+    This batch handles the workflow assignment: Framework best practices review for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are an expert in modern framework and language best practices. Verify adherence to current standards.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## All Prior Findings
-    [Insert a concise summary of critical/high findings from all prior phases]
+        ## All Prior Findings
+        [Insert a concise summary of critical/high findings from all prior phases]
 
-    ## Instructions
-    Check for:
-    1. **Language idioms**: Is the code idiomatic for its language? Modern syntax and features?
-    2. **Framework patterns**: Does it follow the framework's recommended patterns? (e.g., React hooks, Django views, Spring beans)
-    3. **Deprecated APIs**: Are any deprecated functions/libraries/patterns used?
-    4. **Modernization opportunities**: Where could modern language/framework features simplify code?
-    5. **Package management**: Are dependencies up-to-date? Unnecessary dependencies?
-    6. **Build configuration**: Is the build optimized? Development vs production settings?
+        ## Instructions
+        Check for:
+        1. **Language idioms**: Is the code idiomatic for its language? Modern syntax and features?
+        2. **Framework patterns**: Does it follow the framework's recommended patterns? (e.g., React hooks, Django views, Spring beans)
+        3. **Deprecated APIs**: Are any deprecated functions/libraries/patterns used?
+        4. **Modernization opportunities**: Where could modern language/framework features simplify code?
+        5. **Package management**: Are dependencies up-to-date? Unnecessary dependencies?
+        6. **Build configuration**: Is the build optimized? Development vs production settings?
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - Current pattern vs recommended pattern
-    - Migration/fix recommendation with code example
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - Current pattern vs recommended pattern
+        - Migration/fix recommendation with code example
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
 ### Step 4B: CI/CD & DevOps Practices Review
 
 ```
 Task:
-  agent: "task"
-  description: "CI/CD and DevOps practices review for $ARGUMENTS"
-  prompt: |
-    You are a DevOps engineer. Review CI/CD pipeline and operational practices.
+  context: |
+    This batch handles the workflow assignment: CI/CD and DevOps practices review for $ARGUMENTS.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a DevOps engineer. Review CI/CD pipeline and operational practices.
 
-    ## Review Scope
-    [Insert contents of .full-review/00-scope.md]
+        ## Review Scope
+        [Insert contents of .full-review/00-scope.md]
 
-    ## Critical Issues from Prior Phases
-    [Insert critical/high findings from all prior phases that impact deployment or operations]
+        ## Critical Issues from Prior Phases
+        [Insert critical/high findings from all prior phases that impact deployment or operations]
 
-    ## Instructions
-    Evaluate:
-    1. **CI/CD pipeline**: Build automation, test gates, deployment stages, security scanning
-    2. **Deployment strategy**: Blue-green, canary, rollback capabilities
-    3. **Infrastructure as Code**: Are infrastructure configs version-controlled and reviewed?
-    4. **Monitoring & observability**: Logging, metrics, alerting, dashboards
-    5. **Incident response**: Runbooks, on-call procedures, rollback plans
-    6. **Environment management**: Config separation, secret management, parity between environments
+        ## Instructions
+        Evaluate:
+        1. **CI/CD pipeline**: Build automation, test gates, deployment stages, security scanning
+        2. **Deployment strategy**: Blue-green, canary, rollback capabilities
+        3. **Infrastructure as Code**: Are infrastructure configs version-controlled and reviewed?
+        4. **Monitoring & observability**: Logging, metrics, alerting, dashboards
+        5. **Incident response**: Runbooks, on-call procedures, rollback plans
+        6. **Environment management**: Config separation, secret management, parity between environments
 
-    For each finding, provide:
-    - Severity (Critical / High / Medium / Low)
-    - Operational risk assessment
-    - Specific improvement recommendation
+        For each finding, provide:
+        - Severity (Critical / High / Medium / Low)
+        - Operational risk assessment
+        - Specific improvement recommendation
 
-    Write your findings as a structured markdown document.
+        Write your findings as a structured markdown document.
 ```
 
-After both complete, consolidate into `.full-review/04-best-practices.md`:
+After dispatching this parallel group, use the `hub` tool with `op: "wait"` and the returned job IDs (or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. Associate each delivered result with its task before consolidating the group or advancing state.
+
+Then consolidate into `.full-review/04-best-practices.md`:
 
 ```markdown
 # Phase 4: Best Practices & Standards
