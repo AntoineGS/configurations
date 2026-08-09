@@ -68,6 +68,7 @@ Run /ui-design:create-component when needed.
     self.assertNotIn("model:", output)
     self.assertNotIn("variant:", output)
     self.assertIn("Review the assigned code.", output)
+    self.assertTrue(output.endswith("\n"))
 
   def test_skill_tree_is_copied_with_support_files(self):
     migrate_component(self.source, self.destination, "skills")
