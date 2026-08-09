@@ -90,22 +90,27 @@ Use the `task` tool to analyze requirements:
 
 ```
 Task:
-  agent: "task"
-  description: "Analyze requirements for TDD: $FEATURE"
-  prompt: |
-    You are a software architect specializing in test-driven development.
+  context: |
+    This batch handles the workflow assignment: Analyze requirements for TDD: $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a software architect specializing in test-driven development.
 
-    Analyze requirements for: $FEATURE
+        Analyze requirements for: $FEATURE
 
-    ## Deliverables
-    1. Define acceptance criteria with clear pass/fail conditions
-    2. Identify edge cases (null/empty, boundary values, error states, concurrent access)
-    3. Create a comprehensive test scenario matrix mapping requirements to test cases
-    4. Categorize tests: unit, integration, contract, property-based
-    5. Identify external dependencies that will need mocking
+        ## Deliverables
+        1. Define acceptance criteria with clear pass/fail conditions
+        2. Identify edge cases (null/empty, boundary values, error states, concurrent access)
+        3. Create a comprehensive test scenario matrix mapping requirements to test cases
+        4. Categorize tests: unit, integration, contract, property-based
+        5. Identify external dependencies that will need mocking
 
-    Write your complete analysis as a single markdown document.
+        Write your complete analysis as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.tdd-cycle/01-requirements.md`.
 
@@ -119,27 +124,32 @@ Use the `task` tool to design test architecture:
 
 ```
 Task:
-  agent: "task"
-  description: "Design test architecture for $FEATURE"
-  prompt: |
-    You are a test automation expert specializing in test architecture and TDD workflows.
+  context: |
+    This batch handles the workflow assignment: Design test architecture for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert specializing in test architecture and TDD workflows.
 
-    Design test architecture for: $FEATURE
+        Design test architecture for: $FEATURE
 
-    ## Requirements
-    [Insert full contents of .tdd-cycle/01-requirements.md]
+        ## Requirements
+        [Insert full contents of .tdd-cycle/01-requirements.md]
 
-    ## Deliverables
-    1. Test structure and organization (directory layout, naming conventions)
-    2. Fixture design (shared setup, teardown, test data factories)
-    3. Mock/stub strategy (what to mock, what to use real implementations for)
-    4. Test data strategy (generators, factories, edge case data sets)
-    5. Test execution order and parallelization plan
-    6. Framework-specific configuration (matching project's existing test framework)
+        ## Deliverables
+        1. Test structure and organization (directory layout, naming conventions)
+        2. Fixture design (shared setup, teardown, test data factories)
+        3. Mock/stub strategy (what to mock, what to use real implementations for)
+        4. Test data strategy (generators, factories, edge case data sets)
+        5. Test execution order and parallelization plan
+        6. Framework-specific configuration (matching project's existing test framework)
 
-    Ensure architecture supports isolated, fast, reliable tests.
-    Write your complete design as a single markdown document.
+        Ensure architecture supports isolated, fast, reliable tests.
+        Write your complete design as a single markdown document.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.tdd-cycle/02-test-architecture.md`.
 
@@ -177,29 +187,34 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Write failing unit tests for $FEATURE"
-  prompt: |
-    You are a test automation expert specializing in TDD red phase.
+  context: |
+    This batch handles the workflow assignment: Write failing unit tests for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert specializing in TDD red phase.
 
-    Write FAILING unit tests for: $FEATURE
+        Write FAILING unit tests for: $FEATURE
 
-    ## Requirements
-    [Insert contents of .tdd-cycle/01-requirements.md]
+        ## Requirements
+        [Insert contents of .tdd-cycle/01-requirements.md]
 
-    ## Test Architecture
-    [Insert contents of .tdd-cycle/02-test-architecture.md]
+        ## Test Architecture
+        [Insert contents of .tdd-cycle/02-test-architecture.md]
 
-    ## Instructions
-    1. Tests must fail initially — DO NOT implement production code
-    2. Include edge cases, error scenarios, and happy paths
-    3. Use the project's existing test framework and conventions
-    4. Follow Arrange-Act-Assert pattern
-    5. Use descriptive test names (should_X_when_Y)
-    6. Ensure failures are for the RIGHT reasons (missing implementation, not syntax errors)
+        ## Instructions
+        1. Tests must fail initially — DO NOT implement production code
+        2. Include edge cases, error scenarios, and happy paths
+        3. Use the project's existing test framework and conventions
+        4. Follow Arrange-Act-Assert pattern
+        5. Use descriptive test names (should_X_when_Y)
+        6. Ensure failures are for the RIGHT reasons (missing implementation, not syntax errors)
 
-    Write all test files. Report what test files were created and what they cover.
+        Write all test files. Report what test files were created and what they cover.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save a summary to `.tdd-cycle/03-failing-tests.md` (list of test files, test count, coverage areas).
 
@@ -211,23 +226,28 @@ Use the `task` tool with the local code-reviewer agent:
 
 ```
 Task:
-  agent: "tdd-workflows__code-reviewer"
-  description: "Verify tests fail correctly for $FEATURE"
-  prompt: |
-    Verify that all tests for: $FEATURE are failing correctly.
+  context: |
+    This batch handles the workflow assignment: Verify tests fail correctly for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "tdd-workflows__code-reviewer"
+      task: |
+        Verify that all tests for: $FEATURE are failing correctly.
 
-    ## Failing Tests
-    [Insert contents of .tdd-cycle/03-failing-tests.md]
+        ## Failing Tests
+        [Insert contents of .tdd-cycle/03-failing-tests.md]
 
-    ## Instructions
-    1. Run the test suite and confirm all new tests fail
-    2. Ensure failures are for the right reasons (missing implementation, not test errors)
-    3. Confirm no false positives (tests that accidentally pass)
-    4. Verify no existing tests were broken
-    5. Check test quality: meaningful names, proper assertions, good error messages
+        ## Instructions
+        1. Run the test suite and confirm all new tests fail
+        2. Ensure failures are for the right reasons (missing implementation, not test errors)
+        3. Confirm no false positives (tests that accidentally pass)
+        4. Verify no existing tests were broken
+        5. Check test quality: meaningful names, proper assertions, good error messages
 
-    Report your findings. This is a GATE — do not approve if tests pass or fail for wrong reasons.
+        Report your findings. This is a GATE — do not approve if tests pass or fail for wrong reasons.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/04-failure-verification.md`.
 
@@ -265,32 +285,37 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement minimal code to pass tests for $FEATURE"
-  prompt: |
-    You are a backend architect implementing the GREEN phase of TDD.
+  context: |
+    This batch handles the workflow assignment: Implement minimal code to pass tests for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend architect implementing the GREEN phase of TDD.
 
-    Implement MINIMAL code to make tests pass for: $FEATURE
+        Implement MINIMAL code to make tests pass for: $FEATURE
 
-    ## Requirements
-    [Insert contents of .tdd-cycle/01-requirements.md]
+        ## Requirements
+        [Insert contents of .tdd-cycle/01-requirements.md]
 
-    ## Test Architecture
-    [Insert contents of .tdd-cycle/02-test-architecture.md]
+        ## Test Architecture
+        [Insert contents of .tdd-cycle/02-test-architecture.md]
 
-    ## Failing Tests
-    [Insert contents of .tdd-cycle/03-failing-tests.md]
+        ## Failing Tests
+        [Insert contents of .tdd-cycle/03-failing-tests.md]
 
-    ## Instructions
-    1. Focus ONLY on making tests green — no extra features or optimizations
-    2. Use the simplest implementation that passes each test
-    3. Follow the project's existing code patterns and conventions
-    4. Keep methods/functions small and focused
-    5. Don't add error handling unless tests require it
-    6. Document shortcuts taken for the refactor phase
+        ## Instructions
+        1. Focus ONLY on making tests green — no extra features or optimizations
+        2. Use the simplest implementation that passes each test
+        3. Follow the project's existing code patterns and conventions
+        4. Keep methods/functions small and focused
+        5. Don't add error handling unless tests require it
+        6. Document shortcuts taken for the refactor phase
 
-    Write all code files. Report what files were created/modified and any technical debt noted.
+        Write all code files. Report what files were created/modified and any technical debt noted.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save a summary to `.tdd-cycle/05-implementation.md`.
 
@@ -302,25 +327,30 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Verify all tests pass for $FEATURE"
-  prompt: |
-    You are a test automation expert verifying TDD green phase completion.
+  context: |
+    This batch handles the workflow assignment: Verify all tests pass for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert verifying TDD green phase completion.
 
-    Run all tests for: $FEATURE and verify they pass.
+        Run all tests for: $FEATURE and verify they pass.
 
-    ## Implementation
-    [Insert contents of .tdd-cycle/05-implementation.md]
+        ## Implementation
+        [Insert contents of .tdd-cycle/05-implementation.md]
 
-    ## Instructions
-    1. Run the full test suite
-    2. Verify ALL new tests pass (green)
-    3. Verify no existing tests were broken
-    4. Check test coverage metrics against targets
-    5. Confirm implementation is truly minimal (no gold plating)
+        ## Instructions
+        1. Run the full test suite
+        2. Verify ALL new tests pass (green)
+        3. Verify no existing tests were broken
+        4. Check test coverage metrics against targets
+        5. Confirm implementation is truly minimal (no gold plating)
 
-    Report test execution results, coverage metrics, and any issues found.
+        Report test execution results, coverage metrics, and any issues found.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/06-green-verification.md`.
 
@@ -357,27 +387,32 @@ Use the `task` tool with the local code-reviewer agent:
 
 ```
 Task:
-  agent: "tdd-workflows__code-reviewer"
-  description: "Refactor implementation for $FEATURE"
-  prompt: |
-    Refactor the implementation for: $FEATURE while keeping all tests green.
+  context: |
+    This batch handles the workflow assignment: Refactor implementation for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "tdd-workflows__code-reviewer"
+      task: |
+        Refactor the implementation for: $FEATURE while keeping all tests green.
 
-    ## Implementation
-    [Insert contents of .tdd-cycle/05-implementation.md]
+        ## Implementation
+        [Insert contents of .tdd-cycle/05-implementation.md]
 
-    ## Green Verification
-    [Insert contents of .tdd-cycle/06-green-verification.md]
+        ## Green Verification
+        [Insert contents of .tdd-cycle/06-green-verification.md]
 
-    ## Instructions
-    1. Apply SOLID principles where appropriate
-    2. Remove code duplication
-    3. Improve naming for clarity
-    4. Optimize performance where tests support it
-    5. Run tests after each refactoring step — tests MUST remain green
-    6. Apply refactoring triggers: complexity > 10, method > 20 lines, class > 200 lines, duplication > 3 lines
+        ## Instructions
+        1. Apply SOLID principles where appropriate
+        2. Remove code duplication
+        3. Improve naming for clarity
+        4. Optimize performance where tests support it
+        5. Run tests after each refactoring step — tests MUST remain green
+        6. Apply refactoring triggers: complexity > 10, method > 20 lines, class > 200 lines, duplication > 3 lines
 
-    Report all refactoring changes made and confirm tests still pass.
+        Report all refactoring changes made and confirm tests still pass.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/07-refactored-code.md`.
 
@@ -389,28 +424,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Refactor tests for $FEATURE"
-  prompt: |
-    You are a test automation expert refactoring tests for clarity and maintainability.
+  context: |
+    This batch handles the workflow assignment: Refactor tests for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert refactoring tests for clarity and maintainability.
 
-    Refactor tests for: $FEATURE
+        Refactor tests for: $FEATURE
 
-    ## Current Tests
-    [Insert contents of .tdd-cycle/03-failing-tests.md]
+        ## Current Tests
+        [Insert contents of .tdd-cycle/03-failing-tests.md]
 
-    ## Refactored Code
-    [Insert contents of .tdd-cycle/07-refactored-code.md]
+        ## Refactored Code
+        [Insert contents of .tdd-cycle/07-refactored-code.md]
 
-    ## Instructions
-    1. Remove test duplication — extract common fixtures
-    2. Improve test names for clarity and documentation value
-    3. Ensure tests still provide the same coverage
-    4. Optimize test execution speed where possible
-    5. Verify coverage metrics unchanged or improved
+        ## Instructions
+        1. Remove test duplication — extract common fixtures
+        2. Improve test names for clarity and documentation value
+        3. Ensure tests still provide the same coverage
+        4. Optimize test execution speed where possible
+        5. Verify coverage metrics unchanged or improved
 
-    Report all test refactoring changes and confirm coverage is maintained.
+        Report all test refactoring changes and confirm coverage is maintained.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/08-refactored-tests.md`.
 
@@ -446,25 +486,30 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Write failing integration tests for $FEATURE"
-  prompt: |
-    You are a test automation expert writing integration tests in TDD style.
+  context: |
+    This batch handles the workflow assignment: Write failing integration tests for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert writing integration tests in TDD style.
 
-    Write FAILING integration tests for: $FEATURE
+        Write FAILING integration tests for: $FEATURE
 
-    ## Refactored Implementation
-    [Insert contents of .tdd-cycle/07-refactored-code.md]
+        ## Refactored Implementation
+        [Insert contents of .tdd-cycle/07-refactored-code.md]
 
-    ## Instructions
-    1. Test component interactions, API contracts, and data flow
-    2. Tests must fail initially (follow red-green-refactor)
-    3. Focus on integration points identified in the architecture
-    4. Include contract tests for API boundaries
-    5. Follow existing project test patterns
+        ## Instructions
+        1. Test component interactions, API contracts, and data flow
+        2. Tests must fail initially (follow red-green-refactor)
+        3. Focus on integration points identified in the architecture
+        4. Include contract tests for API boundaries
+        5. Follow existing project test patterns
 
-    Write test files and report what they cover.
+        Write test files and report what they cover.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/09-integration-tests.md`.
 
@@ -476,23 +521,28 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement integration code for $FEATURE"
-  prompt: |
-    You are a backend architect implementing integration code.
+  context: |
+    This batch handles the workflow assignment: Implement integration code for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend architect implementing integration code.
 
-    Implement integration code for: $FEATURE to make integration tests pass.
+        Implement integration code for: $FEATURE to make integration tests pass.
 
-    ## Integration Tests
-    [Insert contents of .tdd-cycle/09-integration-tests.md]
+        ## Integration Tests
+        [Insert contents of .tdd-cycle/09-integration-tests.md]
 
-    ## Instructions
-    1. Focus on component interaction and data flow
-    2. Implement only what's needed to pass integration tests
-    3. Follow existing project patterns for integration code
+        ## Instructions
+        1. Focus on component interaction and data flow
+        2. Implement only what's needed to pass integration tests
+        3. Follow existing project patterns for integration code
 
-    Write code and report what was created/modified.
+        Write code and report what was created/modified.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/10-integration-impl.md`.
 
@@ -504,24 +554,29 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Add performance and edge case tests for $FEATURE"
-  prompt: |
-    You are a test automation expert adding extended test coverage.
+  context: |
+    This batch handles the workflow assignment: Add performance and edge case tests for $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert adding extended test coverage.
 
-    Add performance tests and additional edge case tests for: $FEATURE
+        Add performance tests and additional edge case tests for: $FEATURE
 
-    ## Current Implementation
-    [Insert contents of .tdd-cycle/10-integration-impl.md]
+        ## Current Implementation
+        [Insert contents of .tdd-cycle/10-integration-impl.md]
 
-    ## Instructions
-    1. Add stress tests and boundary tests
-    2. Add error recovery tests
-    3. Include performance benchmarks where appropriate
-    4. Ensure all new tests pass
+        ## Instructions
+        1. Add stress tests and boundary tests
+        2. Add error recovery tests
+        3. Include performance benchmarks where appropriate
+        4. Ensure all new tests pass
 
-    Write test files and report coverage improvements.
+        Write test files and report coverage improvements.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/11-extended-tests.md`.
 
@@ -539,23 +594,28 @@ Use the `task` tool with the local code-reviewer agent:
 
 ```
 Task:
-  agent: "tdd-workflows__code-reviewer"
-  description: "Final TDD review of $FEATURE"
-  prompt: |
-    Perform comprehensive final review of: $FEATURE
+  context: |
+    This batch handles the workflow assignment: Final TDD review of $FEATURE.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "tdd-workflows__code-reviewer"
+      task: |
+        Perform comprehensive final review of: $FEATURE
 
-    ## All Artifacts
-    [Insert contents of all .tdd-cycle/*.md files]
+        ## All Artifacts
+        [Insert contents of all .tdd-cycle/*.md files]
 
-    ## Instructions
-    1. Verify TDD process was followed (red-green-refactor discipline)
-    2. Check code quality and SOLID principle adherence
-    3. Assess test quality and coverage completeness
-    4. Verify no anti-patterns (test-after, skipped refactoring, etc.)
-    5. Suggest any remaining improvements
+        ## Instructions
+        1. Verify TDD process was followed (red-green-refactor discipline)
+        2. Check code quality and SOLID principle adherence
+        3. Assess test quality and coverage completeness
+        4. Verify no anti-patterns (test-after, skipped refactoring, etc.)
+        5. Suggest any remaining improvements
 
-    Provide a final review report with findings and recommendations.
+        Provide a final review report with findings and recommendations.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save output to `.tdd-cycle/12-final-review.md`.
 

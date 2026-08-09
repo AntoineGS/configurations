@@ -22,59 +22,64 @@ Use the `task` tool to implement minimal passing code:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement minimal code to pass failing tests"
-  prompt: |
-    You are a test automation expert implementing the GREEN phase of TDD.
+  context: |
+    This batch handles the workflow assignment: Implement minimal code to pass failing tests.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert implementing the GREEN phase of TDD.
 
-    Implement MINIMAL code to make these failing tests pass: $ARGUMENTS
+        Implement MINIMAL code to make these failing tests pass: $ARGUMENTS
 
-    Follow TDD green phase principles:
+        Follow TDD green phase principles:
 
-    1. **Pre-Implementation Analysis**
-       - Review all failing tests and their error messages
-       - Identify the simplest path to make tests pass
-       - Map test requirements to minimal implementation needs
-       - Avoid premature optimization or over-engineering
-       - Focus only on making tests green, not perfect code
+        1. **Pre-Implementation Analysis**
+           - Review all failing tests and their error messages
+           - Identify the simplest path to make tests pass
+           - Map test requirements to minimal implementation needs
+           - Avoid premature optimization or over-engineering
+           - Focus only on making tests green, not perfect code
 
-    2. **Implementation Strategy**
-       - **Fake It**: Return hard-coded values when appropriate
-       - **Obvious Implementation**: When solution is trivial and clear
-       - **Triangulation**: Generalize only when multiple tests require it
-       - Start with the simplest test and work incrementally
-       - One test at a time — don't try to pass all at once
+        2. **Implementation Strategy**
+           - **Fake It**: Return hard-coded values when appropriate
+           - **Obvious Implementation**: When solution is trivial and clear
+           - **Triangulation**: Generalize only when multiple tests require it
+           - Start with the simplest test and work incrementally
+           - One test at a time — don't try to pass all at once
 
-    3. **Code Structure Guidelines**
-       - Write the minimal code that could possibly work
-       - Avoid adding functionality not required by tests
-       - Use simple data structures initially
-       - Defer architectural decisions until refactor phase
-       - Keep methods/functions small and focused
-       - Don't add error handling unless tests require it
+        3. **Code Structure Guidelines**
+           - Write the minimal code that could possibly work
+           - Avoid adding functionality not required by tests
+           - Use simple data structures initially
+           - Defer architectural decisions until refactor phase
+           - Keep methods/functions small and focused
+           - Don't add error handling unless tests require it
 
-    4. **Progressive Implementation**
-       - Make first test pass with simplest possible code
-       - Run tests after each change to verify progress
-       - Add just enough code for next failing test
-       - Resist urge to implement beyond test requirements
-       - Keep track of technical debt for refactor phase
-       - Document assumptions and shortcuts taken
+        4. **Progressive Implementation**
+           - Make first test pass with simplest possible code
+           - Run tests after each change to verify progress
+           - Add just enough code for next failing test
+           - Resist urge to implement beyond test requirements
+           - Keep track of technical debt for refactor phase
+           - Document assumptions and shortcuts taken
 
-    5. **Success Criteria**
-       - All tests pass (green)
-       - No extra functionality beyond test requirements
-       - Code is readable even if not optimal
-       - No broken existing functionality
-       - Clear path to refactoring identified
+        5. **Success Criteria**
+           - All tests pass (green)
+           - No extra functionality beyond test requirements
+           - Code is readable even if not optimal
+           - No broken existing functionality
+           - Clear path to refactoring identified
 
-    Output should include:
-    - Complete implementation code
-    - Test execution results showing all green
-    - List of shortcuts taken for later refactoring
-    - Technical debt documentation
-    - Readiness assessment for refactor phase
+        Output should include:
+        - Complete implementation code
+        - Test execution results showing all green
+        - List of shortcuts taken for later refactoring
+        - Technical debt documentation
+        - Readiness assessment for refactor phase
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 ## Post-Implementation Checks
 

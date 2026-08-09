@@ -37,6 +37,18 @@ TEXT_REPLACEMENTS = {
   "/ui-design:accessibility-audit": "/ui-design__accessibility-audit",
 }
 
+SEQUENTIAL_TASK_LIFECYCLE = (
+  "After this dispatch, use the `hub` tool with `op: \"wait\"` and the returned job ID(s) "
+  "(or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. "
+  "Associate each delivered result with this task before saving artifacts or advancing state."
+)
+
+PARALLEL_TASK_LIFECYCLE = (
+  "After dispatching this parallel group, use the `hub` tool with `op: \"wait\"` and the returned job IDs "
+  "(or omit `ids` to wait on all jobs you own) until every job in the group has delivered its final result. "
+  "Associate each delivered result with its task before consolidating the group or advancing state."
+)
+
 
 def parse_frontmatter(text: str) -> tuple[list[str], str]:
   lines = text.splitlines()
@@ -62,6 +74,68 @@ def migrate_agent(text: str) -> str:
   return render_frontmatter(kept, body)
 
 
+def _render_task_dispatch(agent: str, description: str, prompt_lines: list[str]) -> list[str]:
+  punctuation = "" if description.endswith((".", "!", "?")) else "."
+  rendered = [
+    "Task:",
+    "  context: |",
+    f"    This batch handles the workflow assignment: {description}{punctuation}",
+    "    Use the current workspace and return the complete final result to the parent.",
+    "  tasks:",
+    f'    - agent: "{agent}"',
+    "      task: |",
+  ]
+  for line in prompt_lines:
+    rendered.append(f"        {line}" if line else "")
+  return rendered
+
+
+def _is_parallel_boundary(line: str) -> bool:
+  return line.startswith(("###", "**7b", "**7c", "After both complete", "After all three complete"))
+
+
+def _migrate_task_dispatches(body: str) -> str:
+  lines = body.splitlines()
+  migrated: list[str] = []
+  index = 0
+
+  while index < len(lines):
+    if lines[index] != "Task:" or index + 3 >= len(lines):
+      migrated.append(lines[index])
+      index += 1
+      continue
+
+    agent_match = re.fullmatch(r'  (?:subagent_type|agent): "([^"]+)"', lines[index + 1])
+    description_match = re.fullmatch(r'  description: "([^"]+)"', lines[index + 2])
+    if not agent_match or not description_match or lines[index + 3] != "  prompt: |":
+      migrated.append(lines[index])
+      index += 1
+      continue
+
+    prompt_start = index + 4
+    prompt_end = prompt_start
+    while prompt_end < len(lines) and lines[prompt_end] != "```":
+      if lines[prompt_end] and not lines[prompt_end].startswith("    "):
+        raise ValueError("expected an indented task prompt")
+      prompt_end += 1
+    if prompt_end == len(lines):
+      raise ValueError("expected a task dispatch closing fence")
+
+    prompt_lines = [line[4:] if line else "" for line in lines[prompt_start:prompt_end]]
+    migrated.extend(_render_task_dispatch(agent_match.group(1), description_match.group(1), prompt_lines))
+    migrated.append(lines[prompt_end])
+
+    following = next((line.strip() for line in lines[prompt_end + 1 :] if line.strip()), "")
+    if not _is_parallel_boundary(following):
+      migrated.extend(["", SEQUENTIAL_TASK_LIFECYCLE])
+    index = prompt_end + 1
+
+  migrated_body = "\n".join(migrated)
+  if body.endswith("\n") and not migrated_body.endswith("\n"):
+    migrated_body += "\n"
+  return migrated_body
+
+
 def migrate_command(text: str) -> str:
   frontmatter, body = parse_frontmatter(text)
   description = next(line for line in frontmatter if line.startswith("description:"))
@@ -69,7 +143,16 @@ def migrate_command(text: str) -> str:
     (line.partition(":")[2].strip() for line in frontmatter if line.startswith("argument-hint:")),
     None,
   )
+  body = _migrate_task_dispatches(body)
   body = re.sub(r"subagent_type(?P<separator>\s*[:=]\s*)", r"agent\g<separator>", body)
+  body = body.replace(
+    "After both complete, consolidate into ",
+    f"{PARALLEL_TASK_LIFECYCLE}\n\nThen consolidate into ",
+  )
+  body = body.replace(
+    "After all three complete, consolidate results into ",
+    f"{PARALLEL_TASK_LIFECYCLE}\n\nThen consolidate results into ",
+  )
   for old, new in AGENT_ALIASES.items():
     body = body.replace(f'"{old}"', f'"{new}"')
   for old, new in TEXT_REPLACEMENTS.items():
