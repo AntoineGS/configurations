@@ -104,7 +104,7 @@ Time Impact:
 - 2 hours per bug fix (must fix in 5 places)
 - 4 hours per feature change
 - Monthly impact: ~20 hours
-Annual Cost: 240 hours × $150/hour = $36,000
+Annual Cost: 240 hours × USD 150/hour = USD 36,000
 ```
 
 **Quality Impact**
@@ -117,8 +117,8 @@ Average Bug Cost:
 - Fix: 2 hours
 - Testing: 2 hours
 - Deployment: 1 hour
-Monthly Cost: 3 bugs × 9 hours × $150 = $4,050
-Annual Cost: $48,600
+Monthly Cost: 3 bugs × 9 hours × USD 150 = USD 4,050
+Annual Cost: USD 48,600
 ```
 
 **Risk Assessment**
