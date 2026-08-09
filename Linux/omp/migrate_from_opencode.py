@@ -37,6 +37,12 @@ TEXT_REPLACEMENTS = {
   "/ui-design:accessibility-audit": "/ui-design__accessibility-audit",
 }
 
+JAVASCRIPT_LANGUAGES = {"javascript", "js", "typescript", "ts"}
+SHELL_LANGUAGES = {"bash", "sh", "shell", "zsh"}
+NUMERIC_DOLLAR_RE = re.compile(r"\$(\d+)")
+CURRENCY_RE = re.compile(r"\$(\d+(?:,\d{3})*(?:\.\d+)?)")
+CURRENCY_CONTEXT_RE = re.compile(r"\b(?:cost|price|amount|budget|salary|revenue|fee|dollars?)\b|/hour", re.I)
+
 SEQUENTIAL_TASK_LIFECYCLE = (
   "After this dispatch, use the `hub` tool with `op: \"wait\"` and the returned job ID(s) "
   "(or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. "
@@ -136,6 +142,88 @@ def _migrate_task_dispatches(body: str) -> str:
   return migrated_body
 
 
+def _normalize_javascript_line(line: str) -> str:
+  normalized: list[str] = []
+  quote: str | None = None
+  index = 0
+
+  while index < len(line):
+    char = line[index]
+    if quote is None:
+      normalized.append(char)
+      if char in ("'", '"', "`"):
+        quote = char
+      index += 1
+      continue
+
+    if char == "\\":
+      normalized.append(char)
+      if index + 1 < len(line):
+        normalized.append(line[index + 1])
+        index += 2
+      else:
+        index += 1
+      continue
+
+    if char == quote:
+      normalized.append(char)
+      quote = None
+      index += 1
+      continue
+
+    match = NUMERIC_DOLLAR_RE.match(line, index)
+    if match:
+      normalized.append(r"\x24" + match.group(1))
+      index = match.end()
+      continue
+
+    normalized.append(char)
+    index += 1
+
+  return "".join(normalized)
+
+
+def _normalize_currency_line(line: str) -> str:
+  if not CURRENCY_CONTEXT_RE.search(line) and not re.search(r"\$\d{1,3}(?:,\d{3})+", line):
+    return line
+  return CURRENCY_RE.sub(lambda match: f"USD {match.group(1)}", line)
+
+
+def _normalize_literal_dollars(body: str) -> str:
+  normalized: list[str] = []
+  fence_language: str | None = None
+
+  for line in body.splitlines(keepends=True):
+    fence_match = re.match(r"^\s*(`{3,})([A-Za-z0-9_+-]*)\s*(?:\r?\n)?$", line)
+    if fence_language is not None:
+      if fence_match and not fence_match.group(2):
+        normalized.append(line)
+        fence_language = None
+        continue
+      if fence_language in JAVASCRIPT_LANGUAGES:
+        normalized.append(_normalize_javascript_line(line))
+      elif fence_language in SHELL_LANGUAGES:
+        normalized.append(NUMERIC_DOLLAR_RE.sub(r"${\1}", line))
+      else:
+        normalized.append(_normalize_currency_line(line))
+      continue
+
+    if fence_match:
+      normalized.append(line)
+      fence_language = fence_match.group(2).lower()
+      continue
+    normalized.append(_normalize_currency_line(line))
+
+  result = "".join(normalized)
+  unresolved = NUMERIC_DOLLAR_RE.search(result)
+  if unresolved:
+    line_number = result.count("\n", 0, unresolved.start()) + 1
+    raise ValueError(
+      f"unclassified numeric dollar token {unresolved.group()} on line {line_number}"
+    )
+  return result
+
+
 def migrate_command(text: str) -> str:
   frontmatter, body = parse_frontmatter(text)
   description = next(line for line in frontmatter if line.startswith("description:"))
@@ -159,6 +247,7 @@ def migrate_command(text: str) -> str:
     body = body.replace(old, new)
   if argument_hint:
     body = f"**Arguments:** `{argument_hint}`\n\n{body.lstrip()}"
+  body = _normalize_literal_dollars(body)
   return render_frontmatter([description], body)
 
 

@@ -324,8 +324,8 @@ class MigrationRunner:
 
 set -e
 
-MIGRATION_VERSION=$1
-DATABASE=$2
+MIGRATION_VERSION=${1}
+DATABASE=${2}
 
 # Verify current version
 CURRENT_VERSION=$(psql -d $DATABASE -t -c \

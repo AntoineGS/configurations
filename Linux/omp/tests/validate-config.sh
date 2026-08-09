@@ -66,6 +66,13 @@ validate_commands() {
   test "$(rg --files "$AGENT_DIR/commands" -g '*.md' | wc -l)" -eq 36
   test ! -e "$AGENT_DIR/commands/context.md"
   ! rg -n '^(subtask|argument-hint):|subagent_type|AskUserQuestion|EnterPlanMode|/ui-design:' "$AGENT_DIR/commands"
+
+  local raw_numeric_dollars
+  raw_numeric_dollars="$(rg -n '\$[0-9]+' "$AGENT_DIR/commands" || true)"
+  if [[ -n "$raw_numeric_dollars" ]]; then
+    printf 'unclassified raw numeric dollar tokens in generated commands:\n%s\n' "$raw_numeric_dollars" >&2
+    return 1
+  fi
 }
 
 validate_tidydots() {
@@ -106,9 +113,7 @@ validate_tidydots() {
     '        backup: ./Linux/omp/agent/commands'
     '      - check:'
     '          linux: >-'
-    '            test -f "$HOME/.omp/plugins/node_modules/superpowers/package.json" &&'
-    "            jq -e '.plugins.superpowers.enabled == true'"
-    '            "$HOME/.omp/plugins/omp-plugins.lock.json" >/dev/null'
+    '            omp plugin list --json | awk '\''BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "superpowers",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'\'''
     '        run:'
     '          linux: omp plugin install github:obra/superpowers'
     '        name: superpowers'
@@ -158,6 +163,7 @@ validate_tidydots() {
     return 1
   fi
 
+  bash "$ROOT/Linux/omp/tests/test_superpowers_check.sh"
   test "$(rg -Fxc 'Linux/zsh/completions/_omp' "$ROOT/.gitignore" || printf '0')" -eq 1
 }
 
