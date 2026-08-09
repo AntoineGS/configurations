@@ -11,6 +11,7 @@ Linux/zmk-config/keyball44/nice-view-gem/
 Linux/zmk-config/keyball44/zmk/
 lnxlink.log
 Linux/os/applications/mimeinfo.cache
+Linux/zsh/completions/_omp
 *.tmpl.rendered
 *.tmpl.conflict
 .tidydots.db
