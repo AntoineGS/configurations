@@ -9,10 +9,13 @@ AGENT_DIR="$ROOT/Linux/omp/agent"
 validate_base() {
   test -f "$AGENT_DIR/config.yml"
   test -f "$AGENT_DIR/AGENTS.md"
-  rg -q '^tools:$' "$AGENT_DIR/config.yml"
-  rg -q '^  approvalMode: write$' "$AGENT_DIR/config.yml"
-  rg -q '^disabledProviders:$' "$AGENT_DIR/config.yml"
-  rg -q '^  - opencode$' "$AGENT_DIR/config.yml"
+  cmp <(
+    printf '%s\n' \
+      'tools:' \
+      '  approvalMode: write' \
+      'disabledProviders:' \
+      '  - opencode'
+  ) "$AGENT_DIR/config.yml"
 
   for policy in lsp-first.md worktree-preferences.md commit-exclusions.md; do
     cmp "$ROOT/Linux/opencode/$policy" "$AGENT_DIR/$policy"
@@ -26,13 +29,29 @@ validate_base() {
 validate_agents() {
   test "$(rg --files "$AGENT_DIR/agents" -g '*.md' | wc -l)" -eq 46
   ! rg -n '^(mode|model|variant):' "$AGENT_DIR/agents"
-  test "$(rg '^name:' "$AGENT_DIR/agents" | sort -u | wc -l)" -eq 46
+
+  while IFS= read -r agent; do
+    test "$(rg --count --no-filename '^name:' "$agent" || printf '0')" -eq 1
+    test "$(rg --count --no-filename '^description:' "$agent" || printf '0')" -eq 1
+  done < <(rg --files "$AGENT_DIR/agents" -g '*.md' | sort)
+
+  test "$(
+    rg --no-filename '^name:' "$AGENT_DIR/agents" |
+      while IFS=: read -r _ value; do
+        printf '%s\n' "${value# }"
+      done |
+      sort -u |
+      wc -l
+  )" -eq 46
 }
 
 validate_skills() {
   test "$(rg --files "$AGENT_DIR/skills" -g 'SKILL.md' | wc -l)" -eq 26
-  test "$(rg '^name:' "$AGENT_DIR/skills" -g 'SKILL.md' | wc -l)" -eq 26
-  test "$(rg '^description:' "$AGENT_DIR/skills" -g 'SKILL.md' | wc -l)" -eq 26
+
+  while IFS= read -r skill; do
+    test "$(rg --count --no-filename '^name:' "$skill" || printf '0')" -eq 1
+    test "$(rg --count --no-filename '^description:' "$skill" || printf '0')" -eq 1
+  done < <(rg --files "$AGENT_DIR/skills" -g 'SKILL.md' | sort)
 }
 
 validate_commands() {
@@ -42,7 +61,8 @@ validate_commands() {
 }
 
 validate_tidydots() {
-  test -f "$ROOT/tidydots.yaml"
+  printf 'tidydots validation not implemented until Task 6\n' >&2
+  return 1
 }
 
 if (( $# != 1 )); then
