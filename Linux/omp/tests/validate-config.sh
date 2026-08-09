@@ -52,8 +52,13 @@ validate_skills() {
   test "$(rg --files "$AGENT_DIR/skills" -g 'SKILL.md' | wc -l)" -eq 26
 
   while IFS= read -r skill; do
-    test "$(rg --count --no-filename '^name:' "$skill" || printf '0')" -eq 1
-    test "$(rg --count --no-filename '^description:' "$skill" || printf '0')" -eq 1
+    awk '
+      NR == 1 && $0 == "---" { in_frontmatter = 1; next }
+      in_frontmatter && $0 == "---" { closed = 1; in_frontmatter = 0; next }
+      in_frontmatter && /^name:/ { name++ }
+      in_frontmatter && /^description:/ { description++ }
+      END { exit !(closed && name == 1 && description == 1) }
+    ' "$skill"
   done < <(rg --files "$AGENT_DIR/skills" -g 'SKILL.md' | sort)
 }
 
@@ -64,8 +69,16 @@ validate_commands() {
 }
 
 validate_tidydots() {
-  printf 'tidydots validation not implemented until Task 6\n' >&2
-  return 1
+  rg -Fq 'name: oh-my-pi' "$ROOT/tidydots.yaml"
+  rg -Fq 'binary: omp' "$ROOT/tidydots.yaml"
+  rg -Fq 'backup: ./Linux/omp/agent' "$ROOT/tidydots.yaml"
+  rg -Fq 'linux: ~/.omp/agent/agents' "$ROOT/tidydots.yaml"
+  rg -Fq 'linux: ~/.omp/agent/skills' "$ROOT/tidydots.yaml"
+  rg -Fq 'linux: ~/.omp/agent/commands' "$ROOT/tidydots.yaml"
+  rg -Fq 'omp plugin install github:obra/superpowers' "$ROOT/tidydots.yaml"
+  rg -Fq 'herdr integration install omp' "$ROOT/tidydots.yaml"
+  rg -Fq 'omp completions zsh' "$ROOT/tidydots.yaml"
+  rg -Fxq 'Linux/zsh/completions/_omp' "$ROOT/.gitignore"
 }
 
 if (( $# != 1 )); then
