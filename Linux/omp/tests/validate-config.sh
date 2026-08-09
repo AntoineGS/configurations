@@ -29,7 +29,9 @@ validate_base() {
 validate_agents() {
   mapfile -t agent_files < <(rg --files "$AGENT_DIR/agents" -g '*.md' | sort)
   test "${#agent_files[@]}" -eq 46
-  ! rg -n '^(mode|model|variant):' "${agent_files[@]}"
+  if rg -n '^(mode|model|variant):' "$AGENT_DIR/agents"; then
+    return 1
+  fi
 
   for agent in "${agent_files[@]}"; do
     test "$(rg --count --no-filename '^name:' "$agent" || printf '0')" -eq 1
