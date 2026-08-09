@@ -335,6 +335,56 @@ applications:
         sudo: true
   - package:
       managers:
+        installer:
+          command:
+            linux: curl -fsSL https://omp.sh/install | sh
+          binary: omp
+    name: oh-my-pi
+    description: Batteries-included Pi fork with native LSP, subagents, and Agent Hub
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.omp/agent
+        name: config
+        backup: ./Linux/omp/agent
+        files:
+          - config.yml
+          - AGENTS.md
+          - lsp-first.md
+          - worktree-preferences.md
+          - commit-exclusions.md
+      - targets:
+          linux: ~/.omp/agent/agents
+        name: agents
+        backup: ./Linux/omp/agent/agents
+      - targets:
+          linux: ~/.omp/agent/skills
+        name: skills
+        backup: ./Linux/omp/agent/skills
+      - targets:
+          linux: ~/.omp/agent/commands
+        name: commands
+        backup: ./Linux/omp/agent/commands
+      - check:
+          linux: >-
+            test -f "$HOME/.omp/plugins/node_modules/superpowers/package.json" &&
+            jq -e '.plugins.superpowers.enabled == true'
+            "$HOME/.omp/plugins/omp-plugins.lock.json" >/dev/null
+        run:
+          linux: omp plugin install github:obra/superpowers
+        name: superpowers
+      - check:
+          linux: "herdr integration status | grep -q '^omp: current '"
+        run:
+          linux: herdr integration install omp
+        name: herdr-integration
+      - check:
+          linux: test -s ~/.local/share/zsh/completions/_omp
+        run:
+          linux: mkdir -p ~/.local/share/zsh/completions && omp completions zsh > ~/.local/share/zsh/completions/_omp
+        name: zsh-completion
+  - package:
+      managers:
         apt: tmux
         brew: tmux
         pacman: tmux
