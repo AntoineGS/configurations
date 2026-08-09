@@ -29,6 +29,8 @@ TEXT_REPLACEMENTS = {
   "AskUserQuestion tool": "`ask` tool",
   "EnterPlanMode": "plan mode",
   "Task tool": "`task` tool",
+  "subagent_type": "agent",
+  "general-purpose": "task",
   "/ui-design:design-system-setup": "/ui-design__design-system-setup",
   "/ui-design:create-component": "/ui-design__create-component",
   "/ui-design:design-review": "/ui-design__design-review",
