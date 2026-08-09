@@ -83,7 +83,7 @@ validate_tidydots() {
     '      managers:'
     '        installer:'
     '          command:'
-    '            linux: curl -fsSL https://omp.sh/install | sh'
+    '            linux: curl -fsSL https://omp.sh/install | sh -s -- --binary'
     '          binary: omp'
     '    name: oh-my-pi'
     '    description: Batteries-included Pi fork with native LSP, subagents, and Agent Hub'
