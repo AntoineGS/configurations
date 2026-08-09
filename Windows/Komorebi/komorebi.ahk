@@ -1,5 +1,9 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+#Include komorebi-bridge.ahk
+
+DetectHiddenWindows true
+KomorebiBridge.EnsureRunning()
 
 ; ==========================================================================
 ; Komorebi Window Manager - AutoHotkey v2 Hotkeys
@@ -34,7 +38,7 @@ FocusOrLaunch(windowTitle, execPath) {
 FocusOrLaunchOnWorkspace(windowTitle, execPath, workspace) {
     if WinExist(windowTitle) {
         WinActivate
-        Komorebic('focus-named-workspace "' workspace '"')
+        KomorebiBridge.Send(KomorebiCommand.FocusWorkspace(workspace))
         return
     }
     Run execPath
@@ -44,8 +48,8 @@ FocusOrLaunchOnWorkspace(windowTitle, execPath, workspace) {
             Sleep 300  ; let the app finish initializing its main form
             WinActivate
             Sleep 100
-            Komorebic('move-to-named-workspace "' workspace '"')
-            Komorebic('focus-named-workspace "' workspace '"')
+            KomorebiBridge.Send(KomorebiCommand.MoveWorkspace(workspace))
+            KomorebiBridge.Send(KomorebiCommand.FocusWorkspace(workspace))
             return
         }
         Sleep 50
@@ -170,8 +174,8 @@ LaunchWezterm(launchArgs, workspace := "") {
         WinActivate "ahk_id " newHwnd
         if workspace != "" {
             Sleep 100
-            Komorebic('move-to-named-workspace "' workspace '"')
-            Komorebic('focus-named-workspace "' workspace '"')
+            KomorebiBridge.Send(KomorebiCommand.MoveWorkspace(workspace))
+            KomorebiBridge.Send(KomorebiCommand.FocusWorkspace(workspace))
         }
     }
 }
@@ -219,24 +223,24 @@ ExitResizeMode() {
 
 ; --- Window management -----------------------------------------------------
 
-#w::Komorebic("close")
-#m::Komorebic("minimize")
-#f::Komorebic("toggle-maximize")
+#w::KomorebiBridge.Send(KomorebiCommand.Close)
+#m::KomorebiBridge.Send(KomorebiCommand.Minimize)
+#f::KomorebiBridge.Send(KomorebiCommand.ToggleMaximize)
 
 ; --- Focus windows ---------------------------------------------------------
 
-#h::Komorebic("focus left")
-#j::Komorebic("focus down")
-#k::Komorebic("focus up")
-#l::Komorebic("focus right")
-#vkBA::Komorebic("focus right")
+#h::KomorebiBridge.Send(KomorebiCommand.FocusLeft)
+#j::KomorebiBridge.Send(KomorebiCommand.FocusDown)
+#k::KomorebiBridge.Send(KomorebiCommand.FocusUp)
+#l::KomorebiBridge.Send(KomorebiCommand.FocusRight)
+#vkBA::KomorebiBridge.Send(KomorebiCommand.FocusRight)
 
 ; --- Move windows ----------------------------------------------------------
 
-#+h::Komorebic("move left")
-#+j::Komorebic("move down")
-#+k::Komorebic("move up")
-#+l::Komorebic("move right")
+#+h::KomorebiBridge.Send(KomorebiCommand.MoveLeft)
+#+j::KomorebiBridge.Send(KomorebiCommand.MoveDown)
+#+k::KomorebiBridge.Send(KomorebiCommand.MoveUp)
+#+l::KomorebiBridge.Send(KomorebiCommand.MoveRight)
 #+Enter::Run 'wezterm-gui.exe start -- nu'
 
 ; --- Stack windows ---------------------------------------------------------
@@ -255,8 +259,8 @@ ExitResizeMode() {
 
 ; --- Manipulate windows ----------------------------------------------------
 
-#t::Komorebic("toggle-float")
-#+f::Komorebic("toggle-monocle")
+#t::KomorebiBridge.Send(KomorebiCommand.ToggleFloat)
+#+f::KomorebiBridge.Send(KomorebiCommand.ToggleMonocle)
 
 ; --- Window manager options ------------------------------------------------
 
@@ -265,40 +269,40 @@ ExitResizeMode() {
 
 ; --- Layouts ---------------------------------------------------------------
 
-#x::Komorebic("flip-layout horizontal")
-#y::Komorebic("flip-layout vertical")
+#x::KomorebiBridge.Send(KomorebiCommand.FlipHorizontal)
+#y::KomorebiBridge.Send(KomorebiCommand.FlipVertical)
 
 ; --- Workspaces ------------------------------------------------------------
 
-#n::Komorebic("cycle-workspace next")
-#p::Komorebic("cycle-workspace previous")
+#n::KomorebiBridge.Send(KomorebiCommand.WorkspaceNext)
+#p::KomorebiBridge.Send(KomorebiCommand.WorkspacePrevious)
 
-#2::Komorebic('focus-named-workspace "main"')
-#5::Komorebic('focus-named-workspace "shell"')
-#8::Komorebic('focus-named-workspace "browser"')
-#3::Komorebic('focus-named-workspace "secondary"')
-#6::Komorebic('focus-named-workspace "git"')
-#9::Komorebic('focus-named-workspace "sql"')
-#0::Komorebic('focus-named-workspace "explorer"')
+#2::KomorebiBridge.Send(KomorebiCommand.FocusMain)
+#5::KomorebiBridge.Send(KomorebiCommand.FocusShell)
+#8::KomorebiBridge.Send(KomorebiCommand.FocusBrowser)
+#3::KomorebiBridge.Send(KomorebiCommand.FocusSecondary)
+#6::KomorebiBridge.Send(KomorebiCommand.FocusGit)
+#9::KomorebiBridge.Send(KomorebiCommand.FocusSql)
+#0::KomorebiBridge.Send(KomorebiCommand.FocusExplorer)
 
 ; --- Move windows across workspaces ----------------------------------------
 
-#+2::Komorebic('move-to-named-workspace "main"')
-#+5::Komorebic('move-to-named-workspace "shell"')
-#+8::Komorebic('move-to-named-workspace "browser"')
-#+3::Komorebic('move-to-named-workspace "secondary"')
-#+6::Komorebic('move-to-named-workspace "git"')
-#+9::Komorebic('move-to-named-workspace "sql"')
-#+0::Komorebic('move-to-named-workspace "explorer"')
+#+2::KomorebiBridge.Send(KomorebiCommand.MoveMain)
+#+5::KomorebiBridge.Send(KomorebiCommand.MoveShell)
+#+8::KomorebiBridge.Send(KomorebiCommand.MoveBrowser)
+#+3::KomorebiBridge.Send(KomorebiCommand.MoveSecondary)
+#+6::KomorebiBridge.Send(KomorebiCommand.MoveGit)
+#+9::KomorebiBridge.Send(KomorebiCommand.MoveSql)
+#+0::KomorebiBridge.Send(KomorebiCommand.MoveExplorer)
 
 ; --- Resize mode hotkeys (active only while in resize mode) ---------------
 
 resizeMode := false
 
 #HotIf resizeMode
-h::Komorebic("resize-axis horizontal decrease")
-l::Komorebic("resize-axis horizontal increase")
-k::Komorebic("resize-axis vertical decrease")
-j::Komorebic("resize-axis vertical increase")
+h::KomorebiBridge.Send(KomorebiCommand.ResizeHorizontalDecrease)
+l::KomorebiBridge.Send(KomorebiCommand.ResizeHorizontalIncrease)
+k::KomorebiBridge.Send(KomorebiCommand.ResizeVerticalDecrease)
+j::KomorebiBridge.Send(KomorebiCommand.ResizeVerticalIncrease)
 Escape::ExitResizeMode()
 #HotIf

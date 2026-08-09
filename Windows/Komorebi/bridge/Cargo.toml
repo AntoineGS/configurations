@@ -1,0 +1,26 @@
+[package]
+name = "komorebi-ahk-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[dependencies]
+uds_windows = "1.2.1"
+windows = { version = "0.62.2", default-features = false, features = [
+  "std",
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+strip = true
