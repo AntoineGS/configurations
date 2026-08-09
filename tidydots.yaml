@@ -76,6 +76,25 @@ applications:
           windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
+      - targets:
+          linux: ~/.config/user-tmpfiles.d
+        name: temp-cleanup
+        backup: ./Linux/user-tmpfiles.d
+        files:
+          - opencode.conf
+      - check:
+          linux: >-
+            test -d /tmp/opencode &&
+            test ! -L /tmp/opencode &&
+            test "$(stat -c %u /tmp/opencode)" = "$(id -u)" &&
+            test "$(stat -c %a /tmp/opencode)" = 700 &&
+            systemctl --user is-enabled --quiet systemd-tmpfiles-clean.timer &&
+            systemctl --user is-active --quiet systemd-tmpfiles-clean.timer
+        run:
+          linux: >-
+            systemd-tmpfiles --user --create ~/.config/user-tmpfiles.d/opencode.conf &&
+            systemctl --user enable --now systemd-tmpfiles-clean.timer
+        name: enable-temp-cleanup-timer
       - check:
           linux: test -f ~/.config/opencode/plugins/vendor/node_modules/js-tiktoken/package.json && test -f ~/.config/opencode/plugins/vendor/node_modules/@huggingface/transformers/package.json
           windows: 'if ((Test-Path -LiteralPath "$HOME/.config/opencode/plugins/vendor/node_modules/js-tiktoken/package.json") -and (Test-Path -LiteralPath "$HOME/.config/opencode/plugins/vendor/node_modules/@huggingface/transformers/package.json")) { exit 0 } else { exit 1 }'
