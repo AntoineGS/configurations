@@ -22,3 +22,4 @@ Windows/PowerShell/.bun
 Windows/PowerShell/.cargo
 Windows/TotalCommander/wincmd.ini
 .worktrees/
+Windows/Komorebi/bridge/target/
