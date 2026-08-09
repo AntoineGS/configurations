@@ -38,6 +38,7 @@ TEXT_REPLACEMENTS = {
 
 def parse_frontmatter(text: str) -> tuple[list[str], str]:
   lines = text.splitlines()
+  preserved_lines = text.splitlines(keepends=True)
   if not lines or lines[0] != "---":
     raise ValueError("expected frontmatter opening delimiter")
 
@@ -46,7 +47,7 @@ def parse_frontmatter(text: str) -> tuple[list[str], str]:
   except ValueError as error:
     raise ValueError("expected frontmatter closing delimiter") from error
 
-  return lines[1:closing], "\n".join(lines[closing + 1 :])
+  return lines[1:closing], "".join(preserved_lines[closing + 1 :])
 
 
 def render_frontmatter(frontmatter: list[str], body: str) -> str:
