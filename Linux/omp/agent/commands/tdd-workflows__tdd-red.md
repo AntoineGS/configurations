@@ -22,63 +22,68 @@ Use the `task` tool to generate failing tests:
 
 ```
 Task:
-  agent: "task"
-  description: "Generate comprehensive failing tests for TDD red phase"
-  prompt: |
-    You are a test automation expert specializing in TDD red phase test generation.
+  context: |
+    This batch handles the workflow assignment: Generate comprehensive failing tests for TDD red phase.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a test automation expert specializing in TDD red phase test generation.
 
-    Generate comprehensive FAILING tests for: $ARGUMENTS
+        Generate comprehensive FAILING tests for: $ARGUMENTS
 
-    ## Core Requirements
+        ## Core Requirements
 
-    1. **Test Structure**
-       - Framework-appropriate setup (Jest/pytest/JUnit/Go/RSpec — match project conventions)
-       - Arrange-Act-Assert pattern
-       - should_X_when_Y naming convention
-       - Isolated fixtures with no interdependencies
+        1. **Test Structure**
+           - Framework-appropriate setup (Jest/pytest/JUnit/Go/RSpec — match project conventions)
+           - Arrange-Act-Assert pattern
+           - should_X_when_Y naming convention
+           - Isolated fixtures with no interdependencies
 
-    2. **Behavior Coverage**
-       - Happy path scenarios
-       - Edge cases (empty, null, boundary values)
-       - Error handling and exceptions
-       - Concurrent access (if applicable)
+        2. **Behavior Coverage**
+           - Happy path scenarios
+           - Edge cases (empty, null, boundary values)
+           - Error handling and exceptions
+           - Concurrent access (if applicable)
 
-    3. **Failure Verification**
-       - Tests MUST fail when run
-       - Failures for RIGHT reasons (not syntax/import errors)
-       - Meaningful diagnostic error messages
-       - No cascading failures
+        3. **Failure Verification**
+           - Tests MUST fail when run
+           - Failures for RIGHT reasons (not syntax/import errors)
+           - Meaningful diagnostic error messages
+           - No cascading failures
 
-    4. **Test Categories**
-       - Unit: Isolated component behavior
-       - Integration: Component interaction
-       - Contract: API/interface contracts
-       - Property: Mathematical invariants (if applicable)
+        4. **Test Categories**
+           - Unit: Isolated component behavior
+           - Integration: Component interaction
+           - Contract: API/interface contracts
+           - Property: Mathematical invariants (if applicable)
 
-    ## Quality Checklist
+        ## Quality Checklist
 
-    - Readable test names documenting intent
-    - One behavior per test
-    - No implementation leakage
-    - Meaningful test data (not 'foo'/'bar')
-    - Tests serve as living documentation
+        - Readable test names documenting intent
+        - One behavior per test
+        - No implementation leakage
+        - Meaningful test data (not 'foo'/'bar')
+        - Tests serve as living documentation
 
-    ## Anti-Patterns to Avoid
+        ## Anti-Patterns to Avoid
 
-    - Tests passing immediately
-    - Testing implementation vs behavior
-    - Complex setup code
-    - Multiple responsibilities per test
-    - Brittle tests tied to specifics
+        - Tests passing immediately
+        - Testing implementation vs behavior
+        - Complex setup code
+        - Multiple responsibilities per test
+        - Brittle tests tied to specifics
 
-    ## Output Requirements
+        ## Output Requirements
 
-    - Complete test files with imports
-    - Documentation of test purpose
-    - Commands to run and verify failures
-    - Metrics: test count, coverage areas
-    - Next steps for green phase
+        - Complete test files with imports
+        - Documentation of test purpose
+        - Commands to run and verify failures
+        - Metrics: test count, coverage areas
+        - Next steps for green phase
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 ## Validation
 

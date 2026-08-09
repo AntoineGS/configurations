@@ -73,23 +73,28 @@ Use the `task` tool to launch the security auditor agent:
 
 ```
 Task:
-  agent: "security-scanning__security-auditor"
-  description: "Comprehensive vulnerability scan of $TARGET"
-  prompt: |
-    Perform a comprehensive security assessment on: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Comprehensive vulnerability scan of $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__security-auditor"
+      task: |
+        Perform a comprehensive security assessment on: $TARGET.
 
-    ## Instructions
-    1. Execute SAST analysis (Semgrep/SonarQube patterns)
-    2. Identify DAST scanning targets (OWASP ZAP patterns)
-    3. Perform dependency audit (Snyk/Trivy patterns)
-    4. Run secrets detection (GitLeaks/TruffleHog patterns)
-    5. Generate SBOM for supply chain analysis
-    6. Identify OWASP Top 10 vulnerabilities, CWE weaknesses, and CVE exposures
-    7. Assign CVSS scores to all findings
+        ## Instructions
+        1. Execute SAST analysis (Semgrep/SonarQube patterns)
+        2. Identify DAST scanning targets (OWASP ZAP patterns)
+        3. Perform dependency audit (Snyk/Trivy patterns)
+        4. Run secrets detection (GitLeaks/TruffleHog patterns)
+        5. Generate SBOM for supply chain analysis
+        6. Identify OWASP Top 10 vulnerabilities, CWE weaknesses, and CVE exposures
+        7. Assign CVSS scores to all findings
 
-    Provide a detailed vulnerability report with: CVSS scores, exploitability analysis,
-    attack surface mapping, secrets exposure report, and SBOM inventory.
+        Provide a detailed vulnerability report with: CVSS scores, exploitability analysis,
+        attack surface mapping, secrets exposure report, and SBOM inventory.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/01-vulnerability-scan.md`.
 
@@ -103,24 +108,29 @@ Use the `task` tool to launch the threat modeling expert:
 
 ```
 Task:
-  agent: "security-scanning__threat-modeling-expert"
-  description: "Threat modeling and risk analysis for $TARGET"
-  prompt: |
-    Conduct threat modeling using STRIDE methodology for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Threat modeling and risk analysis for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__threat-modeling-expert"
+      task: |
+        Conduct threat modeling using STRIDE methodology for: $TARGET.
 
-    ## Vulnerability Context
-    [Insert full contents of .security-hardening/01-vulnerability-scan.md]
+        ## Vulnerability Context
+        [Insert full contents of .security-hardening/01-vulnerability-scan.md]
 
-    ## Instructions
-    1. Analyze attack vectors and create attack trees
-    2. Assess business impact of identified vulnerabilities
-    3. Map threats to MITRE ATT&CK framework
-    4. Prioritize risks based on likelihood and impact
-    5. Use vulnerability scan results to inform threat priorities
+        ## Instructions
+        1. Analyze attack vectors and create attack trees
+        2. Assess business impact of identified vulnerabilities
+        3. Map threats to MITRE ATT&CK framework
+        4. Prioritize risks based on likelihood and impact
+        5. Use vulnerability scan results to inform threat priorities
 
-    Provide: threat model diagrams, risk matrix with prioritized vulnerabilities,
-    attack scenario documentation, and business impact analysis.
+        Provide: threat model diagrams, risk matrix with prioritized vulnerabilities,
+        attack scenario documentation, and business impact analysis.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/02-threat-model.md`.
 
@@ -134,27 +144,32 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Architecture security review for $TARGET"
-  prompt: |
-    You are a backend security architect. Review the architecture for security weaknesses in: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Architecture security review for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend security architect. Review the architecture for security weaknesses in: $TARGET.
 
-    ## Vulnerability Scan Results
-    [Insert contents of .security-hardening/01-vulnerability-scan.md]
+        ## Vulnerability Scan Results
+        [Insert contents of .security-hardening/01-vulnerability-scan.md]
 
-    ## Threat Model
-    [Insert contents of .security-hardening/02-threat-model.md]
+        ## Threat Model
+        [Insert contents of .security-hardening/02-threat-model.md]
 
-    ## Instructions
-    1. Evaluate service boundaries, data flow security, authentication/authorization architecture
-    2. Review encryption implementation and network segmentation
-    3. Design zero-trust architecture patterns where applicable
-    4. Create a data classification matrix
-    5. Reference the threat model and vulnerability findings in your recommendations
+        ## Instructions
+        1. Evaluate service boundaries, data flow security, authentication/authorization architecture
+        2. Review encryption implementation and network segmentation
+        3. Design zero-trust architecture patterns where applicable
+        4. Create a data classification matrix
+        5. Reference the threat model and vulnerability findings in your recommendations
 
-    Provide: security architecture assessment, zero-trust design recommendations,
-    service mesh security requirements, and data classification matrix.
+        Provide: security architecture assessment, zero-trust design recommendations,
+        service mesh security requirements, and data classification matrix.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/03-architecture-review.md`.
 
@@ -197,28 +212,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "security-scanning__security-auditor"
-  description: "Remediate critical vulnerabilities for $TARGET"
-  prompt: |
-    Coordinate immediate remediation of critical vulnerabilities (CVSS 7+) in: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Remediate critical vulnerabilities for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__security-auditor"
+      task: |
+        Coordinate immediate remediation of critical vulnerabilities (CVSS 7+) in: $TARGET.
 
-    ## Vulnerability Scan Results
-    [Insert contents of .security-hardening/01-vulnerability-scan.md]
+        ## Vulnerability Scan Results
+        [Insert contents of .security-hardening/01-vulnerability-scan.md]
 
-    ## Threat Model
-    [Insert contents of .security-hardening/02-threat-model.md]
+        ## Threat Model
+        [Insert contents of .security-hardening/02-threat-model.md]
 
-    ## Instructions
-    1. Fix SQL injections with parameterized queries
-    2. Fix XSS with output encoding
-    3. Fix authentication bypasses with secure session management
-    4. Fix insecure deserialization with input validation
-    5. Apply security patches for known CVEs
-    6. Document all changes and regression test requirements
+        ## Instructions
+        1. Fix SQL injections with parameterized queries
+        2. Fix XSS with output encoding
+        3. Fix authentication bypasses with secure session management
+        4. Fix insecure deserialization with input validation
+        5. Apply security patches for known CVEs
+        6. Document all changes and regression test requirements
 
-    Provide: patched code with vulnerability fixes, security patch documentation,
-    and regression test requirements.
+        Provide: patched code with vulnerability fixes, security patch documentation,
+        and regression test requirements.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/04-critical-fixes.md`.
 
@@ -232,28 +252,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Backend security hardening for $TARGET"
-  prompt: |
-    You are a backend security engineer. Implement comprehensive backend security controls for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Backend security hardening for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a backend security engineer. Implement comprehensive backend security controls for: $TARGET.
 
-    ## Architecture Review
-    [Insert contents of .security-hardening/03-architecture-review.md]
+        ## Architecture Review
+        [Insert contents of .security-hardening/03-architecture-review.md]
 
-    ## Critical Fixes Applied
-    [Insert contents of .security-hardening/04-critical-fixes.md]
+        ## Critical Fixes Applied
+        [Insert contents of .security-hardening/04-critical-fixes.md]
 
-    ## Instructions
-    1. Add input validation with OWASP ESAPI patterns
-    2. Implement rate limiting and DDoS protection
-    3. Secure API endpoints with OAuth2/JWT validation
-    4. Add encryption for data at rest/transit using AES-256/TLS 1.3
-    5. Implement secure logging without PII exposure
-    6. Build upon the critical fixes already applied
+        ## Instructions
+        1. Add input validation with OWASP ESAPI patterns
+        2. Implement rate limiting and DDoS protection
+        3. Secure API endpoints with OAuth2/JWT validation
+        4. Add encryption for data at rest/transit using AES-256/TLS 1.3
+        5. Implement secure logging without PII exposure
+        6. Build upon the critical fixes already applied
 
-    Provide: hardened API endpoints, validation middleware, encryption implementation,
-    and secure configuration templates.
+        Provide: hardened API endpoints, validation middleware, encryption implementation,
+        and secure configuration templates.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/05-backend-hardening.md`.
 
@@ -267,28 +292,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Frontend security implementation for $TARGET"
-  prompt: |
-    You are a frontend security engineer. Implement frontend security measures for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Frontend security implementation for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a frontend security engineer. Implement frontend security measures for: $TARGET.
 
-    ## Architecture Review
-    [Insert contents of .security-hardening/03-architecture-review.md]
+        ## Architecture Review
+        [Insert contents of .security-hardening/03-architecture-review.md]
 
-    ## Backend Hardening
-    [Insert contents of .security-hardening/05-backend-hardening.md]
+        ## Backend Hardening
+        [Insert contents of .security-hardening/05-backend-hardening.md]
 
-    ## Instructions
-    1. Configure CSP headers with nonce-based policies
-    2. Implement XSS prevention with DOMPurify
-    3. Secure authentication flows with PKCE OAuth2
-    4. Add SRI for external resources
-    5. Implement secure cookie handling with SameSite/HttpOnly/Secure flags
-    6. Complement backend security with client-side protections
+        ## Instructions
+        1. Configure CSP headers with nonce-based policies
+        2. Implement XSS prevention with DOMPurify
+        3. Secure authentication flows with PKCE OAuth2
+        4. Add SRI for external resources
+        5. Implement secure cookie handling with SameSite/HttpOnly/Secure flags
+        6. Complement backend security with client-side protections
 
-    Provide: secure frontend components, CSP policy configuration,
-    authentication flow implementation, and security headers configuration.
+        Provide: secure frontend components, CSP policy configuration,
+        authentication flow implementation, and security headers configuration.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/06-frontend-hardening.md`.
 
@@ -304,28 +334,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Mobile security hardening for $TARGET"
-  prompt: |
-    You are a mobile security engineer. Implement mobile app security for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Mobile security hardening for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a mobile security engineer. Implement mobile app security for: $TARGET.
 
-    ## Architecture Review
-    [Insert contents of .security-hardening/03-architecture-review.md]
+        ## Architecture Review
+        [Insert contents of .security-hardening/03-architecture-review.md]
 
-    ## Backend Hardening
-    [Insert contents of .security-hardening/05-backend-hardening.md]
+        ## Backend Hardening
+        [Insert contents of .security-hardening/05-backend-hardening.md]
 
-    ## Instructions
-    1. Add certificate pinning
-    2. Implement biometric authentication
-    3. Secure local storage with encryption
-    4. Obfuscate code with ProGuard/R8
-    5. Implement anti-tampering and root/jailbreak detection
-    6. Secure IPC communications
+        ## Instructions
+        1. Add certificate pinning
+        2. Implement biometric authentication
+        3. Secure local storage with encryption
+        4. Obfuscate code with ProGuard/R8
+        5. Implement anti-tampering and root/jailbreak detection
+        6. Secure IPC communications
 
-    Provide: hardened mobile application configuration, security configuration files,
-    obfuscation rules, and certificate pinning implementation.
+        Provide: hardened mobile application configuration, security configuration files,
+        obfuscation rules, and certificate pinning implementation.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/07-mobile-hardening.md`.
 
@@ -370,28 +405,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "security-scanning__security-auditor"
-  description: "Enhance authentication and authorization for $TARGET"
-  prompt: |
-    Implement a modern authentication system for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Enhance authentication and authorization for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__security-auditor"
+      task: |
+        Implement a modern authentication system for: $TARGET.
 
-    ## Architecture Review
-    [Insert contents of .security-hardening/03-architecture-review.md]
+        ## Architecture Review
+        [Insert contents of .security-hardening/03-architecture-review.md]
 
-    ## Backend Hardening
-    [Insert contents of .security-hardening/05-backend-hardening.md]
+        ## Backend Hardening
+        [Insert contents of .security-hardening/05-backend-hardening.md]
 
-    ## Instructions
-    1. Deploy OAuth2/OIDC with PKCE
-    2. Implement MFA with TOTP/WebAuthn/FIDO2
-    3. Add risk-based authentication
-    4. Implement RBAC/ABAC with principle of least privilege
-    5. Add session management with secure token rotation
-    6. Strengthen access controls based on architecture review
+        ## Instructions
+        1. Deploy OAuth2/OIDC with PKCE
+        2. Implement MFA with TOTP/WebAuthn/FIDO2
+        3. Add risk-based authentication
+        4. Implement RBAC/ABAC with principle of least privilege
+        5. Add session management with secure token rotation
+        6. Strengthen access controls based on architecture review
 
-    Provide: authentication service configuration, MFA implementation,
-    authorization policies, and session management system.
+        Provide: authentication service configuration, MFA implementation,
+        authorization policies, and session management system.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/08-auth-enhancement.md`.
 
@@ -405,27 +445,32 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Deploy infrastructure security controls for $TARGET"
-  prompt: |
-    You are an infrastructure security engineer. Deploy infrastructure security controls for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Deploy infrastructure security controls for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are an infrastructure security engineer. Deploy infrastructure security controls for: $TARGET.
 
-    ## Architecture Review
-    [Insert contents of .security-hardening/03-architecture-review.md]
+        ## Architecture Review
+        [Insert contents of .security-hardening/03-architecture-review.md]
 
-    ## Auth Enhancement
-    [Insert contents of .security-hardening/08-auth-enhancement.md]
+        ## Auth Enhancement
+        [Insert contents of .security-hardening/08-auth-enhancement.md]
 
-    ## Instructions
-    1. Configure WAF rules for OWASP protection
-    2. Implement network segmentation with micro-segmentation
-    3. Deploy IDS/IPS systems
-    4. Configure cloud security groups and NACLs
-    5. Implement DDoS protection with rate limiting and geo-blocking
+        ## Instructions
+        1. Configure WAF rules for OWASP protection
+        2. Implement network segmentation with micro-segmentation
+        3. Deploy IDS/IPS systems
+        4. Configure cloud security groups and NACLs
+        5. Implement DDoS protection with rate limiting and geo-blocking
 
-    Provide: WAF configuration, network security policies, IDS/IPS rules,
-    and cloud security configurations.
+        Provide: WAF configuration, network security policies, IDS/IPS rules,
+        and cloud security configurations.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/09-infra-security.md`.
 
@@ -439,27 +484,32 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement secrets management for $TARGET"
-  prompt: |
-    You are a DevOps security engineer. Implement enterprise secrets management for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Implement secrets management for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a DevOps security engineer. Implement enterprise secrets management for: $TARGET.
 
-    ## Vulnerability Scan Results
-    [Insert contents of .security-hardening/01-vulnerability-scan.md]
+        ## Vulnerability Scan Results
+        [Insert contents of .security-hardening/01-vulnerability-scan.md]
 
-    ## Infrastructure Security
-    [Insert contents of .security-hardening/09-infra-security.md]
+        ## Infrastructure Security
+        [Insert contents of .security-hardening/09-infra-security.md]
 
-    ## Instructions
-    1. Deploy HashiCorp Vault or AWS Secrets Manager configuration
-    2. Implement secret rotation policies
-    3. Remove hardcoded secrets
-    4. Configure least-privilege IAM roles
-    5. Implement encryption key management with HSM support
+        ## Instructions
+        1. Deploy HashiCorp Vault or AWS Secrets Manager configuration
+        2. Implement secret rotation policies
+        3. Remove hardcoded secrets
+        4. Configure least-privilege IAM roles
+        5. Implement encryption key management with HSM support
 
-    Provide: secrets management configuration, rotation policies,
-    IAM role definitions, and key management procedures.
+        Provide: secrets management configuration, rotation policies,
+        IAM role definitions, and key management procedures.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/10-secrets-management.md`.
 
@@ -500,31 +550,36 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "security-scanning__security-auditor"
-  description: "Penetration testing and validation for $TARGET"
-  prompt: |
-    Execute comprehensive penetration testing for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Penetration testing and validation for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__security-auditor"
+      task: |
+        Execute comprehensive penetration testing for: $TARGET.
 
-    ## Critical Fixes Applied
-    [Insert contents of .security-hardening/04-critical-fixes.md]
+        ## Critical Fixes Applied
+        [Insert contents of .security-hardening/04-critical-fixes.md]
 
-    ## Backend Hardening
-    [Insert contents of .security-hardening/05-backend-hardening.md]
+        ## Backend Hardening
+        [Insert contents of .security-hardening/05-backend-hardening.md]
 
-    ## Auth Enhancement
-    [Insert contents of .security-hardening/08-auth-enhancement.md]
+        ## Auth Enhancement
+        [Insert contents of .security-hardening/08-auth-enhancement.md]
 
-    ## Instructions
-    1. Perform authenticated and unauthenticated testing
-    2. Execute API security testing
-    3. Test business logic vulnerabilities
-    4. Attempt privilege escalation
-    5. Validate all security controls effectiveness
-    6. Use Burp Suite, Metasploit, and custom exploit patterns
+        ## Instructions
+        1. Perform authenticated and unauthenticated testing
+        2. Execute API security testing
+        3. Test business logic vulnerabilities
+        4. Attempt privilege escalation
+        5. Validate all security controls effectiveness
+        6. Use Burp Suite, Metasploit, and custom exploit patterns
 
-    Provide: penetration test report, proof-of-concept exploits,
-    remediation validation, and security control effectiveness metrics.
+        Provide: penetration test report, proof-of-concept exploits,
+        remediation validation, and security control effectiveness metrics.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/11-pentest-results.md`.
 
@@ -538,28 +593,33 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "security-scanning__security-auditor"
-  description: "Compliance verification for $TARGET"
-  prompt: |
-    Verify compliance with security frameworks for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Compliance verification for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "security-scanning__security-auditor"
+      task: |
+        Verify compliance with security frameworks for: $TARGET.
 
-    ## Penetration Test Results
-    [Insert contents of .security-hardening/11-pentest-results.md]
+        ## Penetration Test Results
+        [Insert contents of .security-hardening/11-pentest-results.md]
 
-    ## Compliance Frameworks to Validate
-    [Insert compliance_frameworks from state.json — default: OWASP]
+        ## Compliance Frameworks to Validate
+        [Insert compliance_frameworks from state.json — default: OWASP]
 
-    ## Instructions
-    1. Validate against OWASP ASVS Level 2
-    2. Validate against CIS Benchmarks
-    3. Check SOC2 Type II requirements if applicable
-    4. Verify GDPR/CCPA privacy controls if applicable
-    5. Check HIPAA/PCI-DSS requirements if applicable
-    6. Generate compliance attestation reports
+        ## Instructions
+        1. Validate against OWASP ASVS Level 2
+        2. Validate against CIS Benchmarks
+        3. Check SOC2 Type II requirements if applicable
+        4. Verify GDPR/CCPA privacy controls if applicable
+        5. Check HIPAA/PCI-DSS requirements if applicable
+        6. Generate compliance attestation reports
 
-    Provide: compliance assessment report, gap analysis,
-    remediation requirements, and audit evidence collection.
+        Provide: compliance assessment report, gap analysis,
+        remediation requirements, and audit evidence collection.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/12-compliance-report.md`.
 
@@ -573,29 +633,34 @@ Use the `task` tool:
 
 ```
 Task:
-  agent: "task"
-  description: "Implement security monitoring and SIEM for $TARGET"
-  prompt: |
-    You are a security operations engineer specializing in SIEM and incident response.
-    Implement security monitoring and SIEM integration for: $TARGET.
+  context: |
+    This batch handles the workflow assignment: Implement security monitoring and SIEM for $TARGET.
+    Use the current workspace and return the complete final result to the parent.
+  tasks:
+    - agent: "task"
+      task: |
+        You are a security operations engineer specializing in SIEM and incident response.
+        Implement security monitoring and SIEM integration for: $TARGET.
 
-    ## Infrastructure Security
-    [Insert contents of .security-hardening/09-infra-security.md]
+        ## Infrastructure Security
+        [Insert contents of .security-hardening/09-infra-security.md]
 
-    ## Compliance Report
-    [Insert contents of .security-hardening/12-compliance-report.md]
+        ## Compliance Report
+        [Insert contents of .security-hardening/12-compliance-report.md]
 
-    ## Instructions
-    1. Deploy SIEM integration (Splunk/ELK/Sentinel configuration)
-    2. Configure security event correlation rules
-    3. Implement behavioral analytics for anomaly detection
-    4. Set up automated incident response playbooks
-    5. Create security dashboards and alerting
-    6. Ensure monitoring covers compliance requirements
+        ## Instructions
+        1. Deploy SIEM integration (Splunk/ELK/Sentinel configuration)
+        2. Configure security event correlation rules
+        3. Implement behavioral analytics for anomaly detection
+        4. Set up automated incident response playbooks
+        5. Create security dashboards and alerting
+        6. Ensure monitoring covers compliance requirements
 
-    Provide: SIEM configuration, correlation rules, incident response playbooks,
-    security dashboards, and alert definitions.
+        Provide: SIEM configuration, correlation rules, incident response playbooks,
+        security dashboards, and alert definitions.
 ```
+
+After this dispatch, use the `hub` tool with `op: "wait"` and the returned job ID(s) (or omit `ids` to wait on all jobs you own) until every spawned job has delivered its final result. Associate each delivered result with this task before saving artifacts or advancing state.
 
 Save the agent's output to `.security-hardening/13-monitoring-siem.md`.
 
