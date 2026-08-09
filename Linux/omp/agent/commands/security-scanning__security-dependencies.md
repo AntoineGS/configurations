@@ -370,7 +370,7 @@ jobs:
 
 set -euo pipefail
 
-ECOSYSTEM="$1"
+ECOSYSTEM="${1}"
 UPDATE_TYPE="${2:-patch}"
 
 update_npm() {

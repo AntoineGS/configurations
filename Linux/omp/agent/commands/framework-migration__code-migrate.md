@@ -327,22 +327,22 @@ export default {
 
     // Convert onClick to @click
     template = template.replace(/onClick={/g, '@click="');
-    template = template.replace(/on(\w+)={this\.(\w+)}/g, '@$1="$2"');
+    template = template.replace(/on(\w+)={this\.(\w+)}/g, '@\x241="\x242"');
 
     // Convert conditional rendering
     template = template.replace(
       /{(\w+) && (.+?)}/g,
-      '<template v-if="$1">$2</template>',
+      '<template v-if="\x241">\x242</template>',
     );
     template = template.replace(
       /{(\w+) \? (.+?) : (.+?)}/g,
-      '<template v-if="$1">$2</template><template v-else>$3</template>',
+      '<template v-if="\x241">\x242</template><template v-else>\x243</template>',
     );
 
     // Convert map iterations
     template = template.replace(
       /{(\w+)\.map\(\((\w+), (\w+)\) => (.+?)\)}/g,
-      '<template v-for="($2, $3) in $1" :key="$3">$4</template>',
+      '<template v-for="(\x242, \x243) in \x241" :key="\x243">\x244</template>',
     );
 
     return template;

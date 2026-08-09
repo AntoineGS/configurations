@@ -64,6 +64,32 @@ Task:
       "---\ndescription: Context\n---\n\nNative context command.\n",
       encoding="utf-8",
     )
+    (self.source / "commands" / "literal-dollar-fixtures.md").write_text(
+      """---
+description: Literal dollar fixtures
+---
+
+JavaScript replacement groups:
+
+```javascript
+const rendered = source.replace(pattern, '<template v-if="$1">$2</template>');
+```
+
+Shell positional parameters:
+
+```bash
+value="$1"
+database=$2
+```
+
+Currency examples:
+
+Annual Cost: $150/hour = $36,000
+
+OMP placeholders remain intentional: $ARGUMENTS $@ $@[1]
+""",
+      encoding="utf-8",
+    )
 
   def tearDown(self):
     self.tempdir.cleanup()
@@ -132,6 +158,22 @@ Task:
   def test_command_without_dispatch_preserves_terminal_newline(self):
     output = migrate_command("---\ndescription: No dispatch\n---\n\nNo dispatch here.\n")
     self.assertTrue(output.endswith("\n"))
+
+  def test_command_normalizes_literal_dollars_and_preserves_omp_placeholders(self):
+    migrate_component(self.source, self.destination, "commands")
+    output = (self.destination / "commands" / "literal-dollar-fixtures.md").read_text()
+
+    self.assertIn(r"\x241", output)
+    self.assertIn(r"\x242", output)
+    self.assertIn('value="${1}"', output)
+    self.assertIn("database=${2}", output)
+    self.assertIn("Annual Cost: USD 150/hour = USD 36,000", output)
+    self.assertIn("OMP placeholders remain intentional: $ARGUMENTS $@ $@[1]", output)
+    self.assertNotRegex(output, r"\$[0-9]+")
+
+  def test_command_rejects_unclassified_numeric_dollars(self):
+    with self.assertRaisesRegex(ValueError, "unclassified numeric dollar token"):
+      migrate_command("---\ndescription: Unclassified\n---\n\nLiteral prose: $1\n")
 
   def test_parallel_dispatch_waits_for_all_results_before_consolidating(self):
     source = """---
