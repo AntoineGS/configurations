@@ -12,6 +12,10 @@ readonly REPO_WITH_SPACES="$TEST_ROOT/repository with spaces"
 readonly OUTSIDE_REPOSITORY="$TEST_ROOT/outside"
 readonly STUB_BIN="$TEST_ROOT/bin"
 readonly STUB_LOG="$TEST_ROOT/stub.log"
+readonly PREREQUISITE_BIN="$TEST_ROOT/prerequisite-bin"
+readonly PREREQUISITE_TEMP_ROOT="$TEST_ROOT/prerequisite-temp"
+readonly YAY_STUB_TEMPLATE="$TEST_ROOT/yay-stub"
+readonly TIDYDOTS_STUB_TEMPLATE="$TEST_ROOT/tidydots-stub"
 readonly BASH_PATH="$BASH"
 UNSHARE="$(command -v unshare || true)"
 readonly UNSHARE
@@ -19,6 +23,13 @@ readonly UNSHARE
 LAST_OUTPUT=""
 LAST_STATUS=0
 CURL_FAIL=false
+PREREQUISITE_GIT_FAIL=false
+PREREQUISITE_MAKEPKG_FAIL=false
+PREREQUISITE_YAY_FAIL=false
+PREREQUISITE_CREATE_YAY=false
+PREREQUISITE_CREATE_TIDYDOTS=false
+
+shopt -s nullglob
 
 cleanup() {
   rm -rf -- "$TEST_ROOT"
@@ -57,7 +68,7 @@ assert_not_contains() {
 assert_no_mutation_commands() {
   local -r log_contents="$1"
 
-  for command_name in pacman yay git tidydots systemctl sudo; do
+  for command_name in pacman yay git tidydots makepkg mktemp rm systemctl sudo; do
     assert_not_contains "$log_contents" "$command_name " "mutation command log"
   done
 }
@@ -103,11 +114,120 @@ run_bootstrap() {
     BOOTSTRAP_HOSTNAME="$hostname" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
+    BOOTSTRAP_STUB_BIN="$path" \
+    BOOTSTRAP_MKTEMP_ROOT="$PREREQUISITE_TEMP_ROOT" \
+    BOOTSTRAP_YAY_STUB="$YAY_STUB_TEMPLATE" \
+    BOOTSTRAP_TIDYDOTS_STUB="$TIDYDOTS_STUB_TEMPLATE" \
+    BOOTSTRAP_GIT_FAIL="$PREREQUISITE_GIT_FAIL" \
+    BOOTSTRAP_MAKEPKG_FAIL="$PREREQUISITE_MAKEPKG_FAIL" \
+    BOOTSTRAP_YAY_FAIL="$PREREQUISITE_YAY_FAIL" \
+    BOOTSTRAP_CREATE_YAY="$PREREQUISITE_CREATE_YAY" \
+    BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
   fi
+}
+
+run_bootstrap_with_input() {
+  local -r input="$1"
+  local -r path="$2"
+  local -r os_release="$3"
+  local -r hostname="$4"
+  shift 4
+
+  if LAST_OUTPUT=$(printf '%s\n' "$input" | \
+    PATH="$path" \
+    BOOTSTRAP_OS_RELEASE="$os_release" \
+    BOOTSTRAP_HOSTNAME="$hostname" \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
+    BOOTSTRAP_STUB_BIN="$path" \
+    BOOTSTRAP_MKTEMP_ROOT="$PREREQUISITE_TEMP_ROOT" \
+    BOOTSTRAP_YAY_STUB="$YAY_STUB_TEMPLATE" \
+    BOOTSTRAP_TIDYDOTS_STUB="$TIDYDOTS_STUB_TEMPLATE" \
+    BOOTSTRAP_GIT_FAIL="$PREREQUISITE_GIT_FAIL" \
+    BOOTSTRAP_MAKEPKG_FAIL="$PREREQUISITE_MAKEPKG_FAIL" \
+    BOOTSTRAP_YAY_FAIL="$PREREQUISITE_YAY_FAIL" \
+    BOOTSTRAP_CREATE_YAY="$PREREQUISITE_CREATE_YAY" \
+    BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
+    "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+}
+
+assert_log_count() {
+  local -r log_contents="$1"
+  local -r needle="$2"
+  local -r expected="$3"
+  local context="$4"
+  local count=0
+  local line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == *"$needle"* ]]; then
+      count=$((count + 1))
+    fi
+  done <<<"$log_contents"
+
+  [[ "$count" == "$expected" ]] || fail "$context: expected $expected '$needle' entries, got $count\n$log_contents"
+}
+
+assert_prerequisite_temp_empty() {
+  local entries=("$PREREQUISITE_TEMP_ROOT"/*)
+
+  [[ "${#entries[@]}" -eq 0 ]] || fail "temporary prerequisite files remain: ${entries[*]}"
+}
+
+reset_prerequisite_flags() {
+  PREREQUISITE_GIT_FAIL=false
+  PREREQUISITE_MAKEPKG_FAIL=false
+  PREREQUISITE_YAY_FAIL=false
+  PREREQUISITE_CREATE_YAY=false
+  PREREQUISITE_CREATE_TIDYDOTS=false
+}
+
+prepare_prerequisite_fixture() {
+  local -r yay_state="$1"
+  local -r tidydots_state="$2"
+
+  rm -rf -- "$PREREQUISITE_BIN" "$PREREQUISITE_TEMP_ROOT"
+  mkdir -p -- "$PREREQUISITE_TEMP_ROOT"
+  create_stub_path "$PREREQUISITE_BIN"
+  write_executable "$PREREQUISITE_BIN/rm" \
+    "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+    '/usr/bin/rm "$@"'
+  write_executable "$PREREQUISITE_BIN/mktemp" \
+    "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+    "if [[ \"\${1:-}\" == -d ]]; then /usr/bin/mktemp -d \"\$BOOTSTRAP_MKTEMP_ROOT/bootstrap.XXXXXX\"; else /usr/bin/mktemp \"\$@\"; fi"
+  write_executable "$PREREQUISITE_BIN/git" \
+    "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+    "if [[ \"\${BOOTSTRAP_GIT_FAIL:-false}\" == true ]]; then exit 1; fi" \
+    "if [[ \"\${1:-}\" == clone ]]; then /usr/bin/mkdir -p -- \"\$3\"; fi"
+  write_executable "$PREREQUISITE_BIN/makepkg" \
+    "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+    "if [[ \"\${BOOTSTRAP_MAKEPKG_FAIL:-false}\" == true ]]; then exit 1; fi" \
+    "if [[ \"\${BOOTSTRAP_CREATE_YAY:-false}\" == true ]]; then /usr/bin/cp -- \"\$BOOTSTRAP_YAY_STUB\" \"\$BOOTSTRAP_STUB_BIN/yay\"; /usr/bin/chmod +x -- \"\$BOOTSTRAP_STUB_BIN/yay\"; fi"
+
+  if [[ "$yay_state" == present ]]; then
+    /usr/bin/cp -- "$YAY_STUB_TEMPLATE" "$PREREQUISITE_BIN/yay"
+    chmod +x -- "$PREREQUISITE_BIN/yay"
+  else
+    rm -f -- "$PREREQUISITE_BIN/yay"
+  fi
+
+  if [[ "$tidydots_state" == present ]]; then
+    /usr/bin/cp -- "$TIDYDOTS_STUB_TEMPLATE" "$PREREQUISITE_BIN/tidydots"
+    chmod +x -- "$PREREQUISITE_BIN/tidydots"
+  else
+    rm -f -- "$PREREQUISITE_BIN/tidydots"
+  fi
+
+  reset_prerequisite_flags
+  : >"$STUB_LOG"
 }
 
 assert_preflight_success() {
@@ -120,6 +240,12 @@ printf '%s\n' 'name: bootstrap-test-fixture' >"$REPO_WITH_SPACES/tidydots.yaml"
 printf '%s\n' 'ID=arch' >"$ARCH_RELEASE"
 printf '%s\n' 'ID=debian' >"$NON_ARCH_RELEASE"
 create_stub_path "$STUB_BIN"
+write_executable "$YAY_STUB_TEMPLATE" \
+  "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+  "if [[ \"\${BOOTSTRAP_YAY_FAIL:-false}\" == true ]]; then exit 1; fi" \
+  "if [[ \"\${1:-}\" == -S && \"\${4:-}\" == tidydots-git && \"\${BOOTSTRAP_CREATE_TIDYDOTS:-false}\" == true ]]; then /usr/bin/cp -- \"\$BOOTSTRAP_TIDYDOTS_STUB\" \"\$BOOTSTRAP_STUB_BIN/tidydots\"; /usr/bin/chmod +x -- \"\$BOOTSTRAP_STUB_BIN/tidydots\"; fi"
+write_executable "$TIDYDOTS_STUB_TEMPLATE" \
+  "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\""
 write_executable "$STUB_BIN/hostnamectl" \
   'printf "%s\\n" server' \
   'exit 1'
@@ -276,6 +402,124 @@ test_network_failure_stops_before_mutation() {
     'network failure curl invocation'
 }
 
+test_prerequisites_dry_run_prints_only_missing_commands() {
+  prepare_prerequisite_fixture missing missing
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'prerequisite dry-run'
+  assert_contains "$LAST_OUTPUT" 'git clone https://aur.archlinux.org/yay-bin.git' 'prerequisite dry-run yay clone'
+  assert_contains "$LAST_OUTPUT" 'makepkg -si --needed --noconfirm' 'prerequisite dry-run makepkg'
+  assert_contains "$LAST_OUTPUT" 'yay -S --needed --noconfirm tidydots-git' 'prerequisite dry-run tidydots'
+  assert_not_contains "$LAST_OUTPUT" 'pacman' 'prerequisite dry-run pacman'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+  assert_prerequisite_temp_empty
+}
+
+test_declining_prerequisites_exits_before_mutation() {
+  prepare_prerequisite_fixture missing missing
+  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 3 "$LAST_STATUS" 'declined prerequisite confirmation'
+  assert_contains "$LAST_OUTPUT" 'declined' 'declined prerequisite confirmation'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+  assert_prerequisite_temp_empty
+}
+
+test_existing_yay_is_not_reinstalled() {
+  prepare_prerequisite_fixture present missing
+  PREREQUISITE_CREATE_TIDYDOTS=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'existing yay prerequisite installation'
+  assert_not_contains "$LAST_OUTPUT" 'git clone' 'existing yay clone plan'
+  assert_not_contains "$LAST_OUTPUT" 'makepkg' 'existing yay makepkg plan'
+  assert_contains "$LAST_OUTPUT" 'yay -S --needed --noconfirm tidydots-git' 'existing yay tidydots plan'
+  assert_log_count "$(<"$STUB_LOG")" 'git ' 0 'existing yay clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg ' 0 'existing yay makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S --needed --noconfirm tidydots-git' 1 'existing yay tidydots install'
+  assert_prerequisite_temp_empty
+}
+
+test_existing_tidydots_is_not_reinstalled() {
+  prepare_prerequisite_fixture missing present
+  PREREQUISITE_CREATE_YAY=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'existing tidydots prerequisite installation'
+  assert_contains "$LAST_OUTPUT" 'git clone https://aur.archlinux.org/yay-bin.git' 'existing tidydots clone plan'
+  assert_contains "$LAST_OUTPUT" 'makepkg -si --needed --noconfirm' 'existing tidydots makepkg plan'
+  assert_not_contains "$LAST_OUTPUT" 'tidydots-git' 'existing tidydots install plan'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone https://aur.archlinux.org/yay-bin.git' 1 'existing tidydots clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg -si --needed --noconfirm' 1 'existing tidydots makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S --needed --noconfirm tidydots-git' 0 'existing tidydots reinstall'
+  assert_prerequisite_temp_empty
+}
+
+test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
+  prepare_prerequisite_fixture missing missing
+  PREREQUISITE_CREATE_YAY=true
+  PREREQUISITE_CREATE_TIDYDOTS=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'missing prerequisite installation'
+  assert_contains "$(<"$STUB_LOG")" 'mktemp -d' 'missing prerequisite temporary directory'
+  assert_contains "$(<"$STUB_LOG")" "git clone https://aur.archlinux.org/yay-bin.git $PREREQUISITE_TEMP_ROOT/" \
+    'missing prerequisite clone directory'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone https://aur.archlinux.org/yay-bin.git' 1 'missing prerequisite clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg -si --needed --noconfirm' 1 'missing prerequisite makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S --needed --noconfirm tidydots-git' 1 'missing prerequisite tidydots'
+  assert_log_count "$(<"$STUB_LOG")" "rm -rf -- $PREREQUISITE_TEMP_ROOT/" 1 'missing prerequisite cleanup trap'
+  assert_prerequisite_temp_empty
+
+  : >"$STUB_LOG"
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'second prerequisite run'
+  assert_not_contains "$LAST_OUTPUT" 'Prerequisite installation plan' 'second prerequisite plan'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone ' 0 'second prerequisite clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg ' 0 'second prerequisite makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S ' 0 'second prerequisite tidydots'
+}
+
+test_failed_yay_clone_names_failed_step() {
+  prepare_prerequisite_fixture missing missing
+  PREREQUISITE_GIT_FAIL=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 1 "$LAST_STATUS" 'failed yay clone'
+  assert_contains "$LAST_OUTPUT" 'failed to clone yay-bin' 'failed yay clone'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone ' 1 'failed yay clone command'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg ' 0 'failed yay clone makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S ' 0 'failed yay clone tidydots'
+  assert_prerequisite_temp_empty
+}
+
+test_failed_makepkg_names_failed_step() {
+  prepare_prerequisite_fixture missing missing
+  PREREQUISITE_MAKEPKG_FAIL=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 1 "$LAST_STATUS" 'failed yay makepkg'
+  assert_contains "$LAST_OUTPUT" 'failed to build yay-bin' 'failed yay makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone ' 1 'failed yay makepkg clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg -si --needed --noconfirm' 1 'failed yay makepkg command'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S ' 0 'failed yay makepkg tidydots'
+  assert_prerequisite_temp_empty
+}
+
+test_failed_yay_install_names_failed_step() {
+  prepare_prerequisite_fixture present missing
+  PREREQUISITE_YAY_FAIL=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 1 "$LAST_STATUS" 'failed tidydots installation'
+  assert_contains "$LAST_OUTPUT" 'failed to install tidydots-git' 'failed tidydots installation'
+  assert_log_count "$(<"$STUB_LOG")" 'git clone ' 0 'failed tidydots clone'
+  assert_log_count "$(<"$STUB_LOG")" 'makepkg ' 0 'failed tidydots makepkg'
+  assert_log_count "$(<"$STUB_LOG")" 'yay -S --needed --noconfirm tidydots-git' 1 'failed tidydots command'
+  assert_prerequisite_temp_empty
+}
+
 run_preflight_tests() {
   test_help
   test_unknown_option
@@ -293,12 +537,27 @@ run_preflight_tests() {
   printf 'bootstrap preflight tests passed\n'
 }
 
+run_prerequisite_tests() {
+  test_prerequisites_dry_run_prints_only_missing_commands
+  test_declining_prerequisites_exits_before_mutation
+  test_existing_yay_is_not_reinstalled
+  test_existing_tidydots_is_not_reinstalled
+  test_missing_prerequisites_install_once_and_second_run_is_idempotent
+  test_failed_yay_clone_names_failed_step
+  test_failed_makepkg_names_failed_step
+  test_failed_yay_install_names_failed_step
+  printf 'bootstrap prerequisite tests passed\n'
+}
+
 case "${1:-}" in
   preflight)
     run_preflight_tests
     ;;
+  prerequisites)
+    run_prerequisite_tests
+    ;;
   *)
-    printf 'Usage: %s preflight\n' "${BASH_SOURCE[0]##*/}" >&2
+    printf 'Usage: %s {preflight|prerequisites}\n' "${BASH_SOURCE[0]##*/}" >&2
     exit 2
     ;;
 esac
