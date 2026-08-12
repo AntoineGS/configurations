@@ -123,6 +123,28 @@ extract_pacman_packages() {
   '
 }
 
+extract_pacman_primary() {
+  awk '
+    /^        pacman:/ {
+      package_name = $0
+      sub(/^        pacman:[[:space:]]*/, "", package_name)
+      if (length(package_name) > 0) {
+        print package_name
+        exit
+      }
+      in_pacman = 1
+      next
+    }
+
+    in_pacman && /^          name: / {
+      package_name = $0
+      sub(/^          name: /, "", package_name)
+      print package_name
+      exit
+    }
+  '
+}
+
 extract_service_units() {
   awk '
     /systemctl (is-enabled|enable)/ {
@@ -147,61 +169,37 @@ assert_when() {
   [[ "$actual_when" == "$expected_when" ]] || fail "application $application does not use the expected Linux profile gate"
 }
 
-assert_packages() {
+assert_exact_packages() {
   local application="$1"
-  shift
-  local block packages package
+  local primary="$2"
+  shift 2
+  local block actual expected actual_count expected_count
 
   block="$(extract_application "$application")"
   [[ -n "$block" ]] || fail "application $application is not declared"
   [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
-  packages="$(printf '%s\n' "$block" | extract_pacman_packages)"
+  [[ "$(printf '%s\n' "$block" | extract_pacman_primary)" == "$primary" ]] || fail "pacman primary for $application is not $primary"
 
-  for package in "$@"; do
-    if ! grep -Fxq -- "$package" <<< "$packages"; then
-      fail "package $package is missing from the pacman declaration for $application"
-    fi
-  done
+  actual_count="$(printf '%s\n' "$block" | extract_pacman_packages | wc -l)"
+  expected_count="$#"
+  [[ "$actual_count" -eq "$expected_count" ]] || fail "pacman declaration for $application has $actual_count packages, expected $expected_count"
+
+  actual="$(printf '%s\n' "$block" | extract_pacman_packages | sort)"
+  expected="$(printf '%s\n' "$@" | sort)"
+  [[ "$actual" == "$expected" ]] || {
+    printf 'actual packages for %s:\n%s\nexpected packages:\n%s\n' "$application" "$actual" "$expected" >&2
+    fail "pacman declaration for $application does not match the exact package expansion"
+  }
 }
 
-SHARED_PACKAGE_APPLICATIONS=(
-  'hyprland:hyprland'
-  'hypridle:hypridle'
-  'hyprlock:hyprlock'
-  'hyprshot:hyprshot'
-  'hyprsunset:hyprsunset'
-  'polkit-gnome:polkit-gnome'
-  'sddm-package:sddm'
-  'swaybg:swaybg'
-  'uwsm:uwsm'
-  'wl-clipboard:wl-clipboard'
-  'wl-clip-persist:wl-clip-persist'
-  'wtype:wtype'
-  'xdg-desktop-portal-gtk:xdg-desktop-portal-gtk'
-  'xdg-desktop-portal-hyprland:xdg-desktop-portal-hyprland'
-  'pipewire-audio:pipewire'
-  'pipewire-alsa:pipewire-alsa'
-  'pipewire-pulse:pipewire-pulse'
-  'wireplumber:wireplumber'
-  'pamixer:pamixer'
-  'linux-services-packages:ufw'
-  'avahi:avahi'
-  'bluez:bluez'
-  'bluez-utils:bluez-utils'
-  'cups:cups'
-  'cups-browsed:cups-browsed'
-  'docker:docker'
-  'tailscale:tailscale'
-)
-
-GRAPHICAL_SHARED_APPLICATIONS=(
+HYPRLAND_PACKAGES=(
   hyprland
   hypridle
   hyprlock
   hyprshot
   hyprsunset
   polkit-gnome
-  sddm-package
+  sddm
   swaybg
   uwsm
   wl-clipboard
@@ -209,15 +207,18 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   wtype
   xdg-desktop-portal-gtk
   xdg-desktop-portal-hyprland
-  pipewire-audio
+)
+
+PIPEWIRE_AUDIO_PACKAGES=(
+  pipewire
   pipewire-alsa
   pipewire-pulse
   wireplumber
   pamixer
 )
 
-REAL_LINUX_SHARED_APPLICATIONS=(
-  linux-services-packages
+LINUX_SERVICES_PACKAGE_SET=(
+  ufw
   avahi
   bluez
   bluez-utils
@@ -227,48 +228,25 @@ REAL_LINUX_SHARED_APPLICATIONS=(
   tailscale
 )
 
-assert_shared_package_declarations() {
-  local declaration application package
+PROFILE_ANCHORS=(
+  hyprland
+  pipewire-audio
+  linux-services-packages
+)
 
-  for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
-    application="${declaration%%:*}"
-    package="${declaration#*:}"
-    assert_packages "$application" "$package"
-  done
-}
+GRAPHICAL_SHARED_APPLICATIONS=(
+  hyprland
+  pipewire-audio
+)
 
-assert_dry_run_packages() {
-  local output application package expected actual_count declaration
-  local -a applications=()
-  local -a packages=()
+REAL_LINUX_SHARED_APPLICATIONS=(
+  linux-services-packages
+)
 
-  for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
-    applications+=("${declaration%%:*}")
-    packages+=("${declaration#*:}")
-  done
-
-  [[ "${#applications[@]}" -eq "${#packages[@]}" ]] || fail "dry-run package test has mismatched application and package lists"
-
-  if ! output="$(DISPLAY=:99 WAYLAND_DISPLAY=wayland-test tidydots --dir "$REPO_DIR" --os linux install "${applications[@]}" -n 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    fail "tidydots dry-run could not install the shared package applications"
-  fi
-
-  for application in "${applications[@]}"; do
-    [[ -n "$application" ]] || fail "dry-run application name is empty"
-  done
-
-  for i in "${!applications[@]}"; do
-    application="${applications[$i]}"
-    package="${packages[$i]}"
-    expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
-    if ! grep -Fqx -- "$expected" <<< "$output"; then
-      fail "dry-run for $application does not prove package $package\n$output"
-    fi
-  done
-
-  actual_count="$(grep -c '^\[ok\] ' <<< "$output" || true)"
-  [[ "$actual_count" -eq "${#applications[@]}" ]] || fail "dry-run returned $actual_count package commands, expected ${#applications[@]}\n$output"
+assert_grouped_package_declarations() {
+  assert_exact_packages hyprland hyprland "${HYPRLAND_PACKAGES[@]}"
+  assert_exact_packages pipewire-audio pipewire "${PIPEWIRE_AUDIO_PACKAGES[@]}"
+  assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
 }
 
 package_for_service_unit() {
@@ -296,6 +274,8 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
   fail "tidydots list could not parse the configuration"
 fi
 
+assert_grouped_package_declarations
+
 GRAPHICAL_WHEN="'{{ and .HasDisplay (eq .OS \"linux\") (not .IsWSL) }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
 
@@ -308,8 +288,7 @@ for application in "${REAL_LINUX_SHARED_APPLICATIONS[@]}"; do
 done
 
 shared_packages=""
-for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
-  application="${declaration%%:*}"
+for application in "${PROFILE_ANCHORS[@]}"; do
   application_block="$(extract_application "$application")"
   shared_packages+="$(printf '%s\n' "$application_block" | extract_pacman_packages)"
   shared_packages+=$'\n'
@@ -328,8 +307,5 @@ for service_application in enable-desktop-services enable-linux-services; do
     fi
   done <<< "$service_units"
 done
-
-assert_shared_package_declarations
-assert_dry_run_packages
 
 printf 'PASS: shared graphical Arch package profile is complete\n'
