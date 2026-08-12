@@ -28,6 +28,8 @@ PREREQUISITE_MAKEPKG_FAIL=false
 PREREQUISITE_YAY_FAIL=false
 PREREQUISITE_CREATE_YAY=false
 PREREQUISITE_CREATE_TIDYDOTS=false
+TIDYDOTS_FAIL_ACTION=""
+TIDYDOTS_FAIL_MODE=""
 
 shopt -s nullglob
 
@@ -68,9 +70,22 @@ assert_not_contains() {
 assert_no_mutation_commands() {
   local -r log_contents="$1"
 
-  for command_name in pacman yay git tidydots makepkg mktemp rm systemctl sudo; do
+  for command_name in pacman yay git makepkg mktemp rm systemctl sudo; do
     assert_not_contains "$log_contents" "$command_name " "mutation command log"
   done
+
+  assert_no_tidydots_apply_commands "$log_contents"
+}
+
+assert_no_tidydots_apply_commands() {
+  local -r log_contents="$1"
+  local line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == tidydots\ --dir\ *\ install || "$line" == tidydots\ --dir\ *\ restore ]]; then
+      fail "mutation command log: found tidydots apply command '$line'"
+    fi
+  done <<<"$log_contents"
 }
 
 write_executable() {
@@ -123,6 +138,8 @@ run_bootstrap() {
     BOOTSTRAP_YAY_FAIL="$PREREQUISITE_YAY_FAIL" \
     BOOTSTRAP_CREATE_YAY="$PREREQUISITE_CREATE_YAY" \
     BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
+    BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
+    BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -152,6 +169,8 @@ run_bootstrap_with_input() {
     BOOTSTRAP_YAY_FAIL="$PREREQUISITE_YAY_FAIL" \
     BOOTSTRAP_CREATE_YAY="$PREREQUISITE_CREATE_YAY" \
     BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
+    BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
+    BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -176,6 +195,27 @@ assert_log_count() {
   [[ "$count" == "$expected" ]] || fail "$context: expected $expected '$needle' entries, got $count\n$log_contents"
 }
 
+assert_log_sequence() {
+  local -r log_contents="$1"
+  shift
+  local expected_line
+  local line
+  local expected_index=1
+  local sequence=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    sequence+=("$line")
+  done <<<"$log_contents"
+
+  for expected_line in "$@"; do
+    while [[ "$expected_index" -le "${#sequence[@]}" && "${sequence[$((expected_index - 1))]}" != "$expected_line" ]]; do
+      expected_index=$((expected_index + 1))
+    done
+    [[ "$expected_index" -le "${#sequence[@]}" ]] || fail "command log sequence missing '$expected_line'\n$log_contents"
+    expected_index=$((expected_index + 1))
+  done
+}
+
 assert_prerequisite_temp_empty() {
   local entries=("$PREREQUISITE_TEMP_ROOT"/*)
 
@@ -188,6 +228,11 @@ reset_prerequisite_flags() {
   PREREQUISITE_YAY_FAIL=false
   PREREQUISITE_CREATE_YAY=false
   PREREQUISITE_CREATE_TIDYDOTS=false
+}
+
+reset_tidydots_flags() {
+  TIDYDOTS_FAIL_ACTION=""
+  TIDYDOTS_FAIL_MODE=""
 }
 
 prepare_prerequisite_fixture() {
@@ -227,6 +272,7 @@ prepare_prerequisite_fixture() {
   fi
 
   reset_prerequisite_flags
+  reset_tidydots_flags
   : >"$STUB_LOG"
 }
 
@@ -245,7 +291,8 @@ write_executable "$YAY_STUB_TEMPLATE" \
   "if [[ \"\${BOOTSTRAP_YAY_FAIL:-false}\" == true ]]; then exit 1; fi" \
   "if [[ \"\${1:-}\" == -S && \"\${4:-}\" == tidydots-git && \"\${BOOTSTRAP_CREATE_TIDYDOTS:-false}\" == true ]]; then /usr/bin/cp -- \"\$BOOTSTRAP_TIDYDOTS_STUB\" \"\$BOOTSTRAP_STUB_BIN/tidydots\"; /usr/bin/chmod +x -- \"\$BOOTSTRAP_STUB_BIN/tidydots\"; fi"
 write_executable "$TIDYDOTS_STUB_TEMPLATE" \
-  "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\""
+  "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+  "if [[ \"\${BOOTSTRAP_TIDYDOTS_FAIL_ACTION:-}\" == \"\${3:-}\" ]] && { [[ -z \"\${BOOTSTRAP_TIDYDOTS_FAIL_MODE:-}\" ]] || [[ \"\${BOOTSTRAP_TIDYDOTS_FAIL_MODE}\" == preview && \"\${4:-}\" == -n ]] || [[ \"\${BOOTSTRAP_TIDYDOTS_FAIL_MODE}\" == apply && \"\${4:-}\" != -n ]]; }; then exit 1; fi"
 write_executable "$STUB_BIN/hostnamectl" \
   'printf "%s\\n" server' \
   'exit 1'
@@ -258,6 +305,8 @@ test_help() {
 
   assert_status 0 "$LAST_STATUS" '--help'
   assert_contains "$LAST_OUTPUT" 'Usage:' '--help'
+  assert_contains "$LAST_OUTPUT" 'apply tidydots phases' '--help tidydots phases'
+  assert_contains "$LAST_OUTPUT" 'all read-only checks' '--help dry-run'
 }
 
 test_unknown_option() {
@@ -359,13 +408,14 @@ test_repository_path_with_spaces() {
   assert_no_mutation_commands "$(<"$STUB_LOG")"
 }
 
-test_default_mode_does_not_prompt() {
+test_dry_run_does_not_prompt() {
   : >"$STUB_LOG"
   CURL_FAIL=false
-  run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
 
   assert_preflight_success
-  assert_contains "$LAST_OUTPUT" 'read-only' 'default mode'
+  assert_contains "$LAST_OUTPUT" 'dry-run' 'dry-run mode'
+  assert_not_contains "$LAST_OUTPUT" 'Apply tidydots' 'dry-run confirmation'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
 }
 
@@ -428,7 +478,7 @@ test_declining_prerequisites_exits_before_mutation() {
 test_existing_yay_is_not_reinstalled() {
   prepare_prerequisite_fixture present missing
   PREREQUISITE_CREATE_TIDYDOTS=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'existing yay prerequisite installation'
   assert_not_contains "$LAST_OUTPUT" 'git clone' 'existing yay clone plan'
@@ -443,7 +493,7 @@ test_existing_yay_is_not_reinstalled() {
 test_existing_tidydots_is_not_reinstalled() {
   prepare_prerequisite_fixture missing present
   PREREQUISITE_CREATE_YAY=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'existing tidydots prerequisite installation'
   assert_contains "$LAST_OUTPUT" 'git clone https://aur.archlinux.org/yay-bin.git' 'existing tidydots clone plan'
@@ -459,7 +509,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
   prepare_prerequisite_fixture missing missing
   PREREQUISITE_CREATE_YAY=true
   PREREQUISITE_CREATE_TIDYDOTS=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'missing prerequisite installation'
   assert_contains "$(<"$STUB_LOG")" 'mktemp -d' 'missing prerequisite temporary directory'
@@ -472,7 +522,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
   assert_prerequisite_temp_empty
 
   : >"$STUB_LOG"
-  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'second prerequisite run'
   assert_not_contains "$LAST_OUTPUT" 'Prerequisite installation plan' 'second prerequisite plan'
@@ -520,6 +570,119 @@ test_failed_yay_install_names_failed_step() {
   assert_prerequisite_temp_empty
 }
 
+prepare_tidydots_fixture() {
+  prepare_prerequisite_fixture present present
+}
+
+test_tidydots_dry_run_uses_exact_unscoped_commands() {
+  prepare_tidydots_fixture
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$ROOT"
+
+  assert_status 0 "$LAST_STATUS" 'tidydots dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'tidydots list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'tidydots install dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'tidydots restore dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 1 'tidydots install command prefix'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'tidydots restore command prefix'
+  assert_log_sequence "$(<"$STUB_LOG")" \
+    "tidydots --dir $ROOT list" \
+    "tidydots --dir $ROOT install -n" \
+    "tidydots --dir $ROOT restore -n"
+  assert_no_tidydots_apply_commands "$(<"$STUB_LOG")"
+}
+
+test_tidydots_phases_have_separate_confirmations() {
+  prepare_tidydots_fixture
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 0 "$LAST_STATUS" 'tidydots confirmed phases'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'confirmed tidydots list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'confirmed tidydots install dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'confirmed tidydots install plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 2 'confirmed tidydots restore plan and apply'
+  assert_log_sequence "$(<"$STUB_LOG")" \
+    "tidydots --dir $ROOT list" \
+    "tidydots --dir $ROOT install -n" \
+    "tidydots --dir $ROOT install" \
+    "tidydots --dir $ROOT restore -n" \
+    "tidydots --dir $ROOT restore"
+  assert_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'tidydots install confirmation'
+  assert_contains "$LAST_OUTPUT" 'Apply tidydots restore?' 'tidydots restore confirmation'
+  assert_contains "$LAST_OUTPUT" 'SSH private keys' 'post-install SSH boundary'
+  assert_contains "$LAST_OUTPUT" 'browser profiles' 'post-install browser boundary'
+  assert_contains "$LAST_OUTPUT" 'tokens' 'post-install token boundary'
+  assert_contains "$LAST_OUTPUT" 'application data' 'post-install application boundary'
+  assert_contains "$LAST_OUTPUT" 'personal documents' 'post-install document boundary'
+  assert_contains "$LAST_OUTPUT" 'reboot' 'post-install reboot action'
+  assert_contains "$LAST_OUTPUT" 'authenticate applications' 'post-install authentication action'
+  assert_contains "$LAST_OUTPUT" 'restore personal data separately' 'post-install personal data action'
+  assert_contains "$LAST_OUTPUT" 'Linux/install/bootstrap --dry-run' 'post-install convergence action'
+}
+
+test_tidydots_install_decline_exits_before_restore() {
+  prepare_tidydots_fixture
+  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 3 "$LAST_STATUS" 'declined tidydots install'
+  assert_contains "$LAST_OUTPUT" 'tidydots install declined' 'declined tidydots install'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'declined install dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 1 'declined install plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'declined install restore'
+}
+
+test_tidydots_restore_decline_exits_after_install() {
+  prepare_tidydots_fixture
+  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 3 "$LAST_STATUS" 'declined tidydots restore'
+  assert_contains "$LAST_OUTPUT" 'tidydots restore declined' 'declined tidydots restore'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'declined restore install plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'declined restore dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'declined restore plan and apply'
+}
+
+test_tidydots_list_failure_stops_before_phases() {
+  prepare_tidydots_fixture
+  TIDYDOTS_FAIL_ACTION=list
+  TIDYDOTS_FAIL_MODE=apply
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$ROOT"
+
+  assert_status 1 "$LAST_STATUS" 'failed tidydots list'
+  assert_contains "$LAST_OUTPUT" 'failed to list tidydots configuration' 'failed tidydots list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'failed tidydots list command'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 0 'failed tidydots list install'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed tidydots list restore'
+}
+
+test_tidydots_install_plan_failure_stops_before_confirmation() {
+  prepare_tidydots_fixture
+  TIDYDOTS_FAIL_ACTION=install
+  TIDYDOTS_FAIL_MODE=preview
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 1 "$LAST_STATUS" 'failed tidydots install plan'
+  assert_contains "$LAST_OUTPUT" 'failed to plan tidydots install' 'failed tidydots install plan'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'failed install plan list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'failed install plan command'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed install plan restore'
+  assert_not_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'failed install plan confirmation'
+}
+
+test_tidydots_restore_apply_failure_stops_before_boundaries() {
+  prepare_tidydots_fixture
+  TIDYDOTS_FAIL_ACTION=restore
+  TIDYDOTS_FAIL_MODE=apply
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 1 "$LAST_STATUS" 'failed tidydots restore apply'
+  assert_contains "$LAST_OUTPUT" 'failed to apply tidydots restore' 'failed tidydots restore apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'failed restore install plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'failed restore plan command'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 2 'failed restore plan and apply'
+  assert_not_contains "$LAST_OUTPUT" 'Post-install boundaries' 'failed restore boundaries'
+}
+
 run_preflight_tests() {
   test_help
   test_unknown_option
@@ -531,7 +694,7 @@ run_preflight_tests() {
   test_unknown_hostname_rejected_before_commands
   test_missing_command_names_command
   test_repository_path_with_spaces
-  test_default_mode_does_not_prompt
+  test_dry_run_does_not_prompt
   test_invocation_outside_repository_resolves_repo
   test_network_failure_stops_before_mutation
   printf 'bootstrap preflight tests passed\n'
@@ -549,15 +712,34 @@ run_prerequisite_tests() {
   printf 'bootstrap prerequisite tests passed\n'
 }
 
+run_tidydots_tests() {
+  test_tidydots_dry_run_uses_exact_unscoped_commands
+  test_tidydots_phases_have_separate_confirmations
+  test_tidydots_install_decline_exits_before_restore
+  test_tidydots_restore_decline_exits_after_install
+  test_tidydots_list_failure_stops_before_phases
+  test_tidydots_install_plan_failure_stops_before_confirmation
+  test_tidydots_restore_apply_failure_stops_before_boundaries
+  printf 'bootstrap tidydots tests passed\n'
+}
+
 case "${1:-}" in
+  '')
+    run_preflight_tests
+    run_prerequisite_tests
+    run_tidydots_tests
+    ;;
   preflight)
     run_preflight_tests
     ;;
   prerequisites)
     run_prerequisite_tests
     ;;
+  tidydots)
+    run_tidydots_tests
+    ;;
   *)
-    printf 'Usage: %s {preflight|prerequisites}\n' "${BASH_SOURCE[0]##*/}" >&2
+    printf 'Usage: %s {preflight|prerequisites|tidydots}\n' "${BASH_SOURCE[0]##*/}" >&2
     exit 2
     ;;
 esac

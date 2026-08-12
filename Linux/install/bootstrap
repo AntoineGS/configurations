@@ -11,13 +11,13 @@ PREREQUISITE_TEMP_DIR=""
 usage() {
   printf 'Usage: %s [--dry-run] [--repo PATH] [--help]\n' "${BASH_SOURCE[0]##*/}"
   printf '\n'
-  printf 'Run the Arch bootstrap preflight and install prerequisites.\n'
+  printf 'Run the Arch bootstrap preflight, install prerequisites, and apply tidydots phases.\n'
   printf '\n'
   printf 'Options:\n'
-  printf '  --dry-run    Run the preflight and display prerequisite commands without applying changes.\n'
+  printf '  --dry-run    Run all read-only checks and display plans without applying changes.\n'
   printf '  --repo PATH  Use PATH as the repository checkout.\n'
   printf '  --help       Show this help text.\n'
-  printf '  Exit %s means prerequisite installation was declined.\n' "$EXIT_DECLINED"
+  printf '  Exit %s means a prerequisite or tidydots phase was declined.\n' "$EXIT_DECLINED"
 }
 
 die() {
@@ -208,6 +208,61 @@ install_prerequisites() {
   fi
 }
 
+confirm_tidydots() {
+  local -r action="$1"
+  local response=""
+
+  printf 'Apply tidydots %s? Type yes to continue: ' "$action"
+  if ! IFS= read -r response; then
+    response=""
+  fi
+
+  if [[ "$response" != yes ]]; then
+    printf 'bootstrap: tidydots %s declined\n' "$action" >&2
+    exit "$EXIT_DECLINED"
+  fi
+}
+
+run_tidydots_phase() {
+  local -r action="$1"
+  local -a scope=("${@:2}")
+
+  if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" "$action" "${scope[@]}" -n); then
+    die "failed to plan tidydots $action"
+  fi
+
+  [[ "$DRY_RUN" == true ]] && return 0
+  confirm_tidydots "$action"
+
+  if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" "$action" "${scope[@]}"); then
+    die "failed to apply tidydots $action"
+  fi
+}
+
+list_tidydots() {
+  if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" list); then
+    die 'failed to list tidydots configuration'
+  fi
+}
+
+print_post_install_boundaries() {
+  printf '\nPost-install boundaries:\n'
+  printf '  SSH private keys, browser profiles, tokens, application data, and personal documents were not restored.\n'
+  printf 'Next actions:\n'
+  printf '  reboot, authenticate applications, restore personal data separately, and rerun Linux/install/bootstrap --dry-run to confirm convergence.\n'
+}
+
+apply_tidydots() {
+  list_tidydots
+  run_tidydots_phase install
+  run_tidydots_phase restore
+
+  [[ "$DRY_RUN" == true ]] || print_post_install_boundaries
+}
+
 parse_args "$@"
 preflight
 install_prerequisites
+if command -v tidydots >/dev/null 2>&1; then
+  apply_tidydots
+fi
