@@ -28,6 +28,7 @@ run bash Linux/install/tests/archinstall-config-test.sh
 run bash Linux/install/tests/bootstrap-test.sh
 run bash Linux/pacman/tests/all-profiles-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-test.sh
+run bash Linux/os/tests/no-omarchy-runtime-error-test.sh
 run_shellcheck
 run tidydots --dir "$ROOT" list
 run git diff --check
