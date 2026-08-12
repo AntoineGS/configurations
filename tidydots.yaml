@@ -1410,6 +1410,15 @@ applications:
         pacman: limine
     name: limine
     when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
+        yay: limine-snapper-sync
+    name: limine-snapper-sync
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - name: limine-current-desktop-config
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
       - targets:
           linux: /etc/
