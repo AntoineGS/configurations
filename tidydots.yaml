@@ -451,6 +451,7 @@ applications:
           deps:
             - bluetui
             - brightnessctl
+            - evince
             - ffmpeg
             - gpu-screen-recorder
             - grim
@@ -460,9 +461,12 @@ applications:
             - hyprshot
             - hyprsunset
             - impala
+            - imv
+            - lazydocker
             - libnotify
             - mako
             - mpv
+            - nautilus
             - playerctl
             - polkit-gnome
             - power-profiles-daemon
@@ -705,7 +709,6 @@ applications:
       managers:
         yay:
           deps:
-            - localsend
             - xdg-terminal-exec
           name: hyprland-preview-share-picker-git
     name: hyprland-preview-share-picker
