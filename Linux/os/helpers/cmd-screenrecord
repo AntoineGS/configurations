@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Start and stop a screenrecording, which will be saved to ~/Videos by default.
 # Alternative location can be set via SCREENRECORD_DIR or XDG_VIDEOS_DIR ENVs.
 # Resolution is capped to 4K for monitors above 4K, native otherwise.
@@ -41,7 +43,7 @@ start_webcam_overlay() {
 
   # Auto-detect first available webcam if none specified
   if [[ -z $WEBCAM_DEVICE ]]; then
-    WEBCAM_DEVICE=$(v4l2-ctl --list-devices 2>/dev/null | grep -m1 "^[[:space:]]*/dev/video" | tr -d '\t')
+    WEBCAM_DEVICE=$(v4l2-ctl --list-devices 2>/dev/null | grep -m1 "^[[:space:]]*/dev/video" | tr -d '\t' || true)
     if [[ -z $WEBCAM_DEVICE ]]; then
       notify-send "No webcam devices found" -u critical -t 3000
       return 1
@@ -60,7 +62,7 @@ start_webcam_overlay() {
   local preferred_resolutions=("640x360" "1280x720" "1920x1080")
   local video_size_arg=""
   local available_formats
-  available_formats=$(v4l2-ctl --list-formats-ext -d "$WEBCAM_DEVICE" 2>/dev/null)
+  available_formats=$(v4l2-ctl --list-formats-ext -d "$WEBCAM_DEVICE" 2>/dev/null || true)
 
   for resolution in "${preferred_resolutions[@]}"; do
     if echo "$available_formats" | grep -q "$resolution"; then
@@ -83,7 +85,7 @@ start_webcam_overlay() {
 }
 
 cleanup_webcam() {
-  pkill -f "WebcamOverlay" 2>/dev/null
+  pkill -f "WebcamOverlay" 2>/dev/null || true
 }
 
 default_resolution() {
@@ -135,7 +137,7 @@ start_screenrecording() {
 }
 
 stop_screenrecording() {
-  pkill -SIGINT -f "^gpu-screen-recorder" # SIGINT required to save video properly
+  pkill -SIGINT -f "^gpu-screen-recorder" || true # SIGINT required to save video properly
 
   # Wait a maximum of 5 seconds to finish before hard killing
   local count=0
@@ -153,7 +155,11 @@ stop_screenrecording() {
   else
     trim_first_frame
     local filename
-    filename=$(cat "$RECORDING_FILE" 2>/dev/null)
+    if [[ ! -f $RECORDING_FILE ]]; then
+      rm -f "$RECORDING_FILE"
+      return
+    fi
+    filename=$(<"$RECORDING_FILE")
     local preview="${filename%.mp4}-preview.png"
 
     # Generate a preview thumbnail from the first frame
@@ -170,7 +176,7 @@ stop_screenrecording() {
 }
 
 toggle_screenrecording_indicator() {
-  pkill -RTMIN+8 waybar
+  pkill -RTMIN+8 waybar || true
 }
 
 screenrecording_active() {
@@ -179,7 +185,8 @@ screenrecording_active() {
 
 trim_first_frame() {
   local latest
-  latest=$(cat "$RECORDING_FILE" 2>/dev/null)
+  [[ -f $RECORDING_FILE ]] || return 0
+  latest=$(<"$RECORDING_FILE")
 
   if [[ -n $latest && -f $latest ]]; then
     local trimmed="${latest%.mp4}-trimmed.mp4"
@@ -197,7 +204,9 @@ elif [[ $STOP_RECORDING == "true" ]]; then
   exit 1
 else
   select_capture_target || exit 0
-  [[ $WEBCAM == "true" ]] && start_webcam_overlay
+  if [[ $WEBCAM == "true" ]]; then
+    start_webcam_overlay || true
+  fi
 
   start_screenrecording || cleanup_webcam
 fi

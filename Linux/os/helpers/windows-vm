@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -Eeuo pipefail
+
 COMPOSE_FILE="$HOME/.config/windows/docker-compose.yml"
 
 check_prerequisites() {
@@ -68,7 +71,7 @@ EOF
     fi
   done
 
-  SELECTED_RAM=$(echo "$RAM_OPTIONS" | tr ' ' '\n' | gum choose --selected="4G" --header="How much RAM would you like to allocate to Windows VM?")
+  SELECTED_RAM=$(echo "$RAM_OPTIONS" | tr ' ' '\n' | gum choose --selected="4G" --header="How much RAM would you like to allocate to Windows VM?") || true
 
   # Check if user cancelled
   if [[ -z $SELECTED_RAM ]]; then
@@ -76,7 +79,7 @@ EOF
     exit 1
   fi
 
-  SELECTED_CORES=$(gum input --placeholder="Number of CPU cores (1-$TOTAL_CORES)" --value="2" --header="How many CPU cores would you like to allocate to Windows VM?" --char-limit=2)
+  SELECTED_CORES=$(gum input --placeholder="Number of CPU cores (1-$TOTAL_CORES)" --value="2" --header="How many CPU cores would you like to allocate to Windows VM?" --char-limit=2) || true
 
   # Check if user cancelled (Ctrl+C in gum input returns empty string)
   if [[ -z $SELECTED_CORES ]]; then
@@ -113,7 +116,7 @@ EOF
     DEFAULT_DISK="32G"
   fi
 
-  SELECTED_DISK=$(echo "$DISK_OPTIONS" | tr ' ' '\n' | gum choose --selected="$DEFAULT_DISK" --header="How much disk space would you like to give Windows VM? (64GB+ recommended)")
+  SELECTED_DISK=$(echo "$DISK_OPTIONS" | tr ' ' '\n' | gum choose --selected="$DEFAULT_DISK" --header="How much disk space would you like to give Windows VM? (64GB+ recommended)") || true
 
   # Check if user cancelled
   if [[ -z $SELECTED_DISK ]]; then
@@ -128,12 +131,12 @@ EOF
   check_prerequisites "$DISK_SIZE_NUM"
 
   # Prompt for username and password
-  USERNAME=$(gum input --placeholder="Username (Press enter to use default: docker)" --header="Enter Windows username:")
+  USERNAME=$(gum input --placeholder="Username (Press enter to use default: docker)" --header="Enter Windows username:") || true
   if [[ -z $USERNAME ]]; then
     USERNAME="docker"
   fi
 
-  PASSWORD=$(gum input --placeholder="Password (Press enter to use default: admin)" --password --header="Enter Windows password:")
+  PASSWORD=$(gum input --placeholder="Password (Press enter to use default: admin)" --password --header="Enter Windows password:") || true
   if [[ -z $PASSWORD ]]; then
     PASSWORD="admin"
     PASSWORD_DISPLAY="(default)"
@@ -221,7 +224,7 @@ EOF
 
   # Open browser to monitor installation
   sleep 3
-  xdg-open "http://127.0.0.1:8006"
+  xdg-open "http://127.0.0.1:8006" || true
 
   echo ""
   echo "Installation is running in the background."
@@ -246,7 +249,7 @@ remove_windows() {
 
   docker rmi dockurr/windows 2>/dev/null || echo "Image already removed or not found"
 
-  rm "$HOME/.local/share/applications/windows-vm.desktop"
+  rm -f "$HOME/.local/share/applications/windows-vm.desktop"
   rm -rf "$HOME/.config/windows"
   rm -rf "$HOME/.windows"
 
@@ -256,7 +259,7 @@ remove_windows() {
 
 launch_windows() {
   KEEP_ALIVE=false
-  if [[ $1 = "--keep-alive" ]] || [[ $1 = "-k" ]]; then
+  if [[ ${1:-} = "--keep-alive" ]] || [[ ${1:-} = "-k" ]]; then
     KEEP_ALIVE=true
   fi
 
@@ -267,27 +270,27 @@ launch_windows() {
   fi
 
   # Extract credentials from compose file
-  WIN_USER=$(grep "USERNAME:" "$COMPOSE_FILE" | sed 's/.*USERNAME: "\(.*\)"/\1/')
-  WIN_PASS=$(grep "PASSWORD:" "$COMPOSE_FILE" | sed 's/.*PASSWORD: "\(.*\)"/\1/')
+  WIN_USER=$(grep "USERNAME:" "$COMPOSE_FILE" | sed 's/.*USERNAME: "\(.*\)"/\1/' || true)
+  WIN_PASS=$(grep "PASSWORD:" "$COMPOSE_FILE" | sed 's/.*PASSWORD: "\(.*\)"/\1/' || true)
 
   # Use defaults if not found
   [[ -z $WIN_USER ]] && WIN_USER="docker"
   [[ -z $WIN_PASS ]] && WIN_PASS="admin"
 
   # Check if container is already running
-  CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' windows 2>/dev/null)
+  CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' windows 2>/dev/null || true)
 
   if [[ $CONTAINER_STATUS != "running" ]]; then
     echo "Starting Windows VM..."
 
     # Send desktop notification
-    notify-send "    Starting Windows VM" "      This can take 15-30 seconds" -t 15000
+    notify-send "    Starting Windows VM" "      This can take 15-30 seconds" -t 15000 || true
 
     if ! docker-compose -f "$COMPOSE_FILE" up -d 2>&1; then
       echo "❌ Failed to start Windows VM!"
       echo "   Try checking: windows-vm status"
       echo "   View logs: docker logs windows"
-      notify-send -u critical "Windows VM" "Failed to start Windows VM"
+      notify-send -u critical "Windows VM" "Failed to start Windows VM" || true
       exit 1
     fi
 
@@ -326,28 +329,31 @@ To stop: windows-vm stop"
   HYPR_SCALE=$(hyprctl monitors -j | jq -r '.[] | select (.focused == true) | .scale')
   SCALE_PERCENT=$(echo "$HYPR_SCALE" | awk '{print int($1 * 100)}')
 
-  RDP_SCALE=""
+  RDP_SCALE=()
   if (( SCALE_PERCENT >= 170 )); then
-    RDP_SCALE="/scale:180"
+    RDP_SCALE+=(/scale:180)
   elif (( SCALE_PERCENT >= 130 )); then
-    RDP_SCALE="/scale:140"
+    RDP_SCALE+=(/scale:140)
   fi
   # If scale is less than 130%, don't set any scale (use default 100)
 
   # Connect with RDP in fullscreen (auto-detects resolution)
-  xfreerdp3 /u:"$WIN_USER" /p:"$WIN_PASS" /v:127.0.0.1:3389 -grab-keyboard /sound /microphone /clipboard /cert:ignore /title:"Windows VM" /dynamic-resolution /gfx:AVC444 /floatbar:sticky:off,default:visible,show:fullscreen $RDP_SCALE
+  RDP_STATUS=0
+  xfreerdp3 /u:"$WIN_USER" /p:"$WIN_PASS" /v:127.0.0.1:3389 -grab-keyboard /sound /microphone /clipboard /cert:ignore /title:"Windows VM" /dynamic-resolution /gfx:AVC444 /floatbar:sticky:off,default:visible,show:fullscreen "${RDP_SCALE[@]}" || RDP_STATUS=$?
 
   # After RDP closes, stop the container unless --keep-alive was specified
   if [[ $KEEP_ALIVE = "false" ]]; then
     echo ""
     echo "RDP session closed. Stopping Windows VM..."
-    docker-compose -f "$COMPOSE_FILE" down
+    docker-compose -f "$COMPOSE_FILE" down || true
     echo "Windows VM stopped."
   else
     echo ""
     echo "RDP session closed. Windows VM is still running."
     echo "To stop it: windows-vm stop"
   fi
+
+  return "$RDP_STATUS"
 }
 
 stop_windows() {
@@ -368,7 +374,7 @@ status_windows() {
     exit 1
   fi
 
-  CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' windows 2>/dev/null)
+  CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' windows 2>/dev/null || true)
 
   if [[ -z $CONTAINER_STATUS ]]; then
     echo "Windows VM container not found."
@@ -413,7 +419,7 @@ show_usage() {
 }
 
 # Main command dispatcher
-case "$1" in
+case "${1:-}" in
   install)
     install_windows
     ;;
@@ -421,7 +427,7 @@ case "$1" in
     remove_windows
     ;;
   launch|start)
-    launch_windows "$2"
+    launch_windows "${2:-}"
     ;;
   stop|down)
     stop_windows
@@ -433,7 +439,7 @@ case "$1" in
     show_usage
     ;;
   *)
-    echo "Unknown command: $1" >&2
+    echo "Unknown command: ${1:-}" >&2
     echo "" >&2
     show_usage >&2
     exit 1

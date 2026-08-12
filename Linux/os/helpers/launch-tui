@@ -1,5 +1,12 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Launch the TUI command passed in as an argument in the default terminal.
 
-exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e "$1" "${@:2}"
+if (( $# == 0 )); then
+  printf '%s\n' 'Usage: launch-tui <command> [args...]' >&2
+  exit 1
+fi
+
+exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e "$@"
