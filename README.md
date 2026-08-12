@@ -41,6 +41,11 @@
 
 # Linux
 
+## Arch Installation
+
+- Follow the [reproducible Arch installation guide](Linux/install/archinstall/README.md) for the ISO workflow.
+- After reboot, run `Linux/install/bootstrap` as the sole post-reboot setup entry point.
+
 ## Systemd Units Backup
 
 Daily timer to backup enabled services and timers to
