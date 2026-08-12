@@ -1,5 +1,5 @@
 # Machine-specific Limine defaults for DESKTOP-E07VTRN only; package ownership is shared.
-TARGET_OS_NAME="Omarchy"
+TARGET_OS_NAME="Arch Linux"
 
 ESP_PATH="/boot"
 
@@ -8,7 +8,7 @@ KERNEL_CMDLINE[default]+=" resume=/dev/mapper/root resume_offset=11364183 "
 KERNEL_CMDLINE[default]+="quiet splash"
 
 ENABLE_UKI=yes
-CUSTOM_UKI_NAME="omarchy"
+CUSTOM_UKI_NAME="arch"
 
 ENABLE_LIMINE_FALLBACK=yes
 
