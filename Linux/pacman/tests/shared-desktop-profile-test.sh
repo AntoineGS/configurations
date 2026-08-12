@@ -249,7 +249,8 @@ assert_source_requires_package() {
   local source_file="$1"
   local source_evidence="$2"
   local application="$3"
-  local package="$4"
+  local manager="$4"
+  local package="$5"
   local source_path block
 
   source_path="$REPO_DIR/$source_file"
@@ -259,8 +260,8 @@ assert_source_requires_package() {
 
   block="$(extract_application "$application")"
   [[ -n "$block" ]] || fail "application $application is not declared"
-  if ! printf '%s\n' "$block" | extract_manager_packages pacman | grep -Fxq -- "$package"; then
-    fail "runtime source $source_file requires package $package in $application"
+  if ! printf '%s\n' "$block" | extract_manager_packages "$manager" | grep -Fxq -- "$package"; then
+    fail "runtime source $source_file requires package $package in $application ($manager)"
   fi
 }
 
@@ -309,6 +310,10 @@ HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES=(
   xdg-terminal-exec
 )
 
+LOCAL_SEND_YAY_PACKAGES=(
+  localsend
+)
+
 PIPEWIRE_AUDIO_PACKAGES=(
   pipewire
   pipewire-alsa
@@ -341,6 +346,10 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   pipewire-audio
 )
 
+OPTIONAL_GRAPHICAL_APPLICATIONS=(
+  localsend
+)
+
 REAL_LINUX_SHARED_APPLICATIONS=(
   linux-services-packages
 )
@@ -348,19 +357,22 @@ REAL_LINUX_SHARED_APPLICATIONS=(
 assert_grouped_package_declarations() {
   assert_exact_packages hyprland hyprland "${HYPRLAND_PACKAGES[@]}"
   assert_exact_manager_packages hyprland-preview-share-picker yay hyprland-preview-share-picker-git "${HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES[@]}"
+  assert_exact_manager_packages localsend yay localsend "${LOCAL_SEND_YAY_PACKAGES[@]}"
   assert_exact_packages pipewire-audio pipewire "${PIPEWIRE_AUDIO_PACKAGES[@]}"
   assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
 }
 
 assert_runtime_requirements() {
-  assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop hyprland imv
-  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' hyprland imv
-  assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' hyprland lazydocker
-  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' hyprland lazydocker
-  assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop hyprland evince
-  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince hyprland evince
-  assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop hyprland nautilus
-  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus hyprland nautilus
+  assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop hyprland pacman imv
+  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' hyprland pacman imv
+  assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' hyprland pacman lazydocker
+  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' hyprland pacman lazydocker
+  assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop hyprland pacman evince
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince hyprland pacman evince
+  assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop hyprland pacman nautilus
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus hyprland pacman nautilus
+  assert_source_requires_package Linux/os/helpers/cmd-share 'localsend --headless send' localsend yay localsend
+  assert_source_requires_package Linux/hypr/apps/localsend.lua 'class = "(Share|localsend)"' localsend yay localsend
 }
 
 assert_focused_dry_run() {
@@ -422,6 +434,7 @@ assert_grouped_package_declarations
 assert_runtime_requirements
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
+assert_focused_dry_run localsend yay localsend
 assert_focused_dry_run pipewire-audio pacman pipewire
 assert_focused_dry_run linux-services-packages pacman ufw
 
@@ -434,6 +447,10 @@ done
 
 for application in "${REAL_LINUX_SHARED_APPLICATIONS[@]}"; do
   assert_when "$application" "$REAL_LINUX_WHEN"
+done
+
+for application in "${OPTIONAL_GRAPHICAL_APPLICATIONS[@]}"; do
+  assert_when "$application" "$GRAPHICAL_WHEN"
 done
 
 shared_packages=""
