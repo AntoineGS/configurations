@@ -507,6 +507,21 @@ applications:
     entries: []
   - package:
       managers:
+        pacman:
+          deps:
+            - intel-media-driver
+            - libva-utils
+            - mesa
+            - mesa-utils
+            - vulkan-intel
+            - vulkan-tools
+          name: intel-ucode
+    name: antoinews-linux-intel
+    description: Intel microcode and integrated graphics stack for the Intel desktop
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
         pacman: waybar
         yay:
           deps:
@@ -527,7 +542,7 @@ applications:
         name: config
         backup: ./Linux/uwsm/default
   - name: sddm
-    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
           linux: /etc/sddm.conf.d
