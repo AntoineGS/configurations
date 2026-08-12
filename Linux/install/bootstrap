@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly EXIT_ERROR=1
+readonly EXIT_USAGE=2
+readonly EXIT_DECLINED=3
+DRY_RUN=false
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+usage() {
+  printf 'Usage: %s [--dry-run] [--repo PATH] [--help]\n' "${BASH_SOURCE[0]##*/}"
+  printf '\n'
+  printf 'Run the read-only Arch bootstrap preflight.\n'
+  printf '\n'
+  printf 'Options:\n'
+  printf '  --dry-run    Run the preflight without applying bootstrap changes.\n'
+  printf '  --repo PATH  Use PATH as the repository checkout.\n'
+  printf '  --help       Show this help text.\n'
+  printf '  Exit %s is reserved for future confirmation steps.\n' "$EXIT_DECLINED"
+}
+
+die() {
+  printf 'bootstrap: %s\n' "$1" >&2
+  exit "$EXIT_ERROR"
+}
+
+usage_error() {
+  printf 'bootstrap: %s\n' "$1" >&2
+  usage >&2
+  exit "$EXIT_USAGE"
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      --repo)
+        [[ $# -ge 2 && "$2" != --* ]] || usage_error 'missing value for --repo'
+        REPO_ROOT="$2"
+        shift 2
+        ;;
+      --help)
+        usage
+        exit 0
+        ;;
+      *)
+        usage_error "unknown option: $1"
+        ;;
+    esac
+  done
+}
+
+check_user() {
+  [[ "$EUID" -ne 0 ]] || die 'must not run as root'
+}
+
+check_arch() {
+  local -r os_release="${BOOTSTRAP_OS_RELEASE:-/etc/os-release}"
+  local line=""
+  local os_id=""
+
+  [[ -r "$os_release" ]] || die "cannot read os-release: $os_release"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == ID=* ]]; then
+      os_id="${line#ID=}"
+      os_id="${os_id#\"}"
+      os_id="${os_id%\"}"
+      break
+    fi
+  done <"$os_release"
+
+  [[ "$os_id" == arch ]] || die "unsupported operating system: require ID=arch"
+}
+
+resolve_hostname() {
+  if [[ -n "${BOOTSTRAP_HOSTNAME:-}" ]]; then
+    printf '%s\n' "$BOOTSTRAP_HOSTNAME"
+    return 0
+  fi
+
+  command -v hostnamectl >/dev/null 2>&1 || die 'missing required command: hostnamectl'
+  hostnamectl --static || die 'could not resolve the static hostname'
+}
+
+check_hostname() {
+  local -r hostname="$(resolve_hostname)"
+
+  case "$hostname" in
+    DESKTOP-E07VTRN|omarchbook|server|antoinews-linux)
+      ;;
+    *)
+      die "unknown hostname: $hostname"
+      ;;
+  esac
+}
+
+check_commands() {
+  local command_name
+
+  for command_name in bash curl git pacman sudo systemctl; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      die "missing required command: $command_name"
+    fi
+  done
+}
+
+check_repository() {
+  [[ -d "$REPO_ROOT" ]] || die "repository directory does not exist: $REPO_ROOT"
+  REPO_ROOT="$(cd -- "$REPO_ROOT" 2>/dev/null && pwd)" || die "repository path is not accessible: $REPO_ROOT"
+  [[ -f "$REPO_ROOT/tidydots.yaml" ]] || die "missing repository file: $REPO_ROOT/tidydots.yaml"
+}
+
+check_network() {
+  curl --fail --silent --show-error --head https://aur.archlinux.org/ \
+    || die 'network check failed: https://aur.archlinux.org/'
+}
+
+preflight() {
+  check_user
+  check_arch
+  check_hostname
+  check_commands
+  check_repository
+  check_network
+  if [[ "$DRY_RUN" == true ]]; then
+    printf 'bootstrap preflight passed (dry-run): %s\n' "$REPO_ROOT"
+  else
+    printf 'bootstrap preflight passed (read-only): %s\n' "$REPO_ROOT"
+  fi
+}
+
+parse_args "$@"
+preflight
