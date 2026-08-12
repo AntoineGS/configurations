@@ -307,6 +307,7 @@ test_help() {
   assert_contains "$LAST_OUTPUT" 'Usage:' '--help'
   assert_contains "$LAST_OUTPUT" 'apply tidydots phases' '--help tidydots phases'
   assert_contains "$LAST_OUTPUT" 'all read-only checks' '--help dry-run'
+  assert_contains "$LAST_OUTPUT" 'incomplete' '--help incomplete dry-run'
 }
 
 test_unknown_option() {
@@ -456,11 +457,24 @@ test_prerequisites_dry_run_prints_only_missing_commands() {
   prepare_prerequisite_fixture missing missing
   run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
 
-  assert_status 0 "$LAST_STATUS" 'prerequisite dry-run'
+  assert_status 4 "$LAST_STATUS" 'prerequisite dry-run with missing tidydots'
   assert_contains "$LAST_OUTPUT" 'git clone https://aur.archlinux.org/yay-bin.git' 'prerequisite dry-run yay clone'
   assert_contains "$LAST_OUTPUT" 'makepkg -si --needed --noconfirm' 'prerequisite dry-run makepkg'
   assert_contains "$LAST_OUTPUT" 'yay -S --needed --noconfirm tidydots-git' 'prerequisite dry-run tidydots'
   assert_not_contains "$LAST_OUTPUT" 'pacman' 'prerequisite dry-run pacman'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+  assert_prerequisite_temp_empty
+}
+
+test_missing_tidydots_dry_run_reports_incomplete_preview() {
+  prepare_prerequisite_fixture present missing
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+
+  assert_status 4 "$LAST_STATUS" 'missing tidydots dry-run'
+  assert_contains "$LAST_OUTPUT" 'incomplete' 'missing tidydots dry-run status'
+  assert_contains "$LAST_OUTPUT" 'Skipped tidydots package phase' 'missing tidydots package phase'
+  assert_contains "$LAST_OUTPUT" 'Skipped tidydots configuration phase' 'missing tidydots configuration phase'
+  assert_log_count "$(<"$STUB_LOG")" 'tidydots --dir' 0 'missing tidydots skipped phases'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
   assert_prerequisite_temp_empty
 }
@@ -702,6 +716,7 @@ run_preflight_tests() {
 
 run_prerequisite_tests() {
   test_prerequisites_dry_run_prints_only_missing_commands
+  test_missing_tidydots_dry_run_reports_incomplete_preview
   test_declining_prerequisites_exits_before_mutation
   test_existing_yay_is_not_reinstalled
   test_existing_tidydots_is_not_reinstalled

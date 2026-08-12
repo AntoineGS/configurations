@@ -45,6 +45,10 @@
 
 - Follow the [reproducible Arch installation guide](Linux/install/archinstall/README.md) for the ISO workflow.
 - After reboot, run `Linux/install/bootstrap` as the sole post-reboot setup entry point.
+- Run `Linux/install/bootstrap --dry-run` before applying changes. If `tidydots` is
+  unavailable, the command reports an incomplete preview with exit status `4`,
+  explicitly skips its package and configuration phases, and must be rerun after
+  installing the prerequisite.
 
 ## Package Profiles
 
