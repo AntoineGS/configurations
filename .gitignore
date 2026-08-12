@@ -23,3 +23,6 @@ Windows/PowerShell/.bun
 Windows/PowerShell/.cargo
 Windows/TotalCommander/wincmd.ini
 .worktrees/
+/Linux/install/archinstall/user_credentials.json
+/Linux/install/archinstall/user_disk_layouts.json
+/Linux/install/archinstall/*.local.json

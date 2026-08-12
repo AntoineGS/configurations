@@ -1,0 +1,31 @@
+{
+  "bootloader_config": {
+    "bootloader": "Limine",
+    "uki": false,
+    "removable": false
+  },
+  "hostname": "antoinews-linux",
+  "kernels": [
+    "linux"
+  ],
+  "locale_config": {
+    "kb_layout": "us",
+    "sys_enc": "UTF-8",
+    "sys_lang": "en_US"
+  },
+  "ntp": true,
+  "packages": [
+    "base-devel",
+    "git",
+    "iwd",
+    "linux-headers",
+    "sudo"
+  ],
+  "services": [
+    "iwd",
+    "systemd-networkd",
+    "systemd-resolved"
+  ],
+  "swap": true,
+  "timezone": "America/Toronto"
+}
