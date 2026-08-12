@@ -138,7 +138,7 @@ assert_when() {
 tidydots --dir "$REPO_DIR" list >/dev/null || fail "tidydots list could not parse the configuration"
 
 INTEL_WHEN="'{{ eq .Hostname \"antoinews-linux\" }}'"
-GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
+GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 
 assert_when antoinews-linux-intel "$INTEL_WHEN"
 assert_exact_packages antoinews-linux-intel \

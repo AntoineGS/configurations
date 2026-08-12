@@ -50,7 +50,8 @@
 
 `tidydots.yaml` is desired package state.
 `pkglist-pacman-<hostname>.txt` and `pkglist-aur-<hostname>.txt` are generated audit snapshots.
-Shared packages use real Linux/non-WSL conditions.
+- Graphical shared packages/configs require real Linux, a display, and non-WSL execution, except `antoinews-linux` is explicitly allowed headless.
+- Machine-wide shared services use real Linux/non-WSL conditions.
 Hardware and machine policy use exact hostname conditions.
 `antoinews-linux` is the Intel desktop profile.
 
