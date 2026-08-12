@@ -22,6 +22,11 @@ if [[ -z $STATE_NAME ]]; then
   exit 1
 fi
 
+if [[ $STATE_NAME == */* || $STATE_NAME == . || $STATE_NAME == .. ]]; then
+  echo "State name must not contain a path separator or be a dot path" >&2
+  exit 1
+fi
+
 case "$COMMAND" in
 set) touch "$STATE_DIR/$STATE_NAME" ;;
 clear) find "$STATE_DIR" -maxdepth 1 -type f -name "$STATE_NAME" -delete ;;

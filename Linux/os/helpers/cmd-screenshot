@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Take a screenshot of the whole screen, a specific window, or a user-drawn region.
 # Saves to ~/Pictures by default, but that can be changed via SCREENSHOT_DIR or XDG_PICTURES_DIR ENVs.
 # Editor defaults to Satty but can be changed via --editor=<name> or SCREENSHOT_EDITOR env
@@ -13,7 +15,7 @@ if [[ ! -d $OUTPUT_DIR ]]; then
   exit 1
 fi
 
-pkill slurp && exit 0
+pkill slurp && exit 0 || true
 
 SCREENSHOT_EDITOR="${SCREENSHOT_EDITOR:-satty}"
 
@@ -37,7 +39,7 @@ open_editor() {
       --save-after-copy \
       --copy-command 'wl-copy'
   else
-    $SCREENSHOT_EDITOR "$filepath"
+    "$SCREENSHOT_EDITOR" "$filepath"
   fi
 }
 
@@ -72,15 +74,15 @@ region)
   hyprpicker -r -z >/dev/null 2>&1 &
   PID=$!
   sleep .1
-  SELECTION=$(slurp 2>/dev/null)
-  kill $PID 2>/dev/null
+  SELECTION=$(slurp 2>/dev/null) || true
+  kill "$PID" 2>/dev/null || true
   ;;
 windows)
   hyprpicker -r -z >/dev/null 2>&1 &
   PID=$!
   sleep .1
-  SELECTION=$(get_rectangles | slurp -r 2>/dev/null)
-  kill $PID 2>/dev/null
+  SELECTION=$(get_rectangles | slurp -r 2>/dev/null) || true
+  kill "$PID" 2>/dev/null || true
   ;;
 fullscreen)
   SELECTION=$(hyprctl monitors -j | jq -r "${JQ_MONITOR_GEO} .[] | select(.focused == true) | format_geo")
@@ -90,8 +92,8 @@ smart | *)
   hyprpicker -r -z >/dev/null 2>&1 &
   PID=$!
   sleep .1
-  SELECTION=$(echo "$RECTS" | slurp 2>/dev/null)
-  kill $PID 2>/dev/null
+  SELECTION=$(echo "$RECTS" | slurp 2>/dev/null) || true
+  kill "$PID" 2>/dev/null || true
 
   # If the selection area is L * W < 20, we'll assume you were trying to select whichever
   # window or output it was inside of to prevent accidental 2px snapshots

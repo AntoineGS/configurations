@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
@@ -16,6 +17,10 @@ modified_helpers=(
   state
   windows-vm
   voxtype-install
+  cmd-tzupdate
+  voxtype-model
+  tzupdate-and-restart-waybar
+  voxtype-model-setup
   cmd-screenrecord
   cmd-screenshot
   font-set
@@ -104,7 +109,44 @@ for helper_path in \
   "$ROOT/Linux/os/helpers/launch-tui"; do
   grep -Fq -- '--app-id=org.local.terminal' "$helper_path"
   grep -Fq -- '--title=System' "$helper_path"
+  grep -Fq 'set -Eeuo pipefail' "$helper_path"
+  grep -Fq 'if (( $# == 0 )); then' "$helper_path"
+  grep -Fq -- '-e "$@"' "$helper_path"
 done
+
+for helper in windows-vm cmd-screenrecord cmd-screenshot font-set cmd-tzupdate voxtype-model; do
+  grep -Fq 'set -Eeuo pipefail' "$ROOT/Linux/os/helpers/$helper"
+done
+
+if grep -Eq '\$\*|bash -c' "$ROOT/Linux/os/helpers/launch-floating-terminal-with-presentation"; then
+  printf '%s\n' 'floating terminal launcher reparses a shell command string' >&2
+  exit 1
+fi
+
+grep -Fq 'launch-floating-terminal-with-presentation tzupdate-and-restart-waybar' \
+  "$ROOT/Linux/os/helpers/cmd-tzupdate"
+grep -Fq 'launch-floating-terminal-with-presentation voxtype-model-setup' \
+  "$ROOT/Linux/os/helpers/voxtype-model"
+grep -Fq 'sudo tzupdate' "$ROOT/Linux/os/helpers/tzupdate-and-restart-waybar"
+grep -Fq 'voxtype setup model' "$ROOT/Linux/os/helpers/voxtype-model-setup"
+if grep -Fq 'sudo tzupdate && restart-waybar' "$ROOT/Linux/os/helpers/cmd-tzupdate"; then
+  printf '%s\n' 'timezone update still passes a compound shell command' >&2
+  exit 1
+fi
+
+grep -Fq 'RESUME_DROP_IN="/etc/limine-entry-tool.d/resume.conf"' \
+  "$ROOT/Linux/os/helpers/hibernation-remove"
+grep -Fq 'RTC_ALARM_DROP_IN="/etc/limine-entry-tool.d/rtc-alarm.conf"' \
+  "$ROOT/Linux/os/helpers/hibernation-remove"
+grep -Fq 'LIMINE_UPDATE_REQUIRED=true' "$ROOT/Linux/os/helpers/hibernation-remove"
+grep -Fq 'if [[ $HIBERNATION_CONFIGURED == false && $LIMINE_UPDATE_REQUIRED == false ]]; then' \
+  "$ROOT/Linux/os/helpers/hibernation-remove"
+grep -Fq 'sudo rm -f -- "$RESUME_DROP_IN" "$RTC_ALARM_DROP_IN"' \
+  "$ROOT/Linux/os/helpers/hibernation-remove"
+grep -Fq 'sudo limine-update' "$ROOT/Linux/os/helpers/hibernation-remove"
+
+grep -Fq 'trap restore_noidle EXIT' "$ROOT/Linux/os/helpers/update-perform"
+grep -Fq 'tag="-noidle"' "$ROOT/Linux/os/helpers/update-perform"
 
 grep -Fq "STATE_DIR=\"\$HOME/.local/state/configurations\"" "$ROOT/Linux/os/helpers/state"
 grep -Fq 'arch*.efi' "$ROOT/Linux/os/helpers/config-direct-boot"
@@ -118,5 +160,121 @@ if grep -Fq 'hook font-set' "$ROOT/Linux/os/helpers/font-set"; then
   printf '%s\n' 'font-set still invokes the deleted hook helper' >&2
   exit 1
 fi
+
+terminal_test_dir=$(mktemp -d)
+terminal_argv_log="$terminal_test_dir/argv"
+injection_marker="$terminal_test_dir/should-not-run"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "<%s>\\n" "$@" >"$TERMINAL_ARGV_LOG"' \
+  >"$terminal_test_dir/setsid"
+chmod +x "$terminal_test_dir/setsid"
+
+expected_terminal_argv=$(printf '%s\n' \
+  '<uwsm-app>' \
+  '<-->' \
+  '<xdg-terminal-exec>' \
+  '<--app-id=org.local.terminal>' \
+  '<--title=System>' \
+  '<-e>' \
+  '<printf>' \
+  '<argument with spaces>' \
+  "<\$(touch $injection_marker)>" \
+  '<>')
+PATH="$terminal_test_dir:$PATH" TERMINAL_ARGV_LOG="$terminal_argv_log" \
+  "$ROOT/Linux/os/helpers/launch-floating-terminal-with-presentation" \
+  printf 'argument with spaces' "\$(touch $injection_marker)" ''
+actual_terminal_argv=$(<"$terminal_argv_log")
+if [[ $actual_terminal_argv != "$expected_terminal_argv" ]]; then
+  printf 'floating terminal argv mismatch:\nexpected:\n%s\nactual:\n%s\n' \
+    "$expected_terminal_argv" "$actual_terminal_argv" >&2
+  exit 1
+fi
+if [[ -e $injection_marker ]]; then
+  printf '%s\n' 'floating terminal launcher evaluated an argument as shell code' >&2
+  exit 1
+fi
+
+: >"$terminal_argv_log"
+PATH="$terminal_test_dir:$PATH" TERMINAL_ARGV_LOG="$terminal_argv_log" \
+  "$ROOT/Linux/os/helpers/launch-tui" \
+  printf 'argument with spaces' "\$(touch $injection_marker)" ''
+actual_terminal_argv=$(<"$terminal_argv_log")
+if [[ $actual_terminal_argv != "$expected_terminal_argv" ]]; then
+  printf 'TUI launcher argv mismatch:\nexpected:\n%s\nactual:\n%s\n' \
+    "$expected_terminal_argv" "$actual_terminal_argv" >&2
+  exit 1
+fi
+if PATH="$terminal_test_dir:$PATH" \
+  "$ROOT/Linux/os/helpers/launch-floating-terminal-with-presentation" >/dev/null 2>&1; then
+  printf '%s\n' 'floating terminal launcher accepts an empty command' >&2
+  exit 1
+fi
+if PATH="$terminal_test_dir:$PATH" "$ROOT/Linux/os/helpers/launch-tui" >/dev/null 2>&1; then
+  printf '%s\n' 'TUI launcher accepts an empty command' >&2
+  exit 1
+fi
+rm -rf "$terminal_test_dir"
+
+"$ROOT/Linux/os/helpers/windows-vm" >/dev/null
+"$ROOT/Linux/os/helpers/font-set" >/dev/null
+
+state_test_dir=$(mktemp -d)
+state_home="$state_test_dir/home"
+mkdir -p "$state_home"
+HOME="$state_home" "$ROOT/Linux/os/helpers/state" set suspend-off
+test -f "$state_home/.local/state/configurations/suspend-off"
+HOME="$state_home" "$ROOT/Linux/os/helpers/state" clear 'suspend-*'
+test ! -e "$state_home/.local/state/configurations/suspend-off"
+if HOME="$state_home" "$ROOT/Linux/os/helpers/state" set '../escaped' >/dev/null 2>&1; then
+  printf '%s\n' 'state accepts a path-traversing state name' >&2
+  exit 1
+fi
+if [[ -e "$state_home/.local/state/escaped" ]]; then
+  printf '%s\n' 'state wrote outside its state directory' >&2
+  exit 1
+fi
+if HOME="$state_home" "$ROOT/Linux/os/helpers/state" clear '../*' >/dev/null 2>&1; then
+  printf '%s\n' 'state accepts a path-traversing clear pattern' >&2
+  exit 1
+fi
+rm -rf "$state_test_dir"
+
+update_test_dir=$(mktemp -d)
+update_events="$update_test_dir/events"
+update_log="$update_test_dir/update.log"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\\n" "$*" >>"$UPDATE_EVENTS"' \
+  >"$update_test_dir/hyprctl"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ ${1:-} == -o0 ]]; then shift; fi' \
+  'exec "$@"' \
+  >"$update_test_dir/stdbuf"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'cat >"$UPDATE_LOG"' \
+  >"$update_test_dir/tee"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'exit 23' \
+  >"$update_test_dir/update-keyring"
+chmod +x "$update_test_dir/hyprctl" "$update_test_dir/stdbuf" "$update_test_dir/tee" \
+  "$update_test_dir/update-keyring"
+update_status=0
+if PATH="$update_test_dir:$PATH" UPDATE_EVENTS="$update_events" UPDATE_LOG="$update_log" \
+  "$ROOT/Linux/os/helpers/update-perform"; then
+  update_status=0
+else
+  update_status=$?
+fi
+if (( update_status == 0 )); then
+  printf '%s\n' 'update-perform hides an update failure' >&2
+  exit 1
+fi
+grep -Fq 'tag="+noidle"' "$update_events"
+grep -Fq 'tag="-noidle"' "$update_events"
+rm -rf "$update_test_dir"
 
 printf '%s\n' 'system helper independence tests passed'

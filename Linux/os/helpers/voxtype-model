@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
-launch-floating-terminal-with-presentation "voxtype setup model"
-restart-waybar
+exec launch-floating-terminal-with-presentation voxtype-model-setup

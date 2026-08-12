@@ -1,6 +1,12 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Launch a floating terminal and execute the command passed in.
 
-cmd="$*"
-exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e bash -c "$cmd"
+if (( $# == 0 )); then
+  printf '%s\n' 'Usage: launch-floating-terminal-with-presentation <command> [args...]' >&2
+  exit 1
+fi
+
+exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e "$@"
