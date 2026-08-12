@@ -249,6 +249,24 @@ assert_grouped_package_declarations() {
   assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
 }
 
+assert_focused_dry_run() {
+  local application="$1"
+  local package="$2"
+  local output expected actual
+
+  expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
+  if ! output="$(tidydots --dir "$REPO_DIR" install "$application" -n 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    fail "focused dry-run for $application failed"
+  fi
+
+  actual="$(printf '%s\n' "$output" | grep -F 'Would run: sudo pacman -S --noconfirm ' || true)"
+  [[ "$actual" == "$expected" ]] || {
+    printf 'dry-run output for %s:\n%s\n' "$application" "$output" >&2
+    fail "focused dry-run for $application does not prove primary package $package"
+  }
+}
+
 package_for_service_unit() {
   local service_unit="$1"
   local service_name="${service_unit%.*}"
@@ -275,6 +293,9 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
 fi
 
 assert_grouped_package_declarations
+assert_focused_dry_run hyprland hyprland
+assert_focused_dry_run pipewire-audio pipewire
+assert_focused_dry_run linux-services-packages ufw
 
 GRAPHICAL_WHEN="'{{ and .HasDisplay (eq .OS \"linux\") (not .IsWSL) }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
