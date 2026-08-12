@@ -449,19 +449,38 @@ applications:
       managers:
         pacman:
           deps:
+            - bluetui
+            - brightnessctl
+            - ffmpeg
+            - gpu-screen-recorder
+            - grim
             - hypridle
             - hyprlock
+            - hyprpicker
             - hyprshot
             - hyprsunset
+            - impala
+            - libnotify
+            - mako
+            - mpv
+            - playerctl
             - polkit-gnome
+            - power-profiles-daemon
+            - satty
             - sddm
+            - slurp
+            - socat
             - swaybg
+            - swayosd
             - uwsm
+            - v4l-utils
+            - waypipe
             - wl-clipboard
             - wl-clip-persist
             - wtype
             - xdg-desktop-portal-gtk
             - xdg-desktop-portal-hyprland
+            - xdg-utils
           name: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
@@ -501,6 +520,7 @@ applications:
             - pipewire-pulse
             - wireplumber
             - pamixer
+            - wiremix
           name: pipewire
     name: pipewire-audio
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -681,7 +701,14 @@ applications:
           linux: ~/.config/fontconfig
         name: config
         backup: ./Linux/fontconfig
-  - name: hyprland-preview-share-picker
+  - package:
+      managers:
+        yay:
+          deps:
+            - localsend
+            - xdg-terminal-exec
+          name: hyprland-preview-share-picker-git
+    name: hyprland-preview-share-picker
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
