@@ -69,27 +69,29 @@ extract_application_field() {
   ' <<< "$block"
 }
 
-extract_pacman_packages() {
-  awk '
+extract_manager_packages() {
+  local manager="$1"
+
+  awk -v wanted="$manager" '
     /^      managers:$/ {
       in_managers = 1
-      in_pacman = 0
+      in_manager = 0
       in_deps = 0
       next
     }
 
     in_managers && /^    [^[:space:]]/ {
       in_managers = 0
-      in_pacman = 0
+      in_manager = 0
       in_deps = 0
       next
     }
 
-    in_managers && /^        pacman:/ {
-      in_pacman = 1
+    in_managers && $0 ~ "^        " wanted ":" {
+      in_manager = 1
       in_deps = 0
       package_name = $0
-      sub(/^        pacman:[[:space:]]*/, "", package_name)
+      sub("^        " wanted ":[[:space:]]*", "", package_name)
       if (length(package_name) > 0) {
         print package_name
       }
@@ -97,24 +99,24 @@ extract_pacman_packages() {
     }
 
     in_managers && /^        [^[:space:]]/ {
-      in_pacman = 0
+      in_manager = 0
       in_deps = 0
       next
     }
 
-    in_pacman && /^          deps:$/ {
+    in_manager && /^          deps:$/ {
       in_deps = 1
       next
     }
 
-    in_pacman && in_deps && /^            - / {
+    in_manager && in_deps && /^            - / {
       package_name = $0
       sub(/^            - /, "", package_name)
       print package_name
       next
     }
 
-    in_pacman && /^          name: / {
+    in_manager && /^          name: / {
       package_name = $0
       sub(/^          name: /, "", package_name)
       print package_name
@@ -123,26 +125,53 @@ extract_pacman_packages() {
   '
 }
 
-extract_pacman_primary() {
-  awk '
-    /^        pacman:/ {
+extract_pacman_packages() {
+  extract_manager_packages pacman
+}
+
+extract_manager_primary() {
+  local manager="$1"
+
+  awk -v wanted="$manager" '
+    /^      managers:$/ {
+      in_managers = 1
+      in_manager = 0
+      next
+    }
+
+    in_managers && /^    [^[:space:]]/ {
+      in_managers = 0
+      in_manager = 0
+      next
+    }
+
+    in_managers && $0 ~ "^        " wanted ":" {
+      in_manager = 1
       package_name = $0
-      sub(/^        pacman:[[:space:]]*/, "", package_name)
+      sub("^        " wanted ":[[:space:]]*", "", package_name)
       if (length(package_name) > 0) {
         print package_name
         exit
       }
-      in_pacman = 1
       next
     }
 
-    in_pacman && /^          name: / {
+    in_managers && /^        [^[:space:]]/ {
+      in_manager = 0
+      next
+    }
+
+    in_manager && /^          name: / {
       package_name = $0
       sub(/^          name: /, "", package_name)
       print package_name
       exit
     }
   '
+}
+
+extract_pacman_primary() {
+  extract_manager_primary pacman
 }
 
 extract_service_units() {
@@ -192,21 +221,70 @@ assert_exact_packages() {
   }
 }
 
+assert_exact_manager_packages() {
+  local application="$1"
+  local manager="$2"
+  local primary="$3"
+  shift 3
+  local block actual expected actual_count expected_count
+
+  block="$(extract_application "$application")"
+  [[ -n "$block" ]] || fail "application $application is not declared"
+  [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
+  [[ "$(printf '%s\n' "$block" | extract_manager_primary "$manager")" == "$primary" ]] || fail "$manager primary for $application is not $primary"
+
+  actual_count="$(printf '%s\n' "$block" | extract_manager_packages "$manager" | wc -l)"
+  expected_count="$#"
+  [[ "$actual_count" -eq "$expected_count" ]] || fail "$manager declaration for $application has $actual_count packages, expected $expected_count"
+
+  actual="$(printf '%s\n' "$block" | extract_manager_packages "$manager" | sort)"
+  expected="$(printf '%s\n' "$@" | sort)"
+  [[ "$actual" == "$expected" ]] || {
+    printf 'actual %s packages for %s:\n%s\nexpected packages:\n%s\n' "$manager" "$application" "$actual" "$expected" >&2
+    fail "$manager declaration for $application does not match the exact package expansion"
+  }
+}
+
 HYPRLAND_PACKAGES=(
+  bluetui
+  brightnessctl
+  ffmpeg
+  gpu-screen-recorder
+  grim
   hyprland
   hypridle
   hyprlock
+  hyprpicker
   hyprshot
   hyprsunset
+  impala
+  libnotify
+  mako
+  mpv
+  playerctl
   polkit-gnome
+  power-profiles-daemon
+  satty
   sddm
+  slurp
+  socat
   swaybg
+  swayosd
   uwsm
+  v4l-utils
+  waypipe
   wl-clipboard
   wl-clip-persist
   wtype
   xdg-desktop-portal-gtk
   xdg-desktop-portal-hyprland
+  xdg-utils
+)
+
+HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES=(
+  hyprland-preview-share-picker-git
+  localsend
+  xdg-terminal-exec
 )
 
 PIPEWIRE_AUDIO_PACKAGES=(
@@ -215,6 +293,7 @@ PIPEWIRE_AUDIO_PACKAGES=(
   pipewire-pulse
   wireplumber
   pamixer
+  wiremix
 )
 
 LINUX_SERVICES_PACKAGE_SET=(
@@ -236,6 +315,7 @@ PROFILE_ANCHORS=(
 
 GRAPHICAL_SHARED_APPLICATIONS=(
   hyprland
+  hyprland-preview-share-picker
   pipewire-audio
 )
 
@@ -245,22 +325,35 @@ REAL_LINUX_SHARED_APPLICATIONS=(
 
 assert_grouped_package_declarations() {
   assert_exact_packages hyprland hyprland "${HYPRLAND_PACKAGES[@]}"
+  assert_exact_manager_packages hyprland-preview-share-picker yay hyprland-preview-share-picker-git "${HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES[@]}"
   assert_exact_packages pipewire-audio pipewire "${PIPEWIRE_AUDIO_PACKAGES[@]}"
   assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
 }
 
 assert_focused_dry_run() {
   local application="$1"
-  local package="$2"
+  local manager="$2"
+  local package="$3"
   local output expected actual
 
-  expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
+  case "$manager" in
+    pacman)
+      expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
+      ;;
+    yay)
+      expected="[ok] $application: Would run: yay -S --noconfirm $package"
+      ;;
+    *)
+      fail "unsupported focused dry-run manager $manager"
+      ;;
+  esac
+
   if ! output="$(tidydots --dir "$REPO_DIR" install "$application" -n 2>&1)"; then
     printf '%s\n' "$output" >&2
     fail "focused dry-run for $application failed"
   fi
 
-  actual="$(printf '%s\n' "$output" | grep -F 'Would run: sudo pacman -S --noconfirm ' || true)"
+  actual="$(printf '%s\n' "$output" | grep -F "Would run: ${expected#*Would run: }" || true)"
   [[ "$actual" == "$expected" ]] || {
     printf 'dry-run output for %s:\n%s\n' "$application" "$output" >&2
     fail "focused dry-run for $application does not prove primary package $package"
@@ -293,9 +386,10 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
 fi
 
 assert_grouped_package_declarations
-assert_focused_dry_run hyprland hyprland
-assert_focused_dry_run pipewire-audio pipewire
-assert_focused_dry_run linux-services-packages ufw
+assert_focused_dry_run hyprland pacman hyprland
+assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
+assert_focused_dry_run pipewire-audio pacman pipewire
+assert_focused_dry_run linux-services-packages pacman ufw
 
 GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
