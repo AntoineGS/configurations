@@ -168,4 +168,68 @@ assert_equal "$(<"$MENU_ARGS")" "--region"
 PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" TEST_CAPTURE_CHOICE="Screen / window" "$MENU" screenrecord
 assert_equal "$(<"$MENU_ARGS")" ""
 
+cat >"$BIN/sleep" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+cat >"$BIN/pgrep" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+cat >"$BIN/pkill" <<'EOF'
+#!/bin/bash
+[[ ${1:-} == "-9" ]] && exit 1
+exit 0
+EOF
+
+chmod +x "$BIN/sleep" "$BIN/pgrep" "$BIN/pkill"
+
+stop_status=0
+PATH="$BIN:$PATH" HOME="$HOME_DIR" SCREENRECORD_DIR="$VIDEOS" SCREENRECORD_STATE_FILE="$STATE_FILE" \
+  "$SCREENRECORD" --stop-recording || stop_status=$?
+[[ ! -e $STATE_FILE ]] || {
+  printf 'screen recording state survived a raced hard kill\n' >&2
+  exit 1
+}
+assert_equal "$stop_status" "0"
+
+PGREP_COUNT="$TEST_ROOT/pgrep-count"
+PREVIEW_VIDEO="$VIDEOS/preview-source.mp4"
+: >"$PREVIEW_VIDEO"
+printf '%s\n' "$PREVIEW_VIDEO" >"$STATE_FILE"
+rm -f "$PGREP_COUNT"
+
+cat >"$BIN/pgrep" <<'EOF'
+#!/bin/bash
+
+count=0
+[[ -f $TEST_PGREP_COUNT ]] && count=$(<"$TEST_PGREP_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" >"$TEST_PGREP_COUNT"
+((count == 1))
+EOF
+
+cat >"$BIN/ffmpeg" <<'EOF'
+#!/bin/bash
+exit 1
+EOF
+
+cat >"$BIN/pkill" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+chmod +x "$BIN/pgrep" "$BIN/ffmpeg" "$BIN/pkill"
+
+stop_status=0
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_PGREP_COUNT="$PGREP_COUNT" SCREENRECORD_DIR="$VIDEOS" \
+  SCREENRECORD_STATE_FILE="$STATE_FILE" "$SCREENRECORD" --stop-recording || stop_status=$?
+[[ ! -e $STATE_FILE ]] || {
+  printf 'screen recording state survived preview generation failure\n' >&2
+  exit 1
+}
+assert_equal "$stop_status" "0"
+
 printf '%s\n' 'screenrecord routing tests passed'
