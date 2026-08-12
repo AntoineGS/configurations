@@ -87,7 +87,8 @@ resolve_hostname() {
 }
 
 check_hostname() {
-  local -r hostname="$(resolve_hostname)"
+  local hostname
+  hostname="$(resolve_hostname)"
 
   case "$hostname" in
     DESKTOP-E07VTRN|omarchbook|server|antoinews-linux)

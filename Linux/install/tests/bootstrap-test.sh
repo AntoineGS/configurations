@@ -120,6 +120,9 @@ printf '%s\n' 'name: bootstrap-test-fixture' >"$REPO_WITH_SPACES/tidydots.yaml"
 printf '%s\n' 'ID=arch' >"$ARCH_RELEASE"
 printf '%s\n' 'ID=debian' >"$NON_ARCH_RELEASE"
 create_stub_path "$STUB_BIN"
+write_executable "$STUB_BIN/hostnamectl" \
+  'printf "%s\\n" server' \
+  'exit 1'
 : >"$STUB_LOG"
 
 [[ -n "$UNSHARE" ]] || fail 'unshare is required for the root execution test'
@@ -174,6 +177,25 @@ test_non_arch_rejected() {
 
   assert_status 1 "$LAST_STATUS" 'non-Arch os-release'
   assert_contains "$LAST_OUTPUT" 'ID=arch' 'non-Arch os-release'
+}
+
+test_hostname_command_failure_is_not_masked() {
+  : >"$STUB_LOG"
+  if LAST_OUTPUT=$(env -u BOOTSTRAP_HOSTNAME \
+    PATH="$STUB_BIN" \
+    BOOTSTRAP_OS_RELEASE="$ARCH_RELEASE" \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    BOOTSTRAP_CURL_FAIL=false \
+    "$BASH_PATH" "$BOOTSTRAP" --dry-run --repo "$REPO_WITH_SPACES" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+
+  assert_status 1 "$LAST_STATUS" 'hostname command failure'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostname command failure'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+  assert_not_contains "$(<"$STUB_LOG")" 'curl ' 'hostname command failure network check'
 }
 
 test_unknown_hostname_rejected_before_commands() {
@@ -261,6 +283,7 @@ run_preflight_tests() {
   test_missing_repository_is_environment_failure
   test_root_execution_rejected
   test_non_arch_rejected
+  test_hostname_command_failure_is_not_masked
   test_unknown_hostname_rejected_before_commands
   test_missing_command_names_command
   test_repository_path_with_spaces
