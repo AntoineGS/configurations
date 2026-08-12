@@ -8,6 +8,8 @@ LIMINE_CONFIG="$REPO_DIR/Linux/limine/limine"
 SNAPPER_ROOT_CONFIG="$REPO_DIR/Linux/Snapper/configs/root"
 SNAPPER_HOME_CONFIG="$REPO_DIR/Linux/Snapper/configs/home"
 SNAPPER_REGISTRATION="$REPO_DIR/Linux/Snapper/conf.d/snapper"
+SNAPPER_INITIALIZER="$REPO_DIR/Linux/Snapper/snapper-initialize"
+BOOTSTRAP="$REPO_DIR/Linux/install/bootstrap"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -19,6 +21,8 @@ fail() {
 [[ -r "$SNAPPER_ROOT_CONFIG" ]] || fail "cannot read $SNAPPER_ROOT_CONFIG"
 [[ -r "$SNAPPER_HOME_CONFIG" ]] || fail "cannot read $SNAPPER_HOME_CONFIG"
 [[ -r "$SNAPPER_REGISTRATION" ]] || fail "cannot read $SNAPPER_REGISTRATION"
+[[ -x "$SNAPPER_INITIALIZER" ]] || fail "cannot execute $SNAPPER_INITIALIZER"
+[[ -r "$BOOTSTRAP" ]] || fail "cannot read $BOOTSTRAP"
 command -v tidydots >/dev/null 2>&1 || fail "tidydots is not installed"
 
 extract_application() {
@@ -108,6 +112,62 @@ assert_entry() {
     fail "$application does not contain expected entry data: $expected_line"
 }
 
+extract_application_entry() {
+  local application="$1"
+  local entry="$2"
+  local application_block
+
+  application_block="$(extract_application "$application")"
+  awk -v wanted="$entry" '
+    function flush() {
+      if (entry_name == wanted) {
+        printf "%s", entry_block
+        found = 1
+      }
+    }
+
+    /^      - / {
+      if (length(entry_block) > 0) {
+        flush()
+      }
+      if (found) {
+        exit
+      }
+      entry_block = $0 ORS
+      entry_name = ""
+      next
+    }
+
+    {
+      if (length(entry_block) > 0) {
+        entry_block = entry_block $0 ORS
+        if ($0 ~ /^        name: /) {
+          entry_name = $0
+          sub(/^        name: /, "", entry_name)
+        }
+      }
+    }
+
+    END {
+      if (!found && length(entry_block) > 0) {
+        flush()
+      }
+    }
+  ' <<< "$application_block"
+}
+
+assert_entry_field() {
+  local application="$1"
+  local entry="$2"
+  local expected_line="$3"
+  local entry_block
+
+  entry_block="$(extract_application_entry "$application" "$entry")"
+  [[ -n "$entry_block" ]] || fail "$application entry $entry is not declared"
+  grep -Fqx -- "$expected_line" <<< "$entry_block" ||
+    fail "$application entry $entry does not contain expected data: $expected_line"
+}
+
 assert_snapshot_policy() {
   local application="$1"
   local expected_when="$2"
@@ -136,6 +196,16 @@ assert_when snapper "$LINUX_WHEN"
 assert_package snapper pacman snapper
 assert_entry snapper '        name: configs'
 assert_entry snapper '        name: registered-configs'
+assert_entry_field snapper snapper-initialize '          linux: /usr/local/libexec/antoinews-linux'
+assert_entry_field snapper snapper-initialize '        method: copy'
+assert_entry_field snapper snapper-initialize '        backup: ./Linux/Snapper'
+assert_entry_field snapper snapper-initialize '          - snapper-initialize'
+assert_entry_field snapper snapper-initialize '        sudo: true'
+assert_entry_field snapper initialize-btrfs-layout \
+  '          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --check'
+assert_entry_field snapper initialize-btrfs-layout \
+  '          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --apply'
+assert_entry_field snapper initialize-btrfs-layout '        sudo: true'
 
 assert_when limine-snapper-sync "$LINUX_WHEN"
 assert_package limine-snapper-sync yay limine-snapper-sync
@@ -237,5 +307,54 @@ assert_snapshot_policy snapshots-disabled "$SNAPSHOTS_DISABLED_WHEN" \
 grep -Fxq 'SUBVOLUME="/"' "$SNAPPER_ROOT_CONFIG" || fail "root Snapper policy changed"
 grep -Fxq 'SUBVOLUME="/home"' "$SNAPPER_HOME_CONFIG" || fail "home Snapper policy changed"
 grep -Fxq 'SNAPPER_CONFIGS="root home"' "$SNAPPER_REGISTRATION" || fail "shared Snapper registration changed"
+grep -Fq "[[ \"\$EUID\" -eq 0 ]]" "$SNAPPER_INITIALIZER" || fail "Snapper initializer is not root-only"
+grep -Fq -- '--check|--apply' "$SNAPPER_INITIALIZER" || fail "Snapper initializer lacks explicit modes"
+if grep -Fq 'sudo' "$SNAPPER_INITIALIZER"; then
+  fail "Snapper initializer invokes sudo internally"
+fi
+
+snapper_mapping_owners="$(awk '
+  function flush() {
+    if (application_name != "" && block ~ /backup: \.\/Linux\/Snapper/) {
+      print application_name
+    }
+  }
+
+  /^  - / {
+    if (length(block) > 0) {
+      flush()
+    }
+    block = $0 ORS
+    application_name = ""
+    if ($0 ~ /^  - name: /) {
+      application_name = $0
+      sub(/^  - name: /, "", application_name)
+    }
+    next
+  }
+
+  {
+    block = block $0 ORS
+    if ($0 ~ /^    name: /) {
+      application_name = $0
+      sub(/^    name: /, "", application_name)
+    }
+  }
+
+  END {
+    if (length(block) > 0) {
+      flush()
+    }
+  }
+' "$CONFIG_FILE")"
+[[ "$snapper_mapping_owners" == "snapper" ]] ||
+  fail "Linux/Snapper mappings are owned by unexpected applications: $snapper_mapping_owners"
+
+bootstrap_snapper_restore_line="$(awk '/run_tidydots_phase restore snapper/ { print NR; exit }' "$BOOTSTRAP")"
+bootstrap_broad_restore_line="$(awk '/run_tidydots_phase restore$/ { print NR; exit }' "$BOOTSTRAP")"
+[[ -n "$bootstrap_snapper_restore_line" ]] || fail "bootstrap does not restore Snapper before the environment"
+[[ -n "$bootstrap_broad_restore_line" ]] || fail "bootstrap does not preserve a broad restore phase"
+(( bootstrap_snapper_restore_line < bootstrap_broad_restore_line )) ||
+  fail "bootstrap restores the broad environment before Snapper initialization"
 
 printf 'PASS: shared Limine/Snapper ownership and host-safe boot profile are complete\n'
