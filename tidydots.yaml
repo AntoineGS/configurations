@@ -263,7 +263,7 @@ applications:
         name: config
         backup: ./Linux/Xcompose
         files:
-          - .Xcompose
+          - .XCompose
   - name: powershell
     when: '{{ eq .OS "windows" }}'
     entries:
