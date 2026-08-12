@@ -297,7 +297,7 @@ assert_focused_dry_run hyprland hyprland
 assert_focused_dry_run pipewire-audio pipewire
 assert_focused_dry_run linux-services-packages ufw
 
-GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
+GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
 
 for application in "${GRAPHICAL_SHARED_APPLICATIONS[@]}"; do

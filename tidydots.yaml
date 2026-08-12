@@ -256,7 +256,7 @@ applications:
         name: config
         backup: ./Both/posting
   - name: xcompose
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: "~"
@@ -465,7 +465,7 @@ applications:
           name: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/hypr
@@ -503,7 +503,7 @@ applications:
             - pamixer
           name: pipewire
     name: pipewire-audio
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - package:
       managers:
@@ -528,21 +528,21 @@ applications:
             - claudebar
             - codexbar
     name: waybar
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/waybar
         name: config
         backup: ./Linux/waybar
   - name: uwsm
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/uwsm/default
         name: config
         backup: ./Linux/uwsm/default
   - name: sddm
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: /etc/sddm.conf.d
@@ -577,7 +577,7 @@ applications:
         pacman: teams-for-linux
         yay: teams-for-linux-electron-bin
     name: teams-for-linux
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/teams-for-linux
@@ -642,7 +642,7 @@ applications:
       managers:
         pacman: ghostty
     name: ghostty
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/ghostty
@@ -666,7 +666,7 @@ applications:
         pacman: fcitx5
     name: fcitx5
     description: Input method framework
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/fcitx5/conf
@@ -675,28 +675,28 @@ applications:
         files:
           - unicode.conf
   - name: fontconfig
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/fontconfig
         name: config
         backup: ./Linux/fontconfig
   - name: hyprland-preview-share-picker
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/hyprland-preview-share-picker
         name: config
         backup: ./Linux/hyprland-preview-share-picker
   - name: imv
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/imv
         name: config
         backup: ./Linux/imv
   - name: mako
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/mako
@@ -712,21 +712,21 @@ applications:
         files:
           - config.toml
   - name: swayosd
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/swayosd
         name: config
         backup: ./Linux/swayosd
   - name: typora
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/Typora/themes
         name: themes
         backup: ./Linux/Typora/themes
   - name: wiremix
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/wiremix
@@ -736,7 +736,7 @@ applications:
       managers:
         yay: vicinae-bin
     name: vicinae
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/vicinae
@@ -754,14 +754,14 @@ applications:
           linux: systemctl --user daemon-reload && systemctl --user enable --now vicinae.service
         name: enable-service
   - name: autostart
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/autostart
         name: config
         backup: ./Linux/autostart
   - name: browser-flags
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config
@@ -1025,7 +1025,7 @@ applications:
         sudo: true
   - name: enable-desktop-services
     description: Enable services that only make sense on a graphical Linux host
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - check:
           linux: systemctl is-enabled --quiet sddm.service
