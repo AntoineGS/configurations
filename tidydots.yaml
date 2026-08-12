@@ -447,7 +447,22 @@ applications:
         backup: ./Both/Zellij/plugins
   - package:
       managers:
-        pacman: hyprland
+        pacman:
+          deps:
+            - hypridle
+            - hyprlock
+            - hyprshot
+            - hyprsunset
+            - polkit-gnome
+            - sddm
+            - swaybg
+            - uwsm
+            - wl-clipboard
+            - wl-clip-persist
+            - wtype
+            - xdg-desktop-portal-gtk
+            - xdg-desktop-portal-hyprland
+          name: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
@@ -478,6 +493,18 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
         name: enable-external-keyboard-service
+  - package:
+      managers:
+        pacman:
+          deps:
+            - pipewire-alsa
+            - pipewire-pulse
+            - wireplumber
+            - pamixer
+          name: pipewire
+    name: pipewire-audio
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
   - package:
       managers:
         pacman: waybar
@@ -1011,6 +1038,21 @@ applications:
           linux: systemctl enable --now bluetooth.service
         name: enable-bluetooth
         sudo: true
+  - package:
+      managers:
+        pacman:
+          deps:
+            - avahi
+            - bluez
+            - bluez-utils
+            - cups
+            - cups-browsed
+            - docker
+            - tailscale
+          name: ufw
+    name: linux-services-packages
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
   - package:
       managers:
         git:
