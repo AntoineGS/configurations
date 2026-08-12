@@ -4,6 +4,7 @@ set -Eeuo pipefail
 readonly EXIT_ERROR=1
 readonly EXIT_USAGE=2
 readonly EXIT_DECLINED=3
+readonly EXIT_INCOMPLETE_PREVIEW=4
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_TEMP_DIR=""
@@ -18,6 +19,7 @@ usage() {
   printf '  --repo PATH  Use PATH as the repository checkout.\n'
   printf '  --help       Show this help text.\n'
   printf '  Exit %s means a prerequisite or tidydots phase was declined.\n' "$EXIT_DECLINED"
+  printf '  Exit %s means the dry-run was incomplete because tidydots phases were skipped.\n' "$EXIT_INCOMPLETE_PREVIEW"
 }
 
 die() {
@@ -260,9 +262,19 @@ apply_tidydots() {
   [[ "$DRY_RUN" == true ]] || print_post_install_boundaries
 }
 
+report_incomplete_dry_run() {
+  printf 'bootstrap: incomplete dry-run: tidydots is unavailable\n'
+  printf 'Skipped tidydots package phase (install).\n'
+  printf 'Skipped tidydots configuration phase (restore).\n'
+  printf 'Install tidydots and rerun Linux/install/bootstrap --dry-run.\n'
+  exit "$EXIT_INCOMPLETE_PREVIEW"
+}
+
 parse_args "$@"
 preflight
 install_prerequisites
 if command -v tidydots >/dev/null 2>&1; then
   apply_tidydots
+elif [[ "$DRY_RUN" == true ]]; then
+  report_incomplete_dry_run
 fi
