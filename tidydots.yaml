@@ -917,6 +917,26 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
         name: enable-battery-monitor
+  - package:
+      managers:
+        pacman: iwd
+    name: antoinews-linux-network
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
+      - targets:
+          linux: /usr/local/libexec/antoinews-linux
+        name: setup-networkd-iwd
+        method: copy
+        backup: ./Linux/network
+        files:
+          - setup-networkd-iwd
+        sudo: true
+      - check:
+          linux: /usr/local/libexec/antoinews-linux/setup-networkd-iwd --check
+        run:
+          linux: /usr/local/libexec/antoinews-linux/setup-networkd-iwd --apply
+        name: enable-networkd-iwd
+        sudo: true
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
