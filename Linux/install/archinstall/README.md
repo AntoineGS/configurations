@@ -34,7 +34,7 @@ so they must be reviewed interactively for the selected target disk.
 ## References
 
 - [Arch ISO](https://archlinux.org/download/)
-- [Archinstall 4.4 release](https://github.com/archlinux/archinstall/releases/tag/v4.4.0)
+- [Archinstall 4.4 release](https://github.com/archlinux/archinstall/releases/tag/4.4)
 - [Archinstall manual](https://archinstall.archlinux.page/)
 - [Limine](https://limine-bootloader.org/)
 - [Btrfs on the Arch Wiki](https://wiki.archlinux.org/title/Btrfs)

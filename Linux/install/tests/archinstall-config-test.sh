@@ -4,6 +4,11 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 CONFIG="$ROOT/Linux/install/archinstall/user_configuration.json"
 
+fail() {
+  printf 'FAIL: %s\n' "$1" >&2
+  exit 1
+}
+
 jq -e '
   (keys | sort) == [
     "bootloader_config",
@@ -36,10 +41,14 @@ jq -e '
 ' "$CONFIG" >/dev/null
 
 for forbidden in disk_config disk_encryption users root_enc_password encryption_password password custom_commands; do
-  ! jq -e --arg key "$forbidden" 'has($key)' "$CONFIG" >/dev/null
+  if jq -e --arg key "$forbidden" 'has($key)' "$CONFIG" >/dev/null; then
+    fail "forbidden key $forbidden found in $CONFIG"
+  fi
 done
 
-! grep -Eiq '(/dev/(sd|nvme|vd)|UUID=|PARTUUID=|PRIVATE KEY|ssh-|password)' "$CONFIG"
+if grep -Eiq '(/dev/(sd|nvme|vd)|UUID=|PARTUUID=|PRIVATE KEY|ssh-|password)' "$CONFIG"; then
+  fail "sensitive data found in $CONFIG"
+fi
 
 for ignored in \
   "/Linux/install/archinstall/user_credentials.json" \
