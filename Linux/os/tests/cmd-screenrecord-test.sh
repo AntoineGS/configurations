@@ -87,7 +87,7 @@ assert_equal() {
 
 run_screenrecord() {
   rm -f "$GSR_ARGS"
-  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" SCREENRECORD_STATE_FILE="$STATE_FILE" \
+  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" SCREENRECORD_STATE_FILE="$STATE_FILE" SCREENRECORD_DIR="$VIDEOS" \
     "$SCREENRECORD" "$@"
 }
 
@@ -130,7 +130,7 @@ $VIDEOS/screenrecording-2026-07-25_00-00-00.mp4"
 assert_equal "$(<"$GSR_ARGS")" "$expected"
 
 rm -f "$GSR_ARGS"
-PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=true \
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=true SCREENRECORD_DIR="$VIDEOS" \
   TEST_WEBCAM_STARTED="$WEBCAM_STARTED" SCREENRECORD_STATE_FILE="$STATE_FILE" \
   "$SCREENRECORD" --region --with-webcam --webcam-device=/dev/video0 --resolution=0x0 || true
 [[ ! -e $GSR_ARGS ]] || {

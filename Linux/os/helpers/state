@@ -1,14 +1,16 @@
 #!/bin/bash
 
-# Manage persistent state files for Omarchy toggles and settings.
+set -Eeuo pipefail
+
+# Manage persistent state files for system toggles and settings.
 # Usage: state <set|clear> <state-name-or-pattern>
 # Used to track whether features like suspend, idle lock, etc are enabled or disabled.
 
-STATE_DIR="$HOME/.local/state/omarchy"
+STATE_DIR="$HOME/.local/state/configurations"
 mkdir -p "$STATE_DIR"
 
-COMMAND="$1"
-STATE_NAME="$2"
+COMMAND="${1:-}"
+STATE_NAME="${2:-}"
 
 if [[ -z $COMMAND ]]; then
   echo "Usage: state <set|clear> <state-name-or-pattern>"
@@ -23,4 +25,8 @@ fi
 case "$COMMAND" in
 set) touch "$STATE_DIR/$STATE_NAME" ;;
 clear) find "$STATE_DIR" -maxdepth 1 -type f -name "$STATE_NAME" -delete ;;
+*)
+  echo "Usage: state <set|clear> <state-name-or-pattern>"
+  exit 1
+  ;;
 esac

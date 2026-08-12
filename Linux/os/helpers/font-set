@@ -36,7 +36,6 @@ if [[ -n $font_name ]]; then
       notify-send "    You must restart Ghostty to see font change"
     fi
 
-    hook font-set "$font_name"
   else
     echo "Font '$font_name' not found."
     exit 1
