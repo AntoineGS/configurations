@@ -447,22 +447,7 @@ applications:
         backup: ./Both/Zellij/plugins
   - package:
       managers:
-        pacman:
-          deps:
-            - hypridle
-            - hyprlock
-            - hyprshot
-            - hyprsunset
-            - polkit-gnome
-            - sddm
-            - swaybg
-            - uwsm
-            - wl-clipboard
-            - wl-clip-persist
-            - wtype
-            - xdg-desktop-portal-gtk
-            - xdg-desktop-portal-hyprland
-          name: hyprland
+        pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
@@ -495,14 +480,104 @@ applications:
         name: enable-external-keyboard-service
   - package:
       managers:
-        pacman:
-          deps:
-            - pipewire-alsa
-            - pipewire-pulse
-            - wireplumber
-            - pamixer
-          name: pipewire
+        pacman: hypridle
+    name: hypridle
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprlock
+    name: hyprlock
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprshot
+    name: hyprshot
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprsunset
+    name: hyprsunset
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: polkit-gnome
+    name: polkit-gnome
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: sddm
+    name: sddm-package
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: swaybg
+    name: swaybg
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wl-clipboard
+    name: wl-clipboard
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wl-clip-persist
+    name: wl-clip-persist
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wtype
+    name: wtype
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: xdg-desktop-portal-gtk
+    name: xdg-desktop-portal-gtk
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: xdg-desktop-portal-hyprland
+    name: xdg-desktop-portal-hyprland
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pipewire
     name: pipewire-audio
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pipewire-alsa
+    name: pipewire-alsa
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pipewire-pulse
+    name: pipewire-pulse
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wireplumber
+    name: wireplumber
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pamixer
+    name: pamixer
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries: []
   - package:
@@ -519,7 +594,10 @@ applications:
           linux: ~/.config/waybar
         name: config
         backup: ./Linux/waybar
-  - name: uwsm
+  - package:
+      managers:
+        pacman: uwsm
+    name: uwsm
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
       - targets:
@@ -1040,17 +1118,50 @@ applications:
         sudo: true
   - package:
       managers:
-        pacman:
-          deps:
-            - avahi
-            - bluez
-            - bluez-utils
-            - cups
-            - cups-browsed
-            - docker
-            - tailscale
-          name: ufw
+        pacman: ufw
     name: linux-services-packages
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: avahi
+    name: avahi
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: bluez
+    name: bluez
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: bluez-utils
+    name: bluez-utils
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: cups
+    name: cups
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: cups-browsed
+    name: cups-browsed
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: docker
+    name: docker
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: tailscale
+    name: tailscale
     when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
     entries: []
   - package:

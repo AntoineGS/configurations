@@ -37,8 +37,9 @@ extract_application() {
 
     {
       block = block $0 ORS
-      if ($0 == "    name: " wanted) {
-        application_name = wanted
+      if ($0 ~ /^    name: /) {
+        application_name = $0
+        sub(/^    name: /, "", application_name)
       }
     }
 
@@ -48,6 +49,24 @@ extract_application() {
       }
     }
   ' "$CONFIG_FILE"
+}
+
+extract_application_field() {
+  local application="$1"
+  local field="$2"
+  local block
+
+  block="$(extract_application "$application")"
+  [[ -n "$block" ]] || return 1
+
+  awk -v wanted="$field" '
+    $0 ~ "^    " wanted ": " {
+      value = $0
+      sub("^    " wanted ": ", "", value)
+      print value
+      exit
+    }
+  ' <<< "$block"
 }
 
 extract_pacman_packages() {
@@ -119,13 +138,13 @@ extract_service_units() {
 assert_when() {
   local application="$1"
   local expected_when="$2"
-  local block
+  local actual_name actual_when
 
-  block="$(extract_application "$application")"
-  [[ -n "$block" ]] || fail "application $application is not declared"
-  if ! grep -Fq -- "$expected_when" <<< "$block"; then
-    fail "application $application does not use the expected Linux profile gate"
-  fi
+  actual_name="$(extract_application_field "$application" name)" || fail "application $application is not declared"
+  [[ "$actual_name" == "$application" ]] || fail "application $application was not matched at application level"
+
+  actual_when="$(extract_application_field "$application" when)" || fail "application $application has no application-level when predicate"
+  [[ "$actual_when" == "$expected_when" ]] || fail "application $application does not use the expected Linux profile gate"
 }
 
 assert_packages() {
@@ -135,6 +154,7 @@ assert_packages() {
 
   block="$(extract_application "$application")"
   [[ -n "$block" ]] || fail "application $application is not declared"
+  [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
   packages="$(printf '%s\n' "$block" | extract_pacman_packages)"
 
   for package in "$@"; do
@@ -142,6 +162,113 @@ assert_packages() {
       fail "package $package is missing from the pacman declaration for $application"
     fi
   done
+}
+
+SHARED_PACKAGE_APPLICATIONS=(
+  'hyprland:hyprland'
+  'hypridle:hypridle'
+  'hyprlock:hyprlock'
+  'hyprshot:hyprshot'
+  'hyprsunset:hyprsunset'
+  'polkit-gnome:polkit-gnome'
+  'sddm-package:sddm'
+  'swaybg:swaybg'
+  'uwsm:uwsm'
+  'wl-clipboard:wl-clipboard'
+  'wl-clip-persist:wl-clip-persist'
+  'wtype:wtype'
+  'xdg-desktop-portal-gtk:xdg-desktop-portal-gtk'
+  'xdg-desktop-portal-hyprland:xdg-desktop-portal-hyprland'
+  'pipewire-audio:pipewire'
+  'pipewire-alsa:pipewire-alsa'
+  'pipewire-pulse:pipewire-pulse'
+  'wireplumber:wireplumber'
+  'pamixer:pamixer'
+  'linux-services-packages:ufw'
+  'avahi:avahi'
+  'bluez:bluez'
+  'bluez-utils:bluez-utils'
+  'cups:cups'
+  'cups-browsed:cups-browsed'
+  'docker:docker'
+  'tailscale:tailscale'
+)
+
+GRAPHICAL_SHARED_APPLICATIONS=(
+  hyprland
+  hypridle
+  hyprlock
+  hyprshot
+  hyprsunset
+  polkit-gnome
+  sddm-package
+  swaybg
+  uwsm
+  wl-clipboard
+  wl-clip-persist
+  wtype
+  xdg-desktop-portal-gtk
+  xdg-desktop-portal-hyprland
+  pipewire-audio
+  pipewire-alsa
+  pipewire-pulse
+  wireplumber
+  pamixer
+)
+
+REAL_LINUX_SHARED_APPLICATIONS=(
+  linux-services-packages
+  avahi
+  bluez
+  bluez-utils
+  cups
+  cups-browsed
+  docker
+  tailscale
+)
+
+assert_shared_package_declarations() {
+  local declaration application package
+
+  for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
+    application="${declaration%%:*}"
+    package="${declaration#*:}"
+    assert_packages "$application" "$package"
+  done
+}
+
+assert_dry_run_packages() {
+  local output application package expected actual_count declaration
+  local -a applications=()
+  local -a packages=()
+
+  for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
+    applications+=("${declaration%%:*}")
+    packages+=("${declaration#*:}")
+  done
+
+  [[ "${#applications[@]}" -eq "${#packages[@]}" ]] || fail "dry-run package test has mismatched application and package lists"
+
+  if ! output="$(DISPLAY=:99 WAYLAND_DISPLAY=wayland-test tidydots --dir "$REPO_DIR" --os linux install "${applications[@]}" -n 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    fail "tidydots dry-run could not install the shared package applications"
+  fi
+
+  for application in "${applications[@]}"; do
+    [[ -n "$application" ]] || fail "dry-run application name is empty"
+  done
+
+  for i in "${!applications[@]}"; do
+    application="${applications[$i]}"
+    package="${packages[$i]}"
+    expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
+    if ! grep -Fqx -- "$expected" <<< "$output"; then
+      fail "dry-run for $application does not prove package $package\n$output"
+    fi
+  done
+
+  actual_count="$(grep -c '^\[ok\] ' <<< "$output" || true)"
+  [[ "$actual_count" -eq "${#applications[@]}" ]] || fail "dry-run returned $actual_count package commands, expected ${#applications[@]}\n$output"
 }
 
 package_for_service_unit() {
@@ -169,48 +296,20 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
   fail "tidydots list could not parse the configuration"
 fi
 
-GRAPHICAL_WHEN="when: '{{ and .HasDisplay (eq .OS \"linux\") (not .IsWSL) }}'"
-REAL_LINUX_WHEN="when: '{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
+GRAPHICAL_WHEN="'{{ and .HasDisplay (eq .OS \"linux\") (not .IsWSL) }}'"
+REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
 
-assert_when hyprland "$GRAPHICAL_WHEN"
-assert_when pipewire-audio "$GRAPHICAL_WHEN"
-assert_when linux-services-packages "$REAL_LINUX_WHEN"
+for application in "${GRAPHICAL_SHARED_APPLICATIONS[@]}"; do
+  assert_when "$application" "$GRAPHICAL_WHEN"
+done
 
-assert_packages hyprland \
-  hyprland \
-  hypridle \
-  hyprlock \
-  hyprshot \
-  hyprsunset \
-  polkit-gnome \
-  sddm \
-  swaybg \
-  uwsm \
-  wl-clipboard \
-  wl-clip-persist \
-  wtype \
-  xdg-desktop-portal-gtk \
-  xdg-desktop-portal-hyprland
-
-assert_packages pipewire-audio \
-  pipewire \
-  pipewire-alsa \
-  pipewire-pulse \
-  wireplumber \
-  pamixer
-
-assert_packages linux-services-packages \
-  ufw \
-  avahi \
-  bluez \
-  bluez-utils \
-  cups \
-  cups-browsed \
-  docker \
-  tailscale
+for application in "${REAL_LINUX_SHARED_APPLICATIONS[@]}"; do
+  assert_when "$application" "$REAL_LINUX_WHEN"
+done
 
 shared_packages=""
-for application in hyprland pipewire-audio linux-services-packages; do
+for declaration in "${SHARED_PACKAGE_APPLICATIONS[@]}"; do
+  application="${declaration%%:*}"
   application_block="$(extract_application "$application")"
   shared_packages+="$(printf '%s\n' "$application_block" | extract_pacman_packages)"
   shared_packages+=$'\n'
@@ -229,5 +328,8 @@ for service_application in enable-desktop-services enable-linux-services; do
     fi
   done <<< "$service_units"
 done
+
+assert_shared_package_declarations
+assert_dry_run_packages
 
 printf 'PASS: shared graphical Arch package profile is complete\n'
