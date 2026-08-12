@@ -1,0 +1,381 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
+readonly ROOT_MOUNT="${SNAPPER_INITIALIZER_ROOT_MOUNT:-/}"
+readonly HOME_MOUNT="${SNAPPER_INITIALIZER_HOME_MOUNT:-/home}"
+readonly CONFIG_DIR="${SNAPPER_INITIALIZER_CONFIG_DIR:-/etc/snapper/configs}"
+readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
+readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
+
+MODE=""
+
+usage() {
+  printf 'Usage: %s --check|--apply\n' "$SCRIPT_NAME"
+  printf '\n'
+  printf 'Validate or initialize the root and home Snapper layout for Archinstall Btrfs subvolumes.\n'
+}
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+usage_error() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  usage >&2
+  exit 2
+}
+
+parse_args() {
+  [[ $# -eq 1 ]] || usage_error 'exactly one mode is required'
+
+  case "$1" in
+    --check|--apply)
+      MODE="${1#--}"
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage_error "unknown option: $1"
+      ;;
+  esac
+}
+
+require_root() {
+  [[ "$EUID" -eq 0 ]] || die 'must run as root'
+}
+
+require_commands() {
+  local command_name
+
+  for command_name in btrfs findmnt snapper; do
+    command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
+  done
+}
+
+findmnt_value() {
+  local -r property="$1"
+  local -r target="$2"
+  local value
+
+  value="$(findmnt --noheadings --raw --output "$property" --target "$target")" ||
+    die "could not inspect mount: $target"
+  [[ -n "$value" ]] || die "mount property $property is empty for: $target"
+  printf '%s\n' "$value"
+}
+
+validate_mount_layout() {
+  local root_fstype
+  local home_fstype
+  local root_fsroot
+  local home_fsroot
+  local root_uuid
+  local home_uuid
+
+  [[ -d "$ROOT_MOUNT" ]] || die "root mount is not a directory: $ROOT_MOUNT"
+  [[ -d "$HOME_MOUNT" ]] || die "home mount is not a directory: $HOME_MOUNT"
+
+  root_fstype="$(findmnt_value FSTYPE "$ROOT_MOUNT")"
+  home_fstype="$(findmnt_value FSTYPE "$HOME_MOUNT")"
+  [[ "$root_fstype" == btrfs && "$home_fstype" == btrfs ]] ||
+    die "root and home must be mounted on Btrfs"
+
+  root_fsroot="$(findmnt_value FSROOT "$ROOT_MOUNT")"
+  home_fsroot="$(findmnt_value FSROOT "$HOME_MOUNT")"
+  [[ "$root_fsroot" == /@ ]] || die "root mount must use Btrfs subvolume /@: $root_fsroot"
+  [[ "$home_fsroot" == /@home ]] || die "home mount must use Btrfs subvolume /@home: $home_fsroot"
+
+  root_uuid="$(findmnt_value UUID "$ROOT_MOUNT")"
+  home_uuid="$(findmnt_value UUID "$HOME_MOUNT")"
+  [[ "$root_uuid" == "$home_uuid" ]] || die 'root and home must use the same Btrfs filesystem'
+}
+
+config_value() {
+  local -r config_path="$1"
+  local -r key="$2"
+
+  awk -v wanted="$key" '
+    $1 == wanted {
+      value = $2
+      sub(/^"/, "", value)
+      sub(/"$/, "", value)
+      print value
+      exit
+    }
+  ' FS='=' "$config_path"
+}
+
+validate_config_file() {
+  local -r name="$1"
+  local -r expected_subvolume="$2"
+  local -r config_path="$CONFIG_DIR/$name"
+  local configured_subvolume
+  local configured_fstype
+
+  if [[ ! -e "$config_path" && ! -L "$config_path" ]]; then
+    return 1
+  fi
+  [[ -f "$config_path" ]] || die "Snapper config is not a regular file: $config_path"
+
+  configured_subvolume="$(config_value "$config_path" SUBVOLUME)"
+  configured_fstype="$(config_value "$config_path" FSTYPE)"
+  [[ "$configured_subvolume" == "$expected_subvolume" ]] ||
+    die "Snapper config $name must target $expected_subvolume: $configured_subvolume"
+  [[ "$configured_fstype" == btrfs ]] ||
+    die "Snapper config $name must use Btrfs: $configured_fstype"
+  return 0
+}
+
+registration_value() {
+  [[ -f "$REGISTRATION_FILE" ]] || return 0
+  awk -F'"' '$0 ~ /^[[:space:]]*SNAPPER_CONFIGS=/ { print $2; exit }' "$REGISTRATION_FILE"
+}
+
+registration_has() {
+  local -r name="$1"
+  local configs
+
+  configs="$(registration_value)"
+  case " $configs " in
+    *" $name "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_registration() {
+  if [[ ! -e "$REGISTRATION_FILE" && ! -L "$REGISTRATION_FILE" ]]; then
+    return 1
+  fi
+  [[ -f "$REGISTRATION_FILE" ]] || die "Snapper registration is not a regular file: $REGISTRATION_FILE"
+
+  registration_has root || die "Snapper registration does not include root: $REGISTRATION_FILE"
+  registration_has home || die "Snapper registration does not include home: $REGISTRATION_FILE"
+}
+
+registration_complete() {
+  registration_file_is_safe || return 1
+  [[ -n "$(registration_value)" ]] || return 1
+  registration_has root && registration_has home
+}
+
+registration_file_is_safe() {
+  if [[ ! -e "$REGISTRATION_FILE" && ! -L "$REGISTRATION_FILE" ]]; then
+    return 1
+  fi
+  [[ -f "$REGISTRATION_FILE" ]] || die "Snapper registration is not a regular file: $REGISTRATION_FILE"
+}
+
+validate_registration_shape() {
+  registration_file_is_safe || return 1
+  if grep -Eq '^[[:space:]]*SNAPPER_CONFIGS=' "$REGISTRATION_FILE" && [[ -z "$(registration_value)" ]]; then
+    die "Snapper registration has a malformed SNAPPER_CONFIGS entry: $REGISTRATION_FILE"
+  fi
+}
+
+is_snapshot_subvolume() {
+  local -r path="$1"
+
+  btrfs subvolume show "$path" >/dev/null 2>&1
+}
+
+validate_snapshot_path() {
+  local -r path="$1"
+
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ ! -L "$path" ]] || die "snapshot path must not be a symlink: $path"
+    is_snapshot_subvolume "$path" || die "snapshot path exists but is not a Btrfs subvolume: $path"
+    return 0
+  fi
+  return 1
+}
+
+validate_existing_state() {
+  if validate_config_file root /; then
+    :
+  elif [[ "$MODE" == check ]]; then
+    die "missing Snapper config: $CONFIG_DIR/root"
+  fi
+
+  if validate_config_file home /home; then
+    :
+  elif [[ "$MODE" == check ]]; then
+    die "missing Snapper config: $CONFIG_DIR/home"
+  fi
+
+  if ! validate_snapshot_path "$ROOT_MOUNT/.snapshots" && [[ "$MODE" == check ]]; then
+    die "missing root snapshot subvolume: $ROOT_MOUNT/.snapshots"
+  fi
+  if ! validate_snapshot_path "$HOME_MOUNT/.snapshots" && [[ "$MODE" == check ]]; then
+    die "missing home snapshot subvolume: $HOME_MOUNT/.snapshots"
+  fi
+
+  if [[ -e "$REGISTRATION_FILE" || -L "$REGISTRATION_FILE" ]]; then
+    validate_registration_shape
+    if [[ -L "$REGISTRATION_FILE" ]] && ! registration_complete; then
+      die "cannot repair incomplete Snapper registration symlink: $REGISTRATION_FILE"
+    fi
+  elif [[ "$MODE" == check ]]; then
+    die "missing Snapper registration: $REGISTRATION_FILE"
+  fi
+}
+
+prepare_directories() {
+  mkdir -p -- "$CONFIG_DIR" "${REGISTRATION_FILE%/*}"
+}
+
+create_config() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r config_path="$CONFIG_DIR/$name"
+  local -r expected_subvolume="$([[ "$name" == root ]] && printf / || printf /home)"
+
+  if validate_config_file "$name" "$expected_subvolume"; then
+    return 0
+  fi
+
+  if validate_snapshot_path "$mount_path/.snapshots"; then
+    create_config_from_template "$name" "$expected_subvolume" "$config_path"
+    return 0
+  fi
+
+  snapper --no-dbus --config "$name" create-config --fstype btrfs "$mount_path" ||
+    die "snapper create-config failed for $name ($mount_path)"
+  [[ -f "$config_path" ]] || die "snapper did not create config: $config_path"
+}
+
+create_config_from_template() {
+  local -r name="$1"
+  local -r expected_subvolume="$2"
+  local -r config_path="$3"
+  local temp_file
+
+  [[ -r "$CONFIG_TEMPLATE" ]] || die "missing Snapper config template: $CONFIG_TEMPLATE"
+  [[ ! -e "$config_path" && ! -L "$config_path" ]] ||
+    die "Snapper config appeared before creation: $config_path"
+
+  temp_file="$(mktemp "${config_path%/*}/.${name}.XXXXXX")" ||
+    die "could not create temporary Snapper config for $name"
+  if ! awk -v subvolume="$expected_subvolume" '
+    /^SUBVOLUME=/ { print "SUBVOLUME=\"" subvolume "\""; next }
+    /^FSTYPE=/ { print "FSTYPE=\"btrfs\""; next }
+    { print }
+  ' "$CONFIG_TEMPLATE" >"$temp_file"; then
+    rm -f -- "$temp_file"
+    die "could not render Snapper config for $name"
+  fi
+  if ! cat "$temp_file" >"$config_path"; then
+    rm -f -- "$temp_file"
+    die "could not install Snapper config for $name: $config_path"
+  fi
+  rm -f -- "$temp_file"
+}
+
+create_snapshot_subvolume() {
+  local -r name="$1"
+  local -r path="$2"
+
+  if validate_snapshot_path "$path"; then
+    return 0
+  fi
+  [[ ! -e "$path" && ! -L "$path" ]] || die "snapshot path became unsafe before creation: $path"
+
+  btrfs subvolume create "$path" || die "btrfs subvolume creation failed for $name: $path"
+  is_snapshot_subvolume "$path" || die "created snapshot path is not a Btrfs subvolume: $path"
+}
+
+ensure_registration() {
+  local configs
+  local updated_configs
+  local registration_parent
+  local temp_file
+
+  if registration_complete; then
+    return 0
+  fi
+
+  if [[ -e "$REGISTRATION_FILE" || -L "$REGISTRATION_FILE" ]]; then
+    validate_registration_shape
+    if [[ -L "$REGISTRATION_FILE" ]] && ! registration_complete; then
+      die "cannot repair incomplete Snapper registration symlink: $REGISTRATION_FILE"
+    fi
+    [[ ! -L "$REGISTRATION_FILE" ]] || die "cannot repair Snapper registration symlink: $REGISTRATION_FILE"
+    configs="$(registration_value)"
+    if [[ -z "$configs" ]]; then
+      printf '\nSNAPPER_CONFIGS="root home"\n' >>"$REGISTRATION_FILE"
+      return 0
+    fi
+    updated_configs="$configs"
+    registration_has root || updated_configs+=" root"
+    registration_has home || updated_configs+=" home"
+    registration_parent="${REGISTRATION_FILE%/*}"
+    temp_file="$(mktemp "$registration_parent/.snapper.XXXXXX")" ||
+      die "could not create temporary Snapper registration"
+    if ! awk -v replacement="SNAPPER_CONFIGS=\"$updated_configs\"" '
+      /^[[:space:]]*SNAPPER_CONFIGS=/ {
+        if (!replaced) {
+          print replacement
+          replaced = 1
+        }
+        next
+      }
+      { print }
+      END { exit !replaced }
+    ' "$REGISTRATION_FILE" >"$temp_file"; then
+      rm -f -- "$temp_file"
+      die "could not render Snapper registration: $REGISTRATION_FILE"
+    fi
+    if ! cat "$temp_file" >"$REGISTRATION_FILE"; then
+      rm -f -- "$temp_file"
+      die "could not update Snapper registration: $REGISTRATION_FILE"
+    fi
+    rm -f -- "$temp_file"
+    return 0
+  fi
+
+  registration_parent="${REGISTRATION_FILE%/*}"
+  mkdir -p -- "$registration_parent"
+  printf 'SNAPPER_CONFIGS="root home"\n' >"$REGISTRATION_FILE"
+}
+
+apply_layout() {
+  prepare_directories
+
+  create_config root "$ROOT_MOUNT"
+  create_config home "$HOME_MOUNT"
+
+  create_snapshot_subvolume root "$ROOT_MOUNT/.snapshots"
+  create_snapshot_subvolume home "$HOME_MOUNT/.snapshots"
+  ensure_registration
+}
+
+check_layout() {
+  validate_existing_state
+  validate_config_file root / || die "missing Snapper config: $CONFIG_DIR/root"
+  validate_config_file home /home || die "missing Snapper config: $CONFIG_DIR/home"
+  validate_snapshot_path "$ROOT_MOUNT/.snapshots" || die "missing root snapshot subvolume: $ROOT_MOUNT/.snapshots"
+  validate_snapshot_path "$HOME_MOUNT/.snapshots" || die "missing home snapshot subvolume: $HOME_MOUNT/.snapshots"
+  validate_registration || die "missing or incomplete Snapper registration: $REGISTRATION_FILE"
+}
+
+main() {
+  parse_args "$@"
+  require_root
+  require_commands
+  validate_mount_layout
+
+  if [[ "$MODE" == check ]]; then
+    check_layout
+    printf 'Snapper layout is ready for /@ and /@home\n'
+    return 0
+  fi
+
+  validate_existing_state
+  apply_layout
+  check_layout
+  printf 'Snapper layout initialized for /@ and /@home\n'
+}
+
+main "$@"

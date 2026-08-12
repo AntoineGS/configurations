@@ -212,15 +212,24 @@ install_prerequisites() {
 
 confirm_tidydots() {
   local -r action="$1"
+  local -r scope_label="${2:-}"
   local response=""
 
-  printf 'Apply tidydots %s? Type yes to continue: ' "$action"
+  if [[ -n "$scope_label" ]]; then
+    printf 'Apply tidydots %s %s? Type yes to continue: ' "$action" "$scope_label"
+  else
+    printf 'Apply tidydots %s? Type yes to continue: ' "$action"
+  fi
   if ! IFS= read -r response; then
     response=""
   fi
 
   if [[ "$response" != yes ]]; then
-    printf 'bootstrap: tidydots %s declined\n' "$action" >&2
+    if [[ -n "$scope_label" ]]; then
+      printf 'bootstrap: tidydots %s %s declined\n' "$action" "$scope_label" >&2
+    else
+      printf 'bootstrap: tidydots %s declined\n' "$action" >&2
+    fi
     exit "$EXIT_DECLINED"
   fi
 }
@@ -228,15 +237,22 @@ confirm_tidydots() {
 run_tidydots_phase() {
   local -r action="$1"
   local -a scope=("${@:2}")
+  local -r scope_label="${scope[*]:-}"
 
   if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" "$action" "${scope[@]}" -n); then
+    if [[ -n "$scope_label" ]]; then
+      die "failed to plan tidydots $action $scope_label"
+    fi
     die "failed to plan tidydots $action"
   fi
 
   [[ "$DRY_RUN" == true ]] && return 0
-  confirm_tidydots "$action"
+  confirm_tidydots "$action" "$scope_label"
 
   if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" "$action" "${scope[@]}"); then
+    if [[ -n "$scope_label" ]]; then
+      die "failed to apply tidydots $action $scope_label"
+    fi
     die "failed to apply tidydots $action"
   fi
 }
@@ -257,6 +273,7 @@ print_post_install_boundaries() {
 apply_tidydots() {
   list_tidydots
   run_tidydots_phase install
+  run_tidydots_phase restore snapper
   run_tidydots_phase restore
 
   [[ "$DRY_RUN" == true ]] || print_post_install_boundaries

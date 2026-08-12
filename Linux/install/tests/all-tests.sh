@@ -11,7 +11,7 @@ run() {
 }
 
 run_shellcheck() {
-  local -a files=(Linux/install/bootstrap Linux/install/tests/*.sh)
+  local -a files=(Linux/install/bootstrap Linux/install/tests/*.sh Linux/Snapper/snapper-initialize Linux/Snapper/tests/*.sh Linux/pacman/tests/boot-profile-test.sh)
 
   if command -v shellcheck >/dev/null 2>&1; then
     run shellcheck "${files[@]}"
@@ -26,6 +26,7 @@ cd -- "$ROOT"
 
 run bash Linux/install/tests/archinstall-config-test.sh
 run bash Linux/install/tests/bootstrap-test.sh
+run bash Linux/Snapper/tests/snapper-initialize-test.sh
 run bash Linux/pacman/tests/all-profiles-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-error-test.sh
