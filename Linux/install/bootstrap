@@ -5,6 +5,9 @@ readonly EXIT_ERROR=1
 readonly EXIT_USAGE=2
 readonly EXIT_DECLINED=3
 readonly EXIT_INCOMPLETE_PREVIEW=4
+readonly SNAPPER_INITIALIZER=/usr/local/libexec/antoinews-linux/snapper-initialize
+readonly SNAPPER_CONFIG_DIRECTORY=/etc/snapper/configs
+readonly SNAPPER_REGISTRATION_DIRECTORY=/etc/conf.d
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_TEMP_DIR=""
@@ -257,6 +260,45 @@ run_tidydots_phase() {
   fi
 }
 
+remove_legacy_snapper_link() {
+  local -r target="$1"
+  local -r expected_target="$2"
+  local link_target
+
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  sudo -n test ! -L %s\n' "$target"
+    return 0
+  fi
+  if ! sudo -n test -L "$target"; then
+    return 0
+  fi
+
+  link_target="$(sudo -n readlink -- "$target")" ||
+    die "could not inspect legacy Snapper link: $target"
+  [[ "$link_target" == "$expected_target" ]] ||
+    die "refusing to remove unmanaged Snapper link: $target -> $link_target"
+  sudo -n rm -f -- "$target" || die "could not remove managed Snapper link: $target"
+}
+
+remove_legacy_snapper_links() {
+  remove_legacy_snapper_link "$SNAPPER_CONFIG_DIRECTORY" "$REPO_ROOT/Linux/Snapper/configs"
+  remove_legacy_snapper_link "$SNAPPER_REGISTRATION_DIRECTORY" "$REPO_ROOT/Linux/Snapper/conf.d"
+}
+
+run_snapper_initializer() {
+  printf '  sudo -n -- %s --apply\n' "$SNAPPER_INITIALIZER"
+  printf '  sudo -n -- %s --check\n' "$SNAPPER_INITIALIZER"
+
+  [[ "$DRY_RUN" == true ]] && return 0
+
+  if ! sudo -n -- "$SNAPPER_INITIALIZER" --apply; then
+    die 'failed to apply Snapper initializer'
+  fi
+  if ! sudo -n -- "$SNAPPER_INITIALIZER" --check; then
+    die 'failed to validate Snapper initializer'
+  fi
+}
+
 list_tidydots() {
   if ! (cd -- "$REPO_ROOT" && tidydots --dir "$REPO_ROOT" list); then
     die 'failed to list tidydots configuration'
@@ -273,7 +315,9 @@ print_post_install_boundaries() {
 apply_tidydots() {
   list_tidydots
   run_tidydots_phase install
+  remove_legacy_snapper_links
   run_tidydots_phase restore snapper
+  run_snapper_initializer
   run_tidydots_phase restore
 
   [[ "$DRY_RUN" == true ]] || print_post_install_boundaries
