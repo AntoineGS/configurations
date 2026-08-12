@@ -46,6 +46,46 @@
 - Follow the [reproducible Arch installation guide](Linux/install/archinstall/README.md) for the ISO workflow.
 - After reboot, run `Linux/install/bootstrap` as the sole post-reboot setup entry point.
 
+## Package Profiles
+
+`tidydots.yaml` is desired package state.
+`pkglist-pacman-<hostname>.txt` and `pkglist-aur-<hostname>.txt` are generated audit snapshots.
+Shared packages use OS/display conditions.
+Hardware and machine policy use exact hostname conditions.
+`antoinews-linux` is the Intel desktop profile.
+
+Review only the relevant profile with a worktree-scoped dry-run. Set `REPO_DIR`
+to the checkout being reviewed; every command below is non-mutating:
+
+```bash
+REPO_DIR=/path/to/configurations
+
+# Shared desktop baseline
+tidydots --dir "$REPO_DIR" install hyprland -n
+tidydots --dir "$REPO_DIR" install pipewire-audio -n
+tidydots --dir "$REPO_DIR" install linux-services-packages -n
+
+# Intel desktop profile
+tidydots --dir "$REPO_DIR" install antoinews-linux-intel -n
+
+# Network stack
+tidydots --dir "$REPO_DIR" install antoinews-linux-network -n
+tidydots --dir "$REPO_DIR" restore antoinews-linux-network -n
+
+# Limine and Snapper
+tidydots --dir "$REPO_DIR" install limine -n
+tidydots --dir "$REPO_DIR" install limine-snapper-sync -n
+tidydots --dir "$REPO_DIR" restore limine-current-desktop-config -n
+tidydots --dir "$REPO_DIR" install snapper -n
+tidydots --dir "$REPO_DIR" restore snapper -n
+```
+
+Hostname-gated previews can report a condition mismatch when intentionally run
+on another host; that is the expected exclusion behavior.
+
+Run the complete read-only profile and runtime audit with
+`bash Linux/pacman/tests/all-profiles-test.sh`.
+
 ## Systemd Units Backup
 
 Daily timer to backup enabled services and timers to
