@@ -245,9 +245,29 @@ assert_exact_manager_packages() {
   }
 }
 
+assert_source_requires_package() {
+  local source_file="$1"
+  local source_evidence="$2"
+  local application="$3"
+  local package="$4"
+  local source_path block
+
+  source_path="$REPO_DIR/$source_file"
+  [[ -r "$source_path" ]] || fail "runtime requirement source $source_file is not readable"
+  grep -Fq -- "$source_evidence" "$source_path" ||
+    fail "runtime requirement source $source_file no longer contains: $source_evidence"
+
+  block="$(extract_application "$application")"
+  [[ -n "$block" ]] || fail "application $application is not declared"
+  if ! printf '%s\n' "$block" | extract_manager_packages pacman | grep -Fxq -- "$package"; then
+    fail "runtime source $source_file requires package $package in $application"
+  fi
+}
+
 HYPRLAND_PACKAGES=(
   bluetui
   brightnessctl
+  evince
   ffmpeg
   gpu-screen-recorder
   grim
@@ -258,9 +278,12 @@ HYPRLAND_PACKAGES=(
   hyprshot
   hyprsunset
   impala
+  imv
+  lazydocker
   libnotify
   mako
   mpv
+  nautilus
   playerctl
   polkit-gnome
   power-profiles-daemon
@@ -283,7 +306,6 @@ HYPRLAND_PACKAGES=(
 
 HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES=(
   hyprland-preview-share-picker-git
-  localsend
   xdg-terminal-exec
 )
 
@@ -328,6 +350,17 @@ assert_grouped_package_declarations() {
   assert_exact_manager_packages hyprland-preview-share-picker yay hyprland-preview-share-picker-git "${HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES[@]}"
   assert_exact_packages pipewire-audio pipewire "${PIPEWIRE_AUDIO_PACKAGES[@]}"
   assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
+}
+
+assert_runtime_requirements() {
+  assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop hyprland imv
+  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' hyprland imv
+  assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' hyprland lazydocker
+  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' hyprland lazydocker
+  assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop hyprland evince
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince hyprland evince
+  assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop hyprland nautilus
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus hyprland nautilus
 }
 
 assert_focused_dry_run() {
@@ -386,6 +419,7 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
 fi
 
 assert_grouped_package_declarations
+assert_runtime_requirements
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
 assert_focused_dry_run pipewire-audio pacman pipewire
