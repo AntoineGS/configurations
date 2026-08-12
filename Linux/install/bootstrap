@@ -6,17 +6,18 @@ readonly EXIT_USAGE=2
 readonly EXIT_DECLINED=3
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PREREQUISITE_TEMP_DIR=""
 
 usage() {
   printf 'Usage: %s [--dry-run] [--repo PATH] [--help]\n' "${BASH_SOURCE[0]##*/}"
   printf '\n'
-  printf 'Run the read-only Arch bootstrap preflight.\n'
+  printf 'Run the Arch bootstrap preflight and install prerequisites.\n'
   printf '\n'
   printf 'Options:\n'
-  printf '  --dry-run    Run the preflight without applying bootstrap changes.\n'
+  printf '  --dry-run    Run the preflight and display prerequisite commands without applying changes.\n'
   printf '  --repo PATH  Use PATH as the repository checkout.\n'
   printf '  --help       Show this help text.\n'
-  printf '  Exit %s is reserved for future confirmation steps.\n' "$EXIT_DECLINED"
+  printf '  Exit %s means prerequisite installation was declined.\n' "$EXIT_DECLINED"
 }
 
 die() {
@@ -134,5 +135,79 @@ preflight() {
   fi
 }
 
+confirm() {
+  local response=""
+
+  printf 'Apply prerequisite installation plan? Type yes to continue: '
+  if ! IFS= read -r response; then
+    response=""
+  fi
+
+  if [[ "$response" != yes ]]; then
+    printf 'bootstrap: prerequisite installation declined\n' >&2
+    exit "$EXIT_DECLINED"
+  fi
+}
+
+cleanup_prerequisite_temp() {
+  if [[ -n "$PREREQUISITE_TEMP_DIR" ]]; then
+    rm -rf -- "$PREREQUISITE_TEMP_DIR"
+  fi
+}
+
+install_yay_bin() {
+  PREREQUISITE_TEMP_DIR="$(mktemp -d)" || die 'failed to create temporary yay-bin build directory'
+  [[ -d "$PREREQUISITE_TEMP_DIR" ]] || die 'failed to create temporary yay-bin build directory'
+  trap cleanup_prerequisite_temp EXIT
+
+  if ! git clone https://aur.archlinux.org/yay-bin.git "$PREREQUISITE_TEMP_DIR/yay-bin"; then
+    die 'failed to clone yay-bin'
+  fi
+
+  if ! (cd -- "$PREREQUISITE_TEMP_DIR/yay-bin" && makepkg -si --needed --noconfirm); then
+    die 'failed to build yay-bin'
+  fi
+}
+
+install_prerequisites() {
+  local need_yay=false
+  local need_tidydots=false
+
+  command -v yay >/dev/null 2>&1 || need_yay=true
+  command -v tidydots >/dev/null 2>&1 || need_tidydots=true
+
+  if [[ "$need_yay" == false && "$need_tidydots" == false ]]; then
+    printf 'bootstrap prerequisites already installed\n'
+    return 0
+  fi
+
+  printf 'Prerequisite installation plan:\n'
+  if [[ "$need_yay" == true ]]; then
+    printf '  mktemp -d\n'
+    printf '  git clone https://aur.archlinux.org/yay-bin.git <temporary-directory>/yay-bin\n'
+    printf '  (cd <temporary-directory>/yay-bin && makepkg -si --needed --noconfirm)\n'
+  fi
+  if [[ "$need_tidydots" == true ]]; then
+    printf '  yay -S --needed --noconfirm tidydots-git\n'
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    return 0
+  fi
+
+  confirm
+
+  if [[ "$need_yay" == true ]]; then
+    install_yay_bin
+  fi
+
+  if [[ "$need_tidydots" == true ]]; then
+    if ! yay -S --needed --noconfirm tidydots-git; then
+      die 'failed to install tidydots-git'
+    fi
+  fi
+}
+
 parse_args "$@"
 preflight
+install_prerequisites
