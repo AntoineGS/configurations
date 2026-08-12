@@ -1,9 +1,11 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Removes hibernation setup: disables swap, removes swapfile, removes fstab entry,
 # removes resume hook, and removes suspend-then-hibernate configuration.
 
-MKINITCPIO_CONF="/etc/mkinitcpio.conf.d/omarchy_resume.conf"
+MKINITCPIO_CONF="/etc/mkinitcpio.conf.d/resume.conf"
 
 # Check if hibernation is configured
 if [[ ! -f $MKINITCPIO_CONF ]] || ! grep -q "^HOOKS+=(resume)$" "$MKINITCPIO_CONF"; then
