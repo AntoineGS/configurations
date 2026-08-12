@@ -217,8 +217,8 @@ See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
 
 **Architecture:**
 
-- Uses Omarchy defaults as base (sourced from `~/.local/share/omarchy/`)
-- Custom overrides in individual conf files: `monitors.conf`, `bindings.conf`, `input.conf`, `looknfeel.conf`, `autostart.conf`
+- Repository-owned configuration; files in `Linux/hypr/` are the source of truth
+- Custom overrides in individual Lua and conf files: `monitors.lua`, `bindings/`, `input.lua`, `looknfeel.lua`, `autostart.lua`
 - NVIDIA-specific environment variables configured
 - Modular configuration split across multiple files
 
@@ -277,4 +277,4 @@ Changes to `lazy-lock.json` should be committed when intentionally updating plug
 The actual keymaps live in the QMK firmware repository (`~/qmk_firmware/keyboards/*/keymaps/AntoineGS`). This repo contains symlinks or copies for backup/versioning. Always compile from the QMK firmware repo.
 
 **Hyprland configuration changes:**
-Edit the individual conf files in `Linux/hypr/`, not the main `hyprland.conf` (which just sources other files). This preserves the Omarchy base and makes custom changes clear.
+Edit the individual Lua and conf files in `Linux/hypr/`, not the main `hyprland.lua` (which just sources other files). The repository-owned files are the source of truth.
