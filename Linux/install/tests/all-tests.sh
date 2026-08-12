@@ -27,6 +27,7 @@ cd -- "$ROOT"
 run bash Linux/install/tests/archinstall-config-test.sh
 run bash Linux/install/tests/bootstrap-test.sh
 run bash Linux/Snapper/tests/snapper-initialize-test.sh
+run bash Linux/Snapper/tests/btrfs-loop-fixture-test.sh
 run bash Linux/pacman/tests/all-profiles-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-error-test.sh

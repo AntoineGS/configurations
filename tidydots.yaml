@@ -1461,11 +1461,16 @@ applications:
       - targets:
           linux: /etc/snapper/configs
         name: configs
+        method: copy
         backup: ./Linux/Snapper/configs
+        files:
+          - root
+          - home
         sudo: true
       - targets:
           linux: /etc/conf.d
         name: registered-configs
+        method: copy
         backup: ./Linux/Snapper/conf.d
         files:
           - snapper
@@ -1477,12 +1482,6 @@ applications:
         backup: ./Linux/Snapper
         files:
           - snapper-initialize
-        sudo: true
-      - check:
-          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --check
-        run:
-          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --apply
-        name: initialize-btrfs-layout
         sudo: true
   - name: snapshots-enabled
     description: Enable btrfs snapshots + limine boot-menu sync on every Linux host except the laptop (omarchbook keeps them off for disk space)

@@ -201,11 +201,16 @@ assert_entry_field snapper snapper-initialize '        method: copy'
 assert_entry_field snapper snapper-initialize '        backup: ./Linux/Snapper'
 assert_entry_field snapper snapper-initialize '          - snapper-initialize'
 assert_entry_field snapper snapper-initialize '        sudo: true'
-assert_entry_field snapper initialize-btrfs-layout \
-  '          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --check'
-assert_entry_field snapper initialize-btrfs-layout \
-  '          linux: /usr/local/libexec/antoinews-linux/snapper-initialize --apply'
-assert_entry_field snapper initialize-btrfs-layout '        sudo: true'
+assert_entry_field snapper configs '        method: copy'
+assert_entry_field snapper configs '          - root'
+assert_entry_field snapper configs '          - home'
+assert_entry_field snapper configs '        sudo: true'
+assert_entry_field snapper registered-configs '        method: copy'
+assert_entry_field snapper registered-configs '          - snapper'
+assert_entry_field snapper registered-configs '        sudo: true'
+if grep -Fq 'initialize-btrfs-layout' <<<"$(extract_application snapper)"; then
+  fail 'Snapper initializer must not be a tidydots setup entry'
+fi
 
 assert_when limine-snapper-sync "$LINUX_WHEN"
 assert_package limine-snapper-sync yay limine-snapper-sync
@@ -306,6 +311,18 @@ assert_snapshot_policy snapshots-disabled "$SNAPSHOTS_DISABLED_WHEN" \
 
 grep -Fxq 'SUBVOLUME="/"' "$SNAPPER_ROOT_CONFIG" || fail "root Snapper policy changed"
 grep -Fxq 'SUBVOLUME="/home"' "$SNAPPER_HOME_CONFIG" || fail "home Snapper policy changed"
+grep -Fxq 'ROOT_SUBVOLUME_PATH="/@"' "$REPO_DIR/Linux/limine/limine-snapper-sync.conf" ||
+  fail "Limine Snapper sync root subvolume path changed"
+grep -Fxq 'ROOT_SNAPSHOTS_PATH="/@/.snapshots"' "$REPO_DIR/Linux/limine/limine-snapper-sync.conf" ||
+  fail "Limine Snapper sync snapshot path changed"
+for config in "$SNAPPER_ROOT_CONFIG" "$SNAPPER_HOME_CONFIG"; do
+  grep -Fxq 'TIMELINE_CREATE="yes"' "$config" || fail "$config does not enable timeline creation"
+  grep -Fxq 'TIMELINE_CLEANUP="yes"' "$config" || fail "$config does not enable timeline cleanup"
+  for limit in HOURLY DAILY WEEKLY MONTHLY QUARTERLY YEARLY; do
+    grep -Eq "^TIMELINE_LIMIT_${limit}=\"[1-9][0-9]*\"$" "$config" ||
+      fail "$config does not define a positive ${limit,,} retention limit"
+  done
+done
 grep -Fxq 'SNAPPER_CONFIGS="root home"' "$SNAPPER_REGISTRATION" || fail "shared Snapper registration changed"
 grep -Fq "[[ \"\$EUID\" -eq 0 ]]" "$SNAPPER_INITIALIZER" || fail "Snapper initializer is not root-only"
 grep -Fq -- '--check|--apply' "$SNAPPER_INITIALIZER" || fail "Snapper initializer lacks explicit modes"
@@ -351,10 +368,12 @@ snapper_mapping_owners="$(awk '
   fail "Linux/Snapper mappings are owned by unexpected applications: $snapper_mapping_owners"
 
 bootstrap_snapper_restore_line="$(awk '/run_tidydots_phase restore snapper/ { print NR; exit }' "$BOOTSTRAP")"
-bootstrap_broad_restore_line="$(awk '/run_tidydots_phase restore$/ { print NR; exit }' "$BOOTSTRAP")"
+bootstrap_broad_restore_line="$(awk '/run_tidydots_phase restore$/ && !/function/ { print NR; exit }' "$BOOTSTRAP")"
+bootstrap_initializer_line="$(awk '/^[[:space:]]*run_snapper_initializer$/ { print NR; exit }' "$BOOTSTRAP")"
 [[ -n "$bootstrap_snapper_restore_line" ]] || fail "bootstrap does not restore Snapper before the environment"
 [[ -n "$bootstrap_broad_restore_line" ]] || fail "bootstrap does not preserve a broad restore phase"
-(( bootstrap_snapper_restore_line < bootstrap_broad_restore_line )) ||
+[[ -n "$bootstrap_initializer_line" ]] || fail "bootstrap does not invoke the root-only Snapper initializer"
+(( bootstrap_snapper_restore_line < bootstrap_initializer_line && bootstrap_initializer_line < bootstrap_broad_restore_line )) ||
   fail "bootstrap restores the broad environment before Snapper initialization"
 
 printf 'PASS: shared Limine/Snapper ownership and host-safe boot profile are complete\n'

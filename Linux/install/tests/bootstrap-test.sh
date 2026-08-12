@@ -30,6 +30,7 @@ PREREQUISITE_CREATE_YAY=false
 PREREQUISITE_CREATE_TIDYDOTS=false
 TIDYDOTS_FAIL_ACTION=""
 TIDYDOTS_FAIL_MODE=""
+SUDO_FAIL=false
 
 shopt -s nullglob
 
@@ -124,6 +125,12 @@ create_stub_path() {
         "if [[ \"\${BOOTSTRAP_CURL_FAIL:-false}\" == true ]]; then exit 1; fi"
     elif [[ "$command_name" == bash ]]; then
       write_executable "$path/$command_name" 'exit 0'
+    elif [[ "$command_name" == sudo ]]; then
+      write_executable "$path/$command_name" \
+        "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+        "if [[ \"\$1\" == -n && \"\$2\" == test && \"\$3\" == ! && \"\$4\" == -L ]]; then exit 0; fi" \
+        "if [[ \"\$1\" == -n && \"\$2\" == test && \"\$3\" == -L ]]; then exit 1; fi" \
+        "if [[ \"\${BOOTSTRAP_SUDO_FAIL:-false}\" == true && \"\$*\" == *'snapper-initialize --apply'* ]]; then exit 1; fi"
     else
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\""
@@ -156,6 +163,7 @@ run_bootstrap() {
     BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
+    BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -187,6 +195,7 @@ run_bootstrap_with_input() {
     BOOTSTRAP_CREATE_TIDYDOTS="$PREREQUISITE_CREATE_TIDYDOTS" \
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
+    BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -249,6 +258,7 @@ reset_prerequisite_flags() {
 reset_tidydots_flags() {
   TIDYDOTS_FAIL_ACTION=""
   TIDYDOTS_FAIL_MODE=""
+  SUDO_FAIL=false
 }
 
 prepare_prerequisite_fixture() {
@@ -619,6 +629,9 @@ test_tidydots_dry_run_uses_exact_unscoped_commands() {
     "tidydots --dir $ROOT install -n" \
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore -n"
+  assert_not_contains "$(<"$STUB_LOG")" 'snapper-initialize' 'tidydots dry-run root initializer'
+  assert_contains "$LAST_OUTPUT" 'sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+    'tidydots dry-run root initializer plan'
   assert_no_tidydots_apply_commands "$(<"$STUB_LOG")"
 }
 
@@ -632,6 +645,8 @@ test_tidydots_phases_have_separate_confirmations() {
   assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'confirmed tidydots install plan and apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 1 'confirmed Snapper restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'confirmed Snapper restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" 1 'confirmed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -640,6 +655,8 @@ test_tidydots_phases_have_separate_confirmations() {
     "tidydots --dir $ROOT install" \
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore snapper" \
+    "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
+    "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" \
     "tidydots --dir $ROOT restore -n" \
     "tidydots --dir $ROOT restore"
   assert_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'tidydots install confirmation'
@@ -737,6 +754,20 @@ test_tidydots_restore_apply_failure_stops_before_boundaries() {
   assert_not_contains "$LAST_OUTPUT" 'Post-install boundaries' 'failed restore boundaries'
 }
 
+test_snapper_initializer_failure_stops_before_broad_restore() {
+  prepare_tidydots_fixture
+  SUDO_FAIL=true
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+
+  assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
+  assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'failed Snapper restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 0 'failed broad restore plan'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed broad restore apply'
+}
+
 run_preflight_tests() {
   test_help
   test_unknown_option
@@ -776,6 +807,7 @@ run_tidydots_tests() {
   test_tidydots_list_failure_stops_before_phases
   test_tidydots_install_plan_failure_stops_before_confirmation
   test_tidydots_restore_apply_failure_stops_before_boundaries
+  test_snapper_initializer_failure_stops_before_broad_restore
   printf 'bootstrap tidydots tests passed\n'
 }
 
