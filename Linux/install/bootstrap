@@ -818,18 +818,21 @@ recover_snapper_deployment() {
       die 'Snapper recovery staged path is invalid; manual recovery is required'
     root_exec rm -f -- "$staged" || die 'could not remove incomplete staged Snapper file'
   fi
+  SNAPPER_MANIFEST_CONTENT="$(read_snapper_recovery_file "$SNAPPER_MANIFEST_FILE")" ||
+    die 'could not read Snapper recovery manifest'
   case "$phase" in
     cleanup)
       die 'Snapper deployment cleanup is incomplete; manual recovery is required'
       ;;
-    planned|backing-up|backed-up)
+    planned|preparing|backing-up|backed-up)
+      if ! remove_snapper_manifest_directories; then
+        die 'Snapper preparation recovery failed; journal and backups were retained for manual recovery'
+      fi
       root_exec rm -rf -- "$SNAPPER_RECOVERY_DIRECTORY" ||
         die 'Snapper recovery state cleanup failed; manual recovery is required'
       printf 'bootstrap: discarded incomplete Snapper preparation before continuing\n'
       ;;
     deploying)
-      SNAPPER_MANIFEST_CONTENT="$(read_snapper_recovery_file "$SNAPPER_MANIFEST_FILE")" ||
-        die 'could not read Snapper recovery manifest'
       SNAPPER_HAS_GETFACL=false
       SNAPPER_HAS_GETFATTR=false
       root_test -x /usr/bin/getfacl && SNAPPER_HAS_GETFACL=true
@@ -997,7 +1000,7 @@ deploy_snapper_files() {
     plan_snapper_target "${targets[$index]}" "$SNAPPER_BACKUP_DIRECTORY/${backup_names[$index]}"
   done
   write_snapper_manifest
-  write_snapper_journal_state planned
+  write_snapper_journal_state preparing
   ensure_root_directory_chain "${SNAPPER_CONFIG_DIRECTORY%/*}"
   ensure_root_directory_chain "${SNAPPER_REGISTRATION_DIRECTORY%/*}"
   ensure_root_directory_chain "${SNAPPER_INITIALIZER%/*}"
@@ -1016,6 +1019,7 @@ deploy_snapper_files() {
 
 run_snapper_initializer() {
   printf '  sudo -n -- env -i PATH=%s %s --apply\n' "$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER"
+  printf '  sudo -n -- env -i PATH=%s %s --create-initial-snapshots\n' "$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER"
   printf '  sudo -n -- env -i PATH=%s %s --check\n' "$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER"
 
   [[ "$DRY_RUN" == true ]] && return 0
@@ -1024,10 +1028,13 @@ run_snapper_initializer() {
   if ! root_run_initializer --apply; then
     root_failure 'failed to apply Snapper initializer'
   fi
-  if ! root_run_initializer --check; then
-    root_failure 'failed to validate Snapper initializer'
-  fi
   finalize_snapper_deployment
+  if ! root_run_initializer --create-initial-snapshots; then
+    die 'failed to create initial Snapper recovery snapshots'
+  fi
+  if ! root_run_initializer --check; then
+    die 'failed to validate initial Snapper recovery snapshots'
+  fi
 }
 
 list_tidydots() {
