@@ -15,6 +15,7 @@ COMMAND_LOG="$TEST_ROOT/commands.log"
 SUBVOLUME_STATE="$TEST_ROOT/subvolumes"
 CONFIG_TEMPLATE="$TEST_ROOT/default-template"
 RECOVERY_DIRECTORY="$TEST_ROOT/snapper-bootstrap"
+LIFECYCLE_LOCK="$TEST_ROOT/snapper-lifecycle.lock"
 ORIGINAL_PATH="$PATH"
 UNSHARE="$(command -v unshare || true)"
 BASH_PATH="$BASH"
@@ -94,6 +95,27 @@ assert_log_not_contains() {
 
   log_contents="$(<"$COMMAND_LOG")"
   assert_not_contains "$log_contents" "$needle" "$context"
+}
+
+assert_log_sequence() {
+  local log_contents
+  local line
+  local expected
+  local index=1
+  local -a lines=()
+
+  log_contents="$(<"$COMMAND_LOG")"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lines+=("$line")
+  done <<<"$log_contents"
+
+  for expected in "$@"; do
+    while [[ "$index" -le "${#lines[@]}" && "${lines[$((index - 1))]}" != *"$expected"* ]]; do
+      index=$((index + 1))
+    done
+    [[ "$index" -le "${#lines[@]}" ]] || fail "command sequence missing '$expected'\n$log_contents"
+    index=$((index + 1))
+  done
 }
 
 write_executable() {
@@ -262,6 +284,13 @@ create_stubs() {
     '/usr/bin/mktemp "$@"'
 
   # shellcheck disable=SC2016
+  write_executable "$BIN/flock" \
+    'printf "flock" >> "$SNAPPER_TEST_COMMAND_LOG"' \
+    'for argument in "$@"; do printf " %s" "$argument" >> "$SNAPPER_TEST_COMMAND_LOG"; done' \
+    'printf "\\n" >> "$SNAPPER_TEST_COMMAND_LOG"' \
+    '/usr/bin/flock "$@"'
+
+  # shellcheck disable=SC2016
   write_executable "$BIN/snapper" \
     'printf "snapper" >> "$SNAPPER_TEST_COMMAND_LOG"' \
     'for argument in "$@"; do printf " %s" "$argument" >> "$SNAPPER_TEST_COMMAND_LOG"; done' \
@@ -308,6 +337,7 @@ create_stubs() {
 reset_fixture() {
   rm -rf -- "$FIXTURE_ROOT"
   rm -rf -- "$RECOVERY_DIRECTORY"
+  rm -f -- "$LIFECYCLE_LOCK"
   mkdir -p -- "$ROOT_MOUNT" "$HOME_MOUNT" "$CONFIG_DIR" "$CONF_DIR"
   : >"$COMMAND_LOG"
   : >"$SUBVOLUME_STATE"
@@ -337,6 +367,7 @@ reset_fixture() {
   TEST_INITIAL_SNAPSHOT_NUMBER="1"
   TEST_INITIAL_SNAPSHOT_VALID=true
   TEST_INITIAL_SNAPSHOT_EXISTS=false
+  unset TEST_INTERNAL_LOCK_HELD
 }
 
 write_config() {
@@ -404,6 +435,8 @@ run_as_root() {
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
     SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
+    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
     "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -424,6 +457,8 @@ run_as_current_user() {
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
     SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
+    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
     "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -444,6 +479,8 @@ run_without_test_mode() {
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
     SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
+    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
     "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -504,6 +541,7 @@ test_check_is_read_only_when_layout_is_ready() {
   assert_log_not_contains 'chmod ' 'read-only check'
   assert_log_not_contains 'chown ' 'read-only check'
   assert_log_not_contains 'mv ' 'read-only check'
+  assert_log_not_contains 'flock ' 'read-only check'
 }
 
 test_check_rejects_non_btrfs_without_mutation() {
@@ -812,6 +850,69 @@ test_initial_snapshot_phase_rejects_recovery_state() {
   assert_log_not_contains 'snapper --no-dbus --config home create' 'initial snapshots recovery state safety'
 }
 
+test_initial_snapshot_phase_locks_before_recovery_guard() {
+  reset_fixture
+  mkdir -p -- "$RECOVERY_DIRECTORY"
+
+  run_as_root --create-initial-snapshots
+
+  assert_status 1 "$LAST_STATUS" 'initial snapshot lifecycle lock ordering'
+  assert_log_sequence 'flock -n'
+  assert_contains "$LAST_OUTPUT" 'recovery state exists' 'initial snapshot lifecycle lock ordering message'
+  assert_log_not_contains 'snapper --no-dbus --config root create' 'initial snapshot lifecycle lock ordering safety'
+}
+
+test_initial_snapshot_phase_fails_when_lifecycle_lock_is_held() {
+  reset_fixture
+  exec {held_lock_fd}>"$LIFECYCLE_LOCK"
+  flock -n "$held_lock_fd"
+
+  run_as_root --create-initial-snapshots
+
+  flock -u "$held_lock_fd"
+  exec {held_lock_fd}>&-
+
+  assert_status 1 "$LAST_STATUS" 'initial snapshot lifecycle lock contention'
+  assert_contains "$LAST_OUTPUT" 'could not acquire Snapper lifecycle lock' 'initial snapshot lifecycle lock contention message'
+  assert_log_not_contains 'snapper --no-dbus --config root create' 'initial snapshot lifecycle lock contention safety'
+}
+
+test_initial_snapshot_phase_releases_lock_after_validation() {
+  reset_fixture
+
+  run_as_root --apply
+  assert_status 0 "$LAST_STATUS" 'initial snapshot lifecycle lock release setup'
+  : >"$COMMAND_LOG"
+
+  run_as_root --create-initial-snapshots
+
+  assert_status 0 "$LAST_STATUS" 'initial snapshot lifecycle lock release'
+  assert_log_sequence \
+    'snapper --no-dbus --config root create --description initial recovery snapshot' \
+    'snapper --no-dbus --config home create --description initial recovery snapshot' \
+    'snapper --no-dbus --config home --csvout --no-headers list --columns number,description' \
+    'flock -u'
+}
+
+test_internal_snapshot_call_does_not_deadlock_on_lifecycle_lock() {
+  reset_fixture
+  write_config root /
+  write_config home /home
+  write_registration
+  mark_subvolumes
+  exec {held_lock_fd}>"$LIFECYCLE_LOCK"
+  flock -n "$held_lock_fd"
+  TEST_INTERNAL_LOCK_HELD=1
+
+  run_as_root --create-initial-snapshots
+
+  flock -u "$held_lock_fd"
+  exec {held_lock_fd}>&-
+
+  assert_status 0 "$LAST_STATUS" 'internal snapshot lifecycle lock bypass'
+  assert_log_not_contains 'flock ' 'internal snapshot lifecycle lock bypass'
+}
+
 test_apply_rejects_unvalidated_initial_snapshot() {
   reset_fixture
   TEST_INITIAL_SNAPSHOT_VALID=false
@@ -878,6 +979,10 @@ test_check_rejects_snapshot_without_root_ownership
 test_check_rejects_snapshot_without_0750_mode
 test_apply_creates_initial_recovery_snapshots
 test_initial_snapshot_phase_rejects_recovery_state
+test_initial_snapshot_phase_locks_before_recovery_guard
+test_initial_snapshot_phase_fails_when_lifecycle_lock_is_held
+test_initial_snapshot_phase_releases_lock_after_validation
+test_internal_snapshot_call_does_not_deadlock_on_lifecycle_lock
 test_apply_rejects_unvalidated_initial_snapshot
 test_apply_uses_atomic_config_and_registration_replacements
 test_apply_propagates_snapper_failure

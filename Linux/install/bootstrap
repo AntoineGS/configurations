@@ -13,6 +13,11 @@ readonly SNAPPER_JOURNAL_FILE=/var/lib/configurations/snapper-bootstrap/state
 readonly SNAPPER_MANIFEST_FILE=/var/lib/configurations/snapper-bootstrap/manifest
 readonly SNAPPER_BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
 readonly SNAPPER_FIXED_PATH=/usr/bin:/bin
+if [[ "${SNAPPER_BOOTSTRAP_TEST_MODE:-}" == 1 ]]; then
+  readonly SNAPPER_LIFECYCLE_LOCK="${SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK:-/tmp/antoinews-linux-snapper.lock}"
+else
+  readonly SNAPPER_LIFECYCLE_LOCK=/run/lock/antoinews-linux-snapper.lock
+fi
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_TEMP_DIR=""
@@ -25,6 +30,8 @@ SNAPPER_HAS_GETFACL=false
 SNAPPER_HAS_GETFATTR=false
 SNAPPER_LEGACY_CONFIG_LINK=false
 SNAPPER_LEGACY_REGISTRATION_LINK=false
+SNAPPER_LIFECYCLE_LOCK_FD=""
+SNAPPER_LIFECYCLE_LOCK_HELD=false
 
 bootstrap_exit() {
   local -r exit_status="$?"
@@ -38,6 +45,10 @@ bootstrap_exit() {
   fi
   if ! cleanup_prerequisite_temp; then
     printf 'bootstrap: prerequisite temporary directory cleanup failed\n' >&2
+    cleanup_status=1
+  fi
+  if ! release_snapper_lifecycle_lock; then
+    printf 'bootstrap: Snapper lifecycle lock release failed\n' >&2
     cleanup_status=1
   fi
   if (( cleanup_status != 0 )); then
@@ -144,7 +155,7 @@ check_hostname() {
 check_commands() {
   local command_name
 
-  for command_name in bash curl env find git pacman sudo systemctl; do
+  for command_name in bash curl env find flock git pacman sudo systemctl; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       die "missing required command: $command_name"
     fi
@@ -326,6 +337,44 @@ root_stat() {
   local -r path="$2"
 
   root_capture stat -c "$format" -- "$path"
+}
+
+ensure_snapper_lifecycle_lock_file() {
+  local lock_directory="${SNAPPER_LIFECYCLE_LOCK%/*}"
+  local mode
+
+  validate_root_directory "$lock_directory"
+  root_test ! -L "$SNAPPER_LIFECYCLE_LOCK" || die "Snapper lifecycle lock must not be a symlink: $SNAPPER_LIFECYCLE_LOCK"
+  if ! root_test -e "$SNAPPER_LIFECYCLE_LOCK"; then
+    root_exec touch -- "$SNAPPER_LIFECYCLE_LOCK" || die "could not create Snapper lifecycle lock: $SNAPPER_LIFECYCLE_LOCK"
+  fi
+  root_test -f "$SNAPPER_LIFECYCLE_LOCK" || die "Snapper lifecycle lock is not a regular file: $SNAPPER_LIFECYCLE_LOCK"
+  root_exec chown root:root -- "$SNAPPER_LIFECYCLE_LOCK" || die "could not set Snapper lifecycle lock ownership: $SNAPPER_LIFECYCLE_LOCK"
+  root_exec chmod 0644 -- "$SNAPPER_LIFECYCLE_LOCK" || die "could not secure Snapper lifecycle lock: $SNAPPER_LIFECYCLE_LOCK"
+  validate_root_metadata "$SNAPPER_LIFECYCLE_LOCK" 'Snapper lifecycle lock'
+  mode="$(root_stat %a "$SNAPPER_LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock mode: $SNAPPER_LIFECYCLE_LOCK"
+  [[ "$mode" == 644 ]] || die "Snapper lifecycle lock must be mode 0644: $SNAPPER_LIFECYCLE_LOCK (mode $mode)"
+}
+
+acquire_snapper_lifecycle_lock() {
+  [[ "$SNAPPER_LIFECYCLE_LOCK_HELD" == true ]] && return 0
+  ensure_snapper_lifecycle_lock_file
+  exec {SNAPPER_LIFECYCLE_LOCK_FD}<"$SNAPPER_LIFECYCLE_LOCK" ||
+    die "could not open Snapper lifecycle lock: $SNAPPER_LIFECYCLE_LOCK"
+  if ! flock -n "$SNAPPER_LIFECYCLE_LOCK_FD"; then
+    exec {SNAPPER_LIFECYCLE_LOCK_FD}<&-
+    SNAPPER_LIFECYCLE_LOCK_FD=""
+    die "could not acquire Snapper lifecycle lock: $SNAPPER_LIFECYCLE_LOCK"
+  fi
+  SNAPPER_LIFECYCLE_LOCK_HELD=true
+}
+
+release_snapper_lifecycle_lock() {
+  [[ "$SNAPPER_LIFECYCLE_LOCK_HELD" == true ]] || return 0
+  flock -u "$SNAPPER_LIFECYCLE_LOCK_FD" || return 1
+  exec {SNAPPER_LIFECYCLE_LOCK_FD}<&-
+  SNAPPER_LIFECYCLE_LOCK_FD=""
+  SNAPPER_LIFECYCLE_LOCK_HELD=false
 }
 
 validate_root_metadata() {
@@ -936,7 +985,11 @@ cleanup_snapper_staging_files() {
 }
 
 root_run_initializer() {
-  root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER" "$@"
+  if [[ "${1:-}" == --check ]]; then
+    root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER" "$@"
+  else
+    root_exec env -i "PATH=$SNAPPER_FIXED_PATH" SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 "$SNAPPER_INITIALIZER" "$@"
+  fi
 }
 
 retain_snapper_cleanup_state() {
@@ -1035,6 +1088,7 @@ run_snapper_initializer() {
   if ! root_run_initializer --check; then
     die 'failed to validate initial Snapper recovery snapshots'
   fi
+  release_snapper_lifecycle_lock || die 'could not release Snapper lifecycle lock after Snapper validation'
 }
 
 list_tidydots() {
@@ -1052,6 +1106,7 @@ print_post_install_boundaries() {
 
 apply_tidydots() {
   if [[ "$DRY_RUN" == false ]]; then
+    acquire_snapper_lifecycle_lock
     recover_snapper_deployment
   fi
   list_tidydots

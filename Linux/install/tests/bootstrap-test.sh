@@ -12,6 +12,7 @@ readonly REPO_WITH_SPACES="$TEST_ROOT/repository with spaces"
 readonly OUTSIDE_REPOSITORY="$TEST_ROOT/outside"
 readonly STUB_BIN="$TEST_ROOT/bin"
 readonly STUB_LOG="$TEST_ROOT/stub.log"
+readonly LIFECYCLE_LOCK="$TEST_ROOT/snapper-lifecycle.lock"
 readonly PREREQUISITE_BIN="$TEST_ROOT/prerequisite-bin"
 readonly PREREQUISITE_TEMP_ROOT="$TEST_ROOT/prerequisite-temp"
 readonly YAY_STUB_TEMPLATE="$TEST_ROOT/yay-stub"
@@ -71,7 +72,7 @@ assert_not_contains() {
 assert_no_mutation_commands() {
   local -r log_contents="$1"
 
-  for command_name in awk env pacman yay git makepkg mktemp rm sync systemctl sudo tee; do
+  for command_name in awk env flock pacman yay git makepkg mktemp rm sync systemctl sudo tee; do
     assert_not_contains "$log_contents" "$command_name " "mutation command log"
   done
 
@@ -118,11 +119,13 @@ create_stub_path() {
   local command_name
 
   mkdir -p -- "$path"
-  for command_name in awk bash curl env find git pacman sudo sync systemctl tee yay tidydots; do
+  for command_name in awk bash curl env find flock git pacman sudo sync systemctl tee yay tidydots; do
     if [[ "$command_name" == curl ]]; then
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
         "if [[ \"\${BOOTSTRAP_CURL_FAIL:-false}\" == true ]]; then exit 1; fi"
+    elif [[ "$command_name" == flock ]]; then
+      write_executable "$path/$command_name" 'exit 0'
     elif [[ "$command_name" == bash ]]; then
       write_executable "$path/$command_name" 'exit 0'
     elif [[ "$command_name" == sudo ]]; then
@@ -143,6 +146,8 @@ create_stub_path() {
         '  format="${2:-}"' \
         '  if [[ "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap || "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
         '    printf "700\\n"' \
+        '  elif [[ "${!#}" == "$SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK" && "$format" == %a ]]; then' \
+        '    printf "644\\n"' \
         '  elif [[ "$format" == %a ]]; then' \
         '    printf "755\\n"' \
         '  else' \
@@ -150,12 +155,16 @@ create_stub_path() {
         '  fi' \
         '  exit 0' \
         'fi' \
+        'if [[ "$command_name" == touch ]]; then' \
+        '  /usr/bin/touch "$@"' \
+        '  exit 0' \
+        'fi' \
         'if [[ "$command_name" == mktemp ]]; then' \
         '  template="${!#}"' \
         '  printf "%s\\n" "${template/XXXXXX/staged}"' \
         '  exit 0' \
         'fi' \
-        'if [[ "${BOOTSTRAP_SUDO_FAIL:-false}" == true && "$command_name" == env && "${3:-}" == */snapper-initialize && "${4:-}" == --apply ]]; then exit 1; fi' \
+        'if [[ "${BOOTSTRAP_SUDO_FAIL:-false}" == true && "$command_name" == env && "$*" == *snapper-initialize* && "$*" == *--apply ]]; then exit 1; fi' \
         'exit 0'
     else
       write_executable "$path/$command_name" \
@@ -173,6 +182,7 @@ run_bootstrap() {
   local -r hostname="$3"
   shift 3
 
+  : >"$LIFECYCLE_LOCK"
   if LAST_OUTPUT=$(PATH="$path" \
     BOOTSTRAP_OS_RELEASE="$os_release" \
     BOOTSTRAP_HOSTNAME="$hostname" \
@@ -190,6 +200,8 @@ run_bootstrap() {
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
+    SNAPPER_BOOTSTRAP_TEST_MODE=1 \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -204,6 +216,7 @@ run_bootstrap_with_input() {
   local -r hostname="$4"
   shift 4
 
+  : >"$LIFECYCLE_LOCK"
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
     PATH="$path" \
     BOOTSTRAP_OS_RELEASE="$os_release" \
@@ -222,6 +235,8 @@ run_bootstrap_with_input() {
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
+    SNAPPER_BOOTSTRAP_TEST_MODE=1 \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -441,7 +456,7 @@ test_missing_command_names_command() {
   local command_name
 
   mkdir -p -- "$missing_bin"
-  for command_name in awk bash curl env find git sudo systemctl sync tee yay tidydots dirname pwd; do
+  for command_name in awk bash curl env find flock git sudo systemctl sync tee yay tidydots dirname pwd; do
     cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
   done
 
@@ -456,7 +471,7 @@ test_missing_find_names_command() {
   local command_name
 
   mkdir -p -- "$missing_bin"
-  for command_name in awk bash curl env git pacman sudo systemctl sync tee yay tidydots dirname pwd; do
+  for command_name in awk bash curl env flock git pacman sudo systemctl sync tee yay tidydots dirname pwd; do
     cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
   done
 
@@ -686,9 +701,9 @@ test_tidydots_phases_have_separate_confirmations() {
   assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'confirmed tidydots install plan and apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 1 'confirmed Snapper restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'confirmed Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 1 'confirmed Snapper initializer check'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 1 'confirmed initial snapshot creation'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 1 'confirmed initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -697,8 +712,8 @@ test_tidydots_phases_have_separate_confirmations() {
     "tidydots --dir $ROOT install" \
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore snapper" \
-    "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
-    "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" \
     "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" \
     "tidydots --dir $ROOT restore -n" \
     "tidydots --dir $ROOT restore"
@@ -805,7 +820,7 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
   assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
   assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'failed Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'failed initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 0 'failed broad restore plan'

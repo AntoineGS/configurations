@@ -12,6 +12,7 @@ ORIGINAL_PATH="$PATH"
 BASH_PATH="$BASH"
 readonly RECOVERY_DIRECTORY=/var/lib/configurations/snapper-bootstrap
 readonly BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
+readonly LIFECYCLE_LOCK="$TEST_ROOT/snapper-bootstrap-lifecycle.lock"
 
 LAST_OUTPUT=""
 LAST_STATUS=0
@@ -124,6 +125,12 @@ create_stubs() {
   write_executable "$STUB_BIN/git" 'exit 0'
 
   # shellcheck disable=SC2016
+  write_executable "$STUB_BIN/flock" \
+    'printf "flock %s\n" "$*" >>"$SNAPPER_BOOTSTRAP_TEST_LOG"' \
+    'if [[ "${SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE:-false}" == true && "${1:-}" == -n ]]; then exit 1; fi' \
+    '/usr/bin/flock "$@"'
+
+  # shellcheck disable=SC2016
   write_executable "$STUB_BIN/tidydots" \
     'printf "tidydots %s\n" "$*" >>"$SNAPPER_BOOTSTRAP_TEST_LOG"' \
     'exit 0'
@@ -150,6 +157,13 @@ create_stubs() {
     '  operator="${1:-}"' \
     '  path="${2:-}"' \
     '  result=false' \
+    '  if [[ "$path" == "$SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK" ]]; then' \
+    '    case "$operator" in' \
+    '      -L) result=false ;;' \
+    '      -e|-f) [[ -e "$path" ]] && result=true ;;' \
+    '      *) result=false ;;' \
+    '    esac' \
+    '  else' \
     '  case "$operator:$path" in' \
     '    -e:/var/lib/configurations/snapper-bootstrap)' \
       '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
@@ -179,14 +193,11 @@ create_stubs() {
       '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
       '      ;;' \
     '    -e:/etc/snapper/configs|-e:/etc/conf.d)' \
-      '      [[ "${SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES:-false}" == true ]] && result=true' \
+    '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true || "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS:-false}" == true || "${SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES:-false}" == true ]] && result=true' \
       '      ;;' \
     '    -L:/etc/snapper/configs|-L:/etc/conf.d)' \
       '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
       '      ;;' \
-    '    -e:/etc/snapper/configs|-e:/etc/conf.d)' \
-    '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true || "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS:-false}" == true ]] && result=true' \
-    '      ;;' \
     '    -e:/etc/snapper/configs/root|-e:/etc/snapper/configs/home|-e:/etc/conf.d/snapper)' \
     '      [[ "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS:-false}" == true ]] && result=true' \
     '      ;;' \
@@ -239,6 +250,7 @@ create_stubs() {
     '      result=false' \
     '      ;;' \
     '  esac' \
+    '  fi' \
     '  [[ "$negate" == true ]] && [[ "$result" == false ]] && exit 0' \
     '  [[ "$negate" == false ]] && [[ "$result" == true ]] && exit 0' \
     '  exit 1' \
@@ -261,6 +273,10 @@ create_stubs() {
     '  esac' \
     '  exit 0' \
     'fi' \
+    'if [[ "$command_name" == touch ]]; then' \
+    '  /usr/bin/touch "$@"' \
+    '  exit 0' \
+    'fi' \
     'if [[ "$command_name" == chmod && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chmod && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
     'if [[ "$command_name" == chown && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chown && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
     'if [[ "$command_name" == stat ]]; then' \
@@ -271,6 +287,12 @@ create_stubs() {
     '      %u) printf "1001\n" ;;' \
     '      %g) printf "1002\n" ;;' \
     '      %a) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE:-640}" ;;' \
+    '      *) exit 1 ;;' \
+    '    esac' \
+    '  elif [[ "$path" == "$SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK" ]]; then' \
+    '    case "$format" in' \
+    '      %u|%g) printf "0\\n" ;;' \
+    '      %a) printf "644\\n" ;;' \
     '      *) exit 1 ;;' \
     '    esac' \
     '  elif [[ "$path" == /var/lib/configurations/snapper-bootstrap || "$path" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
@@ -315,6 +337,10 @@ create_stubs() {
     '  fi' \
     '  exit 0' \
     'fi' \
+    'if [[ "$command_name" == touch ]]; then' \
+    '  /usr/bin/touch "$@"' \
+    '  exit 0' \
+    'fi' \
     'if [[ "$command_name" == env && "$*" == *snapper-initialize\ --apply ]]; then' \
     '  [[ "${SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE:-false}" == true ]] && exit 1' \
     '  exit 0' \
@@ -335,6 +361,7 @@ create_stubs() {
 
 reset_fixture() {
   : >"$LOG"
+  rm -f -- "$LIFECYCLE_LOCK"
   unset \
     SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS \
     SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE \
@@ -348,7 +375,8 @@ reset_fixture() {
     SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE \
     SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES \
     SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE \
-    SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE
+    SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE \
+    SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE
   unset SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST
 }
 
@@ -377,6 +405,10 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" \
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" \
+    SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE="${SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE:-false}" \
+    SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     "$BASH_PATH" "$BOOTSTRAP" --repo "$ROOT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -410,6 +442,8 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
   assert_contains "$LAST_OUTPUT" 'persistent recovery state' 'persistent recovery wording'
   assert_contains "$LAST_OUTPUT" 'power-loss durability still depends on the filesystem' 'power-loss durability wording'
   assert_log_sequence \
+    'flock -n' \
+    "sudo -n -- test -e ${RECOVERY_DIRECTORY}" \
     'restore snapper -n' \
     'restore snapper' \
     "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest." \
@@ -421,16 +455,57 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
     'sudo -n -- chmod 0644' \
     'sudo -n -- mv -f' \
     'sudo -n -- test ! -L /usr/local/libexec/antoinews-linux/snapper-initialize' \
-    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
     "sudo -n -- rm -rf -- ${BACKUP_DIRECTORY}" \
     "sudo -n -- rm -f -- ${RECOVERY_DIRECTORY}/state ${RECOVERY_DIRECTORY}/manifest" \
     "sudo -n -- rmdir -- ${RECOVERY_DIRECTORY}" \
-    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
+    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check' \
+    'flock -u' \
     'restore -n' \
     'restore'
   assert_log_contains 'sudo -n -- chmod 0755' 'initializer mode correction'
   assert_log_contains 'sudo -n -- chown root:root' 'root ownership correction'
+}
+
+test_snapper_lifecycle_lock_failure_stops_before_recovery() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE=true
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'Snapper lifecycle lock failure'
+  assert_contains "$LAST_OUTPUT" 'could not acquire Snapper lifecycle lock' 'Snapper lifecycle lock failure message'
+  assert_log_contains 'flock -n' 'Snapper lifecycle lock attempt'
+  assert_log_not_contains "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" 'no recovery inspection after lock failure'
+  assert_log_not_contains 'tidydots ' 'no tidydots phase after lock failure'
+}
+
+test_snapper_lifecycle_lock_contention_stops_before_recovery() {
+  reset_fixture
+  : >"$LIFECYCLE_LOCK"
+  exec {held_lock_fd}<"$LIFECYCLE_LOCK"
+  flock -n "$held_lock_fd"
+
+  run_bootstrap $'yes\nyes\nyes'
+
+  flock -u "$held_lock_fd"
+  exec {held_lock_fd}<&-
+
+  assert_status 1 "$LAST_STATUS" 'Snapper lifecycle lock contention'
+  assert_contains "$LAST_OUTPUT" 'could not acquire Snapper lifecycle lock' 'Snapper lifecycle lock contention message'
+  assert_log_contains 'flock -n' 'Snapper lifecycle lock contention attempt'
+  assert_log_not_contains "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" 'no recovery inspection during lock contention'
+  assert_log_not_contains 'tidydots ' 'no tidydots phase during lock contention'
+}
+
+test_existing_snapper_directories_are_not_misclassified_as_legacy_links() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS=true
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 0 "$LAST_STATUS" 'existing Snapper directories'
+  assert_log_not_contains 'sudo -n -- readlink -- /etc/snapper/configs' 'existing configs directory is not treated as link'
+  assert_log_not_contains 'sudo -n -- readlink -- /etc/conf.d' 'existing conf.d directory is not treated as link'
 }
 
 test_initializer_integrity_fails_closed() {
@@ -568,7 +643,7 @@ test_production_initializer_rejects_inherited_overrides() {
     run_bootstrap $'yes\nyes\nyes'
 
   assert_status 0 "$LAST_STATUS" 'production initializer environment isolation'
-  assert_log_contains 'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+  assert_log_contains 'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
     'production initializer clean environment'
   assert_log_not_contains 'SNAPPER_INITIALIZER_' 'inherited initializer override'
   assert_log_not_contains '/untrusted/' 'inherited initializer path redirect'
@@ -746,6 +821,9 @@ run_test() {
 
 run_test test_snapper_decline_preserves_legacy_links
 run_test test_snapper_deployment_is_rollback_assisted_and_after_confirmation
+run_test test_snapper_lifecycle_lock_failure_stops_before_recovery
+run_test test_snapper_lifecycle_lock_contention_stops_before_recovery
+run_test test_existing_snapper_directories_are_not_misclassified_as_legacy_links
 run_test test_initializer_integrity_fails_closed
 run_test test_deployment_failure_rolls_back_before_initializer
 run_test test_initializer_failure_rolls_back_before_broad_restore
