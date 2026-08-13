@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 readonly ROOT
 readonly BOOTSTRAP="$ROOT/Linux/install/bootstrap"
+readonly BOOTSTRAP_TEST_RUNNER="$ROOT/Linux/install/tests/bootstrap-test-runner.sh"
 TEST_ROOT="$(mktemp -d)"
 readonly TEST_ROOT
 readonly ARCH_RELEASE="$TEST_ROOT/arch-release"
@@ -204,7 +205,8 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
-    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" "$@" 2>&1); then
+    SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -240,7 +242,8 @@ run_bootstrap_with_input() {
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
-    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" "$@" 2>&1); then
+    SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -385,6 +388,43 @@ test_unknown_option() {
 
   assert_status 2 "$LAST_STATUS" 'unknown option'
   assert_contains "$LAST_OUTPUT" 'unknown option' 'unknown option'
+}
+
+test_lifecycle_lock_selector_is_not_a_production_option() {
+  : >"$STUB_LOG"
+  if LAST_OUTPUT=$(PATH="$STUB_BIN" \
+    BOOTSTRAP_OS_RELEASE="$ARCH_RELEASE" \
+    BOOTSTRAP_HOSTNAME=server \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    SNAPPER_BOOTSTRAP_TEST_MODE=1 \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$CALLER_LIFECYCLE_LOCK" \
+    --dry-run --repo "$REPO_WITH_SPACES" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+
+  assert_status 2 "$LAST_STATUS" 'production lifecycle lock selector'
+  assert_contains "$LAST_OUTPUT" 'unknown option: --test-only-lifecycle-lock' \
+    'production lifecycle lock selector rejection'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+  [[ ! -e "$CALLER_LIFECYCLE_LOCK" ]] || fail 'production selector created caller-selected lock'
+}
+
+test_inherited_lifecycle_lock_environment_is_ignored() {
+  local lifecycle_lock
+
+  # shellcheck disable=SC2016
+  lifecycle_lock=$(SNAPPER_BOOTSTRAP_TEST_MODE=1 \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" -c 'source "$1"; printf "%s\n" "$SNAPPER_LIFECYCLE_LOCK"' _ "$BOOTSTRAP") ||
+    fail 'production lifecycle lock environment inspection failed'
+
+  [[ "$lifecycle_lock" == /run/lock/antoinews-linux-snapper.lock ]] ||
+    fail "inherited lifecycle lock environment selected '$lifecycle_lock'"
 }
 
 test_missing_repo_value() {
@@ -833,6 +873,8 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
 run_preflight_tests() {
   test_help
   test_unknown_option
+  test_lifecycle_lock_selector_is_not_a_production_option
+  test_inherited_lifecycle_lock_environment_is_ignored
   test_missing_repo_value
   test_missing_repository_is_environment_failure
   test_root_execution_rejected

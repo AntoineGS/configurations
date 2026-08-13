@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
 BOOTSTRAP="$ROOT/Linux/install/bootstrap"
+BOOTSTRAP_TEST_RUNNER="$ROOT/Linux/install/tests/bootstrap-test-runner.sh"
 TEST_ROOT="$(mktemp -d)"
 STUB_BIN="$TEST_ROOT/bin"
 LOG="$TEST_ROOT/commands.log"
@@ -406,7 +407,8 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
-    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" --repo "$ROOT" "$@" 2>&1); then
+    SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --repo "$ROOT" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
