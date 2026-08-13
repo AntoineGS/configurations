@@ -71,7 +71,7 @@ assert_not_contains() {
 assert_no_mutation_commands() {
   local -r log_contents="$1"
 
-  for command_name in pacman yay git makepkg mktemp rm systemctl sudo; do
+  for command_name in awk env pacman yay git makepkg mktemp rm sync systemctl sudo tee; do
     assert_not_contains "$log_contents" "$command_name " "mutation command log"
   done
 
@@ -118,7 +118,7 @@ create_stub_path() {
   local command_name
 
   mkdir -p -- "$path"
-  for command_name in bash curl git pacman sudo systemctl yay tidydots; do
+  for command_name in awk bash curl env find git pacman sudo sync systemctl tee yay tidydots; do
     if [[ "$command_name" == curl ]]; then
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
@@ -128,9 +128,29 @@ create_stub_path() {
     elif [[ "$command_name" == sudo ]]; then
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
-        "if [[ \"\$1\" == -n && \"\$2\" == test && \"\$3\" == ! && \"\$4\" == -L ]]; then exit 0; fi" \
-        "if [[ \"\$1\" == -n && \"\$2\" == test && \"\$3\" == -L ]]; then exit 1; fi" \
-        "if [[ \"\${BOOTSTRAP_SUDO_FAIL:-false}\" == true && \"\$*\" == *'snapper-initialize --apply'* ]]; then exit 1; fi"
+        '[[ "${1:-}" == -n ]] || exit 2' \
+        'shift' \
+        '[[ "${1:-}" == -- ]] && shift' \
+        'command_name="${1:-}"' \
+        'shift || true' \
+        'if [[ "$command_name" == test ]]; then' \
+        '  if [[ "${1:-}" == -e && "${2:-}" == /run/antoinews-linux-snapper-bootstrap ]]; then exit 1; fi' \
+        '  [[ "${1:-}" == ! ]] && exit 0' \
+        '  [[ "${1:-}" == -L ]] && exit 1' \
+        '  exit 0' \
+        'fi' \
+        'if [[ "$command_name" == stat ]]; then' \
+        '  format="${2:-}"' \
+        '  [[ "$format" == %a ]] && printf "755\\n" || printf "0\\n"' \
+        '  exit 0' \
+        'fi' \
+        'if [[ "$command_name" == mktemp ]]; then' \
+        '  template="${!#}"' \
+        '  printf "%s\\n" "${template/XXXXXX/staged}"' \
+        '  exit 0' \
+        'fi' \
+        'if [[ "${BOOTSTRAP_SUDO_FAIL:-false}" == true && "$command_name" == env && "${3:-}" == */snapper-initialize && "${4:-}" == --apply ]]; then exit 1; fi' \
+        'exit 0'
     else
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\""
@@ -415,7 +435,7 @@ test_missing_command_names_command() {
   local command_name
 
   mkdir -p -- "$missing_bin"
-  for command_name in bash curl git sudo systemctl yay tidydots dirname pwd; do
+  for command_name in awk bash curl env find git sudo systemctl sync tee yay tidydots dirname pwd; do
     cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
   done
 
@@ -423,6 +443,21 @@ test_missing_command_names_command() {
 
   assert_status 1 "$LAST_STATUS" 'missing required command'
   assert_contains "$LAST_OUTPUT" 'missing required command: pacman' 'missing required command'
+}
+
+test_missing_find_names_command() {
+  local -r missing_bin="$TEST_ROOT/missing-find-bin"
+  local command_name
+
+  mkdir -p -- "$missing_bin"
+  for command_name in awk bash curl env git pacman sudo systemctl sync tee yay tidydots dirname pwd; do
+    cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
+  done
+
+  run_bootstrap "$missing_bin" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+
+  assert_status 1 "$LAST_STATUS" 'missing find command'
+  assert_contains "$LAST_OUTPUT" 'missing required command: find' 'missing find command'
 }
 
 test_repository_path_with_spaces() {
@@ -630,7 +665,7 @@ test_tidydots_dry_run_uses_exact_unscoped_commands() {
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore -n"
   assert_not_contains "$(<"$STUB_LOG")" 'snapper-initialize' 'tidydots dry-run root initializer'
-  assert_contains "$LAST_OUTPUT" 'sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+  assert_contains "$LAST_OUTPUT" 'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
     'tidydots dry-run root initializer plan'
   assert_no_tidydots_apply_commands "$(<"$STUB_LOG")"
 }
@@ -645,8 +680,8 @@ test_tidydots_phases_have_separate_confirmations() {
   assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'confirmed tidydots install plan and apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 1 'confirmed Snapper restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'confirmed Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" 1 'confirmed Snapper initializer check'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 1 'confirmed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -655,8 +690,8 @@ test_tidydots_phases_have_separate_confirmations() {
     "tidydots --dir $ROOT install" \
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore snapper" \
-    "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
-    "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" \
     "tidydots --dir $ROOT restore -n" \
     "tidydots --dir $ROOT restore"
   assert_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'tidydots install confirmation'
@@ -762,8 +797,8 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
   assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
   assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'failed Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 0 'failed broad restore plan'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed broad restore apply'
 }
@@ -778,6 +813,7 @@ run_preflight_tests() {
   test_hostname_command_failure_is_not_masked
   test_unknown_hostname_rejected_before_commands
   test_missing_command_names_command
+  test_missing_find_names_command
   test_repository_path_with_spaces
   test_dry_run_does_not_prompt
   test_invocation_outside_repository_resolves_repo

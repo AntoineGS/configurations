@@ -394,8 +394,10 @@ run_as_root() {
     SNAPPER_TEST_INITIAL_SNAPSHOT_EXISTS="$TEST_INITIAL_SNAPSHOT_EXISTS" \
     SNAPPER_TEST_FAIL="$TEST_SNAPPER_FAIL" \
     SNAPPER_TEST_FAIL_IF_SNAPSHOT_EXISTS="$TEST_SNAPPER_FAIL_IF_SNAPSHOT_EXISTS" \
+    SNAPPER_INITIALIZER_TEST_MODE=1 \
     SNAPPER_INITIALIZER_ROOT_MOUNT="$ROOT_MOUNT" \
     SNAPPER_INITIALIZER_HOME_MOUNT="$HOME_MOUNT" \
+    SNAPPER_INITIALIZER_TEST_MODE=1 \
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
@@ -419,6 +421,25 @@ run_as_current_user() {
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
     "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+}
+
+run_without_test_mode() {
+  if LAST_OUTPUT=$(env -u SNAPPER_INITIALIZER_TEST_MODE \
+    PATH="$BIN:$ORIGINAL_PATH" \
+    SNAPPER_TEST_COMMAND_LOG="$COMMAND_LOG" \
+    SNAPPER_TEST_SUBVOLUMES="$SUBVOLUME_STATE" \
+    SNAPPER_TEST_CONFIG_DIR="$CONFIG_DIR" \
+    SNAPPER_TEST_REGISTRATION="$REGISTRATION_FILE" \
+    SNAPPER_INITIALIZER_ROOT_MOUNT="$ROOT_MOUNT" \
+    SNAPPER_INITIALIZER_HOME_MOUNT="$HOME_MOUNT" \
+    SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
+    SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
+    SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
+    "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -449,6 +470,15 @@ test_non_root_is_rejected_before_commands() {
   assert_log_not_contains 'findmnt ' 'non-root command log'
   assert_log_not_contains 'btrfs ' 'non-root command log'
   assert_log_not_contains 'snapper ' 'non-root command log'
+}
+
+test_initializer_overrides_require_test_mode() {
+  reset_fixture
+  run_without_test_mode --check
+
+  assert_status 1 "$LAST_STATUS" 'initializer override gate'
+  assert_not_contains "$LAST_OUTPUT" "$ROOT_MOUNT" 'initializer override gate root path'
+  assert_log_not_contains "$ROOT_MOUNT" 'initializer override gate command path'
 }
 
 test_check_is_read_only_when_layout_is_ready() {
@@ -782,6 +812,7 @@ create_stubs
 
 test_help_and_unknown_option
 test_non_root_is_rejected_before_commands
+test_initializer_overrides_require_test_mode
 test_check_is_read_only_when_layout_is_ready
 test_check_rejects_non_btrfs_without_mutation
 test_check_rejects_mismatched_btrfs_uuid_without_mutation
