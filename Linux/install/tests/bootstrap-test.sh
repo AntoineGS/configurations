@@ -134,14 +134,20 @@ create_stub_path() {
         'command_name="${1:-}"' \
         'shift || true' \
         'if [[ "$command_name" == test ]]; then' \
-        '  if [[ "${1:-}" == -e && "${2:-}" == /run/antoinews-linux-snapper-bootstrap ]]; then exit 1; fi' \
+        '  if [[ "${1:-}" == -e && "${2:-}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
         '  [[ "${1:-}" == ! ]] && exit 0' \
         '  [[ "${1:-}" == -L ]] && exit 1' \
         '  exit 0' \
         'fi' \
         'if [[ "$command_name" == stat ]]; then' \
         '  format="${2:-}"' \
-        '  [[ "$format" == %a ]] && printf "755\\n" || printf "0\\n"' \
+        '  if [[ "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap || "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
+        '    printf "700\\n"' \
+        '  elif [[ "$format" == %a ]]; then' \
+        '    printf "755\\n"' \
+        '  else' \
+        '    printf "0\\n"' \
+        '  fi' \
         '  exit 0' \
         'fi' \
         'if [[ "$command_name" == mktemp ]]; then' \

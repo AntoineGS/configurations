@@ -8,10 +8,10 @@ readonly EXIT_INCOMPLETE_PREVIEW=4
 readonly SNAPPER_INITIALIZER=/usr/local/libexec/antoinews-linux/snapper-initialize
 readonly SNAPPER_CONFIG_DIRECTORY=/etc/snapper/configs
 readonly SNAPPER_REGISTRATION_DIRECTORY=/etc/conf.d
-readonly SNAPPER_RECOVERY_DIRECTORY=/run/antoinews-linux-snapper-bootstrap
-readonly SNAPPER_JOURNAL_FILE=/run/antoinews-linux-snapper-bootstrap/state
-readonly SNAPPER_MANIFEST_FILE=/run/antoinews-linux-snapper-bootstrap/manifest
-readonly SNAPPER_BACKUP_DIRECTORY=/run/antoinews-linux-snapper-bootstrap/backups
+readonly SNAPPER_RECOVERY_DIRECTORY=/var/lib/configurations/snapper-bootstrap
+readonly SNAPPER_JOURNAL_FILE=/var/lib/configurations/snapper-bootstrap/state
+readonly SNAPPER_MANIFEST_FILE=/var/lib/configurations/snapper-bootstrap/manifest
+readonly SNAPPER_BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
 readonly SNAPPER_FIXED_PATH=/usr/bin:/bin
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -277,12 +277,13 @@ confirm_tidydots() {
 
 print_snapper_deployment_plan() {
   printf 'Snapper deployment plan:\n'
-  printf '  rollback-assisted per-file deployment with durable recovery:\n'
+  printf '  rollback-assisted per-file deployment with persistent recovery state:\n'
   printf '    /etc/snapper/configs/root\n'
   printf '    /etc/snapper/configs/home\n'
   printf '    /etc/conf.d/snapper\n'
   printf '    %s\n' "$SNAPPER_INITIALIZER"
-  printf '  preserve managed legacy Snapper directory links in the durable recovery journal\n'
+  printf '  preserve managed legacy Snapper directory links in root-owned recovery state\n'
+  printf '  recovery state survives reboot after sync; filesystem power-loss durability still depends on the filesystem\n'
 }
 
 run_tidydots_phase() {
@@ -377,6 +378,28 @@ validate_root_directory_chain() {
   done
 }
 
+ensure_root_directory() {
+  local -r path="$1"
+  local -r mode="$2"
+  local -r description="$3"
+  local actual_mode
+  local expected_mode="${mode#0}"
+
+  root_test -L "$path" && die "$description must not be a symlink: $path"
+  if root_test -e "$path"; then
+    validate_root_directory "$path"
+    root_exec chown root:root -- "$path" || die "could not set $description ownership: $path"
+    root_exec chmod "$mode" -- "$path" || die "could not secure $description: $path"
+  else
+    root_exec mkdir -- "$path" || die "could not create $description: $path"
+    root_exec chown root:root -- "$path" || die "could not set $description ownership: $path"
+    root_exec chmod "$mode" -- "$path" || die "could not secure $description: $path"
+  fi
+  validate_root_directory "$path"
+  actual_mode="$(root_stat %a "$path")" || die "could not inspect $description mode: $path"
+  [[ "$actual_mode" == "$expected_mode" ]] || die "$description must be mode $mode: $path (mode $actual_mode)"
+}
+
 validate_root_file() {
   local -r path="$1"
   local -r description="$2"
@@ -423,8 +446,8 @@ write_root_text_atomic() {
     root_exec rm -f -- "$temp_file" || true
     return 1
   fi
-  root_exec chmod 0600 -- "$temp_file" || return 1
   root_exec chown root:root -- "$temp_file" || return 1
+  root_exec chmod 0600 -- "$temp_file" || return 1
   root_exec mv -f -- "$temp_file" "$path" || return 1
   root_exec sync || return 1
   return 0
@@ -532,29 +555,16 @@ plan_legacy_snapper_directory() {
 }
 
 prepare_snapper_rollback() {
-  validate_root_directory /run
-  if root_test -L "$SNAPPER_RECOVERY_DIRECTORY"; then
-    die 'Snapper recovery directory must not be a symlink'
-  fi
+  local recovery_exists=false
+
+  ensure_root_directory_chain "${SNAPPER_RECOVERY_DIRECTORY%/*}"
+  root_test -L "$SNAPPER_RECOVERY_DIRECTORY" && die 'Snapper recovery directory must not be a symlink'
   if root_test -e "$SNAPPER_RECOVERY_DIRECTORY"; then
-    validate_root_directory "$SNAPPER_RECOVERY_DIRECTORY"
-    SNAPPER_ROLLBACK_DIR="$SNAPPER_RECOVERY_DIRECTORY"
-  else
-    root_exec mkdir -- "$SNAPPER_RECOVERY_DIRECTORY" || die 'could not create Snapper recovery directory'
-    SNAPPER_ROLLBACK_DIR="$SNAPPER_RECOVERY_DIRECTORY"
-    root_exec chmod 0700 -- "$SNAPPER_RECOVERY_DIRECTORY" || die 'could not secure Snapper recovery directory'
-    root_exec chown root:root -- "$SNAPPER_RECOVERY_DIRECTORY" || die 'could not set Snapper recovery ownership'
+    recovery_exists=true
   fi
-  if root_test -L "$SNAPPER_BACKUP_DIRECTORY"; then
-    die 'Snapper backup directory must not be a symlink'
-  fi
-  if ! root_test -e "$SNAPPER_BACKUP_DIRECTORY"; then
-    root_exec mkdir -- "$SNAPPER_BACKUP_DIRECTORY" || die 'could not create Snapper backup directory'
-    root_exec chmod 0700 -- "$SNAPPER_BACKUP_DIRECTORY" || die 'could not secure Snapper backup directory'
-    root_exec chown root:root -- "$SNAPPER_BACKUP_DIRECTORY" || die 'could not set Snapper backup ownership'
-  else
-    validate_root_directory "$SNAPPER_BACKUP_DIRECTORY"
-  fi
+  [[ "$recovery_exists" == true ]] || SNAPPER_ROLLBACK_DIR="$SNAPPER_RECOVERY_DIRECTORY"
+  ensure_root_directory "$SNAPPER_RECOVERY_DIRECTORY" 0700 'Snapper recovery directory'
+  ensure_root_directory "$SNAPPER_BACKUP_DIRECTORY" 0700 'Snapper backup directory'
   if root_test -x /usr/bin/getfacl; then
     SNAPPER_HAS_GETFACL=true
   fi
@@ -591,9 +601,10 @@ ensure_root_directory_chain() {
       validate_root_directory "$current"
     else
       root_exec mkdir -- "$current" || root_failure "could not create root-controlled directory: $current"
-      root_exec chmod 0755 -- "$current" || root_failure "could not secure root-controlled directory: $current"
       root_exec chown root:root -- "$current" || root_failure "could not set root-controlled directory ownership: $current"
+      root_exec chmod 0755 -- "$current" || root_failure "could not secure root-controlled directory: $current"
     fi
+    validate_root_directory "$current"
     current="$current/"
   done
 }
@@ -610,15 +621,15 @@ move_legacy_snapper_directory() {
       root_failure "refusing to remove unmanaged Snapper link: $target -> $link_target"
     root_exec mv -- "$target" "$backup" || root_failure "could not preserve managed legacy Snapper link: $target"
     root_exec mkdir -- "$target" || root_failure "could not create Snapper deployment directory: $target"
-    root_exec chmod 0755 -- "$target" || root_failure "could not secure Snapper deployment directory: $target"
     root_exec chown root:root -- "$target" || root_failure "could not set Snapper deployment directory ownership: $target"
+    root_exec chmod 0755 -- "$target" || root_failure "could not secure Snapper deployment directory: $target"
     return 0
   fi
 
   root_test -e "$target" || {
     root_exec mkdir -- "$target" || root_failure "could not create Snapper deployment directory: $target"
-    root_exec chmod 0755 -- "$target" || root_failure "could not secure Snapper deployment directory: $target"
     root_exec chown root:root -- "$target" || root_failure "could not set Snapper deployment directory ownership: $target"
+    root_exec chmod 0755 -- "$target" || root_failure "could not secure Snapper deployment directory: $target"
     return 0
   }
   validate_root_directory "$target"
@@ -739,8 +750,8 @@ restore_snapper_manifest_kind() {
         fi
         if [[ "$present" == yes ]]; then
           root_exec cp --preserve=all -- "$backup" "$target" || status=1
-          root_exec chmod "$mode" -- "$target" || status=1
           root_exec chown "$uid:$gid" -- "$target" || status=1
+          root_exec chmod "$mode" -- "$target" || status=1
           restore_optional_metadata "$backup" "$target" || status=1
         fi
         ;;
@@ -784,11 +795,19 @@ recover_snapper_deployment() {
   local phase
   local staged
 
+  root_test ! -L "$SNAPPER_RECOVERY_DIRECTORY" || die 'Snapper recovery directory must not be a symlink'
   if ! root_test -e "$SNAPPER_RECOVERY_DIRECTORY"; then
     return 0
   fi
-  root_test ! -L "$SNAPPER_RECOVERY_DIRECTORY" || die 'Snapper recovery directory must not be a symlink'
+  validate_root_directory_chain "${SNAPPER_RECOVERY_DIRECTORY%/*}"
   validate_root_directory "$SNAPPER_RECOVERY_DIRECTORY"
+  [[ "$(root_stat %a "$SNAPPER_RECOVERY_DIRECTORY")" == 700 ]] ||
+    die "Snapper recovery directory must be mode 0700: $SNAPPER_RECOVERY_DIRECTORY"
+  if root_test -e "$SNAPPER_BACKUP_DIRECTORY" || root_test -L "$SNAPPER_BACKUP_DIRECTORY"; then
+    validate_root_directory "$SNAPPER_BACKUP_DIRECTORY"
+    [[ "$(root_stat %a "$SNAPPER_BACKUP_DIRECTORY")" == 700 ]] ||
+      die "Snapper backup directory must be mode 0700: $SNAPPER_BACKUP_DIRECTORY"
+  fi
   root_test -f "$SNAPPER_JOURNAL_FILE" || die 'Snapper recovery journal is missing; manual recovery is required'
   root_test -f "$SNAPPER_MANIFEST_FILE" || die 'Snapper recovery manifest is missing; manual recovery is required'
   state="$(read_snapper_recovery_file "$SNAPPER_JOURNAL_FILE")" || die 'could not read Snapper recovery journal'
@@ -845,8 +864,8 @@ stage_snapper_file() {
   SNAPPER_STAGED_TEMP="$temp_file"
   write_snapper_journal_state deploying "$target" "$temp_file"
   root_exec cp -- "$source" "$temp_file" || root_failure "could not stage Snapper file: $target"
-  root_exec chmod "$mode" -- "$temp_file" || root_failure "could not set staged Snapper mode: $target"
   root_exec chown root:root -- "$temp_file" || root_failure "could not set staged Snapper ownership: $target"
+  root_exec chmod "$mode" -- "$temp_file" || root_failure "could not set staged Snapper mode: $target"
   root_exec mv -f -- "$temp_file" "$target" || root_failure "could not atomically install Snapper file: $target"
   SNAPPER_STAGED_TEMP=""
   write_snapper_journal_state deploying "$target"
@@ -914,33 +933,27 @@ cleanup_snapper_staging_files() {
 }
 
 root_run_initializer() {
-  local -a environment=("PATH=$SNAPPER_FIXED_PATH")
+  root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER" "$@"
+}
 
-  if [[ "${SNAPPER_INITIALIZER_TEST_MODE:-}" == 1 ]]; then
-    environment+=(SNAPPER_INITIALIZER_TEST_MODE=1)
-    local variable
-    local environment_name
-    for variable in ROOT_MOUNT HOME_MOUNT CONFIG_DIR REGISTRATION_FILE TEMPLATE; do
-      environment_name="SNAPPER_INITIALIZER_$variable"
-      if [[ -v "$environment_name" ]]; then
-        environment+=("$environment_name=${!environment_name}")
-      fi
-    done
-  fi
-  root_exec env -i "${environment[@]}" "$SNAPPER_INITIALIZER" "$@"
+retain_snapper_cleanup_state() {
+  write_snapper_journal_state cleanup
+  write_snapper_manifest
 }
 
 finalize_snapper_deployment() {
   SNAPPER_CLEANUP_STARTED=true
   write_snapper_journal_state cleanup
   if ! root_exec rm -rf -- "$SNAPPER_BACKUP_DIRECTORY"; then
-    die 'Snapper deployment cleanup failed; journal and backups retained for manual recovery'
+    die 'Snapper deployment cleanup failed; backup contents may be partial; journal and manifest were retained for manual recovery'
   fi
   if ! root_exec rm -f -- "$SNAPPER_JOURNAL_FILE" "$SNAPPER_MANIFEST_FILE"; then
-    die 'Snapper deployment journal cleanup failed; manual recovery is required'
+    retain_snapper_cleanup_state || die 'Snapper deployment journal cleanup failed and recovery state could not be retained'
+    die 'Snapper deployment journal cleanup failed; journal and manifest were retained for manual recovery'
   fi
   if ! root_exec rmdir -- "$SNAPPER_RECOVERY_DIRECTORY"; then
-    die 'Snapper deployment recovery directory cleanup failed; manual recovery is required'
+    retain_snapper_cleanup_state || die 'Snapper deployment recovery cleanup failed and recovery state could not be retained'
+    die 'Snapper deployment recovery directory cleanup failed; journal and manifest were retained for manual recovery'
   fi
   SNAPPER_ROLLBACK_DIR=""
   SNAPPER_DEPLOYMENT_ACTIVE=false
@@ -1057,6 +1070,17 @@ report_incomplete_dry_run() {
   exit "$EXIT_INCOMPLETE_PREVIEW"
 }
 
+clear_initializer_overrides() {
+  local variable
+
+  while IFS= read -r variable; do
+    case "$variable" in
+      SNAPPER_INITIALIZER_*) unset "$variable" ;;
+    esac
+  done < <(compgen -e)
+}
+
+clear_initializer_overrides
 parse_args "$@"
 preflight
 install_prerequisites
