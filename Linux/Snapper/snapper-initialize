@@ -9,6 +9,7 @@ if [[ "${SNAPPER_INITIALIZER_TEST_MODE:-}" == 1 ]]; then
   readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
   readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
   readonly RECOVERY_DIRECTORY="${SNAPPER_INITIALIZER_RECOVERY_DIRECTORY:-/var/lib/configurations/snapper-bootstrap}"
+  readonly LIFECYCLE_LOCK="${SNAPPER_INITIALIZER_LIFECYCLE_LOCK:-/run/lock/antoinews-linux-snapper.lock}"
 else
   readonly ROOT_MOUNT="/"
   readonly HOME_MOUNT="/home"
@@ -16,6 +17,7 @@ else
   readonly REGISTRATION_FILE="/etc/conf.d/snapper"
   readonly CONFIG_TEMPLATE="/usr/share/snapper/config-templates/default"
   readonly RECOVERY_DIRECTORY="/var/lib/configurations/snapper-bootstrap"
+  readonly LIFECYCLE_LOCK="/run/lock/antoinews-linux-snapper.lock"
 fi
 readonly BACKUP_DIRECTORY="$RECOVERY_DIRECTORY/backups"
 readonly INITIAL_SNAPSHOT_DESCRIPTION="initial recovery snapshot"
@@ -27,6 +29,20 @@ ROOT_UUID=""
 HOME_UUID=""
 ROOT_SUBVOLUME_ID=""
 HOME_SUBVOLUME_ID=""
+LIFECYCLE_LOCK_FD=""
+LIFECYCLE_LOCK_HELD=false
+
+initializer_exit() {
+  local -r exit_status="$?"
+
+  if ! release_lifecycle_lock; then
+    printf '%s: could not release Snapper lifecycle lock: %s\n' "$SCRIPT_NAME" "$LIFECYCLE_LOCK" >&2
+    return 1
+  fi
+  return "$exit_status"
+}
+
+trap initializer_exit EXIT
 
 usage() {
   printf 'Usage: %s --check|--apply|--create-initial-snapshots\n' "$SCRIPT_NAME"
@@ -69,9 +85,68 @@ require_root() {
 require_commands() {
   local command_name
 
-  for command_name in awk btrfs cat chmod chown findmnt grep mkdir mktemp mv rm snapper stat; do
+  for command_name in awk btrfs cat chmod chown findmnt flock grep mkdir mktemp mv rm snapper stat touch; do
     command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
   done
+}
+
+ensure_lifecycle_lock_file() {
+  local -r lock_directory="${LIFECYCLE_LOCK%/*}"
+  local directory_uid
+  local directory_gid
+  local directory_mode
+  local uid
+  local gid
+  local mode
+
+  [[ -d "$lock_directory" && ! -L "$lock_directory" ]] ||
+    die "Snapper lifecycle lock directory is not a real directory: $lock_directory"
+  directory_uid="$(stat -c %u -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory owner: $lock_directory"
+  directory_gid="$(stat -c %g -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory group: $lock_directory"
+  directory_mode="$(stat -c %a -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory mode: $lock_directory"
+  [[ "$directory_uid" == 0 && "$directory_gid" == 0 ]] ||
+    die "Snapper lifecycle lock directory must be root:root: $lock_directory"
+  [[ "$directory_mode" =~ ^[0-7]{3,4}$ ]] ||
+    die "Snapper lifecycle lock directory has an invalid mode: $lock_directory ($directory_mode)"
+  (( (8#${directory_mode: -3} & 0022) == 0 )) ||
+    die "Snapper lifecycle lock directory must not be group/world writable: $lock_directory (mode $directory_mode)"
+  [[ ! -L "$LIFECYCLE_LOCK" ]] || die "Snapper lifecycle lock must not be a symlink: $LIFECYCLE_LOCK"
+  if [[ -e "$LIFECYCLE_LOCK" ]]; then
+    [[ -f "$LIFECYCLE_LOCK" ]] || die "Snapper lifecycle lock is not a regular file: $LIFECYCLE_LOCK"
+  else
+    touch -- "$LIFECYCLE_LOCK" || die "could not create Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  fi
+  chown root:root -- "$LIFECYCLE_LOCK" || die "could not set Snapper lifecycle lock ownership: $LIFECYCLE_LOCK"
+  chmod 0644 -- "$LIFECYCLE_LOCK" || die "could not secure Snapper lifecycle lock: $LIFECYCLE_LOCK"
+
+  uid="$(stat -c %u -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock owner: $LIFECYCLE_LOCK"
+  gid="$(stat -c %g -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock group: $LIFECYCLE_LOCK"
+  mode="$(stat -c %a -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock mode: $LIFECYCLE_LOCK"
+  [[ "$uid" == 0 && "$gid" == 0 ]] || die "Snapper lifecycle lock must be root:root: $LIFECYCLE_LOCK"
+  [[ "$mode" == 644 ]] || die "Snapper lifecycle lock must be mode 0644: $LIFECYCLE_LOCK (mode $mode)"
+}
+
+acquire_lifecycle_lock() {
+  [[ "${SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD:-}" == 1 ]] && return 0
+  ensure_lifecycle_lock_file
+  exec {LIFECYCLE_LOCK_FD}<"$LIFECYCLE_LOCK" || die "could not open Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  if ! flock -n "$LIFECYCLE_LOCK_FD"; then
+    exec {LIFECYCLE_LOCK_FD}<&-
+    LIFECYCLE_LOCK_FD=""
+    die "could not acquire Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  fi
+  LIFECYCLE_LOCK_HELD=true
+}
+
+release_lifecycle_lock() {
+  [[ "$LIFECYCLE_LOCK_HELD" == true ]] || return 0
+  flock -u "$LIFECYCLE_LOCK_FD" || return 1
+  exec {LIFECYCLE_LOCK_FD}<&-
+  LIFECYCLE_LOCK_FD=""
+  LIFECYCLE_LOCK_HELD=false
 }
 
 findmnt_value() {
@@ -658,20 +733,24 @@ main() {
   parse_args "$@"
   require_root
   require_commands
-  validate_mount_layout
 
   case "$MODE" in
     check)
+      validate_mount_layout
       check_layout
       printf 'Snapper layout is ready for /@ and /@home\n'
       ;;
     apply)
+      acquire_lifecycle_lock
+      validate_mount_layout
       validate_existing_state
       apply_layout
       validate_layout_without_initial_snapshots
       printf 'Snapper layout initialized for /@ and /@home\n'
       ;;
     create-initial-snapshots)
+      acquire_lifecycle_lock
+      validate_mount_layout
       create_initial_snapshots_phase
       printf 'Snapper initial recovery snapshots are ready for /@ and /@home\n'
       ;;
