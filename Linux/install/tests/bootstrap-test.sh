@@ -13,6 +13,7 @@ readonly OUTSIDE_REPOSITORY="$TEST_ROOT/outside"
 readonly STUB_BIN="$TEST_ROOT/bin"
 readonly STUB_LOG="$TEST_ROOT/stub.log"
 readonly LIFECYCLE_LOCK="$TEST_ROOT/snapper-lifecycle.lock"
+readonly CALLER_LIFECYCLE_LOCK="$TEST_ROOT/caller-selected.lock"
 readonly PREREQUISITE_BIN="$TEST_ROOT/prerequisite-bin"
 readonly PREREQUISITE_TEMP_ROOT="$TEST_ROOT/prerequisite-temp"
 readonly YAY_STUB_TEMPLATE="$TEST_ROOT/yay-stub"
@@ -146,7 +147,7 @@ create_stub_path() {
         '  format="${2:-}"' \
         '  if [[ "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap || "$format" == %a && "${!#}" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
         '    printf "700\\n"' \
-        '  elif [[ "${!#}" == "$SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK" && "$format" == %a ]]; then' \
+        '  elif [[ "${!#}" == "$SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK" && "$format" == %a ]]; then' \
         '    printf "644\\n"' \
         '  elif [[ "$format" == %a ]]; then' \
         '    printf "755\\n"' \
@@ -200,9 +201,10 @@ run_bootstrap() {
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
+    SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
-    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -235,9 +237,10 @@ run_bootstrap_with_input() {
     BOOTSTRAP_TIDYDOTS_FAIL_ACTION="$TIDYDOTS_FAIL_ACTION" \
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
+    SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
-    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    "$BASH_PATH" "$BOOTSTRAP" "$@" 2>&1); then
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
+    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?

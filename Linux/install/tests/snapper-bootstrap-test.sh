@@ -13,6 +13,7 @@ BASH_PATH="$BASH"
 readonly RECOVERY_DIRECTORY=/var/lib/configurations/snapper-bootstrap
 readonly BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
 readonly LIFECYCLE_LOCK="$TEST_ROOT/snapper-bootstrap-lifecycle.lock"
+readonly CALLER_LIFECYCLE_LOCK="$TEST_ROOT/caller-selected.lock"
 
 LAST_OUTPUT=""
 LAST_STATUS=0
@@ -337,10 +338,6 @@ create_stubs() {
     '  fi' \
     '  exit 0' \
     'fi' \
-    'if [[ "$command_name" == touch ]]; then' \
-    '  /usr/bin/touch "$@"' \
-    '  exit 0' \
-    'fi' \
     'if [[ "$command_name" == env && "$*" == *snapper-initialize\ --apply ]]; then' \
     '  [[ "${SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE:-false}" == true ]] && exit 1' \
     '  exit 0' \
@@ -361,7 +358,7 @@ create_stubs() {
 
 reset_fixture() {
   : >"$LOG"
-  rm -f -- "$LIFECYCLE_LOCK"
+  rm -f -- "$LIFECYCLE_LOCK" "$CALLER_LIFECYCLE_LOCK"
   unset \
     SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS \
     SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE \
@@ -407,9 +404,9 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" \
     SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE="${SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE:-false}" \
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
+    SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
-    "$BASH_PATH" "$BOOTSTRAP" --repo "$ROOT" "$@" 2>&1); then
+    "$BASH_PATH" "$BOOTSTRAP" --test-only-lifecycle-lock "$LIFECYCLE_LOCK" --repo "$ROOT" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -461,9 +458,9 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
     "sudo -n -- rmdir -- ${RECOVERY_DIRECTORY}" \
     'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check' \
-    'flock -u' \
     'restore -n' \
-    'restore'
+    'restore' \
+    'flock -u'
   assert_log_contains 'sudo -n -- chmod 0755' 'initializer mode correction'
   assert_log_contains 'sudo -n -- chown root:root' 'root ownership correction'
 }
@@ -496,6 +493,16 @@ test_snapper_lifecycle_lock_contention_stops_before_recovery() {
   assert_log_contains 'flock -n' 'Snapper lifecycle lock contention attempt'
   assert_log_not_contains "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" 'no recovery inspection during lock contention'
   assert_log_not_contains 'tidydots ' 'no tidydots phase during lock contention'
+}
+
+test_caller_environment_cannot_select_snapper_lifecycle_lock() {
+  reset_fixture
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 0 "$LAST_STATUS" 'caller lock override isolation'
+  assert_log_contains "sudo -n -- test -e $LIFECYCLE_LOCK" 'fixed test-selected lifecycle lock'
+  assert_log_not_contains "$CALLER_LIFECYCLE_LOCK" 'caller-selected lifecycle lock'
+  [[ ! -e "$CALLER_LIFECYCLE_LOCK" ]] || fail 'caller-selected lifecycle lock was created'
 }
 
 test_existing_snapper_directories_are_not_misclassified_as_legacy_links() {
@@ -823,6 +830,7 @@ run_test test_snapper_decline_preserves_legacy_links
 run_test test_snapper_deployment_is_rollback_assisted_and_after_confirmation
 run_test test_snapper_lifecycle_lock_failure_stops_before_recovery
 run_test test_snapper_lifecycle_lock_contention_stops_before_recovery
+run_test test_caller_environment_cannot_select_snapper_lifecycle_lock
 run_test test_existing_snapper_directories_are_not_misclassified_as_legacy_links
 run_test test_initializer_integrity_fails_closed
 run_test test_deployment_failure_rolls_back_before_initializer
