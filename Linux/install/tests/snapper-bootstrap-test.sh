@@ -10,6 +10,8 @@ LOG="$TEST_ROOT/commands.log"
 ARCH_RELEASE="$TEST_ROOT/arch-release"
 ORIGINAL_PATH="$PATH"
 BASH_PATH="$BASH"
+readonly RECOVERY_DIRECTORY=/var/lib/configurations/snapper-bootstrap
+readonly BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
 
 LAST_OUTPUT=""
 LAST_STATUS=0
@@ -134,6 +136,14 @@ create_stubs() {
     '[[ "${1:-}" == -- ]] && shift' \
     'command_name="${1:-}"' \
     'shift || true' \
+    'for variable in SNAPPER_INITIALIZER_TEST_MODE SNAPPER_INITIALIZER_ROOT_MOUNT SNAPPER_INITIALIZER_HOME_MOUNT SNAPPER_INITIALIZER_CONFIG_DIR; do' \
+    '  [[ -v "$variable" ]] && printf "sudo inherited %s=%s\n" "$variable" "${!variable}" >>"$SNAPPER_BOOTSTRAP_TEST_LOG"' \
+    'done' \
+    'if [[ "$command_name" == env ]]; then' \
+    '  for variable in SNAPPER_INITIALIZER_TEST_MODE SNAPPER_INITIALIZER_ROOT_MOUNT SNAPPER_INITIALIZER_HOME_MOUNT SNAPPER_INITIALIZER_CONFIG_DIR; do' \
+    '    [[ -v "$variable" ]] && printf "sudo inherited %s=%s\n" "$variable" "${!variable}" >>"$SNAPPER_BOOTSTRAP_TEST_LOG"' \
+    '  done' \
+    'fi' \
     'if [[ "$command_name" == test ]]; then' \
     '  negate=false' \
     '  [[ "${1:-}" == ! ]] && negate=true && shift' \
@@ -141,30 +151,33 @@ create_stubs() {
     '  path="${2:-}"' \
     '  result=false' \
     '  case "$operator:$path" in' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap|-d:/run/antoinews-linux-snapper-bootstrap)' \
-    '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
-    '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/state|-f:/run/antoinews-linux-snapper-bootstrap/state)' \
-    '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
-    '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/manifest|-f:/run/antoinews-linux-snapper-bootstrap/manifest)' \
-    '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
-    '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/backups/legacy-*)' \
+    '    -e:/var/lib/configurations/snapper-bootstrap)' \
+      '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
+      '      ;;' \
+    '    -d:/var/lib/configurations/snapper-bootstrap)' \
+      '      result=true' \
+      '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/state|-f:/var/lib/configurations/snapper-bootstrap/state)' \
+      '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
+      '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/manifest|-f:/var/lib/configurations/snapper-bootstrap/manifest)' \
+      '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
+      '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/backups/legacy-*)' \
       '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
       '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/backups/legacy-configs|-e:/run/antoinews-linux-snapper-bootstrap/backups/legacy-conf.d)' \
-    '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
-    '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/backups/*.acl|-e:/run/antoinews-linux-snapper-bootstrap/backups/*.xattr)' \
-    '      [[ "${SNAPPER_BOOTSTRAP_TEST_METADATA_TOOLS:-false}" == true ]] && result=true' \
-    '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/backups/root|-e:/run/antoinews-linux-snapper-bootstrap/backups/home|-e:/run/antoinews-linux-snapper-bootstrap/backups/registration|-e:/run/antoinews-linux-snapper-bootstrap/backups/initializer)' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/backups/legacy-configs|-e:/var/lib/configurations/snapper-bootstrap/backups/legacy-conf.d)' \
+      '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
+      '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/backups/*.acl|-e:/var/lib/configurations/snapper-bootstrap/backups/*.xattr)' \
+      '      [[ "${SNAPPER_BOOTSTRAP_TEST_METADATA_TOOLS:-false}" == true ]] && result=true' \
+      '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/backups/root|-e:/var/lib/configurations/snapper-bootstrap/backups/home|-e:/var/lib/configurations/snapper-bootstrap/backups/registration|-e:/var/lib/configurations/snapper-bootstrap/backups/initializer)' \
       '      [[ "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS:-false}" == true ]] && result=true' \
       '      ;;' \
-    '    -e:/run/antoinews-linux-snapper-bootstrap/backups/*)' \
-    '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
-    '      ;;' \
+    '    -e:/var/lib/configurations/snapper-bootstrap/backups/*)' \
+      '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
+      '      ;;' \
     '    -L:/etc/snapper/configs|-L:/etc/conf.d)' \
       '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
       '      ;;' \
@@ -239,14 +252,14 @@ create_stubs() {
     'if [[ "$command_name" == cat ]]; then' \
     '  path="${!#}"' \
     '  case "$path" in' \
-    '    /run/antoinews-linux-snapper-bootstrap/state) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ;;' \
-    '    /run/antoinews-linux-snapper-bootstrap/manifest) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ;;' \
+    '    /var/lib/configurations/snapper-bootstrap/state) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ;;' \
+    '    /var/lib/configurations/snapper-bootstrap/manifest) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ;;' \
     '    *) exit 1 ;;' \
     '  esac' \
     '  exit 0' \
     'fi' \
-    'if [[ "$command_name" == chmod && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chmod && "${!#}" == /run/antoinews-linux-snapper-bootstrap ]]; then exit 1; fi' \
-    'if [[ "$command_name" == chown && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chown && "${!#}" == /run/antoinews-linux-snapper-bootstrap ]]; then exit 1; fi' \
+    'if [[ "$command_name" == chmod && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chmod && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
+    'if [[ "$command_name" == chown && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chown && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
     'if [[ "$command_name" == stat ]]; then' \
     '  format="${2:-}"' \
     '  path="${!#}"' \
@@ -254,8 +267,14 @@ create_stubs() {
     '    case "$format" in' \
     '      %u) printf "1001\n" ;;' \
     '      %g) printf "1002\n" ;;' \
-    '      %a) printf "640\n" ;;' \
+    '      %a) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE:-640}" ;;' \
     '      *) exit 1 ;;' \
+    '    esac' \
+    '  elif [[ "$path" == /var/lib/configurations/snapper-bootstrap || "$path" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
+    '    case "$format:${SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE:-}" in' \
+    '      %a:bad) printf "777\n" ;;' \
+    '      %a:*) printf "700\n" ;;' \
+    '      *) printf "0\n" ;;' \
     '    esac' \
     '  elif [[ "$path" == /usr/local/libexec/antoinews-linux/snapper-initialize ]]; then' \
     '    case "$format:${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" in' \
@@ -299,7 +318,9 @@ create_stubs() {
     'fi' \
     'if [[ "$command_name" == cp && "${SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE:-false}" == true && "$*" == *"/Linux/Snapper/"* ]]; then exit 1; fi' \
     'if [[ "${SNAPPER_BOOTSTRAP_TEST_ROLLBACK_FAILURE:-false}" == true && "$command_name" == cp && "$*" == *"/backups/"* ]]; then exit 1; fi' \
-    'if [[ "$command_name" == rm && "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-false}" == true && "${1:-}" == -rf && "${!#}" == /run/antoinews-linux-snapper-bootstrap* ]]; then exit 1; fi' \
+    'if [[ "$command_name" == rm && ( "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-false}" == true || "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-}" == backup ) && "${1:-}" == -rf && "${!#}" == /var/lib/configurations/snapper-bootstrap/backups ]]; then exit 1; fi' \
+    'if [[ "$command_name" == rm && "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-}" == journal && "${1:-}" == -f && "$*" == *snapper-bootstrap/state* ]]; then exit 1; fi' \
+    'if [[ "$command_name" == rmdir && "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-}" == rmdir && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
     'if [[ "$command_name" == *snapper-initialize && "${1:-}" == --apply && "${SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE:-false}" == true ]]; then exit 1; fi' \
     'exit 0'
 }
@@ -315,6 +336,8 @@ reset_fixture() {
     SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS \
     SNAPPER_BOOTSTRAP_TEST_METADATA_TOOLS \
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE \
+    SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE \
+    SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE
   unset SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST
 }
@@ -337,6 +360,8 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS="${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS:-false}" \
     SNAPPER_BOOTSTRAP_TEST_METADATA_TOOLS="${SNAPPER_BOOTSTRAP_TEST_METADATA_TOOLS:-false}" \
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE="${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" \
+    SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE="${SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE:-}" \
+    SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE="${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE:-640}" \
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" \
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" \
@@ -370,16 +395,18 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
 
   assert_status 0 "$LAST_STATUS" 'Snapper deployment'
   assert_contains "$LAST_OUTPUT" 'Snapper deployment plan:' 'Snapper deployment plan before confirmation'
+  assert_contains "$LAST_OUTPUT" 'persistent recovery state' 'persistent recovery wording'
+  assert_contains "$LAST_OUTPUT" 'power-loss durability still depends on the filesystem' 'power-loss durability wording'
   assert_log_sequence \
     'restore snapper -n' \
     'restore snapper' \
-    'sudo -n -- mktemp /run/antoinews-linux-snapper-bootstrap/.manifest.' \
-    'sudo -n -- mv -f -- /run/antoinews-linux-snapper-bootstrap/.state.staged /run/antoinews-linux-snapper-bootstrap/state' \
-    'sudo -n -- mv -- /etc/snapper/configs /run/antoinews-linux-snapper-bootstrap/backups/legacy-configs' \
+    "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest." \
+    "sudo -n -- mv -f -- ${RECOVERY_DIRECTORY}/.state.staged ${RECOVERY_DIRECTORY}/state" \
+    "sudo -n -- mv -- /etc/snapper/configs ${BACKUP_DIRECTORY}/legacy-configs" \
     'sudo -n -- mktemp /etc/snapper/configs/.root.' \
     'sudo -n -- cp' \
-    'sudo -n -- chmod 0644' \
     'sudo -n -- chown root:root' \
+    'sudo -n -- chmod 0644' \
     'sudo -n -- mv -f' \
     'sudo -n -- test ! -L /usr/local/libexec/antoinews-linux/snapper-initialize' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
@@ -413,7 +440,7 @@ test_deployment_failure_rolls_back_before_initializer() {
 
   assert_status 1 "$LAST_STATUS" 'Snapper deployment failure'
   assert_contains "$LAST_OUTPUT" 'Snapper' 'Snapper deployment failure message'
-  assert_log_contains 'sudo -n -- cp --preserve=all -- /run/antoinews-linux-snapper-bootstrap/backups/initializer' \
+  assert_log_contains "sudo -n -- cp --preserve=all -- ${BACKUP_DIRECTORY}/initializer" \
     'file state rollback after deployment failure'
   assert_log_not_contains 'snapper-initialize --apply' 'initializer not executed after deployment failure'
   assert_log_not_contains 'tidydots restore -n' 'broad restore not planned after deployment failure'
@@ -427,7 +454,7 @@ test_initializer_failure_rolls_back_before_broad_restore() {
 
   assert_status 1 "$LAST_STATUS" 'Snapper initializer failure'
   assert_contains "$LAST_OUTPUT" 'initializer' 'Snapper initializer failure message'
-  assert_log_contains 'sudo -n -- cp --preserve=all -- /run/antoinews-linux-snapper-bootstrap/backups/root /etc/snapper/configs/root' \
+  assert_log_contains "sudo -n -- cp --preserve=all -- ${BACKUP_DIRECTORY}/root /etc/snapper/configs/root" \
     'file state rollback after initializer failure'
   assert_log_not_contains 'snapper-initialize --check' 'initializer check after apply failure'
   assert_log_not_contains 'tidydots restore -n' 'broad restore not planned after initializer failure'
@@ -442,8 +469,8 @@ test_rollback_preserves_original_metadata() {
 
   assert_status 1 "$LAST_STATUS" 'Snapper metadata rollback'
   assert_log_contains 'sudo -n -- cp --preserve=all' 'metadata-preserving backup and restore'
-  assert_log_contains 'sudo -n -- chmod 640 -- /etc/snapper/configs/root' 'rollback restores original mode'
   assert_log_contains 'sudo -n -- chown 1001:1002 -- /etc/snapper/configs/root' 'rollback restores original owner'
+  assert_log_contains 'sudo -n -- chmod 640 -- /etc/snapper/configs/root' 'rollback restores original mode'
   assert_log_contains 'sudo -n -- /usr/bin/setfacl --set-file=' 'rollback restores ACL'
   assert_log_contains 'sudo -n -- /usr/bin/setfattr --restore=' 'rollback restores xattrs'
 }
@@ -456,10 +483,12 @@ test_cleanup_failure_keeps_journal_and_stops_without_destructive_rollback() {
 
   assert_status 1 "$LAST_STATUS" 'Snapper cleanup failure'
   assert_contains "$LAST_OUTPUT" 'manual recovery' 'cleanup failure manual recovery message'
-  assert_log_contains 'sudo -n -- rm -rf -- /run/antoinews-linux-snapper-bootstrap/backups' 'cleanup failure backup deletion'
-  assert_log_not_contains_after 'sudo -n -- rm -rf -- /run/antoinews-linux-snapper-bootstrap/backups' \
-    'sudo -n -- cp --preserve=all /run/antoinews-linux-snapper-bootstrap/backups' \
+  assert_log_contains "sudo -n -- rm -rf -- ${BACKUP_DIRECTORY}" 'cleanup failure backup deletion'
+  assert_log_not_contains_after "sudo -n -- rm -rf -- ${BACKUP_DIRECTORY}" \
+    "sudo -n -- cp --preserve=all ${BACKUP_DIRECTORY}" \
     'cleanup failure must not restore after backup deletion starts'
+  assert_not_contains "$LAST_OUTPUT" 'backups retained' 'cleanup failure must not claim backups retained'
+  assert_contains "$LAST_OUTPUT" 'backup contents may be partial' 'cleanup failure partial backup wording'
   assert_log_not_contains 'tidydots restore -n' 'broad restore after cleanup failure'
 }
 
@@ -467,29 +496,33 @@ test_partial_install_journal_recovers_before_new_deployment() {
   reset_fixture
   SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS=true
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\n'
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="legacy|/etc/snapper/configs|/run/antoinews-linux-snapper-bootstrap/backups/legacy-configs|$ROOT/Linux/Snapper/configs
-file|/etc/snapper/configs/root|/run/antoinews-linux-snapper-bootstrap/backups/root|yes|1001|1002|640
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="legacy|/etc/snapper/configs|${BACKUP_DIRECTORY}/legacy-configs|$ROOT/Linux/Snapper/configs
+file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640
 "
   run_bootstrap $'yes\nyes\nyes'
 
   assert_status 0 "$LAST_STATUS" 'Snapper journal recovery'
   assert_log_sequence \
-    'sudo -n -- test -e /run/antoinews-linux-snapper-bootstrap' \
-    'sudo -n -- cat -- /run/antoinews-linux-snapper-bootstrap/state' \
-    'sudo -n -- cp --preserve=all -- /run/antoinews-linux-snapper-bootstrap/backups/root /etc/snapper/configs/root' \
-    'sudo -n -- mktemp /run/antoinews-linux-snapper-bootstrap/.manifest.'
+    "sudo -n -- test -e ${RECOVERY_DIRECTORY}" \
+    "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" \
+    "sudo -n -- cp --preserve=all -- ${BACKUP_DIRECTORY}/root /etc/snapper/configs/root" \
+    "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest."
 }
 
-test_initializer_uses_clean_fixed_environment() {
+test_production_initializer_rejects_inherited_overrides() {
   reset_fixture
-  SNAPPER_BOOTSTRAP_TEST_INITIALIZER_ROOT_MOUNT=/untrusted \
-    SNAPPER_INITIALIZER_ROOT_MOUNT=/untrusted \
+  SNAPPER_INITIALIZER_TEST_MODE=1 \
+    SNAPPER_INITIALIZER_ROOT_MOUNT=/untrusted/root \
+    SNAPPER_INITIALIZER_HOME_MOUNT=/untrusted/home \
+    SNAPPER_INITIALIZER_CONFIG_DIR=/untrusted/configs \
     run_bootstrap $'yes\nyes\nyes'
 
-  assert_status 0 "$LAST_STATUS" 'clean initializer environment'
+  assert_status 0 "$LAST_STATUS" 'production initializer environment isolation'
   assert_log_contains 'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
-    'clean initializer environment'
-  assert_log_not_contains 'SNAPPER_INITIALIZER_ROOT_MOUNT' 'inherited initializer override'
+    'production initializer clean environment'
+  assert_log_not_contains 'SNAPPER_INITIALIZER_' 'inherited initializer override'
+  assert_log_not_contains '/untrusted/' 'inherited initializer path redirect'
+  assert_log_not_contains 'sudo inherited ' 'initializer override inherited by any sudo command'
 }
 
 test_stale_staging_files_are_cleaned_before_new_deployment() {
@@ -514,7 +547,7 @@ test_recovery_setup_failure_cleans_unjournaled_directory() {
 
   assert_status 1 "$LAST_STATUS" 'Snapper recovery setup failure'
   assert_contains "$LAST_OUTPUT" 'could not secure Snapper recovery directory' 'Snapper recovery setup failure message'
-  assert_log_contains 'sudo -n -- rm -rf -- /run/antoinews-linux-snapper-bootstrap' \
+  assert_log_contains "sudo -n -- rm -rf -- ${RECOVERY_DIRECTORY}" \
     'cleanup of unjournaled recovery directory'
   assert_log_not_contains 'snapper-initialize --apply' 'initializer after recovery setup failure'
 }
@@ -543,6 +576,96 @@ test_metadata_restore_passes_target_explicitly() {
     'metadata restore target argument'
   # shellcheck disable=SC2016
   assert_source_contains 'local -r target="$2"' 'metadata restore target local'
+}
+
+test_recovery_directories_are_root_owned_before_mode_lockdown() {
+  reset_fixture
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 0 "$LAST_STATUS" 'recovery directory metadata ordering'
+  assert_log_sequence \
+    "sudo -n -- chown root:root -- ${RECOVERY_DIRECTORY}" \
+    "sudo -n -- chmod 0700 -- ${RECOVERY_DIRECTORY}" \
+    "sudo -n -- chown root:root -- ${BACKUP_DIRECTORY}" \
+    "sudo -n -- chmod 0700 -- ${BACKUP_DIRECTORY}"
+}
+
+test_restore_ownership_precedes_setuid_and_setgid_mode() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGETS=true
+  SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE=6755
+  SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE=true
+  run_bootstrap $'yes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'setuid and setgid metadata rollback'
+  assert_log_sequence \
+    "sudo -n -- cp --preserve=all -- ${BACKUP_DIRECTORY}/root /etc/snapper/configs/root" \
+    'sudo -n -- chown 1001:1002 -- /etc/snapper/configs/root' \
+    'sudo -n -- chmod 6755 -- /etc/snapper/configs/root'
+}
+
+test_cleanup_failure_reports_partial_backup_state() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE='backup'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'partial backup cleanup failure'
+  assert_contains "$LAST_OUTPUT" 'backup contents may be partial' 'partial backup cleanup wording'
+  assert_not_contains "$LAST_OUTPUT" 'backups retained' 'partial backup cleanup retention claim'
+  assert_log_not_contains 'tidydots restore -n' 'broad restore after partial backup cleanup'
+}
+
+test_cleanup_rmdir_failure_rewrites_recoverable_journal() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE='rmdir'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'recovery directory cleanup failure'
+  assert_contains "$LAST_OUTPUT" 'journal and manifest were retained' 'recovery directory cleanup wording'
+  assert_log_contains "sudo -n -- rmdir -- ${RECOVERY_DIRECTORY}" 'recovery directory removal attempt'
+  assert_log_contains "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.state." 'journal rewrite after rmdir failure'
+  assert_log_contains "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest." 'manifest rewrite after rmdir failure'
+  assert_log_not_contains 'tidydots restore -n' 'broad restore after rmdir cleanup failure'
+}
+
+test_cleanup_journal_failure_rewrites_recoverable_journal() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE='journal'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'journal cleanup failure'
+  assert_contains "$LAST_OUTPUT" 'journal and manifest were retained' 'journal cleanup failure wording'
+  assert_log_contains "sudo -n -- rm -f -- ${RECOVERY_DIRECTORY}/state ${RECOVERY_DIRECTORY}/manifest" \
+    'journal cleanup removal attempt'
+  assert_log_contains "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.state." 'journal rewrite after journal cleanup failure'
+  assert_log_contains "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest." 'manifest rewrite after journal cleanup failure'
+  assert_log_not_contains_after "sudo -n -- rm -f -- ${RECOVERY_DIRECTORY}/state ${RECOVERY_DIRECTORY}/manifest" \
+    'sudo -n -- cp --preserve=all' \
+    'journal cleanup failure must not roll back after cleanup starts'
+  assert_log_not_contains 'tidydots restore -n' 'broad restore after journal cleanup failure'
+}
+
+test_recovery_directory_metadata_is_validated() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE='bad'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'recovery directory metadata validation'
+  assert_contains "$LAST_OUTPUT" 'must not be group/world writable' 'recovery directory metadata validation message'
+  assert_log_not_contains 'snapper-initialize --apply' 'initializer after recovery directory metadata failure'
+}
+
+test_cleanup_phase_blocks_restart_without_rollback() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=cleanup\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|6755
+"
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'cleanup phase restart safety'
+  assert_contains "$LAST_OUTPUT" 'cleanup is incomplete' 'cleanup phase restart message'
+  assert_log_not_contains 'tidydots ' 'cleanup phase restart before tidydots'
+  assert_log_not_contains 'sudo -n -- cp --preserve=all' 'cleanup phase restart without rollback'
 }
 
 test_rollback_failure_stops_closed() {
@@ -579,11 +702,18 @@ run_test test_initializer_failure_rolls_back_before_broad_restore
 run_test test_rollback_preserves_original_metadata
 run_test test_cleanup_failure_keeps_journal_and_stops_without_destructive_rollback
 run_test test_partial_install_journal_recovers_before_new_deployment
-run_test test_initializer_uses_clean_fixed_environment
+run_test test_production_initializer_rejects_inherited_overrides
 run_test test_stale_staging_files_are_cleaned_before_new_deployment
 run_test test_recovery_setup_failure_cleans_unjournaled_directory
 run_test test_repository_paths_reject_manifest_delimiters
 run_test test_metadata_restore_passes_target_explicitly
+run_test test_recovery_directories_are_root_owned_before_mode_lockdown
+run_test test_restore_ownership_precedes_setuid_and_setgid_mode
+run_test test_cleanup_failure_reports_partial_backup_state
+run_test test_cleanup_rmdir_failure_rewrites_recoverable_journal
+run_test test_cleanup_journal_failure_rewrites_recoverable_journal
+run_test test_recovery_directory_metadata_is_validated
+run_test test_cleanup_phase_blocks_restart_without_rollback
 run_test test_rollback_failure_stops_closed
 
 printf 'PASS: Snapper bootstrap deployment and integrity safety\n'
