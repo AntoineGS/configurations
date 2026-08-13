@@ -14,6 +14,7 @@ REGISTRATION_FILE="$CONF_DIR/snapper"
 COMMAND_LOG="$TEST_ROOT/commands.log"
 SUBVOLUME_STATE="$TEST_ROOT/subvolumes"
 CONFIG_TEMPLATE="$TEST_ROOT/default-template"
+RECOVERY_DIRECTORY="$TEST_ROOT/snapper-bootstrap"
 ORIGINAL_PATH="$PATH"
 UNSHARE="$(command -v unshare || true)"
 BASH_PATH="$BASH"
@@ -306,6 +307,7 @@ create_stubs() {
 
 reset_fixture() {
   rm -rf -- "$FIXTURE_ROOT"
+  rm -rf -- "$RECOVERY_DIRECTORY"
   mkdir -p -- "$ROOT_MOUNT" "$HOME_MOUNT" "$CONFIG_DIR" "$CONF_DIR"
   : >"$COMMAND_LOG"
   : >"$SUBVOLUME_STATE"
@@ -401,6 +403,7 @@ run_as_root() {
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
+    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
     "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -420,6 +423,7 @@ run_as_current_user() {
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
+    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
     "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -439,6 +443,7 @@ run_without_test_mode() {
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
+    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
     "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -454,7 +459,7 @@ test_help_and_unknown_option() {
   run_as_root --help
   assert_status 0 "$LAST_STATUS" '--help'
   assert_contains "$LAST_OUTPUT" 'Usage:' '--help usage'
-  assert_contains "$LAST_OUTPUT" '--check|--apply' '--help modes'
+  assert_contains "$LAST_OUTPUT" '--check|--apply|--create-initial-snapshots' '--help modes'
 
   run_as_root --unknown
   assert_status 2 "$LAST_STATUS" 'unknown option'
@@ -545,9 +550,14 @@ test_apply_creates_missing_configs_and_snapshot_subvolumes() {
   assert_status 0 "$LAST_STATUS" 'fresh apply'
   assert_contains "$LAST_OUTPUT" 'Snapper layout initialized' 'fresh apply output'
   assert_log_contains 'mktemp ' 'atomic config creation'
+  assert_log_not_contains 'snapper --no-dbus --config root create --description initial recovery snapshot' 'apply defers root initial snapshot creation'
+  assert_log_not_contains 'snapper --no-dbus --config home create --description initial recovery snapshot' 'apply defers home initial snapshot creation'
+  assert_log_contains 'btrfs subvolume create' 'snapshot subvolume creation'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'initial snapshot phase'
   assert_log_contains 'snapper --no-dbus --config root create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'root initial snapshot creation'
   assert_log_contains 'snapper --no-dbus --config home create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'home initial snapshot creation'
-  assert_log_contains 'btrfs subvolume create' 'snapshot subvolume creation'
 
   run_as_root --check
   assert_status 0 "$LAST_STATUS" 'fresh apply convergence'
@@ -571,6 +581,9 @@ test_apply_creates_missing_snapshot_subvolumes_for_existing_configs() {
   assert_status 0 "$LAST_STATUS" 'partial apply'
   assert_log_contains "btrfs subvolume create $ROOT_MOUNT/.snapshots" 'root snapshot subvolume creation'
   assert_log_contains "btrfs subvolume create $HOME_MOUNT/.snapshots" 'home snapshot subvolume creation'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'partial initial snapshot phase'
   assert_log_contains 'snapper --no-dbus --config root create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'existing config root snapshot'
   assert_log_contains 'snapper --no-dbus --config home create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'existing config home snapshot'
 }
@@ -588,6 +601,9 @@ test_apply_repairs_partial_registration_without_replacing_it() {
   assert_contains "$(<"$REGISTRATION_FILE")" '# keep this setting' 'partial registration preservation'
   assert_contains "$(<"$REGISTRATION_FILE")" 'SNAPPER_CONFIGS="root home"' 'partial registration completion'
   assert_log_not_contains 'subvolume create' 'partial registration repair'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'partial registration initial snapshot phase'
   assert_log_contains 'snapper --no-dbus --config root create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'partial registration root snapshot'
   assert_log_contains 'snapper --no-dbus --config home create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'partial registration home snapshot'
 }
@@ -605,6 +621,9 @@ test_apply_adds_missing_registration_line_without_replacing_file() {
   assert_contains "$(<"$REGISTRATION_FILE")" '# keep this setting' 'missing registration line preservation'
   assert_contains "$(<"$REGISTRATION_FILE")" 'SNAPPER_CONFIGS="root home"' 'missing registration line completion'
   assert_log_contains 'mv -f' 'missing registration atomic replacement'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'missing registration initial snapshot phase'
 }
 
 test_apply_creates_config_from_template_when_snapshot_subvolume_exists() {
@@ -619,6 +638,9 @@ test_apply_creates_config_from_template_when_snapshot_subvolume_exists() {
   assert_contains "$(<"$CONFIG_DIR/home")" 'SUBVOLUME="/home"' 'home template config'
   assert_log_not_contains 'snapper --no-dbus --config root create-config' 'template root config creation'
   assert_log_not_contains 'subvolume create' 'template config creation'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'template initial snapshot phase'
 }
 
 test_apply_rejects_managed_config_symlink() {
@@ -661,6 +683,9 @@ test_apply_is_idempotent_after_convergence() {
   run_as_root --apply
 
   assert_status 0 "$LAST_STATUS" 'idempotent apply'
+
+  run_as_root --create-initial-snapshots
+  assert_status 0 "$LAST_STATUS" 'idempotent initial snapshot phase'
   assert_log_contains 'snapper --no-dbus --config root create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'idempotent initial root snapshot'
   assert_log_contains 'snapper --no-dbus --config home create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'idempotent initial home snapshot'
   : >"$COMMAND_LOG"
@@ -765,10 +790,26 @@ test_apply_creates_initial_recovery_snapshots() {
   reset_fixture
 
   run_as_root --apply
+  assert_status 0 "$LAST_STATUS" 'initial snapshot layout preparation'
+
+  : >"$COMMAND_LOG"
+  run_as_root --create-initial-snapshots
 
   assert_status 0 "$LAST_STATUS" 'initial recovery snapshots'
   assert_log_contains 'snapper --no-dbus --config root create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'root initial snapshot'
   assert_log_contains 'snapper --no-dbus --config home create --description initial recovery snapshot --cleanup-algorithm number --print-number' 'home initial snapshot'
+}
+
+test_initial_snapshot_phase_rejects_recovery_state() {
+  reset_fixture
+  mkdir -p -- "$RECOVERY_DIRECTORY/backups"
+
+  run_as_root --create-initial-snapshots
+
+  assert_status 1 "$LAST_STATUS" 'initial snapshots with recovery state'
+  assert_contains "$LAST_OUTPUT" 'recovery state exists' 'initial snapshots recovery state message'
+  assert_log_not_contains 'snapper --no-dbus --config root create' 'initial snapshots recovery state safety'
+  assert_log_not_contains 'snapper --no-dbus --config home create' 'initial snapshots recovery state safety'
 }
 
 test_apply_rejects_unvalidated_initial_snapshot() {
@@ -776,6 +817,8 @@ test_apply_rejects_unvalidated_initial_snapshot() {
   TEST_INITIAL_SNAPSHOT_VALID=false
 
   run_as_root --apply
+  assert_status 0 "$LAST_STATUS" 'invalid initial snapshot layout preparation'
+  run_as_root --create-initial-snapshots
 
   assert_status 1 "$LAST_STATUS" 'invalid initial recovery snapshot'
   assert_contains "$LAST_OUTPUT" 'Btrfs subvolume' 'invalid initial snapshot message'
@@ -800,6 +843,8 @@ test_apply_propagates_snapper_failure() {
   TEST_SNAPPER_FAIL=true
 
   run_as_root --apply
+  assert_status 0 "$LAST_STATUS" 'Snapper failure layout preparation'
+  run_as_root --create-initial-snapshots
 
   assert_status 1 "$LAST_STATUS" 'snapper failure'
   assert_contains "$LAST_OUTPUT" 'list Snapper snapshots' 'snapper failure message'
@@ -832,6 +877,7 @@ test_check_rejects_snapshot_with_wrong_parent_subvolume
 test_check_rejects_snapshot_without_root_ownership
 test_check_rejects_snapshot_without_0750_mode
 test_apply_creates_initial_recovery_snapshots
+test_initial_snapshot_phase_rejects_recovery_state
 test_apply_rejects_unvalidated_initial_snapshot
 test_apply_uses_atomic_config_and_registration_replacements
 test_apply_propagates_snapper_failure

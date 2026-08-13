@@ -178,6 +178,9 @@ create_stubs() {
     '    -e:/var/lib/configurations/snapper-bootstrap/backups/*)' \
       '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
       '      ;;' \
+    '    -e:/etc/snapper/configs|-e:/etc/conf.d)' \
+      '      [[ "${SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES:-false}" == true ]] && result=true' \
+      '      ;;' \
     '    -L:/etc/snapper/configs|-L:/etc/conf.d)' \
       '      [[ "${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" == true ]] && result=true' \
       '      ;;' \
@@ -316,6 +319,11 @@ create_stubs() {
     '  [[ "${SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE:-false}" == true ]] && exit 1' \
     '  exit 0' \
     'fi' \
+    'if [[ "$command_name" == env && "$*" == *snapper-initialize\ --create-initial-snapshots ]]; then' \
+    '  [[ "${SNAPPER_BOOTSTRAP_TEST_INITIALIZER_FAILURE:-false}" == true ]] && exit 1' \
+    '  exit 0' \
+    'fi' \
+    'if [[ "$command_name" == rmdir && "${SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE:-false}" == true && "${!#}" == /etc/conf.d ]]; then exit 1; fi' \
     'if [[ "$command_name" == cp && "${SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE:-false}" == true && "$*" == *"/Linux/Snapper/"* ]]; then exit 1; fi' \
     'if [[ "${SNAPPER_BOOTSTRAP_TEST_ROLLBACK_FAILURE:-false}" == true && "$command_name" == cp && "$*" == *"/backups/"* ]]; then exit 1; fi' \
     'if [[ "$command_name" == rm && ( "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-false}" == true || "${SNAPPER_BOOTSTRAP_TEST_CLEANUP_FAILURE:-}" == backup ) && "${1:-}" == -rf && "${!#}" == /var/lib/configurations/snapper-bootstrap/backups ]]; then exit 1; fi' \
@@ -338,6 +346,8 @@ reset_fixture() {
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE \
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE \
     SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE \
+    SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES \
+    SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE
   unset SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST
 }
@@ -362,6 +372,8 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE="${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" \
     SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE="${SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE:-}" \
     SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE="${SNAPPER_BOOTSTRAP_TEST_EXISTING_TARGET_MODE:-640}" \
+    SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES="${SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES:-false}" \
+    SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE:-false}" \
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" \
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" \
@@ -410,6 +422,10 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
     'sudo -n -- mv -f' \
     'sudo -n -- test ! -L /usr/local/libexec/antoinews-linux/snapper-initialize' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+    "sudo -n -- rm -rf -- ${BACKUP_DIRECTORY}" \
+    "sudo -n -- rm -f -- ${RECOVERY_DIRECTORY}/state ${RECOVERY_DIRECTORY}/manifest" \
+    "sudo -n -- rmdir -- ${RECOVERY_DIRECTORY}" \
+    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check' \
     'restore -n' \
     'restore'
@@ -507,6 +523,40 @@ file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640
     "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" \
     "sudo -n -- cp --preserve=all -- ${BACKUP_DIRECTORY}/root /etc/snapper/configs/root" \
     "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest."
+}
+
+test_preparation_recovery_removes_only_manifest_directories() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES=true
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST=$'dir|/etc/snapper/configs\ndir|/etc/conf.d\n'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 0 "$LAST_STATUS" 'Snapper preparation recovery'
+  assert_log_sequence \
+    "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/state" \
+    "sudo -n -- cat -- ${RECOVERY_DIRECTORY}/manifest" \
+    'sudo -n -- rmdir -- /etc/conf.d' \
+    'sudo -n -- rmdir -- /etc/snapper/configs' \
+    "sudo -n -- rm -rf -- ${RECOVERY_DIRECTORY}"
+  assert_log_not_contains 'sudo -n -- rmdir -- /etc/snapper ' \
+    'preparation recovery does not remove unplanned parent directories'
+}
+
+test_preparation_recovery_failure_retains_journal() {
+  reset_fixture
+  SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES=true
+  SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE=true
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST=$'dir|/etc/snapper/configs\ndir|/etc/conf.d\n'
+  run_bootstrap $'yes\nyes\nyes'
+
+  assert_status 1 "$LAST_STATUS" 'Snapper preparation recovery failure'
+  assert_contains "$LAST_OUTPUT" 'preparation recovery failed' 'preparation recovery failure message'
+  assert_log_contains 'sudo -n -- rmdir -- /etc/conf.d' 'preparation directory removal attempt'
+  assert_log_not_contains "sudo -n -- rm -rf -- ${RECOVERY_DIRECTORY}" \
+    'preparation recovery failure retains journal state'
+  assert_log_not_contains 'tidydots --dir' 'preparation recovery failure stops before deployment'
 }
 
 test_production_initializer_rejects_inherited_overrides() {
@@ -702,6 +752,8 @@ run_test test_initializer_failure_rolls_back_before_broad_restore
 run_test test_rollback_preserves_original_metadata
 run_test test_cleanup_failure_keeps_journal_and_stops_without_destructive_rollback
 run_test test_partial_install_journal_recovers_before_new_deployment
+run_test test_preparation_recovery_removes_only_manifest_directories
+run_test test_preparation_recovery_failure_retains_journal
 run_test test_production_initializer_rejects_inherited_overrides
 run_test test_stale_staging_files_are_cleaned_before_new_deployment
 run_test test_recovery_setup_failure_cleans_unjournaled_directory

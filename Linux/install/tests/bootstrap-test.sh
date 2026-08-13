@@ -688,6 +688,7 @@ test_tidydots_phases_have_separate_confirmations() {
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'confirmed Snapper restore apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'confirmed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 1 'confirmed Snapper initializer check'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 1 'confirmed initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -697,6 +698,7 @@ test_tidydots_phases_have_separate_confirmations() {
     "tidydots --dir $ROOT restore snapper -n" \
     "tidydots --dir $ROOT restore snapper" \
     "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" \
     "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" \
     "tidydots --dir $ROOT restore -n" \
     "tidydots --dir $ROOT restore"
@@ -805,6 +807,7 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 1 'failed Snapper restore apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'failed initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 0 'failed broad restore plan'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed broad restore apply'
 }

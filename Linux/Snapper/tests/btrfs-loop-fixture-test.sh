@@ -141,10 +141,12 @@ run_initializer() {
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
     SNAPPER_INITIALIZER_TEMPLATE="$TEMPLATE" \
+    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$TEST_ROOT/snapper-bootstrap" \
     "$SCRIPT" "$@"
 }
 
 run_initializer --apply >/dev/null
+run_initializer --create-initial-snapshots >/dev/null
 run_initializer --check >/dev/null
 
 mount -t btrfs -o subvol=@.snapshots "$LOOP_DEVICE" "$MOUNT_ROOT/root/.snapshots"
