@@ -2,11 +2,19 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
-readonly ROOT_MOUNT="${SNAPPER_INITIALIZER_ROOT_MOUNT:-/}"
-readonly HOME_MOUNT="${SNAPPER_INITIALIZER_HOME_MOUNT:-/home}"
-readonly CONFIG_DIR="${SNAPPER_INITIALIZER_CONFIG_DIR:-/etc/snapper/configs}"
-readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
-readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
+if [[ "${SNAPPER_INITIALIZER_TEST_MODE:-}" == 1 ]]; then
+  readonly ROOT_MOUNT="${SNAPPER_INITIALIZER_ROOT_MOUNT:-/}"
+  readonly HOME_MOUNT="${SNAPPER_INITIALIZER_HOME_MOUNT:-/home}"
+  readonly CONFIG_DIR="${SNAPPER_INITIALIZER_CONFIG_DIR:-/etc/snapper/configs}"
+  readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
+  readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
+else
+  readonly ROOT_MOUNT="/"
+  readonly HOME_MOUNT="/home"
+  readonly CONFIG_DIR="/etc/snapper/configs"
+  readonly REGISTRATION_FILE="/etc/conf.d/snapper"
+  readonly CONFIG_TEMPLATE="/usr/share/snapper/config-templates/default"
+fi
 readonly INITIAL_SNAPSHOT_DESCRIPTION="initial recovery snapshot"
 readonly SNAPSHOT_DIR_MODE="750"
 readonly CONFIG_FILE_MODE="644"

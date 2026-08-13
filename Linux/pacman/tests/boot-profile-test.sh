@@ -10,6 +10,7 @@ SNAPPER_HOME_CONFIG="$REPO_DIR/Linux/Snapper/configs/home"
 SNAPPER_REGISTRATION="$REPO_DIR/Linux/Snapper/conf.d/snapper"
 SNAPPER_INITIALIZER="$REPO_DIR/Linux/Snapper/snapper-initialize"
 BOOTSTRAP="$REPO_DIR/Linux/install/bootstrap"
+BOOTSTRAP_DEPLOYMENT_TEST="$REPO_DIR/Linux/install/tests/snapper-bootstrap-test.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -211,6 +212,14 @@ assert_entry_field snapper registered-configs '        sudo: true'
 if grep -Fq 'initialize-btrfs-layout' <<<"$(extract_application snapper)"; then
   fail 'Snapper initializer must not be a tidydots setup entry'
 fi
+[[ -x "$BOOTSTRAP_DEPLOYMENT_TEST" ]] || fail "cannot execute $BOOTSTRAP_DEPLOYMENT_TEST"
+grep -Fq 'deploy_snapper_files' "$BOOTSTRAP" || fail 'bootstrap does not own Snapper deployment'
+grep -Fq 'recover_snapper_deployment' "$BOOTSTRAP" || fail 'bootstrap does not recover incomplete Snapper deployments'
+grep -Fq 'rollback-assisted per-file' "$BOOTSTRAP" || fail 'bootstrap overstates Snapper deployment transactionality'
+grep -Fq 'validate_snapper_initializer_path' "$BOOTSTRAP" ||
+  fail 'bootstrap does not validate the deployed initializer path'
+grep -Fq 'SNAPPER_BOOTSTRAP_TEST' "$BOOTSTRAP_DEPLOYMENT_TEST" ||
+  fail 'Snapper bootstrap deployment tests do not expose stub controls'
 
 assert_when limine-snapper-sync "$LINUX_WHEN"
 assert_package limine-snapper-sync yay limine-snapper-sync
@@ -329,6 +338,8 @@ grep -Fq -- '--check|--apply' "$SNAPPER_INITIALIZER" || fail "Snapper initialize
 if grep -Fq 'sudo' "$SNAPPER_INITIALIZER"; then
   fail "Snapper initializer invokes sudo internally"
 fi
+grep -Fq 'SNAPPER_INITIALIZER_TEST_MODE' "$SNAPPER_INITIALIZER" || fail 'Snapper initializer lacks explicit test override gate'
+grep -Fq 'env -i' "$BOOTSTRAP" || fail 'bootstrap does not clear initializer environment'
 
 snapper_mapping_owners="$(awk '
   function flush() {
