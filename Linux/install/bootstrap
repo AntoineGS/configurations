@@ -13,11 +13,8 @@ readonly SNAPPER_JOURNAL_FILE=/var/lib/configurations/snapper-bootstrap/state
 readonly SNAPPER_MANIFEST_FILE=/var/lib/configurations/snapper-bootstrap/manifest
 readonly SNAPPER_BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
 readonly SNAPPER_FIXED_PATH=/usr/bin:/bin
-if [[ "${SNAPPER_BOOTSTRAP_TEST_MODE:-}" == 1 ]]; then
-  readonly SNAPPER_LIFECYCLE_LOCK="${SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK:-/tmp/antoinews-linux-snapper.lock}"
-else
-  readonly SNAPPER_LIFECYCLE_LOCK=/run/lock/antoinews-linux-snapper.lock
-fi
+readonly SNAPPER_PRODUCTION_LIFECYCLE_LOCK=/run/lock/antoinews-linux-snapper.lock
+SNAPPER_LIFECYCLE_LOCK="$SNAPPER_PRODUCTION_LIFECYCLE_LOCK"
 DRY_RUN=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_TEMP_DIR=""
@@ -98,6 +95,12 @@ parse_args() {
       --help)
         usage
         exit 0
+        ;;
+      # Direct command-stub tests use this hidden option; production keeps the fixed lock above.
+      --test-only-lifecycle-lock)
+        [[ $# -ge 2 && "$2" != --* ]] || usage_error 'missing value for --test-only-lifecycle-lock'
+        SNAPPER_LIFECYCLE_LOCK="$2"
+        shift 2
         ;;
       *)
         usage_error "unknown option: $1"
@@ -1088,7 +1091,6 @@ run_snapper_initializer() {
   if ! root_run_initializer --check; then
     die 'failed to validate initial Snapper recovery snapshots'
   fi
-  release_snapper_lifecycle_lock || die 'could not release Snapper lifecycle lock after Snapper validation'
 }
 
 list_tidydots() {
