@@ -20,7 +20,6 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string configDir: Quickshell.shellDir + "/config"
   readonly property var fallbackBarConfig: ({
-    position: "top",
     centerAnchor: "desktop.clock",
     layout: { left: [], center: [], right: [] }
   })
@@ -188,10 +187,6 @@ Item {
 
   function releasePopout(owner) {
     if (activePopout === owner) activePopout = null
-  }
-
-  function normalizePosition(value) {
-    return BarModel.normalizePosition(value)
   }
 
   function normalizeLayout(layout) {
@@ -502,6 +497,7 @@ Item {
       entries: root.entriesBefore(centerRoot.entries, root.centerAnchor)
       region: "center"
       anchors.right: centerAnchorModule.left
+      anchors.rightMargin: root.moduleGap
       anchors.verticalCenter: centerAnchorModule.verticalCenter
     }
 
@@ -518,6 +514,7 @@ Item {
       entries: root.entriesAfter(centerRoot.entries, root.centerAnchor)
       region: "center"
       anchors.left: centerAnchorModule.right
+      anchors.leftMargin: root.moduleGap
       anchors.verticalCenter: centerAnchorModule.verticalCenter
     }
   }

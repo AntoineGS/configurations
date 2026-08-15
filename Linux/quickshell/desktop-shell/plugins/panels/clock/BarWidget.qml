@@ -80,7 +80,7 @@ BarWidget {
 
   SystemClock {
     id: clock
-    precision: SystemClock.Minutes
+    precision: SystemClock.Seconds
     onDateChanged: root.displayDate = date
   }
 
