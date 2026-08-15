@@ -119,7 +119,34 @@ assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKT
 assert.match(shell, /previewMode: shell\.previewMode/)
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
-assert.match(shell, /if \(shell\.previewMode && m\.keepLoaded === true\) continue/)
+const panelEntriesStart = shell.indexOf("function computePanelEntries")
+const panelEntriesEnd = shell.indexOf("Connections {", panelEntriesStart)
+assert.notEqual(panelEntriesStart, -1, "panel entry computation exists")
+assert.notEqual(panelEntriesEnd, -1, "panel connections follow entry computation")
+const panelEntriesFunction = shell.slice(panelEntriesStart, panelEntriesEnd)
+assert.doesNotMatch(panelEntriesFunction, /previewMode && m\.keepLoaded === true\) continue/)
+assert.match(panelEntriesFunction, /var keepLoaded = m\.keepLoaded === true/)
+assert.match(panelEntriesFunction, /if \(shell\.previewMode\) keepLoaded = false/)
+assert.match(panelEntriesFunction, /keepLoaded: keepLoaded/)
+const panelLoaderStart = shell.indexOf("property Loader panelLoader")
+const panelLoaderEnd = shell.indexOf("onLoaded:", panelLoaderStart)
+const panelLoader = shell.slice(panelLoaderStart, panelLoaderEnd)
+assert.match(panelLoader, /panelEntry\.keepLoaded \|\| shell\.openPanelIds\[panelEntry\.pluginId\] === true/)
+
+function panelMountState(manifest, previewMode, opened) {
+  const keepLoaded = previewMode ? false : manifest.keepLoaded === true
+  return {
+    entryCreated: true,
+    eagerMount: keepLoaded,
+    onDemandMount: !keepLoaded && opened
+  }
+}
+
+const previewKeepLoaded = panelMountState({ keepLoaded: true }, true, false)
+assert.equal(previewKeepLoaded.entryCreated, true, "preview keeps the panel entry")
+assert.equal(previewKeepLoaded.eagerMount, false, "preview suppresses eager mounting")
+assert.equal(panelMountState({ keepLoaded: true }, true, true).onDemandMount, true,
+  "preview still mounts a summoned keep-loaded panel")
 
 const applyStart = shell.indexOf("function applyShellConfig")
 const persistStart = shell.indexOf("function persistShellConfig")
