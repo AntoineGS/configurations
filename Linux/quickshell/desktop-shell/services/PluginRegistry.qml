@@ -15,15 +15,36 @@ QtObject {
   property int registryRevision: 0
   property bool scanning: false
   property var pluginErrors: []
+  property string lastScanError: ""
 
   signal pluginsChanged()
   signal scanFinished()
   signal pluginLoadFailed(string id, string error)
 
-  onPluginLoadFailed: function(id, error) {
-    var next = Array.isArray(registry.pluginErrors) ? registry.pluginErrors.slice() : []
-    next.push({ id: String(id), error: String(error) })
+  function recordPluginError(id, error) {
+    var key = String(id)
+    var next = []
+    for (var i = 0; i < registry.pluginErrors.length; i++) {
+      var entry = registry.pluginErrors[i]
+      if (!entry || String(entry.id) !== key) next.push(entry)
+    }
+    next.push({ id: key, error: String(error) })
     registry.pluginErrors = next
+  }
+
+  function clearPluginError(id) {
+    var key = String(id)
+    var next = []
+    for (var i = 0; i < registry.pluginErrors.length; i++) {
+      var entry = registry.pluginErrors[i]
+      if (entry && String(entry.id) === key) continue
+      next.push(entry)
+    }
+    registry.pluginErrors = next
+  }
+
+  onPluginLoadFailed: function(id, error) {
+    registry.recordPluginError(id, error)
   }
 
   function isSafeEntryPoint(value) {
@@ -212,6 +233,8 @@ QtObject {
     }
     flush()
 
+    registry.lastScanError = ""
+    registry.clearPluginError("registry")
     installedPlugins = firstParty
     registryRevision++
     scanning = false
@@ -219,8 +242,23 @@ QtObject {
     scanFinished()
   }
 
+  function handleScanExit(exitCode, rawOutput) {
+    if (Number(exitCode) !== 0) {
+      registry.lastScanError = "first-party plugin scan failed with exit code " + String(exitCode)
+      registry.recordPluginError("registry", registry.lastScanError)
+      registry.scanning = false
+      console.warn("PluginRegistry: " + registry.lastScanError)
+      registry.scanFinished()
+      return false
+    }
+    registry.parseScanOutput(rawOutput)
+    return true
+  }
+
   property Process scanProcess: Process {
-    onExited: registry.parseScanOutput(scanStdout.text || "")
+    onExited: function(exitCode) {
+      registry.handleScanExit(exitCode, scanStdout.text || "")
+    }
 
     stdout: StdioCollector {
       id: scanStdout
@@ -242,7 +280,7 @@ QtObject {
       + "scan_firstparty() { local dir=\"$1\"; [[ -d \"$dir\" ]] || return 0; "
       + "  while IFS= read -r manifest; do emit_manifest \"$manifest\"; done "
       + "  < <(find \"$dir\" -mindepth 2 -maxdepth 3 -type f "
-      + "\( -name manifest.json -o -name '*.manifest.json' \) | sort); "
+      + "\\( -name manifest.json -o -name '*.manifest.json' \\) | sort); "
       + "}; scan_firstparty \"$0\""
     scanProcess.command = ["bash", "-c", script, registry.firstPartyDir]
     scanProcess.running = true
