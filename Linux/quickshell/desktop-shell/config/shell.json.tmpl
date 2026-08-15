@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "bar": {
+    "id": "desktop.bar",
+    "position": "top",
+    "transparent": false,
+    "centerAnchor": "desktop.clock",
+    "layout": {
+      "left": [{ "id": "desktop.workspaces" }],
+      "center": [
+        { "id": "recording", "type": "command", "exec": "desktop-shell-status recording", "interval": 1 },
+        { "id": "voxtype", "type": "command", "exec": "voxtype-status", "interval": 1 },
+        { "id": "desktop.clock", "format": "dddd MMMM dd yyyy - HH:mm:ss" }
+      ],
+      "right": [
+        { "id": "codex", "type": "command", "exec": "desktop-shell-status codex", "interval": 300, "onClick": "desktop-shell summon desktop.agents '{}'", "onClickRight": "xdg-open https://chatgpt.com/codex/settings/usage" },
+        { "id": "desktop.tray" },
+        { "id": "desktop.tailscale" },
+        { "id": "desktop.bluetooth" },
+        { "id": "desktop.network" },
+        { "id": "desktop.audio" },
+{{ if eq .Hostname "omarchbook" }}
+        { "id": "desktop.monitor" },
+        { "id": "desktop.power" },
+{{ end }}
+        { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 30 },
+        { "id": "memory", "type": "command", "exec": "desktop-shell-status memory", "interval": 5, "onClick": "launch-or-focus-tui btop" },
+        { "id": "cpu", "type": "command", "exec": "desktop-shell-status cpu", "interval": 5, "onClick": "launch-or-focus-tui btop" }
+      ]
+    }
+  },
+  "plugins": []
+}
