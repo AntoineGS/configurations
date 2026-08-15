@@ -59,6 +59,10 @@ for (const file of manifestFiles.sort()) {
     failures.push(`${file}: invalid JSON: ${error.message}`)
     continue
   }
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    failures.push(`${file}: manifest must be a non-null JSON object`)
+    continue
+  }
   if (manifest.schemaVersion !== 1) {
     failures.push(`${file}: schemaVersion must be 1`)
   }
