@@ -23,6 +23,7 @@ window#waybar {
   opacity: 0.6;
 }
 
+#workspaces button.active,
 #workspaces button.visible {
   color: #cba6f7;
   opacity: 1;
