@@ -43,59 +43,61 @@ QtObject {
     registry.pluginErrors = next
   }
 
+  function rejectManifest(manifest, sourcePath, reason) {
+    var id = manifest && manifest.id !== undefined ? String(manifest.id) : String(sourcePath)
+    var detail = String(reason) + " at " + sourcePath
+    console.warn("PluginRegistry: " + detail)
+    registry.recordPluginError(id, detail)
+    return null
+  }
+
   onPluginLoadFailed: function(id, error) {
     registry.recordPluginError(id, error)
   }
 
   function isSafeEntryPoint(value) {
     if (typeof value !== "string" || value.length === 0) return false
-    if (value.charAt(0) === "/") return false
+    if (value.charAt(0) === "/" || value.charAt(0) === "\\") return false
+    if (/^[A-Za-z]:[\\/]/.test(value)) return false
     if (value.indexOf("..") !== -1) return false
     return true
   }
 
   function validateManifest(manifest, sourcePath) {
     if (!Util.isPlainObject(manifest)) {
-      console.warn("PluginRegistry: manifest is not an object at " + sourcePath)
-      return null
+      return registry.rejectManifest(manifest, sourcePath, "manifest is not an object")
     }
     if (manifest.schemaVersion !== 1) {
-      console.warn("PluginRegistry: unsupported schemaVersion at " + sourcePath)
-      return null
+      return registry.rejectManifest(manifest, sourcePath, "unsupported schemaVersion")
     }
     var required = ["id", "name", "version", "kinds", "entryPoints"]
     for (var i = 0; i < required.length; i++) {
       if (manifest[required[i]] === undefined) {
-        console.warn("PluginRegistry: missing required field '" + required[i] + "' at " + sourcePath)
-        return null
+        return registry.rejectManifest(manifest, sourcePath,
+          "missing required field '" + required[i] + "'")
       }
     }
     var id = String(manifest.id)
     if (!/^desktop\.[a-z0-9-]+$/.test(id)) {
-      console.warn("PluginRegistry: invalid plugin id '" + id + "' at " + sourcePath)
-      return null
+      return registry.rejectManifest(manifest, sourcePath, "invalid plugin id '" + id + "'")
     }
     if (!Array.isArray(manifest.kinds) || manifest.kinds.length === 0) {
-      console.warn("PluginRegistry: kinds must be a non-empty array at " + sourcePath)
-      return null
+      return registry.rejectManifest(manifest, sourcePath, "kinds must be a non-empty array")
     }
     if (!Util.isPlainObject(manifest.entryPoints)) {
-      console.warn("PluginRegistry: entryPoints must be an object at " + sourcePath)
-      return null
+      return registry.rejectManifest(manifest, sourcePath, "entryPoints must be an object")
     }
     if (manifest.barWidget !== undefined && Util.isPlainObject(manifest.barWidget)
         && manifest.barWidget.defaultSection !== undefined) {
       var defaultSection = String(manifest.barWidget.defaultSection)
       if (["left", "center", "right"].indexOf(defaultSection) === -1) {
-        console.warn("PluginRegistry: invalid barWidget.defaultSection at " + sourcePath)
-        return null
+        return registry.rejectManifest(manifest, sourcePath, "invalid barWidget.defaultSection")
       }
     }
     for (var key in manifest.entryPoints) {
       if (!isSafeEntryPoint(manifest.entryPoints[key])) {
-        console.warn("PluginRegistry: unsafe entryPoint '" + key + "'='"
-          + manifest.entryPoints[key] + "' at " + sourcePath)
-        return null
+        return registry.rejectManifest(manifest, sourcePath, "unsafe entryPoint '" + key + "'='"
+          + manifest.entryPoints[key] + "'")
       }
     }
     return manifest
@@ -190,6 +192,7 @@ QtObject {
   // then === EOM ===. Each first-party directory can contain one manifest or
   // sibling *.manifest.json bar-widget manifests.
   function parseScanOutput(text) {
+    registry.pluginErrors = []
     var lines = String(text || "").split("\n")
     var firstParty = {}
     var currentSource = null
@@ -207,6 +210,7 @@ QtObject {
           var validated = validateManifest(manifest, currentSource + "/manifest.json")
           if (validated) firstParty[validated.id] = validated
         } catch (e) {
+          registry.recordPluginError(currentSource + "/manifest.json", "invalid JSON: " + e)
           console.warn("PluginRegistry: bad manifest at " + currentSource + ": " + e)
         }
       }

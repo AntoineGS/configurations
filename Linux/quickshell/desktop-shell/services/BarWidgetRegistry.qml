@@ -13,9 +13,13 @@ QtObject {
 
   signal changed()
 
+  function isValidWidgetId(id) {
+    return /^desktop\.[a-z0-9-]+$/.test(String(id || ""))
+  }
+
   function register(id, component, metadata) {
     var key = String(id)
-    if (!key) return
+    if (!registry.isValidWidgetId(key) || !component) return
     var next = {}
     for (var k in widgets) next[k] = widgets[k]
     next[key] = { component: component, metadata: metadata || {} }
