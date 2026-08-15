@@ -14,6 +14,23 @@ if hostname == "omarchbook" then
     -- SUPER+E toggles "takeover" mode via scripts/toggle-external-takeover.sh.
     hl.monitor({ output = "eDP-1", mode = "preferred", position = "auto", scale = 1 })
     hl.monitor({ output = "", mode = "1920x1080@60", position = "auto", scale = 1, mirror = "eDP-1" })
+elseif hostname == "antoinews-linux" then
+    hl.monitor({ output = "DP-1", mode = "1920x1080@60", position = "1920x0", scale = 1 })
+    hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })
+    hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
+
+    hl.workspace_rule({ workspace = "2", monitor = "DP-2", layout = "dwindle", persistent = true, default = true })
+    hl.workspace_rule({ workspace = "5", monitor = "DP-2", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "8", monitor = "DP-2", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "3", monitor = "DP-1", layout = "dwindle", persistent = true, default = true })
+    hl.workspace_rule({ workspace = "6", monitor = "DP-1", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "9", monitor = "DP-1", layout = "dwindle", persistent = true })
+    hl.workspace_rule({ workspace = "10", monitor = "DP-1", layout = "dwindle", persistent = true })
+
+    hl.window_rule({ name = "windowrule-1", match = { class = "org.wezfurlong.wezterm" }, workspace = "5" })
+    hl.window_rule({ name = "windowrule-2", match = { class = "com.mitchellh.ghostty" }, workspace = "5" })
+    hl.window_rule({ name = "windowrule-3", match = { class = "brave-browser" }, workspace = "8" })
+    hl.window_rule({ name = "windowrule-4", match = { class = "org.float-large.yazi" }, workspace = "10" })
 else
     -- Desktop: multi-monitor setup (1x scale for 1080p/1440p displays)
     hl.monitor({ output = "DVI-D-1",  mode = "1680x1050@59.88", position = "0x0",    scale = 1 })
