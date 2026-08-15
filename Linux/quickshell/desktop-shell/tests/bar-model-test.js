@@ -3,6 +3,7 @@ const fs = require("node:fs")
 const path = require("node:path")
 const model = require("../plugins/bar/BarModel.js")
 const shellRoot = path.resolve(__dirname, "..")
+const shellSource = fs.readFileSync(path.join(shellRoot, "shell.qml"), "utf8")
 const barSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/Bar.qml"), "utf8")
 const workspacesSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Workspaces.qml"), "utf8")
 const traySource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Tray.qml"), "utf8")
@@ -36,6 +37,11 @@ contract("tray menu-bearing items use native display", () => {
   assert.doesNotMatch(openTrayMenu, /item\.menu/)
   assert.match(traySource, /modelData\.onlyMenu \|\| trayItemRoot\.modelData\.menu/)
   assert.doesNotMatch(traySource, /PopupCard|QsMenuOpener/)
+})
+
+contract("native tray display has QApplication shell mode", () => {
+  assert.match(shellSource, /^\/\/\@ pragma UseQApplication\r?\n/)
+  assert.match(traySource, /function openTrayMenu[\s\S]*?item\.display\(/)
 })
 
 contract("clock updates at seconds precision", () => {
