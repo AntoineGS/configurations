@@ -1,0 +1,308 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PROC_ROOT="${DESKTOP_SHELL_PROC_ROOT:-/proc}"
+readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/desktop-shell/status"
+ERROR_FILE=$(mktemp)
+readonly ERROR_FILE
+
+trap 'rm -f "$ERROR_FILE"' EXIT
+
+error_message() {
+  local message=$1
+  local detail=""
+
+  if [[ -s $ERROR_FILE ]]; then
+    detail=$(<"$ERROR_FILE")
+    detail=${detail//$'\n'/ }
+    detail=${detail//$'\r'/ }
+  fi
+
+  if [[ -n $detail ]]; then
+    printf '%s: %s' "$message" "$detail"
+  else
+    printf '%s' "$message"
+  fi
+}
+
+adapter_error() {
+  local kind=$1
+  local message=$2
+  local cache_file="$CACHE_DIR/$kind.json"
+  local cached
+
+  if [[ -s $cache_file ]] && cached=$(jq -ce 'if type == "object" then . else error("cache is not an object") end' "$cache_file" 2>/dev/null); then
+    jq -c --arg error "$message" '
+      .class = "stale"
+      | .tooltip = ((.tooltip // "") + (if (.tooltip // "") == "" then "error: " else " · error: " end) + $error)
+    ' <<<"$cached"
+    return 0
+  fi
+
+  printf '%s\n' "$message" >&2
+  return 1
+}
+
+write_result() {
+  local kind=$1
+  local result=$2
+  local normalized
+  local temp_file=""
+
+  : >"$ERROR_FILE"
+  if ! normalized=$(jq -ce 'if type == "object" then . else error("status result is not an object") end' <<<"$result" 2>"$ERROR_FILE"); then
+    adapter_error "$kind" "$(error_message "invalid $kind result")"
+    return $?
+  fi
+
+  if ! mkdir -p "$CACHE_DIR"; then
+    adapter_error "$kind" "$(error_message "cannot create status cache")"
+    return $?
+  fi
+
+  if ! temp_file=$(mktemp "$CACHE_DIR/.$kind.XXXXXX"); then
+    adapter_error "$kind" "$(error_message "cannot create temporary status cache")"
+    return $?
+  fi
+
+  if ! printf '%s\n' "$normalized" >"$temp_file" || ! mv -f "$temp_file" "$CACHE_DIR/$kind.json"; then
+    rm -f "$temp_file"
+    adapter_error "$kind" "$(error_message "cannot commit status cache")"
+    return $?
+  fi
+
+  printf '%s\n' "$normalized"
+}
+
+json_output() {
+  jq -cn --arg text "$1" --arg tooltip "$2" --arg class "$3" \
+    '{text: $text, tooltip: $tooltip, class: $class}'
+}
+
+recording_status() {
+  local result
+  local pgrep_status
+
+  : >"$ERROR_FILE"
+  if pgrep -f '^gpu-screen-recorder' >/dev/null 2>"$ERROR_FILE"; then
+    result=$(json_output '󰻂' 'Stop recording' 'active')
+  else
+    pgrep_status=$?
+    if ((pgrep_status != 1)); then
+      adapter_error recording "$(error_message "recording process check failed")"
+      return $?
+    fi
+    result=$(json_output '' '' '')
+  fi
+
+  write_result recording "$result"
+}
+
+voxtype_status() {
+  local source
+  local state
+  local icon
+  local result
+
+  : >"$ERROR_FILE"
+  if ! source=$(voxtype status --extended --format json 2>"$ERROR_FILE"); then
+    adapter_error voxtype "$(error_message "Voxtype status query failed")"
+    return $?
+  fi
+
+  : >"$ERROR_FILE"
+  if ! state=$(jq -er '.class | strings' <<<"$source" 2>"$ERROR_FILE"); then
+    adapter_error voxtype "$(error_message "Voxtype status has no class")"
+    return $?
+  fi
+
+  case $state in
+    idle) icon='' ;;
+    recording) icon='󰍬' ;;
+    transcribing) icon='󱔟' ;;
+    *)
+      adapter_error voxtype "unsupported Voxtype class: $state"
+      return $?
+      ;;
+  esac
+
+  : >"$ERROR_FILE"
+  if ! result=$(jq -c --arg icon "$icon" \
+    '.text = $icon | .tooltip = (.tooltip // "") | .class = (.class // "")' <<<"$source" 2>"$ERROR_FILE"); then
+    adapter_error voxtype "$(error_message "invalid Voxtype status JSON")"
+    return $?
+  fi
+
+  write_result voxtype "$result"
+}
+
+codex_status() {
+  local result
+
+  : >"$ERROR_FILE"
+  if ! result=$(codexbar --format '{weekly_pct}%/{weekly_reset}' \
+    --color-low '#7f849c' --color-mid '#7f849c' \
+    --color-high '#7f849c' --color-critical '#7f849c' \
+    2>"$ERROR_FILE" | jq -c '.text |= gsub("d "; "d") | .class = "muted"' 2>>"$ERROR_FILE"); then
+    adapter_error codex "$(error_message "Codex status query failed")"
+    return $?
+  fi
+
+  write_result codex "$result"
+}
+
+disk_status() {
+  local raw
+  local line
+  local capacity
+  local percentage
+  local result
+
+  : >"$ERROR_FILE"
+  if ! raw=$(df -P / 2>"$ERROR_FILE"); then
+    adapter_error disk "$(error_message "disk status query failed")"
+    return $?
+  fi
+
+  line=${raw##*$'\n'}
+  if [[ $line == "$raw" || -z $line ]]; then
+    adapter_error disk "df returned no filesystem row"
+    return $?
+  fi
+
+  read -r _ _ _ _ capacity _ <<<"$line"
+  percentage=${capacity%\%}
+  if [[ ! $percentage =~ ^[0-9]+$ ]]; then
+    adapter_error disk "df returned an invalid capacity: $capacity"
+    return $?
+  fi
+
+  result=$(json_output $''"$capacity" "Disk usage on /: $capacity" '')
+  write_result disk "$result"
+}
+
+memory_status() {
+  local total=""
+  local available=""
+  local key value
+  local used
+  local result
+
+  : >"$ERROR_FILE"
+  if [[ ! -r $PROC_ROOT/meminfo ]]; then
+    adapter_error memory "memory info is unavailable: $PROC_ROOT/meminfo"
+    return $?
+  fi
+
+  while read -r key value _ _; do
+    case $key in
+      MemTotal:) total=$value ;;
+      MemAvailable:) available=$value ;;
+    esac
+  done <"$PROC_ROOT/meminfo"
+
+  if [[ ! $total =~ ^[0-9]+$ || ! $available =~ ^[0-9]+$ || $total -eq 0 ]]; then
+    adapter_error memory "memory info has invalid totals"
+    return $?
+  fi
+
+  used=$((100 - (available * 100 / total)))
+  if ((used < 0)); then
+    used=0
+  fi
+  if ((used > 100)); then
+    used=100
+  fi
+  result=$(json_output $'󰡚'"$used%" "Memory usage: $used%" '')
+  write_result memory "$result"
+}
+
+read_cpu_snapshot() {
+  local cpu user nice system idle iowait irq softirq steal
+  local value
+  local total
+
+  if [[ ! -r $PROC_ROOT/stat ]]; then
+    printf 'CPU statistics are unavailable: %s\n' "$PROC_ROOT/stat" >&2
+    return 1
+  fi
+
+  if ! read -r cpu user nice system idle iowait irq softirq steal _ <"$PROC_ROOT/stat"; then
+    printf 'CPU statistics could not be read\n' >&2
+    return 1
+  fi
+  if [[ $cpu != cpu ]]; then
+    printf 'CPU statistics have no aggregate row\n' >&2
+    return 1
+  fi
+
+  for value in "$user" "$nice" "$system" "$idle" "$iowait" "$irq" "$softirq" "$steal"; do
+    if [[ ! $value =~ ^[0-9]+$ ]]; then
+      printf 'CPU statistics contain a non-numeric value\n' >&2
+      return 1
+    fi
+  done
+
+  total=$((user + nice + system + idle + iowait + irq + softirq + steal))
+  printf '%s %s\n' "$total" "$((idle + iowait))"
+}
+
+cpu_status() {
+  local first second
+  local total1 idle1 total2 idle2
+  local total_delta busy_delta usage
+  local result
+
+  : >"$ERROR_FILE"
+  if ! first=$(read_cpu_snapshot 2>"$ERROR_FILE"); then
+    adapter_error cpu "$(error_message "first CPU sample failed")"
+    return $?
+  fi
+  : >"$ERROR_FILE"
+  if ! sleep 0.2 2>"$ERROR_FILE"; then
+    adapter_error cpu "$(error_message "CPU sample delay failed")"
+    return $?
+  fi
+  : >"$ERROR_FILE"
+  if ! second=$(read_cpu_snapshot 2>"$ERROR_FILE"); then
+    adapter_error cpu "$(error_message "second CPU sample failed")"
+    return $?
+  fi
+
+  read -r total1 idle1 <<<"$first"
+  read -r total2 idle2 <<<"$second"
+  total_delta=$((total2 - total1))
+  busy_delta=$(((total2 - idle2) - (total1 - idle1)))
+  if ((total_delta <= 0 || busy_delta < 0)); then
+    adapter_error cpu "CPU samples have no positive interval"
+    return $?
+  fi
+
+  usage=$((busy_delta * 100 / total_delta))
+  if ((usage < 0)); then
+    usage=0
+  fi
+  if ((usage > 100)); then
+    usage=100
+  fi
+  result=$(json_output $''"$usage%" "CPU usage: $usage%" '')
+  write_result cpu "$result"
+}
+
+if (($# != 1)); then
+  printf 'usage: %s <recording|voxtype|codex|disk|memory|cpu>\n' "${0##*/}" >&2
+  exit 2
+fi
+
+case $1 in
+  recording) recording_status ;;
+  voxtype) voxtype_status ;;
+  codex) codex_status ;;
+  disk) disk_status ;;
+  memory) memory_status ;;
+  cpu) cpu_status ;;
+  *)
+    printf 'unknown status adapter: %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
