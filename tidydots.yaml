@@ -405,6 +405,29 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
         name: enable-external-keyboard-service
+  - name: rustdesk-wayland
+    description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/system/rustdesk.service.d
+        name: service-environment
+        method: copy
+        backup: ./Linux/rustdesk/rustdesk.service.d
+        files:
+          - wayland-session.conf
+        sudo: true
+      - check:
+          linux: >-
+            env="$(systemctl show rustdesk --property=Environment --value)";
+            printf '%s\n' "$env" | grep -q 'WAYLAND_DISPLAY=wayland-1' &&
+            printf '%s\n' "$env" | grep -q 'XDG_RUNTIME_DIR=/run/user/155801123' &&
+            printf '%s\n' "$env" | grep -q 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/155801123/bus' &&
+            printf '%s\n' "$env" | grep -q 'XDG_SESSION_TYPE=wayland'
+        run:
+          linux: systemctl daemon-reload && systemctl restart rustdesk
+        name: reload-service
+        sudo: true
   - package:
       managers:
         pacman: waybar
