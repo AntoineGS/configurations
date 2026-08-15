@@ -572,11 +572,12 @@ ShellRoot {
       for (var i = 0; i < panelKinds.length; i++)
         if (m.kinds.indexOf(panelKinds[i]) !== -1) { matched = true; break }
       if (!matched) continue
-      if (shell.previewMode && m.keepLoaded === true) continue
+      var keepLoaded = m.keepLoaded === true
+      if (shell.previewMode) keepLoaded = false
       if (!shell.pluginRegistry.isEnabled(id)) continue
       var kind = m.kinds.indexOf("panel") !== -1 ? "panel"
         : (m.kinds.indexOf("overlay") !== -1 ? "overlay" : "menu")
-      out.push({ id: id, manifest: m, kind: kind, keepLoaded: m.keepLoaded === true })
+      out.push({ id: id, manifest: m, kind: kind, keepLoaded: keepLoaded })
     }
     return out
   }
