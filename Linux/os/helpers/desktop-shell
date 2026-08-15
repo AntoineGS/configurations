@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: desktop-shell <ping|health|list-plugins|reload-config|summon|hide|call> ...\n' >&2
+}
+
+command_name="${1-}"
+if (($# > 0)); then
+  shift
+fi
+
+target="desktop-shell"
+method=""
+args=()
+
+is_plugin_id() {
+  [[ "${1-}" =~ ^desktop\.[a-z0-9-]+$ ]]
+}
+
+case "$command_name" in
+  ping|health)
+    if (($# != 0)); then usage; exit 2; fi
+    method="$command_name"
+    ;;
+  list-plugins)
+    if (($# != 0)); then usage; exit 2; fi
+    method="listPlugins"
+    ;;
+  reload-config)
+    if (($# != 0)); then usage; exit 2; fi
+    method="reloadConfig"
+    ;;
+  summon)
+    if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "${2-}")
+    method="summon"
+    ;;
+  hide)
+    if (($# != 1)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1")
+    method="hide"
+    ;;
+  call)
+    if (($# < 2 || $# > 3)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "$2" "${3-}")
+    method="call"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
+
+quickshell ipc -p "$HOME/.config/quickshell/desktop-shell" call "$target" "$method" "${args[@]}"
