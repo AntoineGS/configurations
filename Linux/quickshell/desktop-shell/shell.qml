@@ -24,6 +24,7 @@ ShellRoot {
   readonly property string firstPartyPluginsDir: shellPath + "/plugins"
   readonly property string configPath: shellPath + "/config/shell.json"
   readonly property string defaultBarId: "desktop.bar"
+  readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
 
   // Bundled fallback so the shell can start even when the default shell.json is
   // missing or unreadable. The bar config here mirrors the on-disk defaults
@@ -54,7 +55,8 @@ ShellRoot {
   readonly property var healthState: ({
     configValid: shell.configValid,
     pluginErrors: shell.pluginErrors,
-    activeBarId: shell.activeBarId
+    activeBarId: shell.activeBarId,
+    previewMode: shell.previewMode
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false
@@ -91,10 +93,15 @@ ShellRoot {
   }
 
   function persistShellConfig(nextConfig) {
+    if (!shell.configValid) {
+      console.warn("shell config is invalid; refusing to overwrite it")
+      return false
+    }
     var payload = JSON.parse(JSON.stringify(nextConfig))
     payload.version = 1
     shellConfig = payload
     configFile.setText(JSON.stringify(payload, null, 2) + "\n")
+    return true
   }
 
   readonly property var barConfig: shellConfig && Util.isPlainObject(shellConfig.bar) ? shellConfig.bar : builtinShellConfig.bar
@@ -248,6 +255,7 @@ ShellRoot {
   }
 
   function ensureService(pluginId) {
+    if (shell.previewMode) return null
     var key = String(pluginId)
     if (_services[key]) return _services[key]
     var manifest = pluginRegistry && pluginRegistry.installedPlugins
@@ -289,6 +297,10 @@ ShellRoot {
 
   function _syncServices() {
     if (!pluginRegistry || !pluginRegistry.installedPlugins) return
+    if (shell.previewMode) {
+      if (Object.keys(_services).length > 0) shell.unloadPluginServices()
+      return
+    }
     var plugins = pluginRegistry.installedPlugins
     for (var id in plugins) {
       var m = plugins[id]
@@ -367,8 +379,7 @@ ShellRoot {
       }
     }
     if (!dirty) return false
-    persistShellConfig(copy)
-    return true
+    return persistShellConfig(copy)
   }
 
   // ---------------------------------------------------------- on-demand panels
@@ -561,6 +572,7 @@ ShellRoot {
       for (var i = 0; i < panelKinds.length; i++)
         if (m.kinds.indexOf(panelKinds[i]) !== -1) { matched = true; break }
       if (!matched) continue
+      if (shell.previewMode && m.keepLoaded === true) continue
       if (!shell.pluginRegistry.isEnabled(id)) continue
       var kind = m.kinds.indexOf("panel") !== -1 ? "panel"
         : (m.kinds.indexOf("overlay") !== -1 ? "overlay" : "menu")
