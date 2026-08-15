@@ -13,7 +13,6 @@ exec > >(stdbuf -o0 tee "/tmp/update.log") 2>&1
 
 # Perform all update steps
 update-keyring
-update-available-reset
 update-system-pkgs
 # migrate
 update-aur-pkgs
