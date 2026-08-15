@@ -32,7 +32,11 @@ BarWidget {
 
   function focusWorkspace(id) {
     var workspace = root.workspaceById(id)
-    if (workspace && typeof workspace.activate === "function") workspace.activate()
+    if (workspace && typeof workspace.activate === "function") {
+      workspace.activate()
+      return
+    }
+    Hyprland.dispatch("workspace " + String(id))
   }
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
