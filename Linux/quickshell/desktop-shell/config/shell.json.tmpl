@@ -8,12 +8,12 @@
     "layout": {
       "left": [{ "id": "desktop.workspaces" }],
       "center": [
-        { "id": "recording", "type": "command", "exec": "desktop-shell-status recording", "interval": 1 },
-        { "id": "voxtype", "type": "command", "exec": "voxtype-status", "interval": 1 },
+        { "id": "recording", "type": "command", "exec": "desktop-shell-status recording", "interval": 1, "onClick": "cmd-screenrecord" },
+        { "id": "voxtype", "type": "command", "exec": "desktop-shell-status voxtype", "interval": 1, "onClick": "voxtype-model", "onRightClick": "voxtype-config" },
         { "id": "desktop.clock", "format": "dddd MMMM dd yyyy - HH:mm:ss" }
       ],
       "right": [
-        { "id": "codex", "type": "command", "exec": "desktop-shell-status codex", "interval": 300, "onClick": "desktop-shell summon desktop.agents '{}'", "onClickRight": "xdg-open https://chatgpt.com/codex/settings/usage" },
+        { "id": "codex", "type": "command", "exec": "desktop-shell-status codex", "interval": 300, "onClick": "desktop-shell summon desktop.agents '{}'", "onRightClick": "xdg-open https://chatgpt.com/codex/settings/usage" },
         { "id": "desktop.tray" },
         { "id": "desktop.tailscale" },
         { "id": "desktop.bluetooth" },
