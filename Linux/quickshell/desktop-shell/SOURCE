@@ -1,0 +1,4 @@
+project=https://github.com/basecamp/omarchy
+version=v4.0.0-17-g7be59e1f
+commit=7be59e1f4b7451d352d4673c560168290792590f
+source_paths=shell/shell.qml shell/Commons shell/Ui shell/services/PluginRegistry.qml shell/services/BarWidgetRegistry.qml
