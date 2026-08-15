@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.bar",
+  "name": "Bar",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Status bar with widgets",
+  "kinds": [
+    "bar"
+  ],
+  "entryPoints": {
+    "bar": "Bar.qml"
+  }
+}
