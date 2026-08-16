@@ -538,6 +538,12 @@ applications:
         name: config
         backup: ./Linux/quickshell/desktop-shell
       - targets:
+          linux: ~/.local/share/helpers
+        name: desktop-shell-launcher
+        backup: ./Linux/os/helpers
+        files:
+          - desktop-shell-launch
+      - targets:
           linux: ~/.config/systemd/user
         name: systemd-service
         backup: ./Linux/quickshell/desktop-shell/systemd
