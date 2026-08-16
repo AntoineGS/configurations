@@ -515,6 +515,16 @@ applications:
           linux: ~/.config/waybar
         name: config
         backup: ./Linux/waybar
+  - package:
+      managers:
+        yay: quickshell-git
+    name: desktop-shell
+    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.config/quickshell/desktop-shell
+        name: config
+        backup: ./Linux/quickshell/desktop-shell
   - name: uwsm
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
