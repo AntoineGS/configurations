@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2034,SC2329 # The test intentionally replaces functions and state dynamically.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -109,6 +110,7 @@ clients() {
 }
 
 # The watcher must define functions but not enter its event loop when sourced.
+# shellcheck source=../watch-rustdesk-submap.sh
 source "$WATCHER"
 
 TEST_RUNTIME_DIR=$(mktemp -d)
@@ -175,6 +177,14 @@ MONITORS_INACTIVE=$(printf '%s\n' \
   "$(monitor 2 HDMI-A-1 1920 0 false true)" \
   "$(monitor 3 DP-2 3840 0 false false false)" \
   "$(monitor 4 UNKNOWN-1 5760 0 false)" | monitors)
+MONITORS_ANTOINEWS=$(printf '%s\n' \
+  "$(monitor 11 USB-C-42 0 0 true)" \
+  "$(monitor 12 HDMI-9 1920 0 false)" \
+  "$(monitor 13 VGA-77 3840 0 false true)" | monitors)
+MONITORS_UNKNOWN=$(printf '%s\n' \
+  "$(monitor 21 USB-C-77 0 0 true)" \
+  "$(monitor 22 eDP-99 1920 0 false)" \
+  "$(monitor 23 DP-UNKNOWN 3840 0 false false false)" | monitors)
 
 RUSTDESK_ON_HDMI=$(client 2 true true | clients)
 RUSTDESK_ON_DVI=$(client 1 true true | clients)
@@ -182,6 +192,7 @@ RUSTDESK_ON_ALL=$(printf '%s\n' \
   "$(client 1 true true)" \
   "$(client 2 true true)" \
   "$(client 3 true true)" | clients)
+RUSTDESK_ON_ARBITRARY=$(client 11 true true | clients)
 HIDDEN_RUSTDESK_ON_DP=$(client 3 true false | clients)
 UNMAPPED_RUSTDESK_ON_HDMI=$(client 2 false true | clients)
 NON_RUSTDESK_ON_HDMI=$(client 2 true true AnyDesk 'Remote Desktop' | clients)
@@ -242,6 +253,18 @@ assert_equal 'rustdesk-route-DP-2|DVI-D-1|left' \
 assert_equal 'rustdesk-route-hidden|DVI-D-1|none' \
   "$(notification_route_state "$MONITORS_INACTIVE" "$RUSTDESK_ON_DVI")" \
   'unknown disabled and DPMS-off outputs cannot replace an excluded focused output'
+
+assert_equal 'HDMI-9' \
+  "$(rightmost_monitor_from_json "$MONITORS_ANTOINEWS")" \
+  'antoinews arbitrary rightmost monitor'
+
+assert_equal 'eDP-99' \
+  "$(rightmost_monitor_from_json "$MONITORS_UNKNOWN")" \
+  'unknown arbitrary rightmost active monitor'
+
+assert_equal 'rustdesk-route-hidden|none|none' \
+  "$(notification_route_state "$MONITORS_ANTOINEWS" "$RUSTDESK_ON_ARBITRARY")" \
+  'unknown connector notification route is hidden'
 
 # Removing or adding a watcher-owned route must never remove unrelated Mako modes.
 reset_mako
@@ -310,7 +333,7 @@ MAKO_FAIL=false
 # A Mako mode-read failure cannot mutate either Mako modes or the cue state.
 reset_mako
 printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-MAKO_FAIL=read
+MAKO_FAIL='read'
 if apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'; then
   fail 'Mako mode-read failure returned success'
 fi
@@ -382,24 +405,36 @@ HYPR_MONITORS_JSON='[]'
 reset_mako
 : >"$HYPR_LOG"
 handler_clean_state=false
-handle_hyprland_event 'activewindow>>RustDesk,Remote Desktop' handler_clean_state DP-2
+handle_hyprland_event 'activewindow>>RustDesk,Remote Desktop' handler_clean_state
 assert_equal true "$handler_clean_state" 'clean-submap state after RustDesk focus'
-handle_hyprland_event 'activewindow>>Firefox,Example' handler_clean_state DP-2
+handle_hyprland_event 'activewindow>>Firefox,Example' handler_clean_state
 assert_equal false "$handler_clean_state" 'clean-submap state after focus leaves RustDesk'
 assert_equal $'eval hl.dispatch(hl.dsp.submap("clean"))\neval hl.dispatch(hl.dsp.submap("reset"))' \
   "$(<"$HYPR_LOG")" 'clean-submap transitions persist across event iterations'
 
 : >"$HYPR_LOG"
-HYPR_MONITORS_JSON='[{"name":"DP-2","activeWorkspace":{"id":9}}]'
+HYPR_MONITORS_JSON='[{"name":"DP-2","x":3840,"y":0,"width":1920,"height":1080,"disabled":false,"dpmsStatus":true,"activeWorkspace":{"id":9}}]'
 HYPR_CLIENTS_JSON='[
   {"class":"RustDesk","title":"Remote Desktop"},
   {"class":"RustDesk","title":"Remote Desktop"}
 ]'
 handle_hyprland_event \
-  'openwindow>>abc,1,RustDesk,Remote Desktop' handler_clean_state DP-2
+  'openwindow>>abc,1,RustDesk,Remote Desktop' handler_clean_state
 assert_equal \
   'eval hl.dispatch(hl.dsp.window.move({workspace=9, follow=false, window="address:0xabc"}))' \
   "$(<"$HYPR_LOG")" 'second RustDesk window still moves to the configured monitor'
+
+: >"$HYPR_LOG"
+HYPR_MONITORS_JSON='[
+  {"name":"USB-C-42","x":0,"y":0,"width":1920,"height":1080,"disabled":false,"dpmsStatus":true,"activeWorkspace":{"id":4}},
+  {"name":"HDMI-9","x":1920,"y":0,"width":1920,"height":1080,"disabled":false,"dpmsStatus":true,"activeWorkspace":{"id":8}},
+  {"name":"VGA-77","x":3840,"y":0,"width":1920,"height":1080,"disabled":true,"dpmsStatus":true,"activeWorkspace":{"id":12}}
+]'
+handle_hyprland_event \
+  'openwindow>>def,1,RustDesk,Remote Desktop' handler_clean_state
+assert_equal \
+  'eval hl.dispatch(hl.dsp.window.move({workspace=8, follow=false, window="address:0xdef"}))' \
+  "$(<"$HYPR_LOG")" 'second RustDesk window uses arbitrary rightmost monitor'
 
 # Every newly connected stream reconciles before consuming events, including reconnects.
 STREAM_LOG="$TEST_RUNTIME_DIR/stream.log"
@@ -409,8 +444,8 @@ STREAM_LOG="$TEST_RUNTIME_DIR/stream.log"
     printf 'reconcile\n' >>"$STREAM_LOG"
   }
   stream_clean_state=false
-  consume_hyprland_event_stream stream_clean_state DP-2 </dev/null
-  consume_hyprland_event_stream stream_clean_state DP-2 </dev/null
+  consume_hyprland_event_stream stream_clean_state </dev/null
+  consume_hyprland_event_stream stream_clean_state </dev/null
 )
 assert_equal $'reconcile\nreconcile' "$(<"$STREAM_LOG")" \
   'initial and reconnected streams reconcile immediately'
@@ -428,7 +463,7 @@ set +e
   }
   reconnect_clean_state=false
   HYPRLAND_EVENT_RECONNECT_DELAY=2
-  watch_hyprland_events true /unused reconnect_clean_state DP-2
+  watch_hyprland_events true /unused reconnect_clean_state
 )
 watch_status=$?
 set -e
@@ -444,7 +479,7 @@ assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
   }
   stream_clean_state=false
   NOTIFICATION_RECONCILE_INTERVAL=1
-  consume_hyprland_event_stream stream_clean_state DP-2 < <(sleep 1.1)
+  consume_hyprland_event_stream stream_clean_state < <(sleep 1.1)
 )
 mapfile -t stream_reconciliations <"$STREAM_LOG"
 (( ${#stream_reconciliations[@]} >= 2 )) || \
@@ -458,7 +493,7 @@ mapfile -t stream_reconciliations <"$STREAM_LOG"
   }
   busy_stream_clean_state=false
   NOTIFICATION_RECONCILE_INTERVAL=1
-  consume_hyprland_event_stream busy_stream_clean_state DP-2 < <(
+  consume_hyprland_event_stream busy_stream_clean_state < <(
     for _ in 1 2 3 4 5; do
       sleep 0.3
       printf 'activelayout>>keyboard,us\n'
@@ -476,7 +511,7 @@ MAKO_FAIL=apply
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
 handler_clean_state=false
-consume_hyprland_event_stream handler_clean_state DP-2 <<'EOF'
+consume_hyprland_event_stream handler_clean_state <<'EOF'
 workspace>>1
 activewindow>>RustDesk,Remote Desktop
 EOF
