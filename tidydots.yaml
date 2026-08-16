@@ -517,7 +517,7 @@ applications:
         backup: ./Linux/waybar
   - package:
       managers:
-        yay: quickshell-git
+        pacman: quickshell
     name: desktop-shell
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
