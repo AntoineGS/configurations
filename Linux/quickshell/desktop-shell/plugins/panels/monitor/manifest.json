@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.monitor",
+  "name": "Display",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Display brightness and monitor controls",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Display",
+    "description": "Display brightness and monitor controls",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

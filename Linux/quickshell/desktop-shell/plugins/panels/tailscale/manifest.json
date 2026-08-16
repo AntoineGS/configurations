@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.tailscale",
+  "name": "Tailscale",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Tailscale status, peers, and exit-node controls",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Tailscale",
+    "description": "Tailscale status, peers, and exit-node controls",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
