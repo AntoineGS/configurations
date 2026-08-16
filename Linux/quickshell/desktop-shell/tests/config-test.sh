@@ -131,13 +131,15 @@ const commandModules = {
     id: "disk",
     type: "command",
     exec: "desktop-shell-status disk",
-    interval: 30
+    interval: 30,
+    horizontalMargin: 2.5
   },
   memory: {
     id: "memory",
     type: "command",
     exec: "desktop-shell-status memory",
     interval: 5,
+    horizontalMargin: 2.5,
     onClick: "launch-or-focus-tui btop"
   },
   cpu: {
@@ -145,6 +147,7 @@ const commandModules = {
     type: "command",
     exec: "desktop-shell-status cpu",
     interval: 5,
+    horizontalMargin: 2.5,
     onClick: "launch-or-focus-tui btop"
   }
 }

@@ -286,15 +286,15 @@ done <"$codex_trace"
 
 invoke disk disk
 assert_status 0 disk
-assert_json_field '.text' $'42%' 'disk glyph and percentage adjacency'
+assert_json_field '.text' $' 42%' 'disk glyph and percentage separation'
 
 invoke memory memory
 assert_status 0 memory
-assert_json_field '.text' $'󰡚75%' 'memory glyph and percentage adjacency'
+assert_json_field '.text' $'\uefc5 75%' 'Waybar memory glyph and percentage separation'
 
 invoke cpu cpu
 assert_status 0 cpu
-assert_json_field '.text' $'50%' 'CPU glyph and percentage adjacency'
+assert_json_field '.text' $' 50%' 'CPU glyph and percentage separation'
 assert_equal '0.2' "$(<"$sleep_trace")" 'CPU sample interval'
 
 status_cache="$cache_home/desktop-shell/status"
