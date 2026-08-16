@@ -14,7 +14,7 @@ Panel {
   manageIpc: false
   property var pluginRegistry: null
 
-  readonly property bool capabilityAvailable: Bluetooth.defaultAdapter !== undefined
+  readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
   readonly property var devices: Bluetooth.devices ? Bluetooth.devices.values : []
   readonly property color foreground: bar ? bar.foreground : Color.foreground

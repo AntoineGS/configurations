@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "desktop.audio"
   property var pluginRegistry: null
 
-  readonly property bool capabilityAvailable: Pipewire.nodes !== undefined
+  readonly property bool capabilityAvailable: Pipewire.ready
   readonly property var nodes: capabilityAvailable && Pipewire.nodes ? Pipewire.nodes.values : []
   readonly property var sink: capabilityAvailable ? Pipewire.defaultAudioSink : null
   readonly property var source: capabilityAvailable ? Pipewire.defaultAudioSource : null

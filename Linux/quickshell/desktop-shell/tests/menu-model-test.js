@@ -146,10 +146,10 @@ const expectedActions = [
   "trigger.screenshot", "trigger.screenrecord", "trigger.color",
   "trigger.share-clipboard", "trigger.share-file", "trigger.share-folder",
   "setup.audio", "setup.wifi", "setup.bluetooth", "setup.power-profile", "setup.monitors",
-  "setup.dns", "setup.security", "setup.shell-config",
+  "setup.dns", "setup.security", "setup.shell-config", "setup.shell-health",
   "install.package", "install.aur", "remove.package",
   "update.system", "update.audio", "update.wifi", "update.bluetooth",
-  "update.shell-restart", "update.shell-reload",
+  "update.shell-reload",
   "system.lock", "system.suspend", "system.hibernate", "system.logout",
   "system.reboot", "system.shutdown",
 ]

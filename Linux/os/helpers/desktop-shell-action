@@ -26,7 +26,8 @@ case "$action" in
   setup.monitors)           argv=(desktop-shell summon desktop.monitor '{}') ;;
   setup.dns)                argv=(launch-tui-large setup-dns) ;;
   setup.security)           argv=(launch-tui-large setup-fingerprint) ;;
-  setup.shell-config)       argv=(desktop-shell health) ;;
+  setup.shell-config)       argv=(launch-editor "$HOME/.config/quickshell/desktop-shell/config/shell.json") ;;
+  setup.shell-health)       argv=(launch-tui-large watch -n 2 desktop-shell health) ;;
 
   install.package)          argv=(launch-tui-large pkg-install) ;;
   install.aur)              argv=(launch-tui-large pkg-aur-install) ;;
@@ -36,7 +37,6 @@ case "$action" in
   update.audio)             argv=(restart-pipewire) ;;
   update.wifi)              argv=(restart-wifi) ;;
   update.bluetooth)         argv=(restart-bluetooth) ;;
-  update.shell-restart)     argv=(systemctl --user restart desktop-shell.service) ;;
   update.shell-reload)      argv=(desktop-shell reload-config) ;;
 
   system.lock)              argv=(lock-screen) ;;

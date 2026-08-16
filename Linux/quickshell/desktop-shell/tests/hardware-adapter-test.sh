@@ -107,12 +107,18 @@ EOF
 cat >"$TMP_DIR/bin/hyprctl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-if [[ ${1:-} == -j && ${2:-} == monitors ]]; then
+if [[ ${1:-} == -j && ${2:-} == monitors && ${3:-} == all ]]; then
   case ${STUB_HYPR_MODE:-valid} in
     valid)
       printf '%s\n' '[
-        {"id":0,"name":"eDP-1","description":"Internal Panel","width":1920,"height":1080,"scale":1.25,"focused":true,"disabled":false},
-        {"id":1,"name":"DP-1","description":"External Panel","width":2560,"height":1440,"scale":1.5,"focused":false,"disabled":false}
+        {"id":0,"name":"eDP-1","description":"Internal Panel","width":1920,"height":1080,"scale":1.25,"focused":true,"disabled":false,"mirrorOf":"none"},
+        {"id":1,"name":"DP-1","description":"External Panel","width":2560,"height":1440,"scale":1.5,"focused":false,"disabled":false,"mirrorOf":"none"}
+      ]'
+      ;;
+    mirrored)
+      printf '%s\n' '[
+        {"id":0,"name":"eDP-1","description":"Internal Panel","width":1920,"height":1080,"scale":1.25,"focused":true,"disabled":false,"mirrorOf":"none"},
+        {"id":1,"name":"DP-1","description":"External Panel","width":1920,"height":1080,"scale":1.0,"focused":false,"disabled":false,"mirrorOf":"eDP-1"}
       ]'
       ;;
     malformed) printf '%s\n' '{malformed' ;;
@@ -183,7 +189,8 @@ state=''
 export STUB_BATTERY_PRESENT=no
 state=$("$STATE_HELPER" power)
 assert_envelope "$state"
-jq -e '.available == false and .error == null' <<<"$state" >/dev/null || fail 'missing battery was not reported as unavailable'
+jq -e '.available == true and .error == null and .data.profile.active == "balanced"' <<<"$state" >/dev/null \
+  || fail 'power profiles were hidden without a battery'
 
 export STUB_BATTERY_PRESENT=yes
 state=$("$STATE_HELPER" power)
@@ -193,8 +200,20 @@ jq -e '.available == true and .data.battery.status == "Battery 73%" and .data.pr
 
 state=$("$STATE_HELPER" monitor)
 assert_envelope "$state"
-jq -e '.available == true and .data.brightness.available == true and .data.monitors[0].name == "eDP-1" and .data.monitors[0].scale == 1.25 and .data.monitors[1].name == "DP-1" and .data.monitors[1].scale == 1.5' <<<"$state" >/dev/null \
+jq -e '.available == true and .data.brightness.available == true and .data.mirrorEnabled == false and .data.monitors[0].name == "eDP-1" and .data.monitors[0].scale == 1.25 and .data.monitors[1].name == "DP-1" and .data.monitors[1].scale == 1.5' <<<"$state" >/dev/null \
   || fail 'monitor state did not preserve names/scales or brightness capability'
+
+mv "$TMP_DIR/sys/class/backlight" "$TMP_DIR/sys/class/backlight.off"
+state=$("$STATE_HELPER" monitor)
+mv "$TMP_DIR/sys/class/backlight.off" "$TMP_DIR/sys/class/backlight"
+jq -e '.available == true and .data.brightness.available == false' <<<"$state" >/dev/null \
+  || fail 'monitor controls were hidden without a backlight'
+
+export STUB_HYPR_MODE=mirrored
+state=$("$STATE_HELPER" monitor)
+jq -e '.available == true and .data.mirrorEnabled == true' <<<"$state" >/dev/null \
+  || fail 'active monitor mirroring was not detected'
+export STUB_HYPR_MODE=valid
 
 export STUB_TAILSCALE_MODE=missing
 state=$("$STATE_HELPER" tailscale)
@@ -229,13 +248,21 @@ assert_status 2 "$ACTION_HELPER" monitor set-display-brightness '50%;touch'
 assert_status 2 "$ACTION_HELPER" tailscale set-exit-node 'peer;touch'
 
 : >"$CALL_LOG"
+export STUB_HYPR_MODE=valid
 "$ACTION_HELPER" power set-profile performance
 "$ACTION_HELPER" monitor set-display-brightness 42
 "$ACTION_HELPER" monitor set-keyboard-brightness cycle
+"$ACTION_HELPER" monitor toggle-internal
+"$ACTION_HELPER" monitor toggle-mirror
+export STUB_HYPR_MODE=mirrored
+"$ACTION_HELPER" monitor toggle-mirror
 "$ACTION_HELPER" tailscale down
 grep -Fxq 'powerprofilesctl set performance' "$CALL_LOG" || fail 'power profile was not passed as direct argv'
 grep -Fxq 'brightness-display 42%' "$CALL_LOG" || fail 'display brightness was not passed as direct argv'
 grep -Fxq 'brightness-keyboard cycle' "$CALL_LOG" || fail 'keyboard brightness was not passed as direct argv'
+grep -Fxq 'hyprctl keyword monitor eDP-1\,disable' "$CALL_LOG" || fail 'internal display was not toggled from the full monitor list'
+grep -Fxq 'hyprctl keyword monitor DP-1\,preferred\,auto\,1\,mirror\,eDP-1' "$CALL_LOG" || fail 'display mirroring was not enabled'
+grep -Fxq 'hyprctl keyword monitor DP-1\,preferred\,auto\,auto' "$CALL_LOG" || fail 'display mirroring was not disabled'
 grep -Fxq 'tailscale down' "$CALL_LOG" || fail 'Tailscale action was not passed as direct argv'
 
 printf 'PASS: hardware adapters\n'

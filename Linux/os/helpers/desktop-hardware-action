@@ -48,9 +48,10 @@ set_monitor_state() {
   local internal
   local external
   local enabled
+  local mirrored
 
   hyprctl_command=$(resolve_command hyprctl) || exit 1
-  raw_monitors=$("$hyprctl_command" -j monitors 2>/dev/null) || exit 1
+  raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
   internal=$(jq -r '[.[] | select(type == "object") | select(.name | type == "string") | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
   [[ -n $internal && $internal != *[!A-Za-z0-9_.:-]* ]] || exit 1
 
@@ -66,7 +67,12 @@ set_monitor_state() {
     toggle-mirror)
       external=$(jq -r --arg internal "$internal" '[.[] | select(type == "object") | select(.name | type == "string") | select(.name != $internal) | select(.disabled != true) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
       [[ -n $external && $external != *[!A-Za-z0-9_.:-]* ]] || exit 1
-      run_command "$hyprctl_command" keyword monitor "${external},preferred,auto,1,mirror,${internal}"
+      mirrored=$(jq -r --arg name "$external" --arg internal "$internal" 'any(.[]; .name == $name and .mirrorOf == $internal)' <<<"$raw_monitors" 2>/dev/null) || exit 1
+      if [[ $mirrored == true ]]; then
+        run_command "$hyprctl_command" keyword monitor "${external},preferred,auto,auto"
+      else
+        run_command "$hyprctl_command" keyword monitor "${external},preferred,auto,1,mirror,${internal}"
+      fi
       ;;
     *)
       usage
