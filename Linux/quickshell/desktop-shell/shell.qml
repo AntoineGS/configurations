@@ -466,6 +466,11 @@ ShellRoot {
       return hidden === true
     }
     invokeIfLoaded(id, "close", null)
+    return releasePanel(id)
+  }
+
+  function releasePanel(pluginId) {
+    var id = String(pluginId || "")
     if (!openPanelIds[id]) return true
     var next = ({})
     for (var k in openPanelIds) if (k !== id) next[k] = openPanelIds[k]

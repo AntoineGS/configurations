@@ -21,9 +21,10 @@
   "setup.security": { "label": "Security", "action": "setup.security" },
   "setup.shell-config": {
     "label": "Shell config",
-    "description": "Show desktop-shell health",
+    "description": "Edit the active shell configuration",
     "action": "setup.shell-config"
   },
+  "setup.shell-health": { "label": "Shell health", "action": "setup.shell-health" },
 
   "install": { "label": "Install" },
   "install.package": { "label": "Package", "action": "install.package" },
@@ -37,7 +38,6 @@
   "update.audio": { "label": "Audio", "action": "update.audio" },
   "update.wifi": { "label": "Wi-Fi", "action": "update.wifi" },
   "update.bluetooth": { "label": "Bluetooth", "action": "update.bluetooth" },
-  "update.shell-restart": { "label": "Shell restart", "action": "update.shell-restart" },
   "update.shell-reload": { "label": "Shell reload", "action": "update.shell-reload" },
 
   "system": { "label": "System" },

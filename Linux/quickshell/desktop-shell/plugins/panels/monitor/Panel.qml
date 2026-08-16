@@ -189,12 +189,14 @@ Panel {
 
           PanelSectionHeader {
             text: "BRIGHTNESS"
+            visible: root.brightness.available
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
 
           CursorSurface {
             width: parent.width
+            visible: root.brightness.available
             implicitHeight: brightnessSlider.implicitHeight + Style.spacing.controlGap
             foreground: root.foreground
             outline: true
@@ -218,6 +220,7 @@ Panel {
 
           Text {
             width: parent.width
+            visible: root.brightness.available
             text: root.brightnessPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
             color: root.foreground
             font.family: root.fontFamily
@@ -326,7 +329,7 @@ Panel {
               onClicked: root.toggleInternal()
             }
             Button {
-              text: "Mirror"
+              text: root.stateData.mirrorEnabled === true ? "Unmirror" : "Mirror"
               foreground: root.foreground
               onClicked: root.toggleMirror()
             }

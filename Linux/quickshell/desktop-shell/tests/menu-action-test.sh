@@ -26,7 +26,7 @@ make_fake() {
 }
 
 for command_name in \
-  cmd-screenshot cmd-screenrecord cmd-share hyprpicker desktop-shell launch-tui-large setup-dns setup-fingerprint \
+  cmd-screenshot cmd-screenrecord cmd-share hyprpicker desktop-shell launch-editor launch-tui-large setup-dns setup-fingerprint \
   pkg-install pkg-aur-install pkg-remove update restart-pipewire restart-wifi restart-bluetooth \
   systemctl lock-screen system-logout system-reboot system-shutdown; do
   make_fake "$command_name"
@@ -76,7 +76,8 @@ assert_action setup.power-profile desktop-shell summon desktop.power '{}'
 assert_action setup.monitors desktop-shell summon desktop.monitor '{}'
 assert_action setup.dns launch-tui-large setup-dns
 assert_action setup.security launch-tui-large setup-fingerprint
-assert_action setup.shell-config desktop-shell health
+assert_action setup.shell-config launch-editor "$HOME/.config/quickshell/desktop-shell/config/shell.json"
+assert_action setup.shell-health launch-tui-large watch -n 2 desktop-shell health
 
 assert_action install.package launch-tui-large pkg-install
 assert_action install.aur launch-tui-large pkg-aur-install
@@ -86,7 +87,6 @@ assert_action update.system launch-tui-large update
 assert_action update.audio restart-pipewire
 assert_action update.wifi restart-wifi
 assert_action update.bluetooth restart-bluetooth
-assert_action update.shell-restart systemctl --user restart desktop-shell.service
 assert_action update.shell-reload desktop-shell reload-config
 
 assert_action system.lock lock-screen

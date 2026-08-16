@@ -10,6 +10,7 @@ Panel {
   moduleName: "desktop.agents"
   ipcTarget: "desktop.agents"
   manageIpc: false
+  property var shell: null
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -266,7 +267,11 @@ Panel {
   implicitHeight: button.implicitHeight
 
   onProviderIndexChanged: if (panelFlick) panelFlick.contentY = 0
-  onOpenedChanged: if (opened) {
+  onOpenedChanged: {
+    if (!opened) {
+      if (shell) shell.releasePanel(moduleName)
+      return
+    }
     cursorActive = false
     nowMs = Date.now()
     if (panelFlick) panelFlick.contentY = 0
@@ -277,6 +282,7 @@ Panel {
   Main {
     id: usage
     settings: root.settings
+    loaded: root.opened
   }
 
   // The compact command is not a bar slot, so provide a one-pixel anchor when

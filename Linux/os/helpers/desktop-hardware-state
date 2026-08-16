@@ -190,11 +190,12 @@ read_keyboard_backlight() {
 }
 
 state_power() {
-  local battery_present
+  local battery_present=''
+  local battery_available=false
   local status=0
-  local battery_status
-  local battery_capacity
-  local battery_remaining
+  local battery_status=''
+  local battery_capacity=''
+  local battery_remaining=''
   local profiles_available=false
   local active_profile=''
   local profiles='[]'
@@ -204,28 +205,25 @@ state_power() {
   local profile_data
   local data
 
-  if ! battery_present=$(resolve_helper battery-present); then
-    emit_unavailable '{}'
-  fi
-
-  if "$battery_present" >/dev/null 2>&1; then
-    :
-  else
-    status=$?
-    if (( status == 1 )); then
-      emit_unavailable '{}'
+  if battery_present=$(resolve_helper battery-present); then
+    "$battery_present" >/dev/null 2>&1 || status=$?
+    if (( status == 0 )); then
+      battery_available=true
+    elif (( status != 1 )); then
+      emit_stale 'battery presence check failed'
     fi
-    emit_stale 'battery presence check failed'
   fi
 
-  if ! battery_status=$("$(resolve_helper battery-status)" 2>/dev/null); then
-    emit_stale 'battery status helper failed'
-  fi
-  if ! battery_capacity=$("$(resolve_helper battery-capacity)" 2>/dev/null); then
-    emit_stale 'battery capacity helper failed'
-  fi
-  if ! battery_remaining=$("$(resolve_helper battery-remaining-time)" 2>/dev/null); then
-    emit_stale 'battery remaining-time helper failed'
+  if [[ $battery_available == true ]]; then
+    if ! battery_status=$("$(resolve_helper battery-status)" 2>/dev/null); then
+      emit_stale 'battery status helper failed'
+    fi
+    if ! battery_capacity=$("$(resolve_helper battery-capacity)" 2>/dev/null); then
+      emit_stale 'battery capacity helper failed'
+    fi
+    if ! battery_remaining=$("$(resolve_helper battery-remaining-time)" 2>/dev/null); then
+      emit_stale 'battery remaining-time helper failed'
+    fi
   fi
 
   if profile_command=$(resolve_command powerprofilesctl); then
@@ -265,7 +263,10 @@ state_power() {
     --arg remaining "$battery_remaining" \
     --argjson profile "$profile_data" \
     '{battery: {status: $status, capacity: $capacity, remainingTime: $remaining}, profile: $profile}')
-  emit_available "$data"
+  if [[ $battery_available == true || $profiles_available == true ]]; then
+    emit_available "$data"
+  fi
+  emit_unavailable "$data"
 }
 
 state_monitor() {
@@ -277,13 +278,14 @@ state_monitor() {
   local focused_monitor
   local internal_monitor
   local internal_enabled
+  local mirror_enabled
   local data
   local available
 
   if ! hyprctl_command=$(resolve_command hyprctl); then
     emit_unavailable '{"monitors":[],"brightness":{"available":false,"device":"","percent":0},"keyboardBrightness":{"available":false,"device":"","percent":0}}'
   fi
-  if ! raw_monitors=$("$hyprctl_command" -j monitors 2>/dev/null); then
+  if ! raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null); then
     emit_stale 'hyprctl monitor query failed'
   fi
   if ! monitors=$(jq -ce '
@@ -295,7 +297,8 @@ state_monitor() {
         height: (if (.height | type) == "number" then .height else 0 end),
         scale: (if (.scale | type) == "number" then .scale else 1 end),
         focused: (.focused == true),
-        enabled: (.disabled != true)
+        enabled: (.disabled != true),
+        mirrorOf: (if (.mirrorOf | type) == "string" then .mirrorOf else "none" end)
       })
       | map(select(.name != ""))
     end
@@ -308,7 +311,8 @@ state_monitor() {
   focused_monitor=$(jq -r '[.[] | select(.focused == true) | .name][0] // ""' <<<"$monitors")
   internal_monitor=$(jq -r '[.[] | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$monitors")
   internal_enabled=$(jq -r --arg name "$internal_monitor" 'any(.[]; .name == $name and .enabled)' <<<"$monitors")
-  available=$(jq -r '.available' <<<"$brightness")
+  mirror_enabled=$(jq -r --arg internal "$internal_monitor" '$internal != "" and any(.[]; .enabled and .mirrorOf == $internal)' <<<"$monitors")
+  available=$(jq -r 'length > 0' <<<"$monitors")
   data=$(jq -cn \
     --argjson monitors "$monitors" \
     --argjson brightness "$brightness" \
@@ -316,7 +320,8 @@ state_monitor() {
     --arg focusedMonitor "$focused_monitor" \
     --arg internalMonitor "$internal_monitor" \
     --argjson internalEnabled "$internal_enabled" \
-    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: false, brightness: $brightness, keyboardBrightness: $keyboardBrightness}')
+    --argjson mirrorEnabled "$mirror_enabled" \
+    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness}')
 
   if [[ $available == true ]]; then
     emit_available "$data"
