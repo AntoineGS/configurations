@@ -45,15 +45,4 @@ Item {
     id: panelController
   }
 
-  IpcHandler {
-    enabled: root.manageIpc && root.ipcTarget !== ""
-    target: root.ipcTarget
-
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-  }
-
 }

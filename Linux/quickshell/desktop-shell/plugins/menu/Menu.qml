@@ -250,6 +250,14 @@ Item {
     root.filterText = ""
   }
 
+  // The menu is loaded on demand in preview, so keep its health probe with the
+  // single menu instance instead of adding a handler to each bar screen.
+  IpcHandler {
+    target: "desktop.menu"
+
+    function ping(): string { return "pong" }
+  }
+
   function refresh() {
     defaultMenuFile.reload()
     return "ok"

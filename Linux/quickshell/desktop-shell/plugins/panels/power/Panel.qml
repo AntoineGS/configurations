@@ -72,16 +72,6 @@ Panel {
     if (bar && bar.shell) bar.shell.updateEntryInline(moduleName, next)
   }
 
-  IpcHandler {
-    target: root.ipcTarget
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function refresh(): string { root.refresh(); return "ok" }
-  }
-
   visible: capabilityAvailable
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0

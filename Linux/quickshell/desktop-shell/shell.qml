@@ -788,6 +788,72 @@ ShellRoot {
     }
   }
 
+  // Bar widgets are instantiated once per screen, but their IPC targets are
+  // shell-wide. Keep one handler per target and route calls to the widget on
+  // the focused screen; widget state is still shared across all bar screens.
+  function barWidgetFor(pluginId) {
+    return shell.bar && typeof shell.bar.findPanelWidget === "function"
+      ? shell.bar.findPanelWidget(pluginId) : null
+  }
+
+  function pingBarWidget(pluginId) {
+    var widget = shell.barWidgetFor(pluginId)
+    if (!widget) return "unavailable"
+    return widget.capabilityAvailable === false ? "unavailable" : "pong"
+  }
+
+  function invokeBarWidget(pluginId, method, argument) {
+    var widget = shell.barWidgetFor(pluginId)
+    if (!widget || typeof widget[method] !== "function") return false
+    try {
+      if (method === "refresh" && typeof widget.broadcast === "function") {
+        widget.broadcast("refresh")
+        return true
+      }
+      if (argument === undefined) widget[method]()
+      else widget[method](argument)
+      return true
+    } catch (error) {
+      console.warn("bar widget " + pluginId + " " + method + "() threw:", error)
+      return false
+    }
+  }
+
+  component BarWidgetIpc: IpcHandler {
+    required property string pluginId
+    target: pluginId
+
+    function ping(): string { return shell.pingBarWidget(pluginId) }
+    function open(): void { shell.invokeBarWidget(pluginId, "open") }
+    function close(): void { shell.invokeBarWidget(pluginId, "close") }
+    function show(): void { shell.invokeBarWidget(pluginId, "open") }
+    function hide(): void { shell.invokeBarWidget(pluginId, "close") }
+    function toggle(): void { shell.invokeBarWidget(pluginId, "toggle") }
+    function refresh(): string {
+      return shell.invokeBarWidget(pluginId, "refresh") ? "ok" : "unavailable"
+    }
+    function brightness(percent: string): string {
+      return shell.invokeBarWidget(pluginId, "brightness", percent) ? "ok" : "unavailable"
+    }
+    function up(): string {
+      return shell.invokeBarWidget(pluginId, "up") ? "ok" : "unavailable"
+    }
+    function down(): string {
+      return shell.invokeBarWidget(pluginId, "down") ? "ok" : "unavailable"
+    }
+    function logout(): string {
+      return shell.invokeBarWidget(pluginId, "logout") ? "ok" : "unavailable"
+    }
+  }
+
+  BarWidgetIpc { pluginId: "desktop.clock" }
+  BarWidgetIpc { pluginId: "desktop.audio" }
+  BarWidgetIpc { pluginId: "desktop.network" }
+  BarWidgetIpc { pluginId: "desktop.bluetooth" }
+  BarWidgetIpc { pluginId: "desktop.power" }
+  BarWidgetIpc { pluginId: "desktop.monitor" }
+  BarWidgetIpc { pluginId: "desktop.tailscale" }
+
   // ---------------------------------------------------------- shell IPC
 
   IpcHandler {

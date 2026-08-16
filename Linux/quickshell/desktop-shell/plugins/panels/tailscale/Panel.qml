@@ -45,18 +45,10 @@ Panel {
     if (peer) tailscale.copyPeerAddress(peer)
   }
 
-  IpcHandler {
-    target: root.ipcTarget
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function refresh(): string { tailscale.refresh(); return "ok" }
-    function up(): string { tailscale.up(); return "ok" }
-    function down(): string { tailscale.down(); return "ok" }
-    function logout(): string { tailscale.logout(); return "ok" }
-  }
+  function refresh() { tailscale.refresh() }
+  function up() { tailscale.up() }
+  function down() { tailscale.down() }
+  function logout() { tailscale.logout() }
 
   Service {
     id: tailscale
