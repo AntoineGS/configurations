@@ -15,6 +15,7 @@ run_test() {
 cd -- "$ROOT"
 
 run_test "shared desktop profile" bash Linux/pacman/tests/shared-desktop-profile-test.sh
+run_test "manifest-derived package previews" bash Linux/pacman/tests/package-preview-test.sh
 run_test "headless antoinews-linux graphical profile" bash Linux/pacman/tests/headless-antoinews-linux-profile-test.sh
 run_test "networkd and iwd setup" bash Linux/network/tests/setup-networkd-iwd-test.sh
 run_test "antoinews-linux Intel profile" bash Linux/pacman/tests/antoinews-linux-profile-test.sh

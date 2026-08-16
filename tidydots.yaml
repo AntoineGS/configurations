@@ -232,21 +232,29 @@ applications:
           windows: ~/AppData/Roaming/yazi/config
         name: config
         backup: ./Both/Yazi
-  - package:
-      managers:
-        brew: posting
-        installer:
-          command:
-            windows: uv tool install --python 3.13 posting
-          binary: posting
-        yay: posting
-    name: posting
+  - name: posting
     entries:
       - targets:
           linux: ~/.config/posting
           windows: ~/.config/posting
         name: config
         backup: ./Both/posting
+  - package:
+      managers:
+        brew: posting
+        yay: posting
+    name: posting-linux
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
+        installer:
+          command:
+            windows: uv tool install --python 3.13 posting
+          binary: posting
+    name: posting-windows
+    when: '{{ eq .OS "windows" }}'
+    entries: []
   - name: xcompose
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -1509,12 +1517,18 @@ applications:
   - package:
       managers:
         brew: eza
+        pacman: eza
+    name: eza
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
         installer:
           command:
             windows: cargo install eza
           binary: eza
-        pacman: eza
-    name: eza
+    name: eza-windows
+    when: '{{ eq .OS "windows" }}'
     entries: []
   - package:
       managers:
@@ -1648,12 +1662,18 @@ applications:
   - package:
       managers:
         apt: sd
+        pacman: sd
+    name: sd
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
         installer:
           command:
             windows: cargo install sd
           binary: sd
-        pacman: sd
-    name: sd
+    name: sd-windows
+    when: '{{ eq .OS "windows" }}'
     entries: []
   - package:
       managers:
