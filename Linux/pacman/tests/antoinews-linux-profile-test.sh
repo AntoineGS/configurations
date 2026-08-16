@@ -73,38 +73,11 @@ extract_application_field() {
 extract_pacman_packages() {
   awk '
     /^        pacman:/ {
-      in_pacman = 1
-      in_deps = 0
       package_name = $0
       sub(/^        pacman:[[:space:]]*/, "", package_name)
       if (length(package_name) > 0) {
         print package_name
       }
-      next
-    }
-
-    in_pacman && /^      [^[:space:]]/ {
-      in_pacman = 0
-      in_deps = 0
-      next
-    }
-
-    in_pacman && /^          deps:$/ {
-      in_deps = 1
-      next
-    }
-
-    in_pacman && in_deps && /^            - / {
-      package_name = $0
-      sub(/^            - /, "", package_name)
-      print package_name
-      next
-    }
-
-    in_pacman && /^          name: / {
-      package_name = $0
-      sub(/^          name: /, "", package_name)
-      print package_name
       next
     }
   '
@@ -126,6 +99,17 @@ assert_exact_packages() {
   }
 }
 
+assert_package_application() {
+  local application="$1"
+  local package="$2"
+  local block actual
+
+  block="$(extract_application "$application")"
+  [[ -n "$block" ]] || fail "application $application is not declared"
+  actual="$(printf '%s\n' "$block" | extract_pacman_packages)"
+  [[ "$actual" == "$package" ]] || fail "pacman package for $application is $actual, expected $package"
+}
+
 assert_when() {
   local application="$1"
   local expected_when="$2"
@@ -142,13 +126,12 @@ GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoi
 
 assert_when antoinews-linux-intel "$INTEL_WHEN"
 assert_exact_packages antoinews-linux-intel \
-  intel-ucode \
-  intel-media-driver \
-  libva-utils \
-  mesa \
-  mesa-utils \
-  vulkan-intel \
-  vulkan-tools
+  intel-ucode
+
+for package in intel-media-driver libva-utils mesa mesa-utils vulkan-intel vulkan-tools; do
+  assert_package_application "$package" "$package"
+  assert_when "$package" "$INTEL_WHEN"
+done
 
 intel_block="$(extract_application antoinews-linux-intel)"
 for forbidden in nvidia libva-nvidia thermald raydium qmk lnxlink tailscale-subnet-router; do

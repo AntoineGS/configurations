@@ -439,45 +439,7 @@ applications:
         backup: ./Both/Zellij/plugins
   - package:
       managers:
-        pacman:
-          deps:
-            - bluetui
-            - brightnessctl
-            - evince
-            - ffmpeg
-            - gpu-screen-recorder
-            - grim
-            - hypridle
-            - hyprlock
-            - hyprpicker
-            - hyprshot
-            - hyprsunset
-            - impala
-            - imv
-            - lazydocker
-            - libnotify
-            - mako
-            - mpv
-            - nautilus
-            - playerctl
-            - polkit-gnome
-            - power-profiles-daemon
-            - satty
-            - sddm
-            - slurp
-            - socat
-            - swaybg
-            - swayosd
-            - uwsm
-            - v4l-utils
-            - waypipe
-            - wl-clipboard
-            - wl-clip-persist
-            - wtype
-            - xdg-desktop-portal-gtk
-            - xdg-desktop-portal-hyprland
-            - xdg-utils
-          name: hyprland
+        pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -510,39 +472,266 @@ applications:
         name: enable-external-keyboard-service
   - package:
       managers:
-        pacman:
-          deps:
-            - pipewire-alsa
-            - pipewire-pulse
-            - wireplumber
-            - pamixer
-            - wiremix
-          name: pipewire
+        pacman: bluetui
+    name: bluetui
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: brightnessctl
+    name: brightnessctl
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: evince
+    name: evince
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: ffmpeg
+    name: ffmpeg
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: gpu-screen-recorder
+    name: gpu-screen-recorder
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: grim
+    name: grim
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hypridle
+    name: hypridle
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprlock
+    name: hyprlock
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprpicker
+    name: hyprpicker
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprshot
+    name: hyprshot
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: hyprsunset
+    name: hyprsunset
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: impala
+    name: impala
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: lazydocker
+    name: lazydocker
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: libnotify
+    name: libnotify
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: mpv
+    name: mpv
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: nautilus
+    name: nautilus
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: playerctl
+    name: playerctl
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: polkit-gnome
+    name: polkit-gnome
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: power-profiles-daemon
+    name: power-profiles-daemon
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: satty
+    name: satty
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: slurp
+    name: slurp
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: socat
+    name: socat
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: swaybg
+    name: swaybg
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: v4l-utils
+    name: v4l-utils
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: waypipe
+    name: waypipe
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wl-clipboard
+    name: wl-clipboard
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wl-clip-persist
+    name: wl-clip-persist
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wtype
+    name: wtype
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: xdg-desktop-portal-gtk
+    name: xdg-desktop-portal-gtk
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: xdg-desktop-portal-hyprland
+    name: xdg-desktop-portal-hyprland
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: xdg-utils
+    name: xdg-utils
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pipewire
     name: pipewire-audio
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - package:
       managers:
-        pacman:
-          deps:
-            - intel-media-driver
-            - libva-utils
-            - mesa
-            - mesa-utils
-            - vulkan-intel
-            - vulkan-tools
-          name: intel-ucode
+        pacman: pipewire-alsa
+    name: pipewire-alsa
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pipewire-pulse
+    name: pipewire-pulse
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: wireplumber
+    name: wireplumber
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: pamixer
+    name: pamixer
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: intel-ucode
     name: antoinews-linux-intel
     description: Intel microcode and integrated graphics stack for the Intel desktop
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries: []
   - package:
       managers:
+        pacman: intel-media-driver
+    name: intel-media-driver
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
+        pacman: libva-utils
+    name: libva-utils
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
+        pacman: mesa
+    name: mesa
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
+        pacman: mesa-utils
+    name: mesa-utils
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
+        pacman: vulkan-intel
+    name: vulkan-intel
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
+        pacman: vulkan-tools
+    name: vulkan-tools
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - package:
+      managers:
         pacman: waybar
-        yay:
-          deps:
-            - claudebar
-            - codexbar
     name: waybar
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -550,14 +739,32 @@ applications:
           linux: ~/.config/waybar
         name: config
         backup: ./Linux/waybar
-  - name: uwsm
+  - package:
+      managers:
+        yay: claudebar
+    name: claudebar
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        yay: codexbar
+    name: codexbar
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: uwsm
+    name: uwsm
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/uwsm/default
         name: config
         backup: ./Linux/uwsm/default
-  - name: sddm
+  - package:
+      managers:
+        pacman: sddm
+    name: sddm
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
@@ -604,11 +811,7 @@ applications:
   - package:
       managers:
         brew: fzf
-        pacman:
-          deps:
-            - kitten
-            - perl
-          name: fzf
+        pacman: fzf
         winget: junegunn.fzf
     name: fzf
     description: Command-line fuzzy finder
@@ -628,6 +831,16 @@ applications:
         run:
           windows: '[Environment]::SetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc"), "User")'
         name: configure FZF_DEFAULT_OPTS_FILE
+  - package:
+      managers:
+        pacman: kitten
+    name: kitten
+    entries: []
+  - package:
+      managers:
+        pacman: perl
+    name: perl
+    entries: []
   - name: shell-picker
     description: Cross-platform fzf backend and shell adapters
     entries:
@@ -688,10 +901,7 @@ applications:
         backup: ./Linux/fontconfig
   - package:
       managers:
-        yay:
-          deps:
-            - xdg-terminal-exec
-          name: hyprland-preview-share-picker-git
+        yay: hyprland-preview-share-picker-git
     name: hyprland-preview-share-picker
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -701,19 +911,31 @@ applications:
         backup: ./Linux/hyprland-preview-share-picker
   - package:
       managers:
+        yay: xdg-terminal-exec
+    name: xdg-terminal-exec
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         yay: localsend
     name: localsend
     description: LocalSend file sharing application used by cmd-share
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
-  - name: imv
+  - package:
+      managers:
+        pacman: imv
+    name: imv
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/imv
         name: config
         backup: ./Linux/imv
-  - name: mako
+  - package:
+      managers:
+        pacman: mako
+    name: mako
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
@@ -729,7 +951,10 @@ applications:
         backup: ./Linux/mise
         files:
           - config.toml
-  - name: swayosd
+  - package:
+      managers:
+        pacman: swayosd
+    name: swayosd
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
@@ -743,7 +968,10 @@ applications:
           linux: ~/.config/Typora/themes
         name: themes
         backup: ./Linux/Typora/themes
-  - name: wiremix
+  - package:
+      managers:
+        pacman: wiremix
+    name: wiremix
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
@@ -966,10 +1194,7 @@ applications:
           - nvim-open
   - package:
       managers:
-        pacman:
-          deps:
-            - rebuild-detector
-          name: pacman-contrib
+        pacman: pacman-contrib
     name: pacman-hooks
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -983,6 +1208,12 @@ applications:
           - pkg-checkrebuild.hook
           - clean-cache.hook
         sudo: true
+  - package:
+      managers:
+        pacman: rebuild-detector
+    name: rebuild-detector
+    when: '{{ eq .OS "linux" }}'
+    entries: []
   - name: ssh-agent
     description: SSH agent with 4-hour key lifetime (replaces 1Password agent)
     when: '{{ eq .OS "linux" }}'
@@ -1093,17 +1324,50 @@ applications:
         sudo: true
   - package:
       managers:
-        pacman:
-          deps:
-            - avahi
-            - bluez
-            - bluez-utils
-            - cups
-            - cups-browsed
-            - docker
-            - tailscale
-          name: ufw
+        pacman: ufw
     name: linux-services-packages
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: avahi
+    name: avahi
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: bluez
+    name: bluez
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: bluez-utils
+    name: bluez-utils
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: cups
+    name: cups
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: cups-browsed
+    name: cups-browsed
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: docker
+    name: docker
+    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: tailscale
+    name: tailscale
     when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
     entries: []
   - package:

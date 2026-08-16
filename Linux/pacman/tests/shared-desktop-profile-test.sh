@@ -69,67 +69,7 @@ extract_application_field() {
   ' <<< "$block"
 }
 
-extract_manager_packages() {
-  local manager="$1"
-
-  awk -v wanted="$manager" '
-    /^      managers:$/ {
-      in_managers = 1
-      in_manager = 0
-      in_deps = 0
-      next
-    }
-
-    in_managers && /^    [^[:space:]]/ {
-      in_managers = 0
-      in_manager = 0
-      in_deps = 0
-      next
-    }
-
-    in_managers && $0 ~ "^        " wanted ":" {
-      in_manager = 1
-      in_deps = 0
-      package_name = $0
-      sub("^        " wanted ":[[:space:]]*", "", package_name)
-      if (length(package_name) > 0) {
-        print package_name
-      }
-      next
-    }
-
-    in_managers && /^        [^[:space:]]/ {
-      in_manager = 0
-      in_deps = 0
-      next
-    }
-
-    in_manager && /^          deps:$/ {
-      in_deps = 1
-      next
-    }
-
-    in_manager && in_deps && /^            - / {
-      package_name = $0
-      sub(/^            - /, "", package_name)
-      print package_name
-      next
-    }
-
-    in_manager && /^          name: / {
-      package_name = $0
-      sub(/^          name: /, "", package_name)
-      print package_name
-      next
-    }
-  '
-}
-
-extract_pacman_packages() {
-  extract_manager_packages pacman
-}
-
-extract_manager_primary() {
+extract_direct_manager_packages() {
   local manager="$1"
 
   awk -v wanted="$manager" '
@@ -145,14 +85,10 @@ extract_manager_primary() {
       next
     }
 
-    in_managers && $0 ~ "^        " wanted ":" {
-      in_manager = 1
+    in_managers && $0 ~ "^        " wanted ":[[:space:]]+[^[:space:]]" {
       package_name = $0
-      sub("^        " wanted ":[[:space:]]*", "", package_name)
-      if (length(package_name) > 0) {
-        print package_name
-        exit
-      }
+      sub("^        " wanted ":[[:space:]]+", "", package_name)
+      print package_name
       next
     }
 
@@ -160,18 +96,41 @@ extract_manager_primary() {
       in_manager = 0
       next
     }
-
-    in_manager && /^          name: / {
-      package_name = $0
-      sub(/^          name: /, "", package_name)
-      print package_name
-      exit
-    }
   '
 }
 
-extract_pacman_primary() {
-  extract_manager_primary pacman
+extract_direct_arch_declarations() {
+  awk '
+    /^  - / {
+      application = ""
+      in_managers = 0
+      next
+    }
+
+    /^    name: / {
+      application = $0
+      sub(/^    name: /, "", application)
+      next
+    }
+
+    /^      managers:$/ {
+      in_managers = 1
+      next
+    }
+
+    in_managers && /^    [^[:space:]]/ {
+      in_managers = 0
+      next
+    }
+
+    in_managers && /^        (pacman|yay):[[:space:]]+[^[:space:]]/ {
+      declaration = $0
+      sub(/^        /, "", declaration)
+      split(declaration, parts, /:[[:space:]]+/)
+      print parts[1] "|" parts[2] "|" application
+      next
+    }
+  ' "$CONFIG_FILE"
 }
 
 extract_service_units() {
@@ -198,53 +157,6 @@ assert_when() {
   [[ "$actual_when" == "$expected_when" ]] || fail "application $application does not use the expected Linux profile gate"
 }
 
-assert_exact_packages() {
-  local application="$1"
-  local primary="$2"
-  shift 2
-  local block actual expected actual_count expected_count
-
-  block="$(extract_application "$application")"
-  [[ -n "$block" ]] || fail "application $application is not declared"
-  [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
-  [[ "$(printf '%s\n' "$block" | extract_pacman_primary)" == "$primary" ]] || fail "pacman primary for $application is not $primary"
-
-  actual_count="$(printf '%s\n' "$block" | extract_pacman_packages | wc -l)"
-  expected_count="$#"
-  [[ "$actual_count" -eq "$expected_count" ]] || fail "pacman declaration for $application has $actual_count packages, expected $expected_count"
-
-  actual="$(printf '%s\n' "$block" | extract_pacman_packages | sort)"
-  expected="$(printf '%s\n' "$@" | sort)"
-  [[ "$actual" == "$expected" ]] || {
-    printf 'actual packages for %s:\n%s\nexpected packages:\n%s\n' "$application" "$actual" "$expected" >&2
-    fail "pacman declaration for $application does not match the exact package expansion"
-  }
-}
-
-assert_exact_manager_packages() {
-  local application="$1"
-  local manager="$2"
-  local primary="$3"
-  shift 3
-  local block actual expected actual_count expected_count
-
-  block="$(extract_application "$application")"
-  [[ -n "$block" ]] || fail "application $application is not declared"
-  [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
-  [[ "$(printf '%s\n' "$block" | extract_manager_primary "$manager")" == "$primary" ]] || fail "$manager primary for $application is not $primary"
-
-  actual_count="$(printf '%s\n' "$block" | extract_manager_packages "$manager" | wc -l)"
-  expected_count="$#"
-  [[ "$actual_count" -eq "$expected_count" ]] || fail "$manager declaration for $application has $actual_count packages, expected $expected_count"
-
-  actual="$(printf '%s\n' "$block" | extract_manager_packages "$manager" | sort)"
-  expected="$(printf '%s\n' "$@" | sort)"
-  [[ "$actual" == "$expected" ]] || {
-    printf 'actual %s packages for %s:\n%s\nexpected packages:\n%s\n' "$manager" "$application" "$actual" "$expected" >&2
-    fail "$manager declaration for $application does not match the exact package expansion"
-  }
-}
-
 assert_source_requires_package() {
   local source_file="$1"
   local source_evidence="$2"
@@ -260,19 +172,83 @@ assert_source_requires_package() {
 
   block="$(extract_application "$application")"
   [[ -n "$block" ]] || fail "application $application is not declared"
-  if ! printf '%s\n' "$block" | extract_manager_packages "$manager" | grep -Fxq -- "$package"; then
+  if ! printf '%s\n' "$block" | extract_direct_manager_packages "$manager" | grep -Fxq -- "$package"; then
     fail "runtime source $source_file requires package $package in $application ($manager)"
   fi
 }
 
-HYPRLAND_PACKAGES=(
+ARCH_PACKAGE_APPLICATIONS=(
+  'hyprland|pacman|hyprland'
+  'bluetui|pacman|bluetui'
+  'brightnessctl|pacman|brightnessctl'
+  'evince|pacman|evince'
+  'ffmpeg|pacman|ffmpeg'
+  'gpu-screen-recorder|pacman|gpu-screen-recorder'
+  'grim|pacman|grim'
+  'hypridle|pacman|hypridle'
+  'hyprlock|pacman|hyprlock'
+  'hyprpicker|pacman|hyprpicker'
+  'hyprshot|pacman|hyprshot'
+  'hyprsunset|pacman|hyprsunset'
+  'impala|pacman|impala'
+  'imv|pacman|imv'
+  'lazydocker|pacman|lazydocker'
+  'libnotify|pacman|libnotify'
+  'mako|pacman|mako'
+  'mpv|pacman|mpv'
+  'nautilus|pacman|nautilus'
+  'playerctl|pacman|playerctl'
+  'polkit-gnome|pacman|polkit-gnome'
+  'power-profiles-daemon|pacman|power-profiles-daemon'
+  'satty|pacman|satty'
+  'sddm|pacman|sddm'
+  'slurp|pacman|slurp'
+  'socat|pacman|socat'
+  'swaybg|pacman|swaybg'
+  'swayosd|pacman|swayosd'
+  'uwsm|pacman|uwsm'
+  'v4l-utils|pacman|v4l-utils'
+  'waypipe|pacman|waypipe'
+  'wl-clipboard|pacman|wl-clipboard'
+  'wl-clip-persist|pacman|wl-clip-persist'
+  'wtype|pacman|wtype'
+  'xdg-desktop-portal-gtk|pacman|xdg-desktop-portal-gtk'
+  'xdg-desktop-portal-hyprland|pacman|xdg-desktop-portal-hyprland'
+  'xdg-utils|pacman|xdg-utils'
+  'pipewire-audio|pacman|pipewire'
+  'pipewire-alsa|pacman|pipewire-alsa'
+  'pipewire-pulse|pacman|pipewire-pulse'
+  'wireplumber|pacman|wireplumber'
+  'pamixer|pacman|pamixer'
+  'wiremix|pacman|wiremix'
+  'waybar|pacman|waybar'
+  'claudebar|yay|claudebar'
+  'codexbar|yay|codexbar'
+  'fzf|pacman|fzf'
+  'kitten|pacman|kitten'
+  'perl|pacman|perl'
+  'hyprland-preview-share-picker|yay|hyprland-preview-share-picker-git'
+  'xdg-terminal-exec|yay|xdg-terminal-exec'
+  'pacman-hooks|pacman|pacman-contrib'
+  'rebuild-detector|pacman|rebuild-detector'
+  'linux-services-packages|pacman|ufw'
+  'avahi|pacman|avahi'
+  'bluez|pacman|bluez'
+  'bluez-utils|pacman|bluez-utils'
+  'cups|pacman|cups'
+  'cups-browsed|pacman|cups-browsed'
+  'docker|pacman|docker'
+  'tailscale|pacman|tailscale'
+)
+
+GRAPHICAL_SHARED_APPLICATIONS=(
+  hyprland
   bluetui
   brightnessctl
   evince
   ffmpeg
   gpu-screen-recorder
   grim
-  hyprland
   hypridle
   hyprlock
   hyprpicker
@@ -303,28 +279,25 @@ HYPRLAND_PACKAGES=(
   xdg-desktop-portal-gtk
   xdg-desktop-portal-hyprland
   xdg-utils
-)
-
-HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES=(
-  hyprland-preview-share-picker-git
-  xdg-terminal-exec
-)
-
-LOCAL_SEND_YAY_PACKAGES=(
-  localsend
-)
-
-PIPEWIRE_AUDIO_PACKAGES=(
-  pipewire
+  pipewire-audio
   pipewire-alsa
   pipewire-pulse
   wireplumber
   pamixer
   wiremix
+  waybar
+  claudebar
+  codexbar
+  hyprland-preview-share-picker
+  xdg-terminal-exec
 )
 
-LINUX_SERVICES_PACKAGE_SET=(
-  ufw
+OPTIONAL_GRAPHICAL_APPLICATIONS=(
+  localsend
+)
+
+REAL_LINUX_SHARED_APPLICATIONS=(
+  linux-services-packages
   avahi
   bluez
   bluez-utils
@@ -334,43 +307,118 @@ LINUX_SERVICES_PACKAGE_SET=(
   tailscale
 )
 
-PROFILE_ANCHORS=(
-  hyprland
-  pipewire-audio
-  linux-services-packages
+LINUX_SHARED_APPLICATIONS=(
+  pacman-hooks
+  rebuild-detector
 )
 
-GRAPHICAL_SHARED_APPLICATIONS=(
-  hyprland
-  hyprland-preview-share-picker
-  pipewire-audio
-)
+assert_no_arch_dependency_arrays() {
+  if awk '
+    /^      managers:$/ {
+      in_managers = 1
+      in_arch_manager = 0
+      next
+    }
 
-OPTIONAL_GRAPHICAL_APPLICATIONS=(
-  localsend
-)
+    in_managers && /^    [^[:space:]]/ {
+      in_managers = 0
+      in_arch_manager = 0
+      next
+    }
 
-REAL_LINUX_SHARED_APPLICATIONS=(
-  linux-services-packages
-)
+    in_managers && /^        (pacman|yay):$/ {
+      in_arch_manager = 1
+      next
+    }
 
-assert_grouped_package_declarations() {
-  assert_exact_packages hyprland hyprland "${HYPRLAND_PACKAGES[@]}"
-  assert_exact_manager_packages hyprland-preview-share-picker yay hyprland-preview-share-picker-git "${HYPRLAND_PREVIEW_SHARE_PICKER_YAY_PACKAGES[@]}"
-  assert_exact_manager_packages localsend yay localsend "${LOCAL_SEND_YAY_PACKAGES[@]}"
-  assert_exact_packages pipewire-audio pipewire "${PIPEWIRE_AUDIO_PACKAGES[@]}"
-  assert_exact_packages linux-services-packages ufw "${LINUX_SERVICES_PACKAGE_SET[@]}"
+    in_managers && /^        [^[:space:]]/ {
+      in_arch_manager = 0
+      next
+    }
+
+    in_arch_manager && /^          deps:$/ {
+      found = 1
+    }
+
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$CONFIG_FILE"; then
+    fail 'pacman/yay dependency arrays remain hidden from previews'
+  fi
+}
+
+assert_no_duplicate_arch_packages() {
+  local declaration key manager package application
+  local -a declarations=()
+  declare -A seen=()
+
+  mapfile -t declarations < <(extract_direct_arch_declarations)
+  for declaration in "${declarations[@]}"; do
+    IFS='|' read -r manager package application <<< "$declaration"
+    key="$manager|$package"
+    [[ -z "${seen[$key]+set}" ]] || fail "Arch package $key is declared more than once (application $application)"
+    seen["$key"]="$application"
+  done
+}
+
+assert_arch_package_declarations() {
+  local declaration application manager package block actual actual_count
+
+  for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
+    IFS='|' read -r application manager package <<< "$declaration"
+    block="$(extract_application "$application")"
+    [[ -n "$block" ]] || fail "application $application is not declared"
+    [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
+
+    actual_count="$(printf '%s\n' "$block" | extract_direct_manager_packages "$manager" | wc -l)"
+    [[ "$actual_count" -eq 1 ]] || fail "$manager declaration for $application has $actual_count direct packages, expected 1"
+    actual="$(printf '%s\n' "$block" | extract_direct_manager_packages "$manager")"
+    [[ "$actual" == "$package" ]] || fail "$manager declaration for $application is $actual, expected $package"
+  done
+}
+
+assert_unscoped_dry_run_discloses_arch_packages() {
+  local output expected actual_count application manager package declaration
+  local tidydots_status=0
+
+  if output="$(DISPLAY=:99 WAYLAND_DISPLAY=wayland-test tidydots --dir "$REPO_DIR" --os linux install -n 2>&1)"; then
+    tidydots_status=0
+  else
+    tidydots_status=$?
+  fi
+
+  for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
+    IFS='|' read -r application manager package <<< "$declaration"
+    case "$manager" in
+      pacman)
+        expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
+        ;;
+      yay)
+        expected="[ok] $application: Would run: yay -S --noconfirm $package"
+        ;;
+      *)
+        fail "unsupported Arch manager $manager in $declaration"
+        ;;
+    esac
+
+    actual_count="$(grep -Fxc -- "$expected" <<< "$output" || true)"
+    [[ "$actual_count" -eq 1 ]] || {
+      printf 'unscoped dry-run status: %s\noutput for %s:\n%s\n' "$tidydots_status" "$application" "$output" >&2
+      fail "unscoped dry-run does not disclose exactly one operation for $application ($package)"
+    }
+  done
 }
 
 assert_runtime_requirements() {
-  assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop hyprland pacman imv
-  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' hyprland pacman imv
-  assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' hyprland pacman lazydocker
-  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' hyprland pacman lazydocker
-  assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop hyprland pacman evince
-  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince hyprland pacman evince
-  assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop hyprland pacman nautilus
-  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus hyprland pacman nautilus
+  assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
+  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
+  assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' lazydocker pacman lazydocker
+  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' lazydocker pacman lazydocker
+  assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop evince pacman evince
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince evince pacman evince
+  assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop nautilus pacman nautilus
+  assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus nautilus pacman nautilus
   assert_source_requires_package Linux/os/helpers/cmd-share 'localsend --headless send' localsend yay localsend
   assert_source_requires_package Linux/hypr/apps/localsend.lua 'class = "(Share|localsend)"' localsend yay localsend
 }
@@ -430,8 +478,11 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
   fail "tidydots list could not parse the configuration"
 fi
 
-assert_grouped_package_declarations
+assert_no_arch_dependency_arrays
+assert_no_duplicate_arch_packages
+assert_arch_package_declarations
 assert_runtime_requirements
+assert_unscoped_dry_run_discloses_arch_packages
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
 assert_focused_dry_run localsend yay localsend
@@ -440,6 +491,7 @@ assert_focused_dry_run linux-services-packages pacman ufw
 
 GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
+LINUX_WHEN="'{{ eq .OS \"linux\" }}'"
 
 for application in "${GRAPHICAL_SHARED_APPLICATIONS[@]}"; do
   assert_when "$application" "$GRAPHICAL_WHEN"
@@ -449,14 +501,19 @@ for application in "${REAL_LINUX_SHARED_APPLICATIONS[@]}"; do
   assert_when "$application" "$REAL_LINUX_WHEN"
 done
 
+for application in "${LINUX_SHARED_APPLICATIONS[@]}"; do
+  assert_when "$application" "$LINUX_WHEN"
+done
+
 for application in "${OPTIONAL_GRAPHICAL_APPLICATIONS[@]}"; do
   assert_when "$application" "$GRAPHICAL_WHEN"
 done
 
 shared_packages=""
-for application in "${PROFILE_ANCHORS[@]}"; do
-  application_block="$(extract_application "$application")"
-  shared_packages+="$(printf '%s\n' "$application_block" | extract_pacman_packages)"
+for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
+  IFS='|' read -r application manager package <<< "$declaration"
+  [[ "$manager" == pacman ]] || continue
+  shared_packages+="$package"
   shared_packages+=$'\n'
 done
 

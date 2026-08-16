@@ -59,6 +59,11 @@
 Hardware and machine policy use exact hostname conditions.
 `antoinews-linux` is the Intel desktop profile.
 
+Focused previews such as `tidydots --dir "$REPO_DIR" install hyprland -n` are
+intentionally limited to that application and may install only its package.
+The canonical complete bootstrap package preview is the unscoped command:
+`tidydots --dir "$REPO_DIR" install -n`.
+
 Review only the relevant profile with a worktree-scoped dry-run. Set `REPO_DIR`
 to the checkout being reviewed; every command below is non-mutating:
 
