@@ -77,6 +77,36 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
                 with self.assertRaises(AuditError):
                     extract_exec_commands(path)
 
+    def test_hl_alias_assignments_are_rejected_before_extraction(self) -> None:
+        cases = (
+            'local api = hl; api[member]("signal-desktop")\n',
+            'local api = hl.dsp; api[member]("signal-desktop")\n',
+            'local api = ( hl ); api[member]("signal-desktop")\n',
+            'api = (hl.dsp); api[member]("signal-desktop")\n',
+            'local api, other = hl, nil; api[member]("signal-desktop")\n',
+            'local api, other = nil, hl.dsp; api[member]("signal-desktop")\n',
+        )
+
+        for source in cases:
+            with self.subTest(source=source):
+                temporary_directory, path = self.write_fixture(source)
+                self.addCleanup(temporary_directory.cleanup)
+
+                with self.assertRaises(AuditError):
+                    extract_exec_commands(path)
+
+    def test_require_initialization_preserves_direct_call_inventory(self) -> None:
+        temporary_directory, path = self.write_fixture(
+            'local hl = require("hyprland")\n'
+            'hl.exec_cmd("signal-desktop")\n'
+            'hl.dsp.exec_cmd("signal-desktop")\n'
+        )
+        self.addCleanup(temporary_directory.cleanup)
+
+        commands = extract_exec_commands(path)
+
+        self.assertEqual([command.text for command in commands], ["signal-desktop", "signal-desktop"])
+
     def test_comments_and_strings_do_not_create_exec_cmd_references(self) -> None:
         temporary_directory, path = self.write_fixture(
             '-- hl.exec_cmd("commented-out")\n'

@@ -340,6 +340,18 @@ def _matching_open_paren(tokens: Sequence[LuaToken], close_index: int) -> int | 
     return None
 
 
+def _matching_close_paren(tokens: Sequence[LuaToken], open_index: int) -> int | None:
+    depth = 0
+    for index in range(open_index, len(tokens)):
+        if tokens[index].value == "(":
+            depth += 1
+        elif tokens[index].value == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
 def _expression_start(tokens: Sequence[LuaToken], end: int) -> int | None:
     if end == 0:
         return None
@@ -388,6 +400,71 @@ def _is_hl_computed_access(tokens: Sequence[LuaToken], index: int) -> bool:
     return start is not None and _is_hl_rooted_expression(tokens, start, index)
 
 
+def _is_assignment_operator(tokens: Sequence[LuaToken], index: int) -> bool:
+    if tokens[index].value != "=":
+        return False
+    previous = tokens[index - 1].value if index > 0 else ""
+    following = tokens[index + 1].value if index + 1 < len(tokens) else ""
+    return previous not in {"=", "<", ">", "~"} and following != "="
+
+
+def _simple_alias_expression_end(tokens: Sequence[LuaToken], start: int) -> int | None:
+    if start >= len(tokens):
+        return None
+    if tokens[start].value == "(":
+        closing = _matching_close_paren(tokens, start)
+        if closing is not None and _is_hl_rooted_expression(tokens, start, closing + 1):
+            return closing + 1
+        return None
+    end = start + 1
+    if end + 1 < len(tokens) and [token.value for token in tokens[end : end + 2]] == [".", "dsp"]:
+        end += 2
+    if _is_hl_rooted_expression(tokens, start, end):
+        return end
+    return None
+
+
+def _is_alias_expression_delimited(tokens: Sequence[LuaToken], text: str, end: int) -> bool:
+    if end == len(tokens):
+        return True
+    next_token = tokens[end]
+    return next_token.value in {",", ";", ")", "}"} or "\n" in text[tokens[end - 1].end : next_token.start]
+
+
+def _rhs_contains_hl_alias(tokens: Sequence[LuaToken], text: str, start: int) -> bool:
+    candidate = start
+    depth = 0
+    for index in range(start, len(tokens)):
+        if depth == 0 and index == candidate:
+            end = _simple_alias_expression_end(tokens, candidate)
+            if end is not None and _is_alias_expression_delimited(tokens, text, end):
+                return True
+
+        value = tokens[index].value
+        if depth == 0 and value == ";":
+            return False
+        if depth == 0 and value == ",":
+            candidate = index + 1
+            continue
+        if value in {"(", "[", "{"}:
+            depth += 1
+        elif value in {")", "]", "}"} and depth > 0:
+            depth -= 1
+    return False
+
+
+def _reject_hl_alias_assignments(source: Path, text: str, tokens: Sequence[LuaToken]) -> None:
+    for index, token in enumerate(tokens):
+        if not _is_assignment_operator(tokens, index) or index == 0:
+            continue
+        left = tokens[index - 1]
+        if left.kind != "identifier" or (index > 1 and tokens[index - 2].value in {".", "]"}):
+            continue
+        if _rhs_contains_hl_alias(tokens, text, index + 1):
+            line = _line_number(text, token.start)
+            raise AuditError(f"{source}:{line}: assignment aliases hl or hl.dsp")
+
+
 def _line_number(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
@@ -397,6 +474,7 @@ def extract_exec_commands(source: Path) -> list[Command]:
 
     text = source.read_text(encoding="utf-8")
     tokens = _scan_lua(text)
+    _reject_hl_alias_assignments(source, text, tokens)
     commands: list[Command] = []
     consumed_exec_tokens: set[int] = set()
 
