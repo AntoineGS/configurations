@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s <action-id>\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 1 )) || usage
+
+action=$1
+argv=()
+
+case "$action" in
+  trigger.screenshot)       argv=(cmd-screenshot) ;;
+  trigger.screenrecord)     argv=(cmd-screenrecord) ;;
+  trigger.color)            argv=(hyprpicker -a) ;;
+  trigger.share-clipboard)  argv=(cmd-share clipboard) ;;
+  trigger.share-file)       argv=(launch-tui-large cmd-share file) ;;
+  trigger.share-folder)     argv=(launch-tui-large cmd-share folder) ;;
+
+  setup.audio)              argv=(desktop-shell summon desktop.audio '{}') ;;
+  setup.wifi)               argv=(desktop-shell summon desktop.network '{}') ;;
+  setup.bluetooth)          argv=(desktop-shell summon desktop.bluetooth '{}') ;;
+  setup.power-profile)      argv=(desktop-shell summon desktop.power '{}') ;;
+  setup.monitors)           argv=(desktop-shell summon desktop.monitor '{}') ;;
+  setup.dns)                argv=(launch-tui-large setup-dns) ;;
+  setup.security)           argv=(launch-tui-large setup-fingerprint) ;;
+  setup.shell-config)       argv=(desktop-shell health) ;;
+
+  install.package)          argv=(launch-tui-large pkg-install) ;;
+  install.aur)              argv=(launch-tui-large pkg-aur-install) ;;
+  remove.package)           argv=(launch-tui-large pkg-remove) ;;
+
+  update.system)            argv=(launch-tui-large update) ;;
+  update.audio)             argv=(restart-pipewire) ;;
+  update.wifi)              argv=(restart-wifi) ;;
+  update.bluetooth)         argv=(restart-bluetooth) ;;
+  update.shell-restart)     argv=(systemctl --user restart desktop-shell.service) ;;
+  update.shell-reload)      argv=(desktop-shell reload-config) ;;
+
+  system.lock)              argv=(lock-screen) ;;
+  system.suspend)           argv=(systemctl suspend) ;;
+  system.hibernate)         argv=(systemctl hibernate) ;;
+  system.logout)            argv=(system-logout) ;;
+  system.reboot)            argv=(system-reboot) ;;
+  system.shutdown)          argv=(system-shutdown) ;;
+  *)                        usage ;;
+esac
+
+if ! "${argv[@]}"; then
+  exit 1
+fi

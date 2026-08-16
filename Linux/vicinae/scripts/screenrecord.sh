@@ -6,4 +6,4 @@
 
 export PATH="$HOME/.local/share/helpers:$PATH"
 exec </dev/null >/dev/null 2>&1 # Vicinae closes command pipes on exit; descendants must not inherit them
-menu screenrecord
+menu trigger.screenrecord

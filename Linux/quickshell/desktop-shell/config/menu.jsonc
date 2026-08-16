@@ -1,0 +1,50 @@
+{
+  // Repository-owned menu data. Leaf actions are opaque IDs; the action
+  // helper owns their fixed argv and rejects every other value.
+  "root": { "label": "Control" },
+
+  "trigger": { "label": "Trigger" },
+  "trigger.screenshot": { "label": "Screenshot", "action": "trigger.screenshot" },
+  "trigger.screenrecord": { "label": "Screenrecord", "action": "trigger.screenrecord" },
+  "trigger.color": { "label": "Color", "action": "trigger.color" },
+  "trigger.share-clipboard": { "label": "Share clipboard", "action": "trigger.share-clipboard" },
+  "trigger.share-file": { "label": "Share file", "action": "trigger.share-file" },
+  "trigger.share-folder": { "label": "Share folder", "action": "trigger.share-folder" },
+
+  "setup": { "label": "Setup" },
+  "setup.audio": { "label": "Audio", "action": "setup.audio" },
+  "setup.wifi": { "label": "Wi-Fi", "action": "setup.wifi" },
+  "setup.bluetooth": { "label": "Bluetooth", "action": "setup.bluetooth" },
+  "setup.power-profile": { "label": "Power profile", "action": "setup.power-profile" },
+  "setup.monitors": { "label": "Monitors", "action": "setup.monitors" },
+  "setup.dns": { "label": "DNS", "action": "setup.dns" },
+  "setup.security": { "label": "Security", "action": "setup.security" },
+  "setup.shell-config": {
+    "label": "Shell config",
+    "description": "Show desktop-shell health",
+    "action": "setup.shell-config"
+  },
+
+  "install": { "label": "Install" },
+  "install.package": { "label": "Package", "action": "install.package" },
+  "install.aur": { "label": "AUR", "action": "install.aur" },
+
+  "remove": { "label": "Remove" },
+  "remove.package": { "label": "Package", "action": "remove.package" },
+
+  "update": { "label": "Update" },
+  "update.system": { "label": "System", "action": "update.system" },
+  "update.audio": { "label": "Audio", "action": "update.audio" },
+  "update.wifi": { "label": "Wi-Fi", "action": "update.wifi" },
+  "update.bluetooth": { "label": "Bluetooth", "action": "update.bluetooth" },
+  "update.shell-restart": { "label": "Shell restart", "action": "update.shell-restart" },
+  "update.shell-reload": { "label": "Shell reload", "action": "update.shell-reload" },
+
+  "system": { "label": "System" },
+  "system.lock": { "label": "Lock", "action": "system.lock" },
+  "system.suspend": { "label": "Suspend", "action": "system.suspend" },
+  "system.hibernate": { "label": "Hibernate", "action": "system.hibernate" },
+  "system.logout": { "label": "Logout", "action": "system.logout" },
+  "system.reboot": { "label": "Reboot", "action": "system.reboot" },
+  "system.shutdown": { "label": "Shutdown", "action": "system.shutdown" }
+}

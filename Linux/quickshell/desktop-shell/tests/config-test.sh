@@ -177,7 +177,7 @@ function assertConfig(hostname, includeHardware, workspaceLabels) {
     transparent: false,
     centerAnchor: "desktop.clock",
     layout: {
-      left: [{ id: "desktop.workspaces", labels: workspaceLabels }],
+      left: [{ id: "desktop.menu" }, { id: "desktop.workspaces", labels: workspaceLabels }],
       center: [
         commandModules.recording,
         commandModules.voxtype,
@@ -309,11 +309,11 @@ run_ipc call desktop.osd show '{"level":1}'
 assert_trace desktop-shell call desktop.osd show '{"level":1}'
 
 set +e
-run_ipc summon omarchy.menu 2>"$fixture/invalid-id.err"
+run_ipc summon legacy.menu 2>"$fixture/invalid-id.err"
 invalid_id_exit=$?
-run_ipc hide omarchy.audio 2>"$fixture/invalid-hide-id.err"
+run_ipc hide legacy.audio 2>"$fixture/invalid-hide-id.err"
 invalid_hide_id_exit=$?
-run_ipc call omarchy.audio show 2>"$fixture/invalid-call-id.err"
+run_ipc call legacy.audio show 2>"$fixture/invalid-call-id.err"
 invalid_call_id_exit=$?
 run_ipc unknown 2>"$fixture/unknown-command.err"
 unknown_exit=$?
