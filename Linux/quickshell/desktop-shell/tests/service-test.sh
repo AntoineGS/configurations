@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+LAUNCHER="$ROOT/Linux/os/helpers/desktop-shell-launch"
+UNIT="$ROOT/Linux/quickshell/desktop-shell/systemd/desktop-shell.service"
+TEST_ROOT=$(mktemp -d)
+trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
+
+BIN="$TEST_ROOT/bin"
+HOME_DIR="$TEST_ROOT/home"
+SHELL_DIR="$HOME_DIR/.config/quickshell/desktop-shell"
+ARGS_FILE="$TEST_ROOT/quickshell-args"
+EXECUTED_FILE="$TEST_ROOT/quickshell-executed"
+
+mkdir -p "$BIN" "$SHELL_DIR/config"
+
+cat >"$BIN/quickshell" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' "$@" >"$QUICKSHELL_ARGS_FILE"
+: >"$QUICKSHELL_EXECUTED_FILE"
+EOF
+chmod +x "$BIN/quickshell"
+
+fail() {
+  printf 'FAIL: %s\n' "$1" >&2
+  exit 1
+}
+
+run_launcher() {
+  PATH="$BIN:$PATH" HOME="$HOME_DIR" QUICKSHELL_ARGS_FILE="$ARGS_FILE" \
+    QUICKSHELL_EXECUTED_FILE="$EXECUTED_FILE" "$@"
+}
+
+expect_launcher_failure() {
+  local label=$1
+  shift
+  local status=0
+
+  rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+  run_launcher "$@" >/dev/null 2>&1 || status=$?
+  ((status != 0)) || fail "$label unexpectedly succeeded"
+  [[ ! -e $EXECUTED_FILE ]] || fail "$label executed quickshell"
+}
+
+expect_launcher_failure 'missing shell.qml' "$LAUNCHER"
+
+printf '%s\n' '// test shell' >"$SHELL_DIR/shell.qml"
+expect_launcher_failure 'missing config/shell.json' "$LAUNCHER"
+
+printf '%s\n' '{}' >"$SHELL_DIR/config/shell.json"
+expect_launcher_failure 'launcher arguments' "$LAUNCHER" unexpected
+
+rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+run_launcher "$LAUNCHER" || fail 'launcher failed with readable shell and config files'
+[[ -e $EXECUTED_FILE ]] || fail 'launcher did not execute quickshell'
+
+expected_args=$(printf '%s\n' '-n' 'desktop-shell' '-p' "$SHELL_DIR")
+[[ -f $ARGS_FILE ]] || fail 'mock quickshell did not receive arguments'
+[[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
+  printf 'expected argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
+  exit 1
+}
+
+[[ -f $UNIT ]] || fail 'desktop-shell.service is absent'
+grep -Fqx 'ExecStart=%h/.local/share/helpers/desktop-shell-launch' "$UNIT" || \
+  fail 'unit does not use the repository launcher path'
+grep -Fqx 'Restart=on-failure' "$UNIT" || fail 'unit does not restart on failure'
+grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
+  fail 'unit is not wanted by graphical-session.target'
+
+printf '%s\n' 'service launcher and unit contract passed'
