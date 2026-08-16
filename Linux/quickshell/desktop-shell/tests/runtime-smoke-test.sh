@@ -26,20 +26,20 @@ preview_pid=""
 preview_start_time=""
 preview_wrapper_pid=""
 preview_wrapper_start_time=""
+preview_wrapper_pgid=""
+preview_wrapper_session_id=""
+preview_wrapper_group_owned=0
 wayland_pid=""
 wayland_start_time=""
 nested_session=0
 cleanup_error=0
 ipc_timeout=3s
+ipc_kill_after=1s
 preview_direct_child=0
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
   exit 1
-}
-
-wall_clock_ns() {
-  date +%s%N
 }
 
 proc_stat_field() {
@@ -64,12 +64,57 @@ process_parent_pid() {
   proc_stat_field "$1" 1
 }
 
+process_group_id() {
+  proc_stat_field "$1" 2
+}
+
+process_session_id() {
+  proc_stat_field "$1" 3
+}
+
 process_state() {
   proc_stat_field "$1" 0
 }
 
+capture_process_stat_field() {
+  local pid=$1
+  local index=$2
+  local value
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 0
+  for _ in {1..5}; do
+    value=$(proc_stat_field "$pid" "$index" 2>/dev/null) || value=""
+    if [[ -n $value ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+    [[ -r "/proc/$pid/stat" ]] || return 0
+    sleep 0.01
+  done
+}
+
 capture_process_start_time() {
-  process_start_time "$1" 2>/dev/null || true
+  capture_process_stat_field "$1" 19
+}
+
+capture_process_group_id() {
+  capture_process_stat_field "$1" 2
+}
+
+capture_process_session_id() {
+  capture_process_stat_field "$1" 3
+}
+
+monotonic_ns() {
+  local uptime seconds fraction
+
+  read -r uptime _ < /proc/uptime || return 1
+  seconds=${uptime%%.*}
+  fraction=${uptime#*.}
+  [[ $seconds =~ ^[0-9]+$ && $fraction =~ ^[0-9]+$ ]] || return 1
+  fraction=${fraction}000000000
+  fraction=${fraction:0:9}
+  printf '%d\n' "$((10#$seconds * 1000000000 + 10#$fraction))"
 }
 
 process_identity_matches() {
@@ -105,20 +150,27 @@ format_duration() {
 
 timeout_for_deadline() {
   local deadline_ns=$1
-  local now_ns remaining_ns
+  local now_ns remaining_ns timeout_ns kill_after_ns
 
-  now_ns=$(wall_clock_ns)
+  now_ns=$(monotonic_ns)
   remaining_ns=$((deadline_ns - now_ns))
   ((remaining_ns > 0)) || return 1
-  ((remaining_ns > 3000000000)) && remaining_ns=3000000000
-  format_duration "$remaining_ns"
+  kill_after_ns=250000000
+  if ((remaining_ns <= kill_after_ns)); then
+    kill_after_ns=$((remaining_ns / 2))
+  fi
+  ((kill_after_ns > 0)) || return 1
+  timeout_ns=$((remaining_ns - kill_after_ns))
+  ((timeout_ns > 0)) || return 1
+  ((timeout_ns > 3000000000)) && timeout_ns=3000000000
+  printf '%s %s\n' "$(format_duration "$timeout_ns")" "$(format_duration "$kill_after_ns")"
 }
 
 sleep_until_deadline() {
   local deadline_ns=$1
   local now_ns remaining_ns
 
-  now_ns=$(wall_clock_ns)
+  now_ns=$(monotonic_ns)
   remaining_ns=$((deadline_ns - now_ns))
   ((remaining_ns > 0)) || return 1
   if ((remaining_ns > 100000000)); then
@@ -131,11 +183,11 @@ sleep_until_deadline() {
 wait_for_process_exit() {
   local pid=$1
   local expected_start_time=$2
-  local deadline_ns=$(( $(wall_clock_ns) + 2000000000 ))
+  local deadline_ns=$(( $(monotonic_ns) + 2000000000 ))
   local now_ns
 
   while process_is_alive "$pid" "$expected_start_time"; do
-    now_ns=$(wall_clock_ns)
+    now_ns=$(monotonic_ns)
     ((now_ns < deadline_ns)) || return 1
     sleep 0.05
   done
@@ -144,17 +196,23 @@ wait_for_process_exit() {
 wait_child_bounded() {
   local pid=$1
   local timer_pid
+  local timer_start_time
+  local self_start_time
   local wait_status
 
   trap ':' ALRM
-  (sleep 2; kill -ALRM "$$" 2>/dev/null || true) &
+  self_start_time=$(capture_process_start_time "$$")
+  (sleep 2; process_identity_matches "$$" "$self_start_time" && kill -ALRM "$$" 2>/dev/null || true) &
   timer_pid=$!
+  timer_start_time=$(capture_process_start_time "$timer_pid")
   if wait "$pid" 2>/dev/null; then
     wait_status=0
   else
     wait_status=$?
   fi
-  kill "$timer_pid" 2>/dev/null || true
+  if [[ -n $timer_start_time ]] && process_identity_matches "$timer_pid" "$timer_start_time"; then
+    kill -TERM "$timer_pid" 2>/dev/null || true
+  fi
   wait "$timer_pid" 2>/dev/null || true
   trap - ALRM
 
@@ -175,15 +233,9 @@ terminate_process() {
   [[ -n $pid ]] || return 0
 
   if [[ -z $expected_start_time ]]; then
-    if ((reap)); then
-      kill -TERM "$pid" 2>/dev/null || true
-      if ! wait_child_bounded "$pid"; then
-        kill -KILL "$pid" 2>/dev/null || true
-        if ! wait_child_bounded "$pid"; then
-          printf 'FAIL: timed out terminating %s (PID %s)\n' "$label" "$pid" >&2
-          cleanup_error=1
-        fi
-      fi
+    if ((reap)) && ! wait_child_bounded "$pid"; then
+      printf 'FAIL: timed out reaping unidentified %s (PID %s)\n' "$label" "$pid" >&2
+      cleanup_error=1
     fi
     return 0
   fi
@@ -208,13 +260,99 @@ terminate_process() {
   fi
 }
 
+is_descendant_of() {
+  local child=$1
+  local ancestor=$2
+  local current=$child
+  local parent
+  local -A seen=()
+
+  [[ $child != "$ancestor" ]] || return 1
+  while [[ $current != "$ancestor" ]]; do
+    [[ -z ${seen[$current]+seen} ]] || return 1
+    seen[$current]=1
+    parent=$(process_parent_pid "$current" 2>/dev/null) || return 1
+    [[ $parent =~ ^[1-9][0-9]*$ && $parent != 1 ]] || return 1
+    current=$parent
+  done
+}
+
+process_group_is_owned() {
+  local wrapper_pid=$1
+  local expected_start_time=$2
+  local expected_pgid=$3
+  local expected_session_id=$4
+  local stat_path member member_pgid member_session_id
+
+  [[ $wrapper_pid =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ $expected_pgid == "$wrapper_pid" && $expected_session_id == "$wrapper_pid" ]] || return 1
+  process_identity_matches "$wrapper_pid" "$expected_start_time" || return 1
+  [[ $(process_group_id "$wrapper_pid" 2>/dev/null) == "$expected_pgid" ]] || return 1
+  [[ $(process_session_id "$wrapper_pid" 2>/dev/null) == "$expected_session_id" ]] || return 1
+
+  for stat_path in /proc/[0-9]*/stat; do
+    [[ -r $stat_path ]] || continue
+    member=${stat_path#/proc/}
+    member=${member%/stat}
+    [[ $member =~ ^[1-9][0-9]*$ ]] || continue
+    member_pgid=$(process_group_id "$member" 2>/dev/null) || continue
+    [[ $member_pgid == "$expected_pgid" ]] || continue
+    member_session_id=$(process_session_id "$member" 2>/dev/null) || continue
+    [[ $member_session_id == "$expected_session_id" ]] || return 1
+    if [[ $member != "$wrapper_pid" ]] && ! is_descendant_of "$member" "$wrapper_pid"; then
+      return 1
+    fi
+  done
+}
+
+terminate_nested_wrapper() {
+  local pid=$1
+  local expected_start_time=$2
+  local expected_pgid=$3
+  local expected_session_id=$4
+
+  [[ -n $pid ]] || return 0
+
+  # Let dbus-run-session reap Quickshell and tear down its bus naturally first.
+  if wait_child_bounded "$pid"; then
+    return 0
+  fi
+
+  if ((preview_wrapper_group_owned == 0)) || ! process_group_is_owned \
+    "$pid" "$expected_start_time" "$expected_pgid" "$expected_session_id"; then
+    printf 'FAIL: unable to safely terminate the owned dbus-run-session wrapper (PID %s)\n' "$pid" >&2
+    cleanup_error=1
+    return 0
+  fi
+  kill -TERM -- "-$expected_pgid" 2>/dev/null || true
+
+  if wait_for_process_exit "$pid" "$expected_start_time"; then
+    if process_group_is_owned "$pid" "$expected_start_time" "$expected_pgid" "$expected_session_id"; then
+      kill -KILL -- "-$expected_pgid" 2>/dev/null || true
+    else
+      printf 'FAIL: dbus-run-session process group ownership was lost during cleanup\n' >&2
+      cleanup_error=1
+    fi
+  elif process_group_is_owned "$pid" "$expected_start_time" "$expected_pgid" "$expected_session_id"; then
+    kill -KILL -- "-$expected_pgid" 2>/dev/null || true
+  else
+    printf 'FAIL: dbus-run-session process group ownership was lost during cleanup\n' >&2
+    cleanup_error=1
+  fi
+
+  if ! wait_child_bounded "$pid"; then
+    printf 'FAIL: timed out reaping dbus-run-session wrapper (PID %s)\n' "$pid" >&2
+    cleanup_error=1
+  fi
+}
+
 cleanup() {
   local status=$?
   trap - EXIT HUP INT TERM ALRM
 
   terminate_process "$preview_pid" "$preview_start_time" "$preview_direct_child" 'Quickshell preview'
-  terminate_process "$preview_wrapper_pid" "$preview_wrapper_start_time" 1 \
-    'dbus-run-session wrapper'
+  terminate_nested_wrapper "$preview_wrapper_pid" "$preview_wrapper_start_time" \
+    "$preview_wrapper_pgid" "$preview_wrapper_session_id"
   terminate_process "$wayland_pid" "$wayland_start_time" 1 'Wayland session'
 
   ((cleanup_error == 0)) || status=1
@@ -299,10 +437,21 @@ preview_config=$(readlink -e -- "$SHELL_ROOT/shell.qml") || {
 }
 
 if ((nested_session == 1)) && command -v dbus-run-session >/dev/null 2>&1; then
-  DESKTOP_SHELL_PREVIEW=1 dbus-run-session -- quickshell -p "$SHELL_ROOT" \
+  command -v setsid >/dev/null 2>&1 || fail 'setsid is required to isolate the nested preview session'
+  DESKTOP_SHELL_PREVIEW=1 setsid -- dbus-run-session -- quickshell -p "$SHELL_ROOT" \
     >"$preview_log" 2>&1 &
   preview_wrapper_pid=$!
   preview_wrapper_start_time=$(capture_process_start_time "$preview_wrapper_pid")
+  preview_wrapper_pgid=$(capture_process_group_id "$preview_wrapper_pid")
+  preview_wrapper_session_id=$(capture_process_session_id "$preview_wrapper_pid")
+  process_is_alive "$preview_wrapper_pid" "$preview_wrapper_start_time" || {
+    fail 'dbus-run-session wrapper exited before its private process group was verified'
+  }
+  process_group_is_owned "$preview_wrapper_pid" "$preview_wrapper_start_time" \
+    "$preview_wrapper_pgid" "$preview_wrapper_session_id" || {
+    fail 'dbus-run-session wrapper process group was not private and owned'
+  }
+  preview_wrapper_group_owned=1
 else
   DESKTOP_SHELL_PREVIEW=1 quickshell -p "$SHELL_ROOT" >"$preview_log" 2>&1 &
   preview_pid=$!
@@ -310,26 +459,9 @@ else
   preview_direct_child=1
 fi
 
-is_descendant_of() {
-  local child=$1
-  local ancestor=$2
-  local current=$child
-  local parent
-  local -A seen=()
-
-  [[ $child != "$ancestor" ]] || return 1
-  while [[ $current != "$ancestor" ]]; do
-    [[ -z ${seen[$current]+seen} ]] || return 1
-    seen[$current]=1
-    parent=$(process_parent_pid "$current" 2>/dev/null) || return 1
-    [[ $parent =~ ^[1-9][0-9]*$ && $parent != 1 ]] || return 1
-    current=$parent
-  done
-}
-
 discover_nested_preview() {
   local deadline_ns=$1
-  local list_timeout
+  local list_timeout list_kill_after
   local instances_json
   local matching_pids_text
   local candidate candidate_start_time
@@ -342,8 +474,11 @@ discover_nested_preview() {
     fail 'dbus-run-session wrapper exited before Quickshell PID discovery'
   }
 
-  list_timeout=$(timeout_for_deadline "$deadline_ns") || return 1
-  if ! instances_json=$(timeout --foreground "$list_timeout" quickshell list -j --all 2>/dev/null); then
+  if ! read -r list_timeout list_kill_after < <(timeout_for_deadline "$deadline_ns"); then
+    return 1
+  fi
+  if ! instances_json=$(timeout --foreground --kill-after="$list_kill_after" "$list_timeout" \
+    quickshell list -j --all 2>/dev/null); then
     process_is_alive "$preview_wrapper_pid" "$preview_wrapper_start_time" || {
       fail 'dbus-run-session wrapper exited before Quickshell PID discovery'
     }
@@ -407,7 +542,7 @@ require_preview_alive() {
   process_is_alive "$preview_pid" "$preview_start_time" || fail "$1"
 }
 
-readiness_deadline_ns=$(( $(wall_clock_ns) + 15000000000 ))
+readiness_deadline_ns=$(( $(monotonic_ns) + 15000000000 ))
 ping=''
 while :; do
   if ((nested_session == 1)) && [[ -z $preview_pid ]]; then
@@ -421,8 +556,11 @@ while :; do
   fi
 
   require_preview_alive 'Quickshell preview exited before desktop-shell ping returned pong'
-  ping_timeout=$(timeout_for_deadline "$readiness_deadline_ns") || break
-  if ping=$(timeout --foreground "$ping_timeout" quickshell ipc --pid "$preview_pid" \
+  if ! read -r ping_timeout ping_kill_after < <(timeout_for_deadline "$readiness_deadline_ns"); then
+    break
+  fi
+  if ping=$(timeout --foreground --kill-after="$ping_kill_after" "$ping_timeout" \
+    quickshell ipc --pid "$preview_pid" \
     call desktop-shell ping 2>/dev/null); then
     require_preview_alive 'Quickshell preview exited before desktop-shell ping was accepted'
     [[ $ping == pong ]] && break
@@ -436,7 +574,8 @@ require_preview_alive 'Quickshell preview is not alive after the 15-second readi
 [[ $ping == pong ]] || fail 'desktop-shell ping did not return exactly pong within 15 seconds'
 
 require_preview_alive 'Quickshell preview exited before listPlugins'
-plugins_json=$(timeout --foreground "$ipc_timeout" quickshell ipc --pid "$preview_pid" \
+plugins_json=$(timeout --foreground --kill-after="$ipc_kill_after" "$ipc_timeout" \
+  quickshell ipc --pid "$preview_pid" \
   call desktop-shell listPlugins 2>/dev/null) || {
   fail 'desktop-shell listPlugins failed'
 }
