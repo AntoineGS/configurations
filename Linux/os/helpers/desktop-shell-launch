@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 0 )) || usage
+
+shell_dir="$HOME/.config/quickshell/desktop-shell"
+[[ -r "$shell_dir/shell.qml" ]] || {
+  printf 'desktop-shell: readable shell.qml is required: %s\n' "$shell_dir/shell.qml" >&2
+  exit 1
+}
+[[ -r "$shell_dir/config/shell.json" ]] || {
+  printf 'desktop-shell: readable config/shell.json is required: %s\n' "$shell_dir/config/shell.json" >&2
+  exit 1
+}
+
+if ! quickshell_command=$(command -v quickshell); then
+  printf 'desktop-shell: quickshell command not found\n' >&2
+  exit 127
+fi
+
+exec "$quickshell_command" -n desktop-shell -p "$shell_dir"

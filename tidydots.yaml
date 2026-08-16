@@ -537,6 +537,17 @@ applications:
           linux: ~/.config/quickshell/desktop-shell
         name: config
         backup: ./Linux/quickshell/desktop-shell
+      - targets:
+          linux: ~/.config/systemd/user
+        name: systemd-service
+        backup: ./Linux/quickshell/desktop-shell/systemd
+        files:
+          - desktop-shell.service
+      - check:
+          linux: systemctl --user is-enabled --quiet desktop-shell.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service
+        name: enable-service
   - name: uwsm
     when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
     entries:
