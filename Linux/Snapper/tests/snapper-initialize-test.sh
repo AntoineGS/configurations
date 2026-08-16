@@ -496,11 +496,27 @@ test_help_and_unknown_option() {
   run_as_root --help
   assert_status 0 "$LAST_STATUS" '--help'
   assert_contains "$LAST_OUTPUT" 'Usage:' '--help usage'
-  assert_contains "$LAST_OUTPUT" '--check|--apply|--create-initial-snapshots' '--help modes'
+  assert_contains "$LAST_OUTPUT" '--validate-topology|--check|--apply|--create-initial-snapshots' '--help modes'
 
   run_as_root --unknown
   assert_status 2 "$LAST_STATUS" 'unknown option'
   assert_contains "$LAST_OUTPUT" 'unknown option' 'unknown option message'
+}
+
+test_validate_topology_is_read_only() {
+  reset_fixture
+
+  run_as_root --validate-topology
+
+  assert_status 0 "$LAST_STATUS" 'topology validation'
+  assert_contains "$LAST_OUTPUT" 'Btrfs topology is compatible' 'topology validation output'
+  assert_log_contains 'findmnt ' 'topology mount inspection'
+  assert_log_contains 'btrfs subvolume show' 'topology subvolume inspection'
+  assert_log_not_contains 'snapper ' 'topology validation does not require Snapper'
+  assert_log_not_contains 'chmod ' 'topology validation is read-only'
+  assert_log_not_contains 'chown ' 'topology validation is read-only'
+  assert_log_not_contains 'mv ' 'topology validation is read-only'
+  assert_log_not_contains 'flock ' 'topology validation is read-only'
 }
 
 test_non_root_is_rejected_before_commands() {
@@ -957,6 +973,7 @@ test_script_is_executable
 create_stubs
 
 test_help_and_unknown_option
+test_validate_topology_is_read_only
 test_non_root_is_rejected_before_commands
 test_initializer_overrides_require_test_mode
 test_check_is_read_only_when_layout_is_ready

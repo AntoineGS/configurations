@@ -385,7 +385,7 @@ run_bootstrap() {
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
     PATH="$STUB_BIN:$ORIGINAL_PATH" \
     BOOTSTRAP_OS_RELEASE="$ARCH_RELEASE" \
-    BOOTSTRAP_HOSTNAME=server \
+    BOOTSTRAP_HOSTNAME=antoinews-linux \
     SNAPPER_BOOTSTRAP_TEST_LOG="$LOG" \
     SNAPPER_BOOTSTRAP_TEST_ROOT="$ROOT" \
     SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS="${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" \
@@ -421,10 +421,10 @@ test_snapper_decline_preserves_legacy_links() {
   run_bootstrap $'yes\nno'
 
   assert_status 3 "$LAST_STATUS" 'Snapper dry-run decline'
-  assert_contains "$LAST_OUTPUT" 'tidydots restore snapper declined' 'Snapper dry-run decline message'
+  assert_contains "$LAST_OUTPUT" 'custom Snapper deployment declined' 'Snapper dry-run decline message'
   assert_contains "$LAST_OUTPUT" 'Snapper deployment plan:' 'Snapper deployment plan before decline'
-  assert_log_contains 'restore snapper -n' 'Snapper dry-run before decline'
-  assert_log_not_contains_after 'restore snapper -n' 'sudo ' 'no root deployment after Snapper decline'
+  assert_log_not_contains 'restore snapper' 'custom plan does not invoke tidydots Snapper restore'
+  assert_log_not_contains 'sudo -n -- mktemp ' 'no root deployment after Snapper decline'
   assert_log_not_contains 'sudo -n -- rm ' 'no destructive root command after Snapper decline'
   assert_log_not_contains 'sudo -n -- mv ' 'no root replacement after Snapper decline'
   assert_log_not_contains 'sudo -n -- cp ' 'no root backup after Snapper decline'
@@ -441,10 +441,11 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
   assert_contains "$LAST_OUTPUT" 'persistent recovery state' 'persistent recovery wording'
   assert_contains "$LAST_OUTPUT" 'power-loss durability still depends on the filesystem' 'power-loss durability wording'
   assert_log_sequence \
+    'sudo -n -- env -i PATH=/usr/bin:/bin ' \
     'flock -n' \
     "sudo -n -- test -e ${RECOVERY_DIRECTORY}" \
-    'restore snapper -n' \
-    'restore snapper' \
+    'tidydots --dir ' \
+    'tidydots --dir ' \
     "sudo -n -- mktemp ${RECOVERY_DIRECTORY}/.manifest." \
     "sudo -n -- mv -f -- ${RECOVERY_DIRECTORY}/.state.staged ${RECOVERY_DIRECTORY}/state" \
     "sudo -n -- mv -- /etc/snapper/configs ${BACKUP_DIRECTORY}/legacy-configs" \
@@ -463,6 +464,7 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
     'restore -n' \
     'restore' \
     'flock -u'
+  assert_log_not_contains 'restore snapper' 'custom deployment has no tidydots Snapper restore'
   assert_log_contains 'sudo -n -- chmod 0755' 'initializer mode correction'
   assert_log_contains 'sudo -n -- chown root:root' 'root ownership correction'
 }

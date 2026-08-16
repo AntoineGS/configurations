@@ -195,20 +195,18 @@ grep -Fqx '    entries: []' <<< "$limine_block" || fail "shared limine applicati
 
 assert_when snapper "$LINUX_WHEN"
 assert_package snapper pacman snapper
-assert_entry snapper '        name: configs'
-assert_entry snapper '        name: registered-configs'
-assert_entry_field snapper snapper-initialize '          linux: /usr/local/libexec/antoinews-linux'
-assert_entry_field snapper snapper-initialize '        method: copy'
-assert_entry_field snapper snapper-initialize '        backup: ./Linux/Snapper'
-assert_entry_field snapper snapper-initialize '          - snapper-initialize'
-assert_entry_field snapper snapper-initialize '        sudo: true'
-assert_entry_field snapper configs '        method: copy'
-assert_entry_field snapper configs '          - root'
-assert_entry_field snapper configs '          - home'
-assert_entry_field snapper configs '        sudo: true'
-assert_entry_field snapper registered-configs '        method: copy'
-assert_entry_field snapper registered-configs '          - snapper'
-assert_entry_field snapper registered-configs '        sudo: true'
+snapper_block="$(extract_application snapper)"
+grep -Fqx '    entries: []' <<< "$snapper_block" || fail 'shared Snapper application deploys configuration entries'
+assert_when snapper-current-desktop-config "$CURRENT_DESKTOP_WHEN"
+assert_entry snapper-current-desktop-config '        name: configs'
+assert_entry snapper-current-desktop-config '        name: registered-configs'
+assert_entry_field snapper-current-desktop-config configs '        method: copy'
+assert_entry_field snapper-current-desktop-config configs '          - root'
+assert_entry_field snapper-current-desktop-config configs '          - home'
+assert_entry_field snapper-current-desktop-config configs '        sudo: true'
+assert_entry_field snapper-current-desktop-config registered-configs '        method: copy'
+assert_entry_field snapper-current-desktop-config registered-configs '          - snapper'
+assert_entry_field snapper-current-desktop-config registered-configs '        sudo: true'
 if grep -Fq 'initialize-btrfs-layout' <<<"$(extract_application snapper)"; then
   fail 'Snapper initializer must not be a tidydots setup entry'
 fi
@@ -334,7 +332,7 @@ for config in "$SNAPPER_ROOT_CONFIG" "$SNAPPER_HOME_CONFIG"; do
 done
 grep -Fxq 'SNAPPER_CONFIGS="root home"' "$SNAPPER_REGISTRATION" || fail "shared Snapper registration changed"
 grep -Fq "[[ \"\$EUID\" -eq 0 ]]" "$SNAPPER_INITIALIZER" || fail "Snapper initializer is not root-only"
-grep -Fq -- '--check|--apply' "$SNAPPER_INITIALIZER" || fail "Snapper initializer lacks explicit modes"
+grep -Fq -- '--validate-topology|--check|--apply' "$SNAPPER_INITIALIZER" || fail "Snapper initializer lacks explicit modes"
 if grep -Fq 'sudo' "$SNAPPER_INITIALIZER"; then
   fail "Snapper initializer invokes sudo internally"
 fi
@@ -375,16 +373,18 @@ snapper_mapping_owners="$(awk '
     }
   }
 ' "$CONFIG_FILE")"
-[[ "$snapper_mapping_owners" == "snapper" ]] ||
+[[ "$snapper_mapping_owners" == "snapper-current-desktop-config" ]] ||
   fail "Linux/Snapper mappings are owned by unexpected applications: $snapper_mapping_owners"
 
 bootstrap_snapper_restore_line="$(awk '/run_tidydots_phase restore snapper/ { print NR; exit }' "$BOOTSTRAP")"
+bootstrap_deploy_line="$(awk '/^[[:space:]]*deploy_snapper_files$/ { print NR; exit }' "$BOOTSTRAP")"
 bootstrap_broad_restore_line="$(awk '/run_tidydots_phase restore$/ && !/function/ { print NR; exit }' "$BOOTSTRAP")"
 bootstrap_initializer_line="$(awk '/^[[:space:]]*run_snapper_initializer$/ { print NR; exit }' "$BOOTSTRAP")"
-[[ -n "$bootstrap_snapper_restore_line" ]] || fail "bootstrap does not restore Snapper before the environment"
+[[ -z "$bootstrap_snapper_restore_line" ]] || fail "bootstrap still delegates Snapper files to tidydots"
+[[ -n "$bootstrap_deploy_line" ]] || fail "bootstrap does not own Snapper deployment"
 [[ -n "$bootstrap_broad_restore_line" ]] || fail "bootstrap does not preserve a broad restore phase"
 [[ -n "$bootstrap_initializer_line" ]] || fail "bootstrap does not invoke the root-only Snapper initializer"
-(( bootstrap_snapper_restore_line < bootstrap_initializer_line && bootstrap_initializer_line < bootstrap_broad_restore_line )) ||
+(( bootstrap_deploy_line < bootstrap_initializer_line && bootstrap_initializer_line < bootstrap_broad_restore_line )) ||
   fail "bootstrap restores the broad environment before Snapper initialization"
 
 printf 'PASS: shared Limine/Snapper ownership and host-safe boot profile are complete\n'
