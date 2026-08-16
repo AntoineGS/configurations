@@ -57,6 +57,26 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
                 with self.assertRaises(AuditError):
                     extract_exec_commands(path)
 
+    def test_hl_computed_property_access_is_rejected(self) -> None:
+        cases = (
+            'hl["exec_cmd"]("signal-desktop")\n',
+            'hl.dsp["exec_cmd"]("signal-desktop")\n',
+            'hl[("exec_cmd")]("signal-desktop")\n',
+            'hl [ ("exec_cmd") ] ("signal-desktop")\n',
+            'hl[runner].exec_cmd("signal-desktop")\n',
+            'hl.dsp [ runner ].exec_cmd("signal-desktop")\n',
+            '(hl)[runner].exec_cmd("signal-desktop")\n',
+            '(hl.dsp)[runner].exec_cmd("signal-desktop")\n',
+        )
+
+        for source in cases:
+            with self.subTest(source=source):
+                temporary_directory, path = self.write_fixture(source)
+                self.addCleanup(temporary_directory.cleanup)
+
+                with self.assertRaises(AuditError):
+                    extract_exec_commands(path)
+
     def test_comments_and_strings_do_not_create_exec_cmd_references(self) -> None:
         temporary_directory, path = self.write_fixture(
             '-- hl.exec_cmd("commented-out")\n'
@@ -100,6 +120,30 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
 
         self.assertEqual(len(commands), 2)
         audit_commands(commands, packages)
+
+    def test_only_current_environment_assignment_is_allowed(self) -> None:
+        packages = parse_manifest_packages(self.manifest)
+        accepted = self.write_fixture(
+            'hl.exec_cmd("uwsm-app -- env HERDR_NAV_PASSTHROUGH_RE=\'^(shell-picker|fzf)$\' xdg-terminal-exec herdr")\n'
+        )
+        self.addCleanup(accepted[0].cleanup)
+
+        audit_commands(extract_exec_commands(accepted[1]), packages)
+
+        rejected = (
+            "uwsm-app -- env PATH=/tmp xdg-terminal-exec herdr",
+            "uwsm-app -- env LD_PRELOAD=/tmp/lib.so xdg-terminal-exec herdr",
+            "uwsm-app -- env HERDR_NAV_PASSTHROUGH_RE=unreviewed xdg-terminal-exec herdr",
+            "PATH=/tmp uwsm-app -- xdg-terminal-exec",
+            "LD_LIBRARY_PATH=/tmp uwsm-app -- xdg-terminal-exec",
+        )
+        for command in rejected:
+            with self.subTest(command=command):
+                temporary_directory, path = self.write_fixture(f'hl.exec_cmd("{command}")\n')
+                self.addCleanup(temporary_directory.cleanup)
+
+                with self.assertRaises(AuditError):
+                    audit_commands(extract_exec_commands(path), packages)
 
     def test_unsupported_full_commands_fail_closed(self) -> None:
         cases = (

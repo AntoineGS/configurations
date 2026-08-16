@@ -112,6 +112,7 @@ HELPER_COMMANDS = {"launch-or-focus", "launch-tui-large"}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _LONG_STRING_OPEN = re.compile(r"\[(=*)\[")
+_APPROVED_ENV_ASSIGNMENTS = frozenset({("HERDR_NAV_PASSTHROUGH_RE", "^(shell-picker|fzf)$")})
 
 _WORKSPACE_EVAL = (
     'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); '
@@ -327,6 +328,66 @@ def _is_bracket_exec_reference(tokens: Sequence[LuaToken], index: int) -> bool:
     )
 
 
+def _matching_open_paren(tokens: Sequence[LuaToken], close_index: int) -> int | None:
+    depth = 0
+    for index in range(close_index, -1, -1):
+        if tokens[index].value == ")":
+            depth += 1
+        elif tokens[index].value == "(":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _expression_start(tokens: Sequence[LuaToken], end: int) -> int | None:
+    if end == 0:
+        return None
+    last = end - 1
+    if tokens[last].value == ")":
+        opening = _matching_open_paren(tokens, last)
+        if opening is None:
+            return None
+        if opening > 0 and tokens[opening - 1].kind in {"identifier", "string"}:
+            return _expression_start(tokens, opening)
+        start = opening
+    elif tokens[last].kind in {"identifier", "string"} or tokens[last].value == "]":
+        start = last
+    else:
+        return None
+
+    if start > 0 and tokens[start - 1].value == ".":
+        return _expression_start(tokens, start - 1)
+    return start
+
+
+def _strip_outer_parens(tokens: Sequence[LuaToken], start: int, end: int) -> tuple[int, int]:
+    while start < end and tokens[start].value == "(" and tokens[end - 1].value == ")":
+        closing = _matching_open_paren(tokens, end - 1)
+        if closing != start:
+            break
+        start += 1
+        end -= 1
+    return start, end
+
+
+def _is_hl_rooted_expression(tokens: Sequence[LuaToken], start: int, end: int) -> bool:
+    start, end = _strip_outer_parens(tokens, start, end)
+    values = [token.value for token in tokens[start:end]]
+    if values == ["hl"] or values == ["hl", ".", "dsp"]:
+        return True
+    if end - start >= 3 and tokens[end - 2].value == "." and tokens[end - 1].value == "dsp":
+        return _is_hl_rooted_expression(tokens, start, end - 2)
+    return False
+
+
+def _is_hl_computed_access(tokens: Sequence[LuaToken], index: int) -> bool:
+    if tokens[index].value != "[":
+        return False
+    start = _expression_start(tokens, index)
+    return start is not None and _is_hl_rooted_expression(tokens, start, index)
+
+
 def _line_number(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
@@ -356,7 +417,7 @@ def extract_exec_commands(source: Path) -> list[Command]:
         unconsumed_identifier = (
             token.kind == "identifier" and token.value == "exec_cmd" and index not in consumed_exec_tokens
         )
-        if unconsumed_identifier or _is_bracket_exec_reference(tokens, index):
+        if unconsumed_identifier or _is_bracket_exec_reference(tokens, index) or _is_hl_computed_access(tokens, index):
             line = _line_number(text, token.start)
             raise AuditError(f"{source}:{line}: unconsumed exec_cmd reference")
     return commands
@@ -659,6 +720,8 @@ def _audit_segment(
         return
 
     executable = words[0]
+    if _ASSIGNMENT.fullmatch(executable):
+        raise AuditError(f"{command.source}:{command.line}: unsupported leading environment assignment")
     if _audit_system_words(words, command):
         return
     if executable in HELPER_COMMANDS:
@@ -680,8 +743,12 @@ def _audit_segment(
         target = list(words[2:])
         if target[0] == "env":
             target.pop(0)
+            assignments: list[tuple[str, str]] = []
             while target and _ASSIGNMENT.fullmatch(target[0]):
-                target.pop(0)
+                name, value = target.pop(0).split("=", 1)
+                assignments.append((name, value))
+            if len(assignments) != 1 or assignments[0] not in _APPROVED_ENV_ASSIGNMENTS:
+                raise AuditError(f"{command.source}:{command.line}: unsupported environment assignment")
         _audit_target_words(target, command, packages)
         return
     if executable == "uwsm":
