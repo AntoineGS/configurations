@@ -15,6 +15,12 @@ const menu = require(modelPath)
 const menuQml = fs.readFileSync(menuPath, "utf8")
 const configSource = fs.readFileSync(configPath, "utf8")
 
+assert.match(
+  menuQml,
+  /id: keyCatcher[\s\S]*?anchors\.fill: parent[\s\S]*?anchors\.margins: card\.padding/,
+  "menu content honors the card padding"
+)
+
 const parsed = menu.parseMenuJsonc(`
 {
   // Comments and trailing commas are valid JSONC input.
