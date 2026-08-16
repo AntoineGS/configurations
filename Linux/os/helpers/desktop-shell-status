@@ -213,7 +213,7 @@ disk_status() {
     return $?
   fi
 
-  result=$(json_output $''"$capacity" "Disk usage on /: $capacity" '')
+  result=$(json_output $' '"$capacity" "Disk usage on /: $capacity" '')
   write_result disk "$result"
 }
 
@@ -249,7 +249,7 @@ memory_status() {
   if ((used > 100)); then
     used=100
   fi
-  result=$(json_output $'󰡚'"$used%" "Memory usage: $used%" '')
+  result=$(json_output $'\uefc5 '"$used%" "Memory usage: $used%" '')
   write_result memory "$result"
 }
 
@@ -321,7 +321,7 @@ cpu_status() {
   if ((usage > 100)); then
     usage=100
   fi
-  result=$(json_output $''"$usage%" "CPU usage: $usage%" '')
+  result=$(json_output $' '"$usage%" "CPU usage: $usage%" '')
   write_result cpu "$result"
 }
 

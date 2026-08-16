@@ -30,6 +30,22 @@ assert.deepStrictEqual(model.pinTrayToInner([
 ])
 assert.strictEqual(model.customModuleSafeName("../escape"), false)
 
+contract("empty command JSON stays hidden", () => {
+  assert.deepStrictEqual(model.commandModuleState(
+    { text: "", tooltip: "", class: "" },
+    '{"text":"","tooltip":"","class":""}',
+    {}
+  ), { text: "", tooltip: "", active: false, muted: false })
+})
+
+contract("muted command class reaches the widget", () => {
+  assert.deepStrictEqual(model.commandModuleState(
+    { text: "6%/3d12h", tooltip: "Codex quota", class: "muted" },
+    "",
+    {}
+  ), { text: "6%/3d12h", tooltip: "Codex quota", active: false, muted: true })
+})
+
 contract("empty workspaces dispatch through Hyprland", () => {
   assert.match(workspacesSource, /function focusWorkspace\(id\) \{[\s\S]*?var workspace = root\.workspaceById\(id\)[\s\S]*?workspace\.activate\(\)[\s\S]*?Hyprland\.dispatch\("workspace " \+ String\(id\)\)/)
   assert.doesNotMatch(workspacesSource, /root\.bar\.run|hyprctl/)
