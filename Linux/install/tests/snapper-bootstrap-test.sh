@@ -7,9 +7,10 @@ BOOTSTRAP="$ROOT/Linux/install/bootstrap"
 BOOTSTRAP_TEST_RUNNER="$ROOT/Linux/install/tests/bootstrap-test-runner.sh"
 TEST_ROOT="$(mktemp -d)"
 STUB_BIN="$TEST_ROOT/bin"
+FIXTURE_REPO="$TEST_ROOT/repository"
+FIXTURE_MARKER="$TEST_ROOT/.bootstrap-test-fixture"
 LOG="$TEST_ROOT/commands.log"
 ARCH_RELEASE="$TEST_ROOT/arch-release"
-ORIGINAL_PATH="$PATH"
 BASH_PATH="$BASH"
 readonly RECOVERY_DIRECTORY=/var/lib/configurations/snapper-bootstrap
 readonly BACKUP_DIRECTORY=/var/lib/configurations/snapper-bootstrap/backups
@@ -113,16 +114,40 @@ write_executable() {
   local -r path="$1"
   shift
 
-  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' "$@" >"$path"
+  printf '%s\n' '#!/usr/bin/bash' 'set -Eeuo pipefail' "$@" >"$path"
   chmod +x -- "$path"
 }
 
 create_stubs() {
   mkdir -p -- "$STUB_BIN"
 
+  # shellcheck disable=SC2016
+  write_executable "$STUB_BIN/awk" \
+    'if [[ "${1:-}" == -F= ]]; then' \
+    '  field=""' \
+    '  if [[ "${2:-}" == *phase* ]]; then field=phase; fi' \
+    '  if [[ "${2:-}" == *staged* ]]; then field=staged; fi' \
+    '  while IFS= read -r line || [[ -n "$line" ]]; do' \
+    '    if [[ "${line%%=*}" == "$field" ]]; then printf "%s\n" "${line#*=}"; break; fi' \
+    '  done' \
+    'else' \
+    '  while IFS= read -r line || [[ -n "$line" ]]; do printf "%s\n" "$line"; done' \
+    'fi'
+  write_executable "$STUB_BIN/bash" 'exit 0'
   write_executable "$STUB_BIN/curl" 'exit 0'
+  # shellcheck disable=SC2016
+  write_executable "$STUB_BIN/dirname" 'printf "%s\\n" "${1%/*}"'
+  write_executable "$STUB_BIN/env" 'exit 0'
+  write_executable "$STUB_BIN/find" 'exit 0'
   write_executable "$STUB_BIN/pacman" 'exit 0'
+  write_executable "$STUB_BIN/hostname" 'printf "%s\\n" server'
+  write_executable "$STUB_BIN/hostnamectl" 'printf "%s\\n" server'
+  write_executable "$STUB_BIN/makepkg" 'exit 0'
+  write_executable "$STUB_BIN/mktemp" 'exit 0'
+  write_executable "$STUB_BIN/rm" 'exit 0'
+  write_executable "$STUB_BIN/sync" 'exit 0'
   write_executable "$STUB_BIN/systemctl" 'exit 0'
+  write_executable "$STUB_BIN/tee" 'exit 0'
   write_executable "$STUB_BIN/yay" 'exit 0'
   write_executable "$STUB_BIN/git" 'exit 0'
 
@@ -260,8 +285,8 @@ create_stubs() {
     'if [[ "$command_name" == readlink ]]; then' \
     '  [[ "${1:-}" == -- ]] && shift' \
     '  case "${1:-}" in' \
-    '    /etc/snapper/configs) printf "%s/Linux/Snapper/configs\n" "$SNAPPER_BOOTSTRAP_TEST_ROOT" ;;' \
-    '    /etc/conf.d) printf "%s/Linux/Snapper/conf.d\n" "$SNAPPER_BOOTSTRAP_TEST_ROOT" ;;' \
+    '    /etc/snapper/configs) printf "%s/Linux/Snapper/configs\n" "$SNAPPER_BOOTSTRAP_TEST_REPO" ;;' \
+    '    /etc/conf.d) printf "%s/Linux/Snapper/conf.d\n" "$SNAPPER_BOOTSTRAP_TEST_REPO" ;;' \
     '    *) exit 1 ;;' \
     '  esac' \
     '  exit 0' \
@@ -276,7 +301,9 @@ create_stubs() {
     '  exit 0' \
     'fi' \
     'if [[ "$command_name" == touch ]]; then' \
-    '  /usr/bin/touch "$@"' \
+    '  target="${!#}"' \
+    '  [[ "$target" == "$BOOTSTRAP_TEST_ROOT"/* ]] || exit 1' \
+    '  : >"$target"' \
     '  exit 0' \
     'fi' \
     'if [[ "$command_name" == chmod && "${SNAPPER_BOOTSTRAP_TEST_RECOVERY_SETUP_FAILURE:-}" == chmod && "${!#}" == /var/lib/configurations/snapper-bootstrap ]]; then exit 1; fi' \
@@ -383,11 +410,17 @@ run_bootstrap() {
   shift
 
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
-    PATH="$STUB_BIN:$ORIGINAL_PATH" \
+    PATH="$STUB_BIN" \
     BOOTSTRAP_TEST_OS_RELEASE="$ARCH_RELEASE" \
     BOOTSTRAP_TEST_HOSTNAME=antoinews-linux \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$FIXTURE_MARKER" \
+    BOOTSTRAP_TEST_BIN="$STUB_BIN" \
+    BOOTSTRAP_TEST_REPO="$FIXTURE_REPO" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="" \
     SNAPPER_BOOTSTRAP_TEST_LOG="$LOG" \
-    SNAPPER_BOOTSTRAP_TEST_ROOT="$ROOT" \
+    SNAPPER_BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    SNAPPER_BOOTSTRAP_TEST_REPO="$FIXTURE_REPO" \
     SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS="${SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS:-false}" \
     SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE="${SNAPPER_BOOTSTRAP_TEST_DEPLOY_FAILURE:-false}" \
     SNAPPER_BOOTSTRAP_TEST_ROLLBACK_FAILURE="${SNAPPER_BOOTSTRAP_TEST_ROLLBACK_FAILURE:-false}" \
@@ -408,7 +441,7 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     SNAPPER_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
-    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --repo "$ROOT" "$@" 2>&1); then
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --repo "$FIXTURE_REPO" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -598,7 +631,7 @@ test_partial_install_journal_recovers_before_new_deployment() {
   reset_fixture
   SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS=true
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\n'
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="legacy|/etc/snapper/configs|${BACKUP_DIRECTORY}/legacy-configs|$ROOT/Linux/Snapper/configs
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="legacy|/etc/snapper/configs|${BACKUP_DIRECTORY}/legacy-configs|$FIXTURE_REPO/Linux/Snapper/configs
 file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640
 "
   run_bootstrap $'yes\nyes\nyes'
@@ -697,7 +730,13 @@ test_repository_paths_reject_manifest_delimiters() {
     bad_repo="$TEST_ROOT/repository${suffix}"
     mkdir -p -- "$bad_repo"
     printf 'name: invalid-manifest-path\n' >"$bad_repo/tidydots.yaml"
-    run_bootstrap $'yes\nyes\nyes' --repo "$bad_repo"
+    # shellcheck disable=SC2016
+    if LAST_OUTPUT=$(PATH="$STUB_BIN" \
+      "$BASH_PATH" -c 'source "$1"; REPO_ROOT="$2"; check_repository' _ "$BOOTSTRAP" "$bad_repo" 2>&1); then
+      LAST_STATUS=0
+    else
+      LAST_STATUS=$?
+    fi
 
     assert_status 1 "$LAST_STATUS" "manifest delimiter in repository path: ${suffix@Q}"
     assert_contains "$LAST_OUTPUT" 'repository path cannot contain manifest delimiters' \
@@ -817,7 +856,10 @@ test_rollback_failure_stops_closed() {
   assert_log_not_contains 'tidydots restore -n' 'broad restore not planned after rollback failure'
 }
 
-mkdir -p -- "$STUB_BIN"
+mkdir -p -- "$STUB_BIN" "$FIXTURE_REPO/Linux"
+printf '%s' 'bootstrap-test-fixture-v1' >"$FIXTURE_MARKER"
+printf '%s\n' 'name: snapper-bootstrap-fixture' >"$FIXTURE_REPO/tidydots.yaml"
+/usr/bin/cp -a -- "$ROOT/Linux/Snapper" "$FIXTURE_REPO/Linux/Snapper"
 printf 'ID=arch\n' >"$ARCH_RELEASE"
 create_stubs
 
