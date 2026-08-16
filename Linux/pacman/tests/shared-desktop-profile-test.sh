@@ -4,6 +4,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
 CONFIG_FILE="$REPO_DIR/tidydots.yaml"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+RUNTIME_AUDIT="$SCRIPT_DIR/hyprland_runtime_audit.py"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -12,6 +14,8 @@ fail() {
 
 [[ -r "$CONFIG_FILE" ]] || fail "cannot read $CONFIG_FILE"
 command -v tidydots >/dev/null 2>&1 || fail "tidydots is not installed"
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "$PYTHON_BIN is not installed"
+[[ -r "$RUNTIME_AUDIT" ]] || fail "cannot read $RUNTIME_AUDIT"
 
 extract_application() {
   local application="$1"
@@ -75,13 +79,11 @@ extract_direct_manager_packages() {
   awk -v wanted="$manager" '
     /^      managers:$/ {
       in_managers = 1
-      in_manager = 0
       next
     }
 
     in_managers && /^    [^[:space:]]/ {
       in_managers = 0
-      in_manager = 0
       next
     }
 
@@ -89,11 +91,6 @@ extract_direct_manager_packages() {
       package_name = $0
       sub("^        " wanted ":[[:space:]]+", "", package_name)
       print package_name
-      next
-    }
-
-    in_managers && /^        [^[:space:]]/ {
-      in_manager = 0
       next
     }
   '
@@ -302,354 +299,12 @@ assert_no_duplicate_arch_packages() {
   done
 }
 
-extract_active_hypr_commands() {
-  local -a source_files=("$@")
-
-  if ((${#source_files[@]} == 0)); then
-    source_files=(
-      "$REPO_DIR/Linux/hypr/bindings/apps.lua"
-      "$REPO_DIR/Linux/hypr/autostart.lua"
-    )
-  fi
-
-  awk '
-    function emit_command(line, closing) {
-      if (in_long_string) {
-        closing = index(line, "]]")
-        if (closing > 0) {
-          command = command substr(line, 1, closing - 1)
-          print FILENAME "\t" command
-          command = ""
-          in_exec = 0
-          in_long_string = 0
-        } else {
-          command = command line
-        }
-        return
-      }
-
-      if (in_quoted_string) {
-        closing = index(line, "\"")
-        if (closing > 0) {
-          command = command substr(line, 1, closing - 1)
-          print FILENAME "\t" command
-          command = ""
-          in_exec = 0
-          in_quoted_string = 0
-        } else {
-          command = command line
-        }
-        return
-      }
-
-      if (line ~ /\[\[/) {
-        sub(/^.*\[\[/, "", line)
-        closing = index(line, "]]")
-        if (closing > 0) {
-          print FILENAME "\t" substr(line, 1, closing - 1)
-          in_exec = 0
-        } else {
-          command = line
-          in_long_string = 1
-        }
-        return
-      }
-
-      if (line ~ /exec_cmd[[:space:]]*\([[:space:]]*"/) {
-        sub(/^.*exec_cmd[[:space:]]*\([[:space:]]*"/, "", line)
-        sub(/".*$/, "", line)
-        print FILENAME "\t" line
-        in_exec = 0
-        return
-      }
-
-      if (line ~ /^[[:space:]]*"/) {
-        sub(/^[[:space:]]*"/, "", line)
-        closing = index(line, "\"")
-        if (closing > 0) {
-          print FILENAME "\t" substr(line, 1, closing - 1)
-          in_exec = 0
-        } else {
-          command = line
-          in_quoted_string = 1
-        }
-      }
-    }
-
-    {
-      line = $0
-      if (!in_exec && line ~ /hl\.(dsp\.)?exec_cmd[[:space:]]*\(/) {
-        in_exec = 1
-      }
-      if (in_exec) {
-        emit_command(line)
-      }
-    }
-  ' "${source_files[@]}"
-}
-
-extract_shell_chain_segments() {
-  local command="$1"
-  local segment=""
-  local quote=""
-  local escaped=false
-  local char next
-  local i
-
-  for ((i = 0; i < ${#command}; i++)); do
-    char="${command:i:1}"
-
-    if [[ "$escaped" == true ]]; then
-      segment+="$char"
-      escaped=false
-      continue
-    fi
-
-    if [[ "$char" == "\\" && "$quote" != "'" ]]; then
-      segment+="$char"
-      escaped=true
-      continue
-    fi
-
-    if [[ -n "$quote" ]]; then
-      segment+="$char"
-      [[ "$char" == "$quote" ]] && quote=""
-      continue
-    fi
-
-    case "$char" in
-      "'"|\")
-        quote="$char"
-        segment+="$char"
-        ;;
-      '&'|'|'|';')
-        printf '%s\n' "$segment"
-        segment=""
-        next="${command:i+1:1}"
-        [[ "$next" == "$char" ]] && i=$((i + 1))
-        ;;
-      *)
-        segment+="$char"
-        ;;
-    esac
-  done
-
-  printf '%s\n' "$segment"
-}
-
-extract_runtime_command_names() {
-  local source command segment remainder candidate
-
-  while IFS=$'\t' read -r source command; do
-    while IFS= read -r segment; do
-      segment="${segment#"${segment%%[![:space:]]*}"}"
-      segment="${segment%"${segment##*[![:space:]]}"}"
-      [[ -n "$segment" ]] || continue
-
-      case "$segment" in
-        *"launch-or-focus "*)
-          remainder="${segment#*launch-or-focus }"
-          candidate="${remainder%%[[:space:]]*}"
-          candidate="${candidate//\"/}"
-          printf '%s\t%s\n' "$source" "$candidate"
-
-          if [[ "$remainder" == *'"uwsm app -- '* ]]; then
-            remainder="${remainder#*\"uwsm app -- }"
-            remainder="${remainder%%\"*}"
-            candidate="${remainder%%[[:space:]]*}"
-            printf '%s\t%s\n' "$source" "$candidate"
-          fi
-          ;;
-        *"launch-tui-large "*)
-          remainder="${segment#*launch-tui-large }"
-          candidate="${remainder%%[[:space:]]*}"
-          printf '%s\t%s\n' "$source" "$candidate"
-          ;;
-        *"uwsm-app -- "*)
-          printf '%s\tuwsm-app\n' "$source"
-          remainder="${segment#*uwsm-app -- }"
-          if [[ "$remainder" == env\ * ]]; then
-            remainder="${remainder#env }"
-            while [[ "${remainder%% *}" == *=* ]]; do
-              remainder="${remainder#* }"
-            done
-          fi
-          candidate="${remainder%%[[:space:]]*}"
-          candidate="${candidate##*/}"
-          printf '%s\t%s\n' "$source" "$candidate"
-          ;;
-        *"uwsm app -- "*)
-          printf '%s\tuwsm\n' "$source"
-          remainder="${segment#*uwsm app -- }"
-          candidate="${remainder%%[[:space:]]*}"
-          candidate="${candidate##*/}"
-          printf '%s\t%s\n' "$source" "$candidate"
-          ;;
-        *)
-          candidate="${segment%%[[:space:]]*}"
-          candidate="${candidate##*/}"
-          printf '%s\t%s\n' "$source" "$candidate"
-          ;;
-      esac
-    done < <(extract_shell_chain_segments "$command")
-  done < <(extract_active_hypr_commands "$@")
-}
-
-runtime_command_is_ignored() {
-  case "$1" in
-    cut|dbus-update-activation-environment|env|false|hyprctl|pkg-aur-install|pkg-install|pkg-remove|sleep|systemctl|true|update)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-runtime_application_for_command() {
-  local command="$1"
-  local block
-
-  case "$command" in
-    brave-browser)
-      printf 'brave\n'
-      ;;
-    hyprpm)
-      printf 'hyprland\n'
-      ;;
-    launch-editor)
-      printf 'neovim\n'
-      ;;
-    polkit-gnome-authentication-agent-1)
-      printf 'polkit-gnome\n'
-      ;;
-    signal-desktop)
-      printf 'signal\n'
-      ;;
-    swayosd-server)
-      printf 'swayosd\n'
-      ;;
-    uwsm|uwsm-app)
-      printf 'uwsm\n'
-      ;;
-    *)
-      block="$(extract_application "$command")"
-      [[ -n "$block" ]] || return 1
-      printf '%s\n' "$command"
-      ;;
-  esac
-}
-
 assert_hyprland_runtime_ownership() {
-  local source command application block key
-  declare -A seen_commands=()
-
-  while IFS=$'\t' read -r source command; do
-    [[ -n "$command" ]] || continue
-    runtime_command_is_ignored "$command" && continue
-
-    key="$source|$command"
-    [[ -z "${seen_commands[$key]+set}" ]] || continue
-    seen_commands["$key"]=1
-
-    application="$(runtime_application_for_command "$command" || true)"
-    [[ -n "$application" ]] ||
-      fail "active Hyprland command $command from ${source#"$REPO_DIR"/} has no manifest application owner"
-
-    block="$(extract_application "$application")"
-    if ! {
-      printf '%s\n' "$block" | extract_direct_manager_packages pacman
-      printf '%s\n' "$block" | extract_direct_manager_packages yay
-    } | grep -E '[^[:space:]]' >/dev/null; then
-      fail "active Hyprland command $command from ${source#"$REPO_DIR"/} has no direct Arch package owner in $application"
-    fi
-  done < <(extract_runtime_command_names "$@")
-}
-
-assert_autostart_command_count() {
-  local actual
-
-  actual="$(extract_active_hypr_commands "$REPO_DIR/Linux/hypr/autostart.lua" | wc -l)"
-  [[ "$actual" -eq 14 ]] || fail "autostart runtime audit found $actual exec_cmd calls, expected 14"
-}
-
-assert_multiline_unknown_launcher_fails() {
-  local fixture output
-
-  fixture="$(mktemp)"
-  printf '%s\n' \
-    'hl.exec_cmd(' \
-    '  [[uwsm-app -- synthetic-undeclared-launcher]]' \
-    ')' > "$fixture"
-
-  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
-    rm -f -- "$fixture"
-    fail 'multiline runtime audit accepted an undeclared launcher'
-  fi
-
-  rm -f -- "$fixture"
-  grep -Fq -- synthetic-undeclared-launcher <<< "$output" ||
-    fail 'multiline runtime audit rejected an undeclared launcher without naming it'
-}
-
-assert_multiline_quoted_unknown_launcher_fails() {
-  local fixture output
-
-  fixture="$(mktemp)"
-  printf '%s\n' \
-    'hl.exec_cmd(' \
-    '  "uwsm-app -- synthetic-quoted-launcher"' \
-    ')' > "$fixture"
-
-  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
-    rm -f -- "$fixture"
-    fail 'multiline quoted runtime audit accepted an undeclared launcher'
-  fi
-
-  rm -f -- "$fixture"
-  grep -Fq -- synthetic-quoted-launcher <<< "$output" ||
-    fail 'multiline quoted runtime audit rejected an undeclared launcher without naming it'
-}
-
-assert_shell_chain_unknown_launcher_fails() {
-  local fixture output
-
-  fixture="$(mktemp)"
-  printf '%s\n' \
-    'hl.exec_cmd(' \
-    '  [[sleep 1 && synthetic-chain-launcher]]' \
-    ')' > "$fixture"
-
-  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
-    rm -f -- "$fixture"
-    fail 'shell-chain runtime audit accepted an undeclared launcher after sleep'
-  fi
-
-  rm -f -- "$fixture"
-  grep -Fq -- synthetic-chain-launcher <<< "$output" ||
-    fail 'shell-chain runtime audit rejected an undeclared launcher without naming it'
-}
-
-assert_supported_shell_chain_passes() {
-  local fixture output
-
-  fixture="$(mktemp)"
-  printf '%s\n' \
-    'hl.exec_cmd(' \
-    '  [[sleep 1 && hyprctl eval status || systemctl --user is-active; dbus-update-activation-environment --systemd --all | cut -d= -f1]]' \
-    ')' > "$fixture"
-
-  if ! output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
-    rm -f -- "$fixture"
-    printf '%s\n' "$output" >&2
-    fail 'runtime audit rejected recognized system commands in a supported shell chain'
-  fi
-
-  rm -f -- "$fixture"
+  local -a command=("$PYTHON_BIN" "$RUNTIME_AUDIT" --manifest "$CONFIG_FILE")
+  "${command[@]}"
 }
 
 assert_runtime_requirements() {
-  assert_autostart_command_count
   assert_source_requires_package Linux/hypr/autostart.lua 'hl.exec_cmd("signal-desktop")' signal pacman signal-desktop
   assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
   assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
@@ -721,10 +376,6 @@ fi
 
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages
-assert_multiline_unknown_launcher_fails
-assert_multiline_quoted_unknown_launcher_fails
-assert_shell_chain_unknown_launcher_fails
-assert_supported_shell_chain_passes
 assert_runtime_requirements
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
