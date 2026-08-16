@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: toggle-desktop-shell-bar\n' >&2
+}
+
+(($# == 0)) || { usage; exit 2; }
+
+exec desktop-shell toggle-bar
