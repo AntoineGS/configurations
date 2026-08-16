@@ -23,4 +23,4 @@ if ! quickshell_command=$(command -v quickshell); then
   exit 127
 fi
 
-exec "$quickshell_command" -n desktop-shell -p "$shell_dir"
+exec "$quickshell_command" -n -p "$shell_dir"

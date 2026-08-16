@@ -37,7 +37,7 @@ fail() {
 assert_launcher_mapping() {
   awk '
     /^  - / {
-      if (in_app && target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+      if (in_app && target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
         found = 1
       }
       in_app = 0
@@ -48,29 +48,33 @@ assert_launcher_mapping() {
     }
     !in_app { next }
     /^      - / {
-      if (target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+      if (target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
         found = 1
       }
       target = 0
       entry_name = 0
       backup = 0
-      file = ""
+      has_launcher = 0
+      has_cli = 0
+      has_toggle = 0
       file_count = 0
     }
     $0 == "          linux: ~/.local/share/helpers" { target = 1 }
-    $0 == "        name: desktop-shell-launcher" { entry_name = 1 }
+    $0 == "        name: desktop-shell-helpers" { entry_name = 1 }
     $0 == "        backup: ./Linux/os/helpers" { backup = 1 }
     /^          - / {
-      file = $0
       file_count++
     }
+    $0 == "          - desktop-shell-launch" { has_launcher = 1 }
+    $0 == "          - desktop-shell" { has_cli = 1 }
+    $0 == "          - toggle-desktop-shell-bar" { has_toggle = 1 }
     END {
-      if (in_app && target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+      if (in_app && target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
         found = 1
       }
       exit !found
     }
-  ' "$CONFIG" || fail 'desktop-shell launcher mapping is missing or too broad'
+  ' "$CONFIG" || fail 'desktop-shell helper mapping is missing or incorrect'
 }
 
 assert_binding() {
@@ -116,7 +120,7 @@ rm -f "$ARGS_FILE" "$EXECUTED_FILE"
 run_launcher "$LAUNCHER" || fail 'launcher failed with readable shell and config files'
 [[ -e $EXECUTED_FILE ]] || fail 'launcher did not execute quickshell'
 
-expected_args=$(printf '%s\n' '-n' 'desktop-shell' '-p' "$SHELL_DIR")
+expected_args=$(printf '%s\n' '-n' '-p' "$SHELL_DIR")
 [[ -f $ARGS_FILE ]] || fail 'mock quickshell did not receive arguments'
 [[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
   printf 'expected argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
