@@ -21,6 +21,7 @@ const template = fs.readFileSync(templatePath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
 const registry = fs.readFileSync(registryPath, "utf8")
 const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
+assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 function render(hostname) {
   let rendered = template.replace(
@@ -36,13 +37,16 @@ const commandModules = {
     id: "recording",
     type: "command",
     exec: "desktop-shell-status recording",
-    interval: 1
+    interval: 1,
+    onClick: "cmd-screenrecord"
   },
   voxtype: {
     id: "voxtype",
     type: "command",
-    exec: "voxtype-status",
-    interval: 1
+    exec: "desktop-shell-status voxtype",
+    interval: 1,
+    onClick: "voxtype-model",
+    onRightClick: "voxtype-config"
   },
   codex: {
     id: "codex",
@@ -50,7 +54,7 @@ const commandModules = {
     exec: "desktop-shell-status codex",
     interval: 300,
     onClick: "desktop-shell summon desktop.agents '{}'",
-    onClickRight: "xdg-open https://chatgpt.com/codex/settings/usage"
+    onRightClick: "xdg-open https://chatgpt.com/codex/settings/usage"
   },
   disk: {
     id: "disk",
