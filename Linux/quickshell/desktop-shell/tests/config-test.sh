@@ -4,6 +4,8 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 TEMPLATE="$SHELL_ROOT/config/shell.json.tmpl"
+THEME="$SHELL_ROOT/config/shell.toml"
+COLOR="$SHELL_ROOT/Commons/Color.qml"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell"
 
 command -v node >/dev/null 2>&1 || {
@@ -11,17 +13,86 @@ command -v node >/dev/null 2>&1 || {
   exit 1
 }
 
-node - "$TEMPLATE" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
+node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
-const [templatePath, shellPath, registryPath, widgetRegistryPath, helperPath] = process.argv.slice(2)
+const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
+const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
 const registry = fs.readFileSync(registryPath, "utf8")
 const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
+
+const palette = {
+  foreground: "#cdd6f4",
+  background: "#1e1e2e",
+  accent: "#cba6f7",
+  urgent: "#f38ba8",
+  muted: "#7f849c"
+}
+for (const [role, value] of Object.entries(palette)) {
+  assert.match(color, new RegExp(`property color ${role}: "${value}"`), `${role} uses the Catppuccin fallback`)
+}
+
+assert.ok(fs.existsSync(themePath), "repository-owned shell.toml exists")
+const theme = fs.readFileSync(themePath, "utf8")
+const themeValues = {}
+let section = ""
+for (const rawLine of theme.split("\n")) {
+  const line = rawLine.trim()
+  if (!line || line.startsWith("#")) continue
+  const sectionMatch = line.match(/^\[([a-z-]+)\]$/)
+  if (sectionMatch) {
+    section = sectionMatch[1]
+    continue
+  }
+  const valueMatch = line.match(/^([a-z-]+)\s*=\s*"(#[0-9a-f]{6})"$/i)
+  if (section && valueMatch) themeValues[`${section}.${valueMatch[1]}`] = valueMatch[2].toLowerCase()
+}
+
+const surfaceRoles = {
+  "bar.background": palette.background,
+  "bar.text": palette.foreground,
+  "bar.active": palette.urgent,
+  "popups.background": palette.background,
+  "popups.text": palette.foreground,
+  "popups.border": palette.accent,
+  "tooltip.background": palette.background,
+  "tooltip.text": palette.foreground,
+  "tooltip.border": palette.accent,
+  "menu.background": palette.background,
+  "menu.text": palette.foreground,
+  "menu.border": palette.accent,
+  "menu.scrim": palette.background,
+  "menu.selected-background": palette.muted,
+  "menu.selected-text": palette.accent,
+  "menu.selected-border": palette.accent,
+  "notifications.background": palette.background,
+  "notifications.text": palette.foreground,
+  "notifications.border": palette.accent,
+  "notifications.countdown": palette.accent,
+  "polkit.background": palette.background,
+  "polkit.text": palette.foreground,
+  "polkit.text-error": palette.urgent,
+  "polkit.border": palette.accent,
+  "polkit.border-error": palette.urgent,
+  "polkit.accent": palette.accent,
+  "polkit.scrim": palette.background,
+  "lock.background": palette.background,
+  "lock.text": palette.foreground,
+  "lock.placeholder": palette.muted,
+  "lock.text-error": palette.urgent,
+  "lock.border": palette.muted,
+  "lock.border-active": palette.accent,
+  "lock.border-error": palette.urgent,
+  "lock.selection": palette.accent
+}
+for (const [role, value] of Object.entries(surfaceRoles)) {
+  assert.equal(themeValues[role], value, `${role} uses the expected Catppuccin token`)
+}
 
 function render(hostname) {
   let rendered = template.replace(
