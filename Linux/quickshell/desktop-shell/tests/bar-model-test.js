@@ -8,7 +8,11 @@ const barSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/Bar.qml"), "
 const workspacesSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Workspaces.qml"), "utf8")
 const traySource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Tray.qml"), "utf8")
 const clockSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/clock/BarWidget.qml"), "utf8")
+const widgetButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/WidgetButton.qml"), "utf8")
+const barIconButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/BarIconButton.qml"), "utf8")
 const centerSource = barSource.slice(barSource.indexOf("component CenterModules"), barSource.indexOf("component ModuleList"))
+const barVariantsSource = barSource.slice(barSource.indexOf("Variants {"), barSource.indexOf("component BarPanel"))
+const barPanelSource = barSource.slice(barSource.indexOf("component BarPanel"), barSource.indexOf("component LeftModules"))
 
 const failures = []
 function contract(name, check) {
@@ -51,6 +55,36 @@ contract("clock updates at seconds precision", () => {
 contract("center anchor boundaries use one module gap", () => {
   assert.match(centerSource, /anchors\.rightMargin: root\.moduleGap/)
   assert.match(centerSource, /anchors\.leftMargin: root\.moduleGap/)
+})
+
+contract("bar variants bind each screen in the delegate", () => {
+  assert.match(barVariantsSource, /BarPanel \{[\s\S]*?required property var modelData[\s\S]*?screen: modelData/)
+  assert.doesNotMatch(barPanelSource, /required property var modelData|screen: modelData/)
+})
+
+contract("command modules provide their loader component", () => {
+  assert.match(barSource, /Component \{\s*id: customCommandModuleComponent\s*CustomCommandModule \{ entry: slot\.entry \}\s*\}/)
+  assert.match(barSource, /function injectProps\(\) \{[\s\S]*?if \(slot\.commandCustom\) return/)
+})
+
+contract("bar matches Waybar density", () => {
+  assert.match(barSource, /readonly property int barSize: 32/)
+  assert.match(barSource, /property real fontSize: 14/)
+  assert.match(barSource, /property int fontWeight: Font\.Bold/)
+  assert.match(widgetButtonSource, /fontSize: bar && bar\.fontSize \? bar\.fontSize : Style\.font\.body/)
+  assert.match(widgetButtonSource, /font\.weight: root\.fontWeight/)
+  assert.match(barIconButtonSource, /fontSize: bar && bar\.iconFontSize \? bar\.iconFontSize : Style\.bar\.iconFont/)
+  assert.match(traySource, /width: Style\.space\(16\)[\s\S]*height: Style\.space\(16\)/)
+})
+
+contract("workspaces are monitor-local labeled buttons", () => {
+  assert.match(workspacesSource, /import Quickshell\n/)
+  assert.doesNotMatch(workspacesSource, /var ids = \[1, 2, 3, 4, 5\]/)
+  assert.match(workspacesSource, /workspace\.monitor\.name !== root\.screenName/)
+  assert.match(workspacesSource, /root\.setting\("labels", \(\{\}\)\)/)
+  assert.match(workspacesSource, /text: displayName/)
+  assert.match(workspacesSource, /active: focused/)
+  assert.doesNotMatch(workspacesSource, /focused \? "\\uDB85\\uDCFB"/)
 })
 
 contract("fixed bar model has no drag or position helpers", () => {

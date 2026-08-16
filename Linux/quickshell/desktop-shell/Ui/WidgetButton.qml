@@ -7,7 +7,8 @@ Item {
   property var bar: null
   property string text: ""
   property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  property real fontSize: Style.font.body
+  property real fontSize: bar && bar.fontSize ? bar.fontSize : Style.font.body
+  property int fontWeight: bar && bar.fontWeight ? bar.fontWeight : Font.Normal
   property color foreground: bar ? bar.barForeground : Color.foreground
   property color activeColor: bar ? bar.urgent : Color.urgent
   property bool active: false
@@ -80,6 +81,7 @@ Item {
     color: root.active && root.useActiveColor ? root.activeColor : root.foreground
     font.family: root.fontFamily
     font.pixelSize: root.fontSize
+    font.weight: root.fontWeight
     renderType: Text.NativeRendering
     rotation: root.textRotation
     horizontalAlignment: Text.AlignHCenter

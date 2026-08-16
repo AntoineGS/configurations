@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Hyprland
@@ -7,6 +8,9 @@ import qs.Ui
 BarWidget {
   id: root
   moduleName: "desktop.workspaces"
+  readonly property var window: root.QsWindow.window
+  readonly property string screenName: window && window.screen ? String(window.screen.name || "") : ""
+  readonly property var labels: root.setting("labels", ({}))
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
@@ -18,16 +22,25 @@ BarWidget {
   }
 
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5]
+    var ids = []
     var values = Hyprland.workspaces.values
 
     for (var i = 0; i < values.length; i++) {
-      var id = values[i].id
+      var workspace = values[i]
+      if (!workspace || !workspace.monitor || workspace.monitor.name !== root.screenName) continue
+      var id = workspace.id
       if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
     }
 
     ids.sort(function(left, right) { return left - right })
     return ids
+  }
+
+  function workspaceLabel(id, workspace) {
+    var configured = labels[String(id)]
+    if (configured !== undefined && configured !== null && String(configured) !== "") return String(configured)
+    if (workspace && workspace.name) return String(workspace.name)
+    return id === 10 ? "0" : String(id)
   }
 
   function focusWorkspace(id) {
@@ -60,17 +73,16 @@ BarWidget {
 
         readonly property var workspace: root.workspaceById(modelData)
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
-        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
-        readonly property string displayName: workspace && workspace.name
-          ? String(workspace.name)
-          : (modelData === 10 ? "0" : String(modelData))
+        readonly property bool focused: workspace !== null && workspace.active
+        readonly property string displayName: root.workspaceLabel(modelData, workspace)
 
         bar: root.bar
-        text: focused ? "\uDB85\uDCFB" : displayName
+        text: displayName
+        active: focused
         opacity: occupied || focused ? 1 : 0.5
         horizontalMargin: 6
         verticalPadding: 6
-        fixedWidth: root.vertical ? root.barSize : Style.space(20)
+        fixedWidth: root.vertical ? root.barSize : -1
         fixedHeight: root.barSize
         onPressed: function() { root.focusWorkspace(modelData) }
       }
