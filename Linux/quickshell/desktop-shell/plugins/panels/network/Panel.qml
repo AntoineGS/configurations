@@ -15,7 +15,8 @@ Panel {
   manageIpc: false
   property var pluginRegistry: null
 
-  readonly property bool capabilityAvailable: Networking.devices !== undefined
+  readonly property bool capabilityAvailable: Model.networkCapabilityAvailable(
+    Networking.backend, NetworkBackendType.NetworkManager, Networking.devices)
   readonly property var networkDevices: capabilityAvailable && Networking.devices ? Networking.devices.values : []
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
