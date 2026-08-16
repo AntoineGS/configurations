@@ -1,4 +1,4 @@
--- Change the default Omarchy look'n'feel
+-- Configure the default Hyprland look'n'feel
 
 local activeBorderColor   = "rgb(cba6f7)"
 local inactiveBorderColor = "rgba(595959aa)"

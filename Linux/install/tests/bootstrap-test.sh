@@ -131,6 +131,8 @@ create_stub_path() {
     elif [[ "$command_name" == bash ]]; then
       write_executable "$path/$command_name" 'exit 0'
     elif [[ "$command_name" == sudo ]]; then
+      # These single-quoted arguments are source for the generated sudo stub; their variables must expand at stub runtime.
+      # shellcheck disable=SC2016
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
         '[[ "${1:-}" == -n ]] || exit 2' \
