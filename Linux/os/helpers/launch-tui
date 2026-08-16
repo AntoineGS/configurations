@@ -1,5 +1,12 @@
 #!/bin/bash
 
-# Launch the TUI command passed in as an argument in the default terminal with an org.omarchy.COMMAND app id for styling.
+set -Eeuo pipefail
 
-exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.float.$(basename $1) -e "$1" "${@:2}"
+# Launch the TUI command passed in as an argument in the default terminal.
+
+if (( $# == 0 )); then
+  printf '%s\n' 'Usage: launch-tui <command> [args...]' >&2
+  exit 1
+fi
+
+exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e "$@"

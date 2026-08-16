@@ -1,7 +1,0 @@
-#!/bin/bash
-
-# Overwrite the user configs for the Waybar menu bar with the Omarchy defaults and restart the service.
-
-refresh-config waybar/config.jsonc
-refresh-config waybar/style.css
-restart-waybar

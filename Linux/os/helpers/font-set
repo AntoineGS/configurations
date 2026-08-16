@@ -1,42 +1,51 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Set the system-wide monospace font that should be used by the terminal, hyprlock, waybar, swayosd, etc.
 # The font name must be one of the ones returned by font-list.
 
-font_name="$1"
+font_name="${1:-}"
 
 if [[ -n $font_name ]]; then
-  if fc-list | grep -iq "$font_name"; then
+  if grep -Fqi -- "$font_name" < <(fc-list); then
     if [[ -f ~/.config/alacritty/alacritty.toml ]]; then
       sed -i "s/family = \".*\"/family = \"$font_name\"/g" ~/.config/alacritty/alacritty.toml
     fi
 
     if [[ -f ~/.config/kitty/kitty.conf ]]; then
       sed -i "s/^font_family .*/font_family $font_name/g" ~/.config/kitty/kitty.conf
-      pkill -USR1 kitty
+      pkill -USR1 kitty || true
     fi
 
     if [[ -f ~/.config/ghostty/config ]]; then
       sed -i "s/font-family = \".*\"/font-family = \"$font_name\"/g" ~/.config/ghostty/config
-      pkill -SIGUSR2 ghostty
+      pkill -SIGUSR2 ghostty || true
     fi
 
-    sed -i "s/font_family = .*/font_family = $font_name/g" ~/.config/hypr/hyprlock.conf
-    sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/waybar/style.css
-    sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/swayosd/style.css
-    xmlstarlet ed -L \
-      -u '//match[@target="pattern"][test/string="monospace"]/edit[@name="family"]/string' \
-      -v "$font_name" \
-      ~/.config/fontconfig/fonts.conf
+    if [[ -f ~/.config/hypr/hyprlock.conf ]]; then
+      sed -i "s/font_family = .*/font_family = $font_name/g" ~/.config/hypr/hyprlock.conf
+    fi
+    if [[ -f ~/.config/waybar/style.css ]]; then
+      sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/waybar/style.css
+    fi
+    if [[ -f ~/.config/swayosd/style.css ]]; then
+      sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/swayosd/style.css
+    fi
+    if [[ -f ~/.config/fontconfig/fonts.conf ]]; then
+      xmlstarlet ed -L \
+        -u '//match[@target="pattern"][test/string="monospace"]/edit[@name="family"]/string' \
+        -v "$font_name" \
+        ~/.config/fontconfig/fonts.conf
+    fi
 
-    restart-waybar
-    restart-swayosd
+    restart-waybar || true
+    restart-swayosd || true
 
     if pgrep -x ghostty; then
-      notify-send "    You must restart Ghostty to see font change"
+      notify-send "    You must restart Ghostty to see font change" || true
     fi
 
-    hook font-set "$font_name"
   else
     echo "Font '$font_name' not found."
     exit 1

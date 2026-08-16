@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Launch a floating terminal with the Omarchy logo presentation, then execute the command passed in, and finally end with the show-done presentation.
-# Used by actions such as Update System.
+set -Eeuo pipefail
 
-cmd="$*"
-exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.omarchy.terminal --title=Omarchy -e bash -c "show-logo; $cmd; if (( \$? != 130 )); then show-done; fi"
+# Launch a floating terminal and execute the command passed in.
+
+if (( $# == 0 )); then
+  printf '%s\n' 'Usage: launch-floating-terminal-with-presentation <command> [args...]' >&2
+  exit 1
+fi
+
+exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.local.terminal --title=System -e "$@"

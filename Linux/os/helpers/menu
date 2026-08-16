@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# Launch the Omarchy Menu or takes a parameter to jump straight to a submenu.
-
-export PATH="$HOME/.local/share/omarchy/bin:$PATH"
+# Launch the system menu or take a parameter to jump straight to a submenu.
 
 # Set to true when going directly to a submenu, so we can exit directly
 BACK_TO_EXIT=false
@@ -42,12 +40,10 @@ menu() {
 }
 
 terminal() {
-  # xdg-terminal-exec --app-id=org.omarchy.terminal "$@"
   launch-tui-large "$@"
 }
 
 present_terminal() {
-  # launch-floating-terminal-with-presentation $1
   launch-tui-large "$@"
 }
 
@@ -81,11 +77,10 @@ aur_install_and_launch() {
 }
 
 show_trigger_menu() {
-  case $(menu "Trigger" "  Capture\n  Share\n󰔎  Toggle\n  Hardware") in
+  case $(menu "Trigger" "  Capture\n  Share\n󰔎  Toggle") in
   *Capture*) show_capture_menu ;;
   *Share*) show_share_menu ;;
   *Toggle*) show_toggle_menu ;;
-  *Hardware*) show_hardware_menu ;;
   *) show_main_menu ;;
   esac
 }
@@ -111,8 +106,10 @@ get_webcam_list() {
 }
 
 show_webcam_select_menu() {
-  local devices=$(get_webcam_list)
-  local count=$(echo "$devices" | grep -c . 2>/dev/null || echo 0)
+  local devices
+  devices=$(get_webcam_list)
+  local count
+  count=$(echo "$devices" | grep -c . 2>/dev/null || echo 0)
 
   if [[ -z $devices ]] || ((count == 0)); then
     notify-send "No webcam devices found" -u critical -t 3000
@@ -141,10 +138,11 @@ show_screenrecord_menu() {
   *"With desktop audio") cmd-screenrecord "${capture_args[@]}" --with-desktop-audio ;;
   *"With desktop + microphone audio") cmd-screenrecord "${capture_args[@]}" --with-desktop-audio --with-microphone-audio ;;
   *"With desktop + microphone audio + webcam")
-    local device=$(show_webcam_select_menu) || {
+    local device
+    if ! device=$(show_webcam_select_menu); then
       back_to show_capture_menu
       return
-    }
+    fi
     cmd-screenrecord "${capture_args[@]}" --with-desktop-audio --with-microphone-audio --with-webcam --webcam-device="$device"
     ;;
   *) back_to show_capture_menu ;;
@@ -161,9 +159,8 @@ show_share_menu() {
 }
 
 show_toggle_menu() {
-  case $(menu "Toggle" "󱄄  Screensaver\n󰔎  Nightlight\n󱫖  Idle Lock\n󰍜  Top Bar\n󱂬  Workspace Layout\n  Window Gaps\n  1-Window Ratio\n󰍹  Display Scaling") in
+  case $(menu "Toggle" "󰔎  Nightlight\n󱫖  Idle Lock\n󰍜  Top Bar\n󱂬  Workspace Layout\n  Window Gaps\n  1-Window Ratio\n󰍹  Display Scaling") in
 
-  *Screensaver*) toggle-screensaver ;;
   *Nightlight*) toggle-nightlight ;;
   *Idle*) toggle-idle ;;
   *Bar*) toggle-waybar ;;
@@ -175,68 +172,30 @@ show_toggle_menu() {
   esac
 }
 
-show_hardware_menu() {
-  case $(menu "Toggle" "  Hybrid GPU") in
-  *"Hybrid GPU"*) present_terminal toggle-hybrid-gpu ;;
-  *) show_trigger_menu ;;
-  esac
-}
-
 show_style_menu() {
-  case $(menu "Style" "󰸌  Theme\n  Font\n  Background\n  Hyprland\n󱄄  Screensaver\n") in
-  *Theme*) show_theme_menu ;;
+  case $(menu "Style" "  Font\n  Hyprland") in
   *Font*) show_font_menu ;;
-  *Background*) show_background_menu ;;
-  *Hyprland*) open_in_editor ~/.config/hypr/looknfeel.conf ;;
-  *Screensaver*) open_in_editor ~/.config/omarchy/branding/screensaver.txt ;;
+  *Hyprland*) open_in_editor ~/.config/hypr/looknfeel.lua ;;
   *) show_main_menu ;;
   esac
 }
 
-show_theme_menu() {
-  theme=$(menu "Theme" "$(theme-list)" "-W 350" "$(theme-current)")
-  if [[ $theme == "CNCLD" || -z $theme ]]; then
-    back_to show_style_menu
-  else
-    theme-set "$theme"
-  fi
-}
-
-show_background_menu() {
-  local theme_name bg_list selection
-  theme_name=$(cat "$HOME/.config/omarchy/current/theme.name" 2>/dev/null)
-
-  bg_list=$(find -L "$HOME/.config/omarchy/backgrounds/$theme_name" "$HOME/.config/omarchy/current/theme/backgrounds" -maxdepth 1 -type f 2>/dev/null | sort -u)
-
-  if [[ -z $bg_list ]]; then
-    notify-send "No backgrounds found for current theme" -t 2000
-    back_to show_style_menu
-    return
-  fi
-
-  selection=$(menu "Background" "$bg_list" "-W 800")
-
-  if [[ -z $selection ]]; then
-    back_to show_style_menu
-    return
-  fi
-
-  [[ -n $selection ]] && theme-bg-set "$selection"
-}
-
 show_font_menu() {
-  theme=$(menu "Font" "$(font-list)" "-W 350" "$(font-current)")
-  if [[ $theme == "CNCLD" || -z $theme ]]; then
+  local font
+  font=$(menu "Font" "$(font-list)" "-W 350" "$(font-current)")
+  if [[ $font == "CNCLD" || -z $font ]]; then
     back_to show_style_menu
   else
-    font-set "$theme"
+    font-set "$font"
   fi
 }
 
 show_setup_menu() {
-  local options="  Audio\n  Wifi\n󰂯  Bluetooth\n󱐋  Power Profile\n  System Sleep\n󰍹  Monitors"
-  [[ -f ~/.config/hypr/bindings.conf ]] && options="$options\n  Keybindings"
-  [[ -f ~/.config/hypr/input.conf ]] && options="$options\n  Input"
+  local options="  Audio\n  Wifi\n󰂯  Bluetooth"
+  command -v powerprofilesctl >/dev/null 2>&1 && options="$options\n󱐋  Power Profile"
+  options="$options\n  System Sleep\n󰍹  Monitors"
+  [[ -f ~/.config/hypr/bindings.lua ]] && options="$options\n  Keybindings"
+  [[ -f ~/.config/hypr/input.lua ]] && options="$options\n  Input"
   options="$options\n󰱔  DNS\n  Security\n  Config"
 
   case $(menu "Setup" "$options") in
@@ -245,9 +204,9 @@ show_setup_menu() {
   *Bluetooth*) launch-bluetooth ;;
   *Power*) show_setup_power_menu ;;
   *System*) show_setup_system_menu ;;
-  *Monitors*) open_in_editor ~/.config/hypr/monitors.conf ;;
-  *Keybindings*) open_in_editor ~/.config/hypr/bindings.conf ;;
-  *Input*) open_in_editor ~/.config/hypr/input.conf ;;
+  *Monitors*) open_in_editor ~/.config/hypr/monitors.lua ;;
+  *Keybindings*) open_in_editor ~/.config/hypr/bindings.lua ;;
+  *Input*) open_in_editor ~/.config/hypr/input.lua ;;
   *DNS*) present_terminal setup-dns ;;
   *Security*) show_setup_security_menu ;;
   *Config*) show_setup_config_menu ;;
@@ -256,6 +215,9 @@ show_setup_menu() {
 }
 
 show_setup_power_menu() {
+  command -v powerprofilesctl >/dev/null 2>&1 || return 0
+
+  local profile
   profile=$(menu "Power Profile" "$(powerprofiles-list)" "" "$(powerprofilesctl get)")
 
   if [[ $profile == "CNCLD" || -z $profile ]]; then
@@ -274,9 +236,8 @@ show_setup_security_menu() {
 }
 
 show_setup_config_menu() {
-  case $(menu "Setup" "  Defaults\n  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n  Swayosd\n󰌧  Vicinae\n󰍜  Waybar\n󰞅  XCompose") in
-  *Defaults*) open_in_editor ~/.config/uwsm/default ;;
-  *Hyprland*) open_in_editor ~/.config/hypr/hyprland.conf ;;
+  case $(menu "Setup" "  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n  Swayosd\n󰌧  Vicinae\n󰍜  Waybar\n󰞅  XCompose") in
+  *Hyprland*) open_in_editor ~/.config/hypr/hyprland.lua ;;
   *Hypridle*) open_in_editor ~/.config/hypr/hypridle.conf && restart-hypridle ;;
   *Hyprlock*) open_in_editor ~/.config/hypr/hyprlock.conf ;;
   *Hyprsunset*) open_in_editor ~/.config/hypr/hyprsunset.conf && restart-hyprsunset ;;
@@ -289,13 +250,7 @@ show_setup_config_menu() {
 }
 
 show_setup_system_menu() {
-  local options=""
-
-  if [[ -f ~/.local/state/omarchy/toggles/suspend-off ]]; then
-    options="$options󰒲  Enable Suspend"
-  else
-    options="$options󰒲  Disable Suspend"
-  fi
+  local options="󰒲  Suspend"
 
   if hibernation-available; then
     options="$options\n󰤁  Disable Hibernate"
@@ -304,7 +259,7 @@ show_setup_system_menu() {
   fi
 
   case $(menu "System" "$options") in
-  *Suspend*) toggle-suspend ;;
+  *Suspend*) systemctl suspend ;;
   *"Enable Hibernate"*) present_terminal hibernation-setup ;;
   *"Disable Hibernate"*) present_terminal hibernation-remove ;;
   *) show_setup_menu ;;
@@ -320,9 +275,7 @@ show_install_menu() {
   esac
 }
 show_install_style_menu() {
-  case $(menu "Install" "󰸌  Theme\n  Background\n  Font") in
-  *Theme*) present_terminal theme-install ;;
-  *Background*) theme-bg-install ;;
+  case $(menu "Install" "  Font") in
   *Font*) show_install_font_menu ;;
   *) show_install_menu ;;
   esac
@@ -340,12 +293,11 @@ show_install_font_menu() {
   esac
 }
 show_remove_menu() {
-  case $(menu "Remove" "󰣇  Package\n  Web App\n  TUI\n  Dictation\n󰸌  Theme\n󰍲  Windows\n󰈷  Fingerprint\n  Fido2") in
+  case $(menu "Remove" "󰣇  Package\n  Web App\n  TUI\n  Dictation\n󰍲  Windows\n󰈷  Fingerprint\n  Fido2") in
   *Package*) terminal pkg-remove ;;
   *Web*) present_terminal webapp-remove ;;
   *TUI*) present_terminal tui-remove ;;
   *Dictation*) present_terminal voxtype-remove ;;
-  *Theme*) present_terminal theme-remove ;;
   *Windows*) present_terminal "windows-vm remove" ;;
   *Fingerprint*) present_terminal "setup-fingerprint --remove" ;;
   *Fido2*) present_terminal "setup-fido2 --remove" ;;
@@ -354,11 +306,8 @@ show_remove_menu() {
 }
 
 show_update_menu() {
-  case $(menu "Update" "  Arch\n󰔫  Channel\n  Config\n󰸌  Extra Themes\n  Process\n󰇅  Hardware\n  Firmware\n  Password\n  Timezone\n  Time") in
+  case $(menu "Update" "  Arch\n  Process\n󰇅  Hardware\n  Firmware\n  Password\n  Timezone\n  Time") in
   *Arch*) present_terminal update ;;
-  *Channel*) show_update_channel_menu ;;
-  *Config*) show_update_config_menu ;;
-  *Themes*) present_terminal theme-update ;;
   *Process*) show_update_process_menu ;;
   *Hardware*) show_update_hardware_menu ;;
   *Firmware*) present_terminal update-firmware ;;
@@ -376,20 +325,6 @@ show_update_process_menu() {
   *Swayosd*) restart-swayosd ;;
   *Vicinae*) vicinae server ;;
   *Waybar*) restart-waybar ;;
-  *) show_update_menu ;;
-  esac
-}
-
-show_update_config_menu() {
-  case $(menu "Use default config" "  Hyprland\n  Hypridle\n  Hyprlock\n  Hyprsunset\n󱣴  Plymouth\n  Swayosd\n  Tmux\n󰍜  Waybar") in
-  *Hyprland*) present_terminal refresh-hyprland ;;
-  *Hypridle*) present_terminal refresh-hypridle ;;
-  *Hyprlock*) present_terminal refresh-hyprlock ;;
-  *Hyprsunset*) present_terminal refresh-hyprsunset ;;
-  *Plymouth*) present_terminal refresh-plymouth ;;
-  *Swayosd*) present_terminal refresh-swayosd ;;
-  *Tmux*) present_terminal refresh-tmux ;;
-  *Waybar*) present_terminal refresh-waybar ;;
   *) show_update_menu ;;
   esac
 }
@@ -412,13 +347,11 @@ show_update_password_menu() {
 }
 
 show_system_menu() {
-  local options="󱄄  Screensaver\n  Lock"
-  [[ ! -f ~/.local/state/omarchy/toggles/suspend-off ]] && options="$options\n󰒲  Suspend"
+  local options="  Lock\n󰒲  Suspend"
   hibernation-available && options="$options\n󰤁  Hibernate"
   options="$options\n󰍃  Logout\n󰜉  Restart\n󰐥  Shutdown"
 
   case $(menu "System" "$options") in
-  *Screensaver*) launch-screensaver force ;;
   *Lock*) lock-screen ;;
   *Suspend*) systemctl suspend ;;
   *Hibernate*) systemctl hibernate ;;
@@ -438,10 +371,8 @@ go_to_menu() {
   *trigger*) show_trigger_menu ;;
   *toggle*) show_toggle_menu ;;
   *share*) show_share_menu ;;
-  *background*) show_background_menu ;;
   *capture*) show_capture_menu ;;
   *style*) show_style_menu ;;
-  *theme*) show_theme_menu ;;
   *screenrecord*) show_screenrecord_menu ;;
   *setup*) show_setup_menu ;;
   *power*) show_setup_power_menu ;;
@@ -451,10 +382,6 @@ go_to_menu() {
   *system*) show_system_menu ;;
   esac
 }
-
-# Allow user extensions and overrides
-USER_EXTENSIONS="$HOME/.config/omarchy/extensions/menu.sh"
-[[ -f $USER_EXTENSIONS ]] && source "$USER_EXTENSIONS"
 
 toggle_existing_menu
 

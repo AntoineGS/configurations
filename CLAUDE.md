@@ -39,23 +39,58 @@ Current template files:
 
 ### Linux (Arch Linux)
 
+**Package ownership policy:**
+
+- `tidydots.yaml` is desired package state.
+- `pkglist-pacman-<hostname>.txt` and `pkglist-aur-<hostname>.txt` are generated audit snapshots.
+- Graphical shared packages/configs require real Linux, a display, and non-WSL execution, except `antoinews-linux` is explicitly allowed headless.
+- Machine-wide shared services use real Linux/non-WSL conditions.
+- Hardware and machine policy use exact hostname conditions.
+- `antoinews-linux` is the Intel desktop profile.
+
 **Automatic package list tracking:**
 The repository uses Pacman hooks to automatically update package lists on install/remove operations.
 
 Hooks located in `Linux/pacman/`:
 
-- `pkg-backup-pacman.hook` - Tracks explicitly installed pacman packages to `pkglist-pacman.txt`
-- `pkg-backup-aur.hook` - Tracks AUR packages to `pkglist-aur.txt`
+- `pkg-backup-pacman.hook` - Tracks explicitly installed pacman packages to `pkglist-pacman-<hostname>.txt`
+- `pkg-backup-aur.hook` - Tracks AUR packages to `pkglist-aur-<hostname>.txt`
 
 These hooks execute Nushell commands post-transaction:
 
 ```bash
 # Pacman packages (explicitly installed)
-pacman -Qqent | save -f /home/antoinegs/gits/configurations/Linux/pacman/pkglist-pacman.txt
+pacman -Qqent > /home/antoinegs/gits/configurations/Linux/pacman/pkglist-pacman-$(hostname).txt
 
 # AUR packages (explicitly installed from AUR)
-pacman -Qqemt | save -f /home/antoinegs/gits/configurations/Linux/pacman/pkglist-aur.txt
+pacman -Qqemt > /home/antoinegs/gits/configurations/Linux/pacman/pkglist-aur-$(hostname).txt
 ```
+
+Use the narrowest worktree-scoped dry-run when reviewing a profile:
+
+```bash
+REPO_DIR=/path/to/configurations
+tidydots --dir "$REPO_DIR" install hyprland -n
+tidydots --dir "$REPO_DIR" install pipewire-audio -n
+tidydots --dir "$REPO_DIR" install linux-services-packages -n
+tidydots --dir "$REPO_DIR" install antoinews-linux-intel -n
+tidydots --dir "$REPO_DIR" install antoinews-linux-network -n
+tidydots --dir "$REPO_DIR" restore antoinews-linux-network -n
+tidydots --dir "$REPO_DIR" install limine -n
+tidydots --dir "$REPO_DIR" install limine-snapper-sync -n
+tidydots --dir "$REPO_DIR" restore limine-current-desktop-config -n
+tidydots --dir "$REPO_DIR" install snapper -n
+tidydots --dir "$REPO_DIR" restore snapper -n
+```
+
+Hostname-gated previews can report a condition mismatch when intentionally run on another host; that is the expected exclusion behavior.
+
+Focused previews such as `tidydots --dir "$REPO_DIR" install hyprland -n` are
+intentionally limited to that application and may install only its package.
+The canonical complete bootstrap package preview is the unscoped command:
+`tidydots --dir "$REPO_DIR" install -n`.
+
+Run the complete read-only profile and runtime audit with `bash Linux/pacman/tests/all-profiles-test.sh`.
 
 **Install hooks:**
 
@@ -217,8 +252,8 @@ See `Linux/zmk-config/keyball44/CONFIG.md` for detailed documentation on:
 
 **Architecture:**
 
-- Uses Omarchy defaults as base (sourced from `~/.local/share/omarchy/`)
-- Custom overrides in individual conf files: `monitors.conf`, `bindings.conf`, `input.conf`, `looknfeel.conf`, `autostart.conf`
+- Repository-owned configuration; files in `Linux/hypr/` are the source of truth
+- Custom overrides in individual Lua and conf files: `monitors.lua`, `bindings/`, `input.lua`, `looknfeel.lua`, `autostart.lua`
 - NVIDIA-specific environment variables configured
 - Modular configuration split across multiple files
 
@@ -267,8 +302,8 @@ Both use JetBrains Mono Nerd Font.
 
 ## Common Workflows
 
-**After installing a package on Arch Linux:**
-The package lists are automatically updated via hooks - just commit the changed `pkglist-*.txt` files.
+**Before applying an Arch package profile:**
+Run the relevant `tidydots --dir "$REPO_DIR" ... -n` preview first. Do not run a real install or restore while reviewing package ownership.
 
 **Updating Neovim plugins:**
 Changes to `lazy-lock.json` should be committed when intentionally updating plugins (not on every sync).
@@ -277,4 +312,4 @@ Changes to `lazy-lock.json` should be committed when intentionally updating plug
 The actual keymaps live in the QMK firmware repository (`~/qmk_firmware/keyboards/*/keymaps/AntoineGS`). This repo contains symlinks or copies for backup/versioning. Always compile from the QMK firmware repo.
 
 **Hyprland configuration changes:**
-Edit the individual conf files in `Linux/hypr/`, not the main `hyprland.conf` (which just sources other files). This preserves the Omarchy base and makes custom changes clear.
+Edit the individual Lua and conf files in `Linux/hypr/`, not the main `hyprland.lua` (which just sources other files). The repository-owned files are the source of truth.

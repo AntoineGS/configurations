@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Locks the system using hyprlock, but not before ensuring 1password has also been locked, and the screensaver stopped.
+# Locks the system using hyprlock and ensures 1password has also been locked.
 
 # Lock the screen
 pidof hyprlock || hyprlock &
@@ -12,6 +12,3 @@ hyprctl switchxkblayout all 0 > /dev/null 2>&1
 if pgrep -x "1password" >/dev/null; then
   1password --lock &
 fi
-
-# Avoid running screensaver when locked
-pkill -f org.omarchy.screensaver

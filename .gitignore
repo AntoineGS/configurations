@@ -25,3 +25,6 @@ Windows/PowerShell/.cargo
 Windows/TotalCommander/wincmd.ini
 .worktrees/
 Windows/Komorebi/bridge/target/
+/Linux/install/archinstall/user_credentials.json
+/Linux/install/archinstall/user_disk_layouts.json
+/Linux/install/archinstall/*.local.json

@@ -27,6 +27,20 @@ count_rustdesk_remote_windows() {
   hyprctl clients -j | jq '[.[] | select(.class | test("rustdesk"; "i")) | select(.title | test("Remote Desktop"; "i"))] | length'
 }
 
+rightmost_monitor_from_json() {
+  local monitors_json=$1
+
+  jq -r '
+    [ .[]
+      | select((.disabled // false) == false)
+      | select((if has("dpmsStatus") then .dpmsStatus else true end) == true)
+      | select((.x // null) != null and (.width // null) != null)
+    ]
+    | sort_by([(.x + .width), .x, .y, .name])
+    | (.[-1].name // "")
+  ' <<<"$monitors_json"
+}
+
 notification_route_state() {
   local monitors_json=$1
   local clients_json=$2
@@ -237,19 +251,26 @@ is_notification_routing_event() {
 handle_hyprland_event() {
   local evline=$1
   local clean_state_name=$2
-  local rightmost_monitor=$3
   local -n clean_state=$clean_state_name
   local window_addr
   local count
+  local monitors_json
+  local rightmost_monitor
   local target_ws
 
   # Move 2nd+ RustDesk Remote Desktop windows to the rightmost monitor.
   if printf '%s\n' "$evline" | grep -qi "^openwindow>>" && is_rustdesk_remote "$evline"; then
     window_addr=$(printf '%s\n' "$evline" | sed 's/^openwindow>>//I' | cut -d',' -f1)
     count=$(count_rustdesk_remote_windows)
-    if [ "$count" -gt 1 ]; then
-      target_ws=$(hyprctl monitors -j | jq -r '.[] | select(.name == "'"${rightmost_monitor}"'") | .activeWorkspace.id')
-      hyprctl eval "hl.dispatch(hl.dsp.window.move({workspace=${target_ws}, follow=false, window=\"address:0x${window_addr}\"}))"
+    if [[ $count -gt 1 ]] &&
+      monitors_json=$(hyprctl monitors -j) &&
+      rightmost_monitor=$(rightmost_monitor_from_json "$monitors_json") &&
+      [[ -n $rightmost_monitor ]]; then
+      if target_ws=$(jq -r --arg name "$rightmost_monitor" \
+        '.[] | select(.name == $name) | .activeWorkspace.id // empty' \
+        <<<"$monitors_json") && [[ -n $target_ws ]]; then
+        hyprctl eval "hl.dispatch(hl.dsp.window.move({workspace=${target_ws}, follow=false, window=\"address:0x${window_addr}\"}))"
+      fi
     fi
   fi
 
@@ -271,7 +292,6 @@ handle_hyprland_event() {
 
 consume_hyprland_event_stream() {
   local clean_state_name=$1
-  local rightmost_monitor=$2
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
   local evline read_status
   local next_reconciliation remaining
@@ -291,7 +311,7 @@ consume_hyprland_event_stream() {
     fi
 
     if IFS= read -r -t "$remaining" evline; then
-      handle_hyprland_event "$evline" "$clean_state_name" "$rightmost_monitor"
+      handle_hyprland_event "$evline" "$clean_state_name"
       continue
     else
       read_status=$?
@@ -311,10 +331,9 @@ watch_hyprland_events() {
   local socat_command=$1
   local hypr_socket_path=$2
   local clean_state_name=$3
-  local rightmost_monitor=$4
 
   while :; do
-    consume_hyprland_event_stream "$clean_state_name" "$rightmost_monitor" \
+    consume_hyprland_event_stream "$clean_state_name" \
       < <("$socat_command" -u "UNIX-CONNECT:${hypr_socket_path}" - 2>/dev/null)
     sleep "$HYPRLAND_EVENT_RECONNECT_DELAY"
   done
@@ -326,8 +345,6 @@ main() {
   local sig=""
   local candidate
   local hypr_socket_path
-  local activated_clean_workspace=false
-  local rightmost_monitor="DP-2"
 
   : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
   hypr_dir="$XDG_RUNTIME_DIR/hypr"
@@ -346,6 +363,7 @@ main() {
       sig=$HYPRLAND_INSTANCE_SIGNATURE
       break
     fi
+    # shellcheck disable=SC2012 # Hyprland instance directories are controlled runtime entries.
     candidate=$(ls -t "$hypr_dir" 2>/dev/null | head -1 || true)
     if [[ -n $candidate && -S "$hypr_dir/$candidate/.socket2.sock" ]]; then
       sig=$candidate
@@ -360,7 +378,7 @@ main() {
   # Consume each connection in this shell so handler state persists. A read
   # timeout drives periodic recovery; EOF returns for a bounded reconnect.
   watch_hyprland_events \
-    "$socat_command" "$hypr_socket_path" activated_clean_workspace "$rightmost_monitor"
+    "$socat_command" "$hypr_socket_path" activated_clean_workspace
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then

@@ -11,6 +11,5 @@ hl.bind("SUPER + ALT + N",        hl.dsp.exec_cmd("launch-editor"),             
 hl.bind("SUPER + ALT + D",        hl.dsp.exec_cmd("launch-tui-large lazydocker"),                                               { description = "Docker" })
 hl.bind("SUPER + ALT + O",        hl.dsp.exec_cmd([[launch-or-focus obsidian "uwsm app -- obsidian -disable-gpu --enable-wayland-ime"]]), { description = "Obsidian" })
 hl.bind("SUPER + ALT + SLASH",    hl.dsp.exec_cmd("uwsm app -- 1password"),                                                     { description = "Passwords" })
-hl.bind("SUPER + ALT + G",        hl.dsp.exec_cmd([[launch-or-focus gitkraken "uwsm app -- gitkraken"]]),                       { description = "GitKraken" })
 hl.bind("SUPER + ALT + S",        hl.dsp.exec_cmd([[launch-or-focus signal "uwsm app -- signal-desktop"]]),                     { description = "Signal" })
 hl.bind("SUPER + ALT + P",        hl.dsp.exec_cmd([[launch-or-focus 1password "uwsm app -- 1password"]]),                       { description = "1Password" })
