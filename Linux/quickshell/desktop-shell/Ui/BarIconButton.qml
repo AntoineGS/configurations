@@ -16,7 +16,7 @@ WidgetButton {
 
   labelVisible: false
   hasVisualContent: text !== "" || iconComponent !== null
-  fontSize: Style.bar.iconFont
+  fontSize: bar && bar.iconFontSize ? bar.iconFontSize : Style.bar.iconFont
   fixedWidth: vertical ? -1 : slotSize
   fixedHeight: vertical ? slotSize : -1
 
