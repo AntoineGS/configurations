@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 LAUNCHER="$ROOT/Linux/os/helpers/desktop-shell-launch"
 UNIT="$ROOT/Linux/quickshell/desktop-shell/systemd/desktop-shell.service"
+CONFIG="$ROOT/tidydots.yaml"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
 
@@ -67,8 +68,22 @@ expected_args=$(printf '%s\n' '-n' 'desktop-shell' '-p' "$SHELL_DIR")
 [[ -f $UNIT ]] || fail 'desktop-shell.service is absent'
 grep -Fqx 'ExecStart=%h/.local/share/helpers/desktop-shell-launch' "$UNIT" || \
   fail 'unit does not use the repository launcher path'
+grep -Fqx 'PartOf=graphical-session.target' "$UNIT" || fail 'unit is not part of graphical-session.target'
+if grep -Fqx 'After=graphical-session.target' "$UNIT"; then
+  fail 'unit orders after graphical-session.target and may create a cycle'
+fi
 grep -Fqx 'Restart=on-failure' "$UNIT" || fail 'unit does not restart on failure'
 grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
   fail 'unit is not wanted by graphical-session.target'
+
+[[ -f $CONFIG ]] || fail 'tidydots.yaml is absent'
+grep -Fq 'systemctl --user is-enabled --quiet desktop-shell.service &&' "$CONFIG" || \
+  fail 'tidydots check does not require the service to be enabled'
+grep -Fq 'systemctl --user is-active --quiet desktop-shell.service &&' "$CONFIG" || \
+  fail 'tidydots check does not require the service to be active'
+grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)\" = no" "$CONFIG" || \
+  fail 'tidydots check does not require NeedDaemonReload=no'
+grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' "$CONFIG" || \
+  fail 'tidydots repair command changed'
 
 printf '%s\n' 'service launcher and unit contract passed'
