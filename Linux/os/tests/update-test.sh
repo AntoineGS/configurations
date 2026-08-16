@@ -61,7 +61,8 @@ PATH="$bin:$PATH" UPDATE_TEST_LOG="$log" "$helpers/update-keyring"
 assert_calls 'sudo pacman -Sy --noconfirm archlinux-keyring'
 
 if grep -Eq 'OMARCHY_PATH|40DFB630FF42BCFFB047046CF0134EE680CAC571|pkg-(missing|add) keyring' \
-  "$helpers/update" "$helpers/update-perform" "$helpers/update-keyring"; then
+  "$helpers/update" "$helpers/update-perform" "$helpers/update-keyring" \
+  "$helpers/desktop-shell" "$helpers/desktop-shell-status"; then
   fail "update flow still contains Omarchy repository or signing-key dependencies"
 fi
 
