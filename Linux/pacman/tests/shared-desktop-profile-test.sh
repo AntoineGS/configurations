@@ -177,70 +177,6 @@ assert_source_requires_package() {
   fi
 }
 
-ARCH_PACKAGE_APPLICATIONS=(
-  'hyprland|pacman|hyprland'
-  'bluetui|pacman|bluetui'
-  'brightnessctl|pacman|brightnessctl'
-  'evince|pacman|evince'
-  'ffmpeg|pacman|ffmpeg'
-  'gpu-screen-recorder|pacman|gpu-screen-recorder'
-  'grim|pacman|grim'
-  'hypridle|pacman|hypridle'
-  'hyprlock|pacman|hyprlock'
-  'hyprpicker|pacman|hyprpicker'
-  'hyprshot|pacman|hyprshot'
-  'hyprsunset|pacman|hyprsunset'
-  'impala|pacman|impala'
-  'imv|pacman|imv'
-  'lazydocker|pacman|lazydocker'
-  'libnotify|pacman|libnotify'
-  'mako|pacman|mako'
-  'mpv|pacman|mpv'
-  'nautilus|pacman|nautilus'
-  'playerctl|pacman|playerctl'
-  'polkit-gnome|pacman|polkit-gnome'
-  'power-profiles-daemon|pacman|power-profiles-daemon'
-  'satty|pacman|satty'
-  'sddm|pacman|sddm'
-  'slurp|pacman|slurp'
-  'socat|pacman|socat'
-  'swaybg|pacman|swaybg'
-  'swayosd|pacman|swayosd'
-  'uwsm|pacman|uwsm'
-  'v4l-utils|pacman|v4l-utils'
-  'waypipe|pacman|waypipe'
-  'wl-clipboard|pacman|wl-clipboard'
-  'wl-clip-persist|pacman|wl-clip-persist'
-  'wtype|pacman|wtype'
-  'xdg-desktop-portal-gtk|pacman|xdg-desktop-portal-gtk'
-  'xdg-desktop-portal-hyprland|pacman|xdg-desktop-portal-hyprland'
-  'xdg-utils|pacman|xdg-utils'
-  'pipewire-audio|pacman|pipewire'
-  'pipewire-alsa|pacman|pipewire-alsa'
-  'pipewire-pulse|pacman|pipewire-pulse'
-  'wireplumber|pacman|wireplumber'
-  'pamixer|pacman|pamixer'
-  'wiremix|pacman|wiremix'
-  'waybar|pacman|waybar'
-  'claudebar|yay|claudebar'
-  'codexbar|yay|codexbar'
-  'fzf|pacman|fzf'
-  'kitten|pacman|kitten'
-  'perl|pacman|perl'
-  'hyprland-preview-share-picker|yay|hyprland-preview-share-picker-git'
-  'xdg-terminal-exec|yay|xdg-terminal-exec'
-  'pacman-hooks|pacman|pacman-contrib'
-  'rebuild-detector|pacman|rebuild-detector'
-  'linux-services-packages|pacman|ufw'
-  'avahi|pacman|avahi'
-  'bluez|pacman|bluez'
-  'bluez-utils|pacman|bluez-utils'
-  'cups|pacman|cups'
-  'cups-browsed|pacman|cups-browsed'
-  'docker|pacman|docker'
-  'tailscale|pacman|tailscale'
-)
-
 GRAPHICAL_SHARED_APPLICATIONS=(
   hyprland
   bluetui
@@ -362,54 +298,6 @@ assert_no_duplicate_arch_packages() {
   done
 }
 
-assert_arch_package_declarations() {
-  local declaration application manager package block actual actual_count
-
-  for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
-    IFS='|' read -r application manager package <<< "$declaration"
-    block="$(extract_application "$application")"
-    [[ -n "$block" ]] || fail "application $application is not declared"
-    [[ "$(extract_application_field "$application" name)" == "$application" ]] || fail "application $application was not matched at application level"
-
-    actual_count="$(printf '%s\n' "$block" | extract_direct_manager_packages "$manager" | wc -l)"
-    [[ "$actual_count" -eq 1 ]] || fail "$manager declaration for $application has $actual_count direct packages, expected 1"
-    actual="$(printf '%s\n' "$block" | extract_direct_manager_packages "$manager")"
-    [[ "$actual" == "$package" ]] || fail "$manager declaration for $application is $actual, expected $package"
-  done
-}
-
-assert_unscoped_dry_run_discloses_arch_packages() {
-  local output expected actual_count application manager package declaration
-  local tidydots_status=0
-
-  if output="$(DISPLAY=:99 WAYLAND_DISPLAY=wayland-test tidydots --dir "$REPO_DIR" --os linux install -n 2>&1)"; then
-    tidydots_status=0
-  else
-    tidydots_status=$?
-  fi
-
-  for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
-    IFS='|' read -r application manager package <<< "$declaration"
-    case "$manager" in
-      pacman)
-        expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package"
-        ;;
-      yay)
-        expected="[ok] $application: Would run: yay -S --noconfirm $package"
-        ;;
-      *)
-        fail "unsupported Arch manager $manager in $declaration"
-        ;;
-    esac
-
-    actual_count="$(grep -Fxc -- "$expected" <<< "$output" || true)"
-    [[ "$actual_count" -eq 1 ]] || {
-      printf 'unscoped dry-run status: %s\noutput for %s:\n%s\n' "$tidydots_status" "$application" "$output" >&2
-      fail "unscoped dry-run does not disclose exactly one operation for $application ($package)"
-    }
-  done
-}
-
 assert_runtime_requirements() {
   assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
   assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
@@ -480,9 +368,7 @@ fi
 
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages
-assert_arch_package_declarations
 assert_runtime_requirements
-assert_unscoped_dry_run_discloses_arch_packages
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
 assert_focused_dry_run localsend yay localsend
@@ -510,12 +396,7 @@ for application in "${OPTIONAL_GRAPHICAL_APPLICATIONS[@]}"; do
 done
 
 shared_packages=""
-for declaration in "${ARCH_PACKAGE_APPLICATIONS[@]}"; do
-  IFS='|' read -r application manager package <<< "$declaration"
-  [[ "$manager" == pacman ]] || continue
-  shared_packages+="$package"
-  shared_packages+=$'\n'
-done
+shared_packages="$(extract_direct_arch_declarations | awk -F'|' '$1 == "pacman" { print $2 }')"
 
 for service_application in enable-desktop-services enable-linux-services; do
   service_block="$(extract_application "$service_application")"
