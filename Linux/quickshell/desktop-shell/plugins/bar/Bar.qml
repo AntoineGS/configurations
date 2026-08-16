@@ -643,32 +643,27 @@ Item {
     property string outputText: ""
     property string outputTooltip: ""
     property bool outputActive: false
+    property bool outputMuted: false
 
     function setting(name, fallback) {
       var value = settings ? settings[name] : undefined
       return value === undefined || value === null ? fallback : value
     }
 
-    function asText(value) {
-      return value === undefined || value === null ? "" : String(value)
-    }
-
     function update(raw) {
       var data = Util.parseModuleJson(raw)
-      var icon = asText(data.icon || setting("icon", ""))
-      var value = data.value !== undefined ? asText(data.value) : asText(data.text || raw).trim()
-      // Keep the metric icon and value in one Text item; separate controls add
-      // an unavoidable layout gap between the two glyph runs.
-      outputText = icon + value
-      outputTooltip = asText(data.tooltip || setting("tooltip", ""))
-      var klass = data.class || data.alt || ""
-      outputActive = klass === "active" || (Array.isArray(klass) && klass.indexOf("active") !== -1)
+      var state = BarModel.commandModuleState(data, raw, settings)
+      outputText = state.text
+      outputTooltip = state.tooltip
+      outputActive = state.active
+      outputMuted = state.muted
     }
 
     bar: root
     text: outputText || String(setting("text", ""))
     tooltipText: outputTooltip || String(setting("tooltip", ""))
     active: outputActive
+    dimmed: outputMuted
     keepSpace: setting("keepSpace", false) === true
     horizontalMargin: Number(setting("horizontalMargin", 7.5))
     verticalPadding: Number(setting("verticalPadding", 6))

@@ -82,6 +82,30 @@ function customModuleType(entry) {
   return ""
 }
 
+function commandClassHas(value, expected) {
+  if (Array.isArray(value)) return value.indexOf(expected) !== -1
+  return String(value || "") === expected
+}
+
+function commandModuleState(data, raw, settings) {
+  var payload = isPlainObject(data) ? data : {}
+  var config = isPlainObject(settings) ? settings : {}
+  var icon = payload.icon !== undefined ? String(payload.icon || "") : String(config.icon || "")
+  var value = payload.value !== undefined
+    ? String(payload.value === null ? "" : payload.value)
+    : (payload.text !== undefined ? String(payload.text === null ? "" : payload.text) : String(raw || "").trim())
+  var tooltip = payload.tooltip !== undefined
+    ? String(payload.tooltip || "")
+    : String(config.tooltip || "")
+  var klass = payload.class !== undefined ? payload.class : payload.alt
+  return {
+    text: icon + value,
+    tooltip: tooltip,
+    active: commandClassHas(klass, "active"),
+    muted: commandClassHas(klass, "muted")
+  }
+}
+
 function customModulePath(entry, home, configDir) {
   var settings = entrySettings(entry)
   var name = entryId(entry)
@@ -151,6 +175,7 @@ if (typeof module !== "undefined") {
     expandPath: expandPath,
     customModuleSafeName: customModuleSafeName,
     customModuleType: customModuleType,
-    customModulePath: customModulePath
+    customModulePath: customModulePath,
+    commandModuleState: commandModuleState
   }
 }
