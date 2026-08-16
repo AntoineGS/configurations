@@ -271,7 +271,10 @@ assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")
 const toggleHelper = fs.readFileSync(toggleHelperPath, "utf8")
 assert.match(toggleHelper, /^set -Eeuo pipefail$/m)
 assert.match(toggleHelper, /\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}/)
-assert.match(toggleHelper, /exec desktop-shell toggle-bar/)
+assert.match(toggleHelper, /exec quickshell ipc -p "\$HOME\/\.config\/quickshell\/desktop-shell" call desktop-shell toggleBar/)
+assert.doesNotMatch(toggleHelper, /desktop-shell toggle-bar/)
+assert.doesNotMatch(toggleHelper, /\beval\b/)
+assert.doesNotMatch(toggleHelper, /\$[@{]/)
 console.log("config-test: rendered layout, fallback, preview, registry, and helper contracts verified")
 NODE
 
@@ -289,9 +292,19 @@ printf '%s\0' "$@" >"$DESKTOP_SHELL_IPC_TRACE"
 FAKE_QUICKSHELL
 chmod +x "$fake_bin/quickshell"
 
-run_ipc() {
+run_helper() {
+  local helper=$1
+  shift
   : >"$trace"
-  PATH="$fake_bin:$PATH" HOME="$test_home" DESKTOP_SHELL_IPC_TRACE="$trace" "$HELPER" "$@"
+  PATH="$fake_bin:$PATH" HOME="$test_home" DESKTOP_SHELL_IPC_TRACE="$trace" "$helper" "$@"
+}
+
+run_ipc() {
+  run_helper "$HELPER" "$@"
+}
+
+run_toggle() {
+  run_helper "$TOGGLE_HELPER" "$@"
 }
 
 assert_trace() {
@@ -318,6 +331,8 @@ run_ipc list-plugins
 assert_trace desktop-shell listPlugins
 run_ipc reload-config
 assert_trace desktop-shell reloadConfig
+run_ipc toggle-bar
+assert_trace desktop-shell toggleBar
 run_ipc summon desktop.agents '{}'
 assert_trace desktop-shell summon desktop.agents '{}'
 run_ipc hide desktop.audio
@@ -339,4 +354,14 @@ test "$invalid_id_exit" -eq 2
 test "$invalid_hide_id_exit" -eq 2
 test "$invalid_call_id_exit" -eq 2
 test "$unknown_exit" -eq 2
+test ! -s "$trace"
+
+run_toggle
+assert_trace desktop-shell toggleBar
+
+set +e
+run_toggle unexpected 2>"$fixture/toggle-argument.err"
+toggle_exit=$?
+set -e
+test "$toggle_exit" -eq 2
 test ! -s "$trace"

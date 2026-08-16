@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 LAUNCHER="$ROOT/Linux/os/helpers/desktop-shell-launch"
+TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
 UNIT="$ROOT/Linux/quickshell/desktop-shell/systemd/desktop-shell.service"
 CONFIG="$ROOT/tidydots.yaml"
 AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
@@ -37,7 +38,7 @@ fail() {
 assert_launcher_mapping() {
   awk '
     /^  - / {
-      if (in_app && target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
+      if (in_app && target && entry_name && backup && file_count == 2 && has_launcher && has_toggle && !has_cli) {
         found = 1
       }
       in_app = 0
@@ -48,7 +49,7 @@ assert_launcher_mapping() {
     }
     !in_app { next }
     /^      - / {
-      if (target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
+      if (target && entry_name && backup && file_count == 2 && has_launcher && has_toggle && !has_cli) {
         found = 1
       }
       target = 0
@@ -60,7 +61,7 @@ assert_launcher_mapping() {
       file_count = 0
     }
     $0 == "          linux: ~/.local/share/helpers" { target = 1 }
-    $0 == "        name: desktop-shell-helpers" { entry_name = 1 }
+    $0 == "        name: desktop-shell-service-helpers" { entry_name = 1 }
     $0 == "        backup: ./Linux/os/helpers" { backup = 1 }
     /^          - / {
       file_count++
@@ -69,7 +70,7 @@ assert_launcher_mapping() {
     $0 == "          - desktop-shell" { has_cli = 1 }
     $0 == "          - toggle-desktop-shell-bar" { has_toggle = 1 }
     END {
-      if (in_app && target && entry_name && backup && file_count == 3 && has_launcher && has_cli && has_toggle) {
+      if (in_app && target && entry_name && backup && file_count == 2 && has_launcher && has_toggle && !has_cli) {
         found = 1
       }
       exit !found
@@ -93,8 +94,10 @@ assert_binding() {
 }
 
 run_launcher() {
+  local helper=$1
+  shift
   PATH="$BIN:$PATH" HOME="$HOME_DIR" QUICKSHELL_ARGS_FILE="$ARGS_FILE" \
-    QUICKSHELL_EXECUTED_FILE="$EXECUTED_FILE" "$@"
+    QUICKSHELL_EXECUTED_FILE="$EXECUTED_FILE" "$helper" "$@"
 }
 
 expect_launcher_failure() {
@@ -126,6 +129,21 @@ expected_args=$(printf '%s\n' '-n' '-p' "$SHELL_DIR")
   printf 'expected argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
   exit 1
 }
+
+rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+run_launcher "$TOGGLE_HELPER" || fail 'toggle helper failed'
+[[ -e $EXECUTED_FILE ]] || fail 'toggle helper did not execute quickshell'
+expected_args=$(printf '%s\n' 'ipc' '-p' "$SHELL_DIR" 'call' 'desktop-shell' 'toggleBar')
+[[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
+  printf 'expected toggle argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
+  exit 1
+}
+
+rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+toggle_status=0
+run_launcher "$TOGGLE_HELPER" unexpected >/dev/null 2>&1 || toggle_status=$?
+((toggle_status != 0)) || fail 'toggle helper accepted an argument'
+[[ ! -e $EXECUTED_FILE ]] || fail 'toggle helper executed quickshell after receiving an argument'
 
 [[ -f $UNIT ]] || fail 'desktop-shell.service is absent'
 grep -Fqx 'ExecStart=%h/.local/share/helpers/desktop-shell-launch' "$UNIT" || \
