@@ -303,22 +303,62 @@ assert_no_duplicate_arch_packages() {
 }
 
 extract_active_hypr_commands() {
+  local -a source_files=("$@")
+
+  if ((${#source_files[@]} == 0)); then
+    source_files=(
+      "$REPO_DIR/Linux/hypr/bindings/apps.lua"
+      "$REPO_DIR/Linux/hypr/autostart.lua"
+    )
+  fi
+
   awk '
-    /hl\.(dsp\.)?exec_cmd/ {
-      line = $0
-      if (line ~ /exec_cmd\("/) {
-        sub(/^.*exec_cmd\("/, "", line)
+    function emit_command(line, closing) {
+      if (in_long_string) {
+        closing = index(line, "]]")
+        if (closing > 0) {
+          command = command substr(line, 1, closing - 1)
+          print FILENAME "\t" command
+          command = ""
+          in_exec = 0
+          in_long_string = 0
+        } else {
+          command = command line
+        }
+        return
+      }
+
+      if (line ~ /\[\[/) {
+        sub(/^.*\[\[/, "", line)
+        closing = index(line, "]]")
+        if (closing > 0) {
+          print FILENAME "\t" substr(line, 1, closing - 1)
+          in_exec = 0
+        } else {
+          command = line
+          in_long_string = 1
+        }
+        return
+      }
+
+      if (line ~ /exec_cmd[[:space:]]*\([[:space:]]*"/) {
+        sub(/^.*exec_cmd[[:space:]]*\([[:space:]]*"/, "", line)
         sub(/".*$/, "", line)
         print FILENAME "\t" line
-      } else if (line ~ /exec_cmd\(\[\[/) {
-        sub(/^.*exec_cmd\(\[\[/, "", line)
-        sub(/\]\].*$/, "", line)
-        print FILENAME "\t" line
+        in_exec = 0
       }
     }
-  ' \
-    "$REPO_DIR/Linux/hypr/bindings/apps.lua" \
-    "$REPO_DIR/Linux/hypr/autostart.lua"
+
+    {
+      line = $0
+      if (!in_exec && line ~ /hl\.(dsp\.)?exec_cmd[[:space:]]*\(/) {
+        in_exec = 1
+      }
+      if (in_exec) {
+        emit_command(line)
+      }
+    }
+  ' "${source_files[@]}"
 }
 
 extract_runtime_command_names() {
@@ -372,12 +412,12 @@ extract_runtime_command_names() {
         printf '%s\t%s\n' "$source" "$candidate"
         ;;
     esac
-  done < <(extract_active_hypr_commands)
+  done < <(extract_active_hypr_commands "$@")
 }
 
 runtime_command_is_ignored() {
   case "$1" in
-    dbus-update-activation-environment|pkg-aur-install|pkg-install|pkg-remove|systemctl|update)
+    dbus-update-activation-environment|hyprctl|pkg-aur-install|pkg-install|pkg-remove|sleep|systemctl|update)
       return 0
       ;;
     *)
@@ -443,10 +483,38 @@ assert_hyprland_runtime_ownership() {
     } | grep -E '[^[:space:]]' >/dev/null; then
       fail "active Hyprland command $command from ${source#"$REPO_DIR"/} has no direct Arch package owner in $application"
     fi
-  done < <(extract_runtime_command_names)
+  done < <(extract_runtime_command_names "$@")
+}
+
+assert_autostart_command_count() {
+  local actual
+
+  actual="$(extract_active_hypr_commands "$REPO_DIR/Linux/hypr/autostart.lua" | wc -l)"
+  [[ "$actual" -eq 14 ]] || fail "autostart runtime audit found $actual exec_cmd calls, expected 14"
+}
+
+assert_multiline_unknown_launcher_fails() {
+  local fixture output
+
+  fixture="$(mktemp)"
+  printf '%s\n' \
+    'hl.exec_cmd(' \
+    '  [[uwsm-app -- synthetic-undeclared-launcher]]' \
+    ')' > "$fixture"
+
+  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
+    rm -f -- "$fixture"
+    fail 'multiline runtime audit accepted an undeclared launcher'
+  fi
+
+  rm -f -- "$fixture"
+  grep -Fq -- synthetic-undeclared-launcher <<< "$output" ||
+    fail 'multiline runtime audit rejected an undeclared launcher without naming it'
 }
 
 assert_runtime_requirements() {
+  assert_autostart_command_count
+  assert_source_requires_package Linux/hypr/autostart.lua 'hl.exec_cmd("signal-desktop")' signal pacman signal-desktop
   assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
   assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
   assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' lazydocker pacman lazydocker
@@ -517,6 +585,7 @@ fi
 
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages
+assert_multiline_unknown_launcher_fails
 assert_runtime_requirements
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
