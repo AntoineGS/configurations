@@ -5,6 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 LAUNCHER="$ROOT/Linux/os/helpers/desktop-shell-launch"
 UNIT="$ROOT/Linux/quickshell/desktop-shell/systemd/desktop-shell.service"
 CONFIG="$ROOT/tidydots.yaml"
+AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
+BINDINGS="$ROOT/Linux/hypr/bindings/utilities.lua"
+VICINAE_TOGGLE="$ROOT/Linux/vicinae/scripts/toggle-top-bar.sh"
+WAYBAR_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-waybar"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
 
@@ -28,6 +32,21 @@ chmod +x "$BIN/quickshell"
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
   exit 1
+}
+
+assert_binding() {
+  local key=$1
+  local command=$2
+  local description=$3
+  local label=$4
+
+  awk -v key="$key" -v command="$command" -v description="$description" '
+    index($0, "\"" key "\"") { in_binding = 1 }
+    in_binding && index($0, command) { command_found = 1 }
+    in_binding && index($0, description) { description_found = 1 }
+    in_binding && $0 ~ /^[[:space:]]*hl[.]bind[(]/ && index($0, "\"" key "\"") == 0 { exit }
+    END { exit !(in_binding && command_found && description_found) }
+  ' "$BINDINGS" || fail "$label"
 }
 
 run_launcher() {
@@ -85,5 +104,26 @@ grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedD
   fail 'tidydots check does not require NeedDaemonReload=no'
 grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' "$CONFIG" || \
   fail 'tidydots repair command changed'
+
+for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
+  [[ -f $active_route ]] || fail "active route is absent: $active_route"
+  for forbidden_route in 'uwsm-app -- waybar' 'pkill waybar' 'toggle-waybar'; do
+    if grep -Fq "$forbidden_route" "$active_route"; then
+      fail "$forbidden_route remains in $active_route"
+    fi
+  done
+done
+
+grep -Fq 'hl.exec_cmd("uwsm-app -- hypridle")' "$AUTOSTART" || fail 'Hypridle autostart was removed'
+grep -Fq 'hl.exec_cmd("uwsm-app -- mako")' "$AUTOSTART" || fail 'Mako autostart was removed'
+grep -Fq 'hl.exec_cmd("uwsm-app -- swayosd-server")' "$AUTOSTART" || fail 'SwayOSD autostart was removed'
+grep -Fq 'hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")' "$AUTOSTART" || \
+  fail 'polkit-gnome autostart was removed'
+assert_binding 'SUPER + CTRL + W' 'systemctl --user restart desktop-shell.service' 'Reload top bar' \
+  'top bar reload binding does not restart desktop-shell.service'
+assert_binding 'SUPER + SHIFT + SPACE' 'toggle-desktop-shell-bar' 'Toggle top bar' \
+  'top bar toggle binding does not use toggle-desktop-shell-bar'
+grep -Fq 'toggle-desktop-shell-bar' "$VICINAE_TOGGLE" || fail 'Vicinae top bar action does not use toggle-desktop-shell-bar'
+[[ ! -e $WAYBAR_TOGGLE_HELPER ]] || fail 'toggle-waybar helper still exists'
 
 printf '%s\n' 'service launcher and unit contract passed'
