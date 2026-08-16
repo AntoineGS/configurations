@@ -65,7 +65,13 @@ set_monitor_state() {
       fi
       ;;
     toggle-mirror)
-      external=$(jq -r --arg internal "$internal" '[.[] | select(type == "object") | select(.name | type == "string") | select(.name != $internal) | select(.disabled != true) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
+      external=$(jq -r --arg internal "$internal" '
+        [.[] | select(type == "object") | select(.name | type == "string") | select(.name != $internal)]
+        | ([.[] | select(.mirrorOf == $internal) | .name][0]
+          // [.[] | select(.disabled != true) | .name][0]
+          // [.[].name][0]
+          // "")
+      ' <<<"$raw_monitors" 2>/dev/null) || exit 1
       [[ -n $external && $external != *[!A-Za-z0-9_.:-]* ]] || exit 1
       mirrored=$(jq -r --arg name "$external" --arg internal "$internal" 'any(.[]; .name == $name and .mirrorOf == $internal)' <<<"$raw_monitors" 2>/dev/null) || exit 1
       if [[ $mirrored == true ]]; then
