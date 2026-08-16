@@ -9,6 +9,7 @@ TEST_ROOT="$(mktemp -d)"
 readonly TEST_ROOT
 readonly ARCH_RELEASE="$TEST_ROOT/arch-release"
 readonly NON_ARCH_RELEASE="$TEST_ROOT/non-arch-release"
+readonly KERNEL_HOSTNAME_FIXTURE="$TEST_ROOT/kernel-hostname"
 readonly REPO_WITH_SPACES="$TEST_ROOT/repository with spaces"
 readonly OUTSIDE_REPOSITORY="$TEST_ROOT/outside"
 readonly STUB_BIN="$TEST_ROOT/bin"
@@ -135,7 +136,7 @@ create_stub_path() {
   local command_name
 
   mkdir -p -- "$path"
-  for command_name in awk bash curl dirname env find flock git hostname hostnamectl makepkg mktemp pacman pwd rm sudo sync systemctl tee tidydots yay; do
+  for command_name in awk bash curl dirname env find flock git hostnamectl makepkg mktemp pacman pwd rm sudo sync systemctl tee tidydots yay; do
     if [[ "$command_name" == curl ]]; then
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
@@ -478,29 +479,42 @@ write_executable "$STUB_BIN/hostnamectl" \
 run_hostname_resolution() {
   local -r static_hostname="$1"
   local -r static_status="$2"
-  local -r kernel_hostname="$3"
-  local -r kernel_status="$4"
+  local -r kernel_state="$3"
+  local -r kernel_hostname="$4"
   local -r identity_bin="$TEST_ROOT/hostname-resolution-bin"
 
   rm -rf -- "$identity_bin"
   mkdir -p -- "$identity_bin"
+  case "$kernel_state" in
+    present)
+      printf '%s\n' "$kernel_hostname" >"$KERNEL_HOSTNAME_FIXTURE"
+      ;;
+    empty)
+      : >"$KERNEL_HOSTNAME_FIXTURE"
+      ;;
+    missing)
+      rm -f -- "$KERNEL_HOSTNAME_FIXTURE"
+      ;;
+    *)
+      fail "unknown kernel hostname fixture state: $kernel_state"
+      ;;
+  esac
+
   # shellcheck disable=SC2016
   write_executable "$identity_bin/dirname" 'printf "%s\\n" "${1%/*}"'
   write_executable "$identity_bin/pwd" '/usr/bin/pwd "$@"'
+
   # shellcheck disable=SC2016
   write_executable "$identity_bin/hostnamectl" \
     'printf "%s\\n" "hostnamectl $*" >>"$BOOTSTRAP_STUB_LOG"' \
     "if [[ \"\${1:-}\" == --static ]]; then printf '%s\\n' '$static_hostname'; exit $static_status; fi" \
     'exit 2'
-  # shellcheck disable=SC2016
-  write_executable "$identity_bin/hostname" \
-    'printf "%s\\n" "hostname $*" >>"$BOOTSTRAP_STUB_LOG"' \
-    "printf '%s\\n' '$kernel_hostname'; exit $kernel_status"
 
   # shellcheck disable=SC2016
   if LAST_OUTPUT=$(PATH="$identity_bin" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
-    "$BASH_PATH" -c 'source "$1"; resolve_hostname' _ "$BOOTSTRAP" 2>&1); then
+    "$BASH_PATH" -c 'source "$1"; KERNEL_HOSTNAME_PATH="$2"; resolve_hostname' _ \
+    "$BOOTSTRAP" "$KERNEL_HOSTNAME_FIXTURE" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -607,30 +621,30 @@ test_non_arch_rejected() {
   assert_contains "$LAST_OUTPUT" 'ID=arch' 'non-Arch os-release'
 }
 
-test_hostname_sources_must_match() {
+test_hostname_command_is_not_required() {
   : >"$STUB_LOG"
-  run_hostname_resolution server 0 server 0
+  run_hostname_resolution server 0 present server
 
-  assert_status 0 "$LAST_STATUS" 'matching hostname sources'
-  [[ "$LAST_OUTPUT" == server ]] || fail "matching hostname sources: expected canonical server, got '$LAST_OUTPUT'"
-  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'matching hostname static lookup'
-  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'matching hostname kernel lookup'
+  assert_status 0 "$LAST_STATUS" 'hostname command is not required'
+  [[ "$LAST_OUTPUT" == server ]] || fail "hostname command is not required: expected canonical server, got '$LAST_OUTPUT'"
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostname command static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'hostname command kernel lookup'
 }
 
 test_hostname_mismatch_is_rejected() {
   : >"$STUB_LOG"
-  run_hostname_resolution server 0 other-host 0
+  run_hostname_resolution server 0 present other-host
 
   assert_status 1 "$LAST_STATUS" 'hostname mismatch'
   assert_contains "$LAST_OUTPUT" 'hostname mismatch' 'hostname mismatch message'
   assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostname mismatch static lookup'
-  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'hostname mismatch kernel lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'hostname mismatch kernel lookup'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
 }
 
 test_hostname_static_failure_is_rejected() {
   : >"$STUB_LOG"
-  run_hostname_resolution server 1 server 0
+  run_hostname_resolution server 1 present server
 
   assert_status 1 "$LAST_STATUS" 'hostnamectl failure'
   assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostnamectl failure message'
@@ -638,31 +652,35 @@ test_hostname_static_failure_is_rejected() {
   assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'hostnamectl failure stops kernel lookup'
 }
 
-test_hostname_kernel_failure_is_rejected() {
+test_hostname_kernel_read_failure_is_rejected() {
   : >"$STUB_LOG"
-  run_hostname_resolution server 0 server 1
+  run_hostname_resolution server 0 missing server
 
-  assert_status 1 "$LAST_STATUS" 'hostname failure'
-  assert_contains "$LAST_OUTPUT" 'could not resolve the kernel hostname' 'hostname failure message'
-  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostname failure static lookup'
-  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'hostname failure kernel lookup'
+  assert_status 1 "$LAST_STATUS" 'kernel hostname read failure'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the kernel hostname' 'kernel hostname read failure message'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'kernel hostname read failure static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'kernel hostname read failure command lookup'
 }
 
-test_hostname_command_failure_is_not_masked() {
+test_hostname_kernel_empty_value_is_rejected() {
   : >"$STUB_LOG"
-  # shellcheck disable=SC2016
-  if LAST_OUTPUT=$(PATH="$STUB_BIN" \
-    BOOTSTRAP_HOSTNAME=antoinews-linux \
-    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
-    "$BASH_PATH" -c 'source "$1"; resolve_hostname' _ "$BOOTSTRAP" 2>&1); then
-    LAST_STATUS=0
-  else
-    LAST_STATUS=$?
-  fi
+  run_hostname_resolution server 0 empty server
 
-  assert_status 1 "$LAST_STATUS" 'hostname command failure'
-  assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostname command failure'
-  assert_not_contains "$LAST_OUTPUT" 'antoinews-linux' 'hostname override is not trusted'
+  assert_status 1 "$LAST_STATUS" 'empty kernel hostname'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the kernel hostname' 'empty kernel hostname message'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'empty kernel hostname static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'empty kernel hostname command lookup'
+}
+
+test_hostnamectl_failure_is_not_masked() {
+  : >"$STUB_LOG"
+  run_hostname_resolution antoinews-linux 1 present server
+
+  assert_status 1 "$LAST_STATUS" 'hostnamectl command failure'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostnamectl command failure'
+  assert_not_contains "$LAST_OUTPUT" 'antoinews-linux' 'hostnamectl failure output is not trusted'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostnamectl command failure lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'hostnamectl command failure kernel lookup'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
   assert_not_contains "$(<"$STUB_LOG")" 'curl ' 'hostname command failure network check'
 }
@@ -1234,11 +1252,12 @@ run_preflight_tests() {
   test_missing_repository_is_environment_failure
   test_root_execution_rejected
   test_non_arch_rejected
-  test_hostname_sources_must_match
+  test_hostname_command_is_not_required
   test_hostname_mismatch_is_rejected
   test_hostname_static_failure_is_rejected
-  test_hostname_kernel_failure_is_rejected
-  test_hostname_command_failure_is_not_masked
+  test_hostname_kernel_read_failure_is_rejected
+  test_hostname_kernel_empty_value_is_rejected
+  test_hostnamectl_failure_is_not_masked
   test_unknown_hostname_rejected_before_commands
   test_missing_command_names_command
   test_missing_find_names_command
