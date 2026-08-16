@@ -94,7 +94,7 @@ function expectedRight(includeHardware) {
   return right
 }
 
-function assertConfig(hostname, includeHardware) {
+function assertConfig(hostname, includeHardware, workspaceLabels) {
   const config = render(hostname)
   assert.equal(config.version, 1, `${hostname}: config version`)
   assert.deepEqual(config.bar, {
@@ -103,7 +103,7 @@ function assertConfig(hostname, includeHardware) {
     transparent: false,
     centerAnchor: "desktop.clock",
     layout: {
-      left: [{ id: "desktop.workspaces" }],
+      left: [{ id: "desktop.workspaces", labels: workspaceLabels }],
       center: [
         commandModules.recording,
         commandModules.voxtype,
@@ -115,9 +115,15 @@ function assertConfig(hostname, includeHardware) {
   assert.deepEqual(config.plugins, [], `${hostname}: empty plugin selection`)
 }
 
-assertConfig("DESKTOP-E07VTRN", false)
-assertConfig("antoinews-linux", false)
-assertConfig("omarchbook", true)
+assertConfig("DESKTOP-E07VTRN", false, {
+  "1": "chat", "2": "main", "3": "secondary", "4": "obsidian", "5": "shell",
+  "6": "git", "7": "browser", "8": "work", "9": "work", "10": "explorer"
+})
+assertConfig("antoinews-linux", false, {
+  "2": "main", "3": "secondary", "5": "shell", "6": "git",
+  "8": "browser", "9": "sql", "10": "explorer"
+})
+assertConfig("omarchbook", true, {})
 
 assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKTOP_SHELL_PREVIEW"\) === "1"/)
 assert.match(shell, /previewMode: shell\.previewMode/)

@@ -155,8 +155,8 @@ BarWidget {
 
     TrayIcon {
       anchors.centerIn: parent
-      width: Style.space(12)
-      height: Style.space(12)
+      width: Style.space(16)
+      height: Style.space(16)
       icon: trayItemRoot.modelData.icon
     }
 

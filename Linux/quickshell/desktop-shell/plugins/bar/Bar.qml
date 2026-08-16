@@ -27,7 +27,7 @@ Item {
   property string centerAnchor: "desktop.clock"
   readonly property string position: "top"
   readonly property bool vertical: false
-  readonly property int barSize: 26
+  readonly property int barSize: 32
   readonly property real moduleGap: 3
 
   property color themeForeground: Color.bar.text
@@ -38,6 +38,9 @@ Item {
   property color urgent: Color.bar.active
   property bool foregroundAnimationEnabled: true
   property string fontFamily: Style.font.family
+  property real fontSize: 14
+  property int fontWeight: Font.Bold
+  property real iconFontSize: 16
   property var activePopout: null
   property var tooltipTarget: null
   property var pendingTooltipTarget: null
@@ -372,6 +375,8 @@ Item {
     delegate: Component {
       BarPanel {
         required property var modelData
+
+        screen: modelData
       }
     }
   }
@@ -379,14 +384,11 @@ Item {
   component BarPanel: PanelWindow {
     id: barWindow
 
-    required property var modelData
-
     visible: true
     exclusionMode: ExclusionMode.Auto
     implicitWidth: 0
     implicitHeight: root.barSize
     color: root.background
-    screen: modelData
     WlrLayershell.namespace: "desktop-bar"
     WlrLayershell.layer: WlrLayer.Top
 
@@ -620,9 +622,15 @@ Item {
     function injectProps() {
       var target = slot.activeItem
       if (!target) return
+      if (slot.commandCustom) return
       if ("bar" in target) target.bar = root
       if ("moduleName" in target) target.moduleName = slot.moduleName
       if ("settings" in target) target.settings = slot.moduleSettings
+    }
+
+    Component {
+      id: customCommandModuleComponent
+      CustomCommandModule { entry: slot.entry }
     }
   }
 
@@ -664,7 +672,7 @@ Item {
     keepSpace: setting("keepSpace", false) === true
     horizontalMargin: Number(setting("horizontalMargin", 7.5))
     verticalPadding: Number(setting("verticalPadding", 6))
-    fontSize: Number(setting("fontSize", 12))
+    fontSize: Number(setting("fontSize", root.fontSize))
 
     onPressed: function(button) {
       var command = button === Qt.RightButton
