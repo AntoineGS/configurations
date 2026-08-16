@@ -17,6 +17,19 @@ fail() {
   exit 1
 }
 
+audited_helpers=(
+  "$helpers/update"
+  "$helpers/update-perform"
+  "$helpers/update-keyring"
+  "$helpers/desktop-shell"
+  "$helpers/desktop-shell-status"
+)
+
+for helper in "${audited_helpers[@]}"; do
+  [[ -r $helper ]] || fail "audited helper is missing or unreadable: $helper"
+done
+[[ -r $waybar_config ]] || fail "Waybar config is missing or unreadable: $waybar_config"
+
 stub() {
   local name=$1
   cat >"$bin/$name" <<'EOF'
@@ -61,13 +74,18 @@ PATH="$bin:$PATH" UPDATE_TEST_LOG="$log" "$helpers/update-keyring"
 assert_calls 'sudo pacman -Sy --noconfirm archlinux-keyring'
 
 if grep -Eq 'OMARCHY_PATH|40DFB630FF42BCFFB047046CF0134EE680CAC571|pkg-(missing|add) keyring' \
-  "$helpers/update" "$helpers/update-perform" "$helpers/update-keyring" \
-  "$helpers/desktop-shell" "$helpers/desktop-shell-status"; then
+  "${audited_helpers[@]}"; then
   fail "update flow still contains Omarchy repository or signing-key dependencies"
+else
+  grep_status=$?
+  ((grep_status == 1)) || fail "could not audit update helpers (grep status $grep_status)"
 fi
 
 if grep -q 'custom/update' "$waybar_config"; then
   fail "Waybar still references the removed Omarchy update checker"
+else
+  grep_status=$?
+  ((grep_status == 1)) || fail "could not audit Waybar config (grep status $grep_status)"
 fi
 
 printf 'PASS: Arch/AUR update flow\n'
