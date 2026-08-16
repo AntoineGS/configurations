@@ -12,6 +12,10 @@ function connectionIcon(kind, signalStrength) {
   return "󰤮"
 }
 
+function networkCapabilityAvailable(backend, networkManagerBackend, devices) {
+  return backend === networkManagerBackend && devices !== undefined && devices !== null
+}
+
 function wifiRow(network) {
   if (!network) return null
   var signal = Number(network.signalStrength || 0)
@@ -54,6 +58,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     wifiIconFor: wifiIconFor,
     connectionIcon: connectionIcon,
+    networkCapabilityAvailable: networkCapabilityAvailable,
     wifiRow: wifiRow,
     sortWifiRows: sortWifiRows,
     wifiSectionTitle: wifiSectionTitle,
