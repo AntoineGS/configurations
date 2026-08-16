@@ -413,9 +413,12 @@ def _simple_alias_expression_end(tokens: Sequence[LuaToken], start: int) -> int 
         return None
     if tokens[start].value == "(":
         closing = _matching_close_paren(tokens, start)
-        if closing is not None and _is_hl_rooted_expression(tokens, start, closing + 1):
-            return closing + 1
-        return None
+        if closing is None or not _is_hl_rooted_expression(tokens, start, closing + 1):
+            return None
+        end = closing + 1
+        if end + 1 < len(tokens) and [token.value for token in tokens[end : end + 2]] == [".", "dsp"]:
+            end += 2
+        return end
     end = start + 1
     if end + 1 < len(tokens) and [token.value for token in tokens[end : end + 2]] == [".", "dsp"]:
         end += 2
