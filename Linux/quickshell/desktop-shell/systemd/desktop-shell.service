@@ -1,7 +1,6 @@
 [Unit]
 Description=Repository desktop shell
 PartOf=graphical-session.target
-After=graphical-session.target
 
 [Service]
 Type=simple
