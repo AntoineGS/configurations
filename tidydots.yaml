@@ -544,6 +544,13 @@ applications:
         files:
           - desktop-shell-launch
           - toggle-desktop-shell-bar
+          - desktop-shell-action
+          - desktop-connectivity-action
+          - desktop-hardware-state
+          - desktop-hardware-action
+          - desktop-agent-usage-update
+          - desktop-agent-usage-codex
+          - desktop-agent-usage-claude
       - targets:
           linux: ~/.config/systemd/user
         name: systemd-service
