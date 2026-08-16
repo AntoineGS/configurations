@@ -142,30 +142,31 @@ PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=t
   exit 1
 }
 
-cat >"$BIN/vicinae" <<'EOF'
+cat >"$BIN/desktop-shell" <<'EOF'
 #!/bin/bash
 
-case "$*" in
-*"Capture area"*) printf '%s\n' "${TEST_CAPTURE_CHOICE:-Region}" ;;
-*Screenrecord*) printf '%s\n' "${TEST_AUDIO_CHOICE:-With no audio}" ;;
-*) exit 1 ;;
-esac
-EOF
-
-cat >"$BIN/cmd-screenrecord" <<'EOF'
-#!/bin/bash
-
-[[ ${1:-} == "--stop-recording" ]] && exit 1
 : >"$TEST_MENU_ARGS"
-(($# == 0)) || printf '%s\n' "$@" >>"$TEST_MENU_ARGS"
+printf '%s\n' "$@" >>"$TEST_MENU_ARGS"
 EOF
 
-chmod +x "$BIN/vicinae" "$BIN/cmd-screenrecord"
+chmod +x "$BIN/desktop-shell"
 
-PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" TEST_CAPTURE_CHOICE=Region "$MENU" screenrecord
-assert_equal "$(<"$MENU_ARGS")" "--region"
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" "$MENU" trigger.screenrecord
+expected_menu=$'summon\ndesktop.menu\n{"menu":"trigger.screenrecord"}'
+assert_equal "$(<"$MENU_ARGS")" "$expected_menu"
 
-PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" TEST_CAPTURE_CHOICE="Screen / window" "$MENU" screenrecord
-assert_equal "$(<"$MENU_ARGS")" ""
+rm -f "$MENU_ARGS"
+set +e
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" "$MENU" 'trigger.screenrecord;touch /tmp/menu-test' 2>/dev/null
+status=$?
+set -e
+[[ $status -eq 2 ]] || {
+  printf 'menu accepted an unsafe route with status %d\n' "$status" >&2
+  exit 1
+}
+[[ ! -e $MENU_ARGS ]] || {
+  printf 'menu executed an unsafe route\n' >&2
+  exit 1
+}
 
-printf '%s\n' 'screenrecord routing tests passed'
+printf '%s\n' 'screenrecord and menu routing tests passed'
