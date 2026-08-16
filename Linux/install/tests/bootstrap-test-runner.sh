@@ -29,7 +29,7 @@ readonly TEST_MISSING_COMMANDS="${BOOTSTRAP_TEST_MISSING_COMMANDS:-}"
 
 readonly MARKER_CONTENT=bootstrap-test-fixture-v1
 readonly REQUIRED_COMMANDS=(
-  awk bash curl dirname env find flock git hostname hostnamectl makepkg mktemp pacman rm sudo sync systemctl tee tidydots yay
+  awk bash curl dirname env find flock git hostnamectl makepkg mktemp pacman rm sudo sync systemctl tee tidydots yay
 )
 
 runner_reject() {
@@ -131,7 +131,7 @@ done
 # shellcheck disable=SC2086
 for missing_command in $TEST_MISSING_COMMANDS; do
   case "$missing_command" in
-    awk|bash|curl|dirname|env|find|flock|git|hostname|hostnamectl|makepkg|mktemp|pacman|rm|sudo|sync|systemctl|tee|tidydots|yay)
+    awk|bash|curl|dirname|env|find|flock|git|hostnamectl|makepkg|mktemp|pacman|rm|sudo|sync|systemctl|tee|tidydots|yay)
       ;;
     *)
       runner_reject "unknown test command mask: $missing_command"

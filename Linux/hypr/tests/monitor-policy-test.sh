@@ -78,6 +78,7 @@ local dp2_workarounds = 0
 local laptop_output = 0
 local laptop_mirror = 0
 local preferred_fallback = 0
+local gitkraken_rules = 0
 
 for _, command in ipairs(calls.execs) do
   if string.find(command, "hl.dsp.workspace.move", 1, true) then
@@ -100,6 +101,12 @@ for _, monitor in ipairs(calls.monitors) do
   end
 end
 
+for _, window_rule in ipairs(calls.window_rules) do
+  if window_rule.match and window_rule.match.class == "GitKraken" then
+    gitkraken_rules = gitkraken_rules + 1
+  end
+end
+
 print("monitor=" .. #calls.monitors)
 print("workspace=" .. #calls.workspace_rules)
 print("window=" .. #calls.window_rules)
@@ -108,6 +115,7 @@ print("dp2_workaround=" .. dp2_workarounds)
 print("laptop_output=" .. laptop_output)
 print("laptop_mirror=" .. laptop_mirror)
 print("preferred_fallback=" .. preferred_fallback)
+print("gitkraken=" .. gitkraken_rules)
 LUA
 }
 
@@ -127,6 +135,7 @@ assert_host_policy() {
   assert_contains "$monitor_output" "monitor=$expected_monitors" "$hostname monitor count"
   assert_contains "$monitor_output" "workspace=$expected_workspace_rules" "$hostname workspace-rule count"
   assert_contains "$monitor_output" "window=$expected_window_rules" "$hostname window-rule count"
+  assert_contains "$monitor_output" 'gitkraken=0' "$hostname GitKraken rule absence"
   assert_contains "$autostart_output" "workspace_move=$expected_workspace_moves" "$hostname workspace move count"
   assert_contains "$autostart_output" "dp2_workaround=$expected_dp2_workarounds" "$hostname DP-2 workaround count"
 }

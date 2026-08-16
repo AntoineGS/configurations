@@ -140,7 +140,6 @@ create_stubs() {
   write_executable "$STUB_BIN/env" 'exit 0'
   write_executable "$STUB_BIN/find" 'exit 0'
   write_executable "$STUB_BIN/pacman" 'exit 0'
-  write_executable "$STUB_BIN/hostname" 'printf "%s\\n" server'
   write_executable "$STUB_BIN/hostnamectl" 'printf "%s\\n" server'
   write_executable "$STUB_BIN/makepkg" 'exit 0'
   write_executable "$STUB_BIN/mktemp" 'exit 0'
