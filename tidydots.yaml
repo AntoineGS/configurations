@@ -704,7 +704,7 @@ applications:
         yay: localsend
     name: localsend
     description: LocalSend file sharing application used by cmd-share
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - name: imv
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
