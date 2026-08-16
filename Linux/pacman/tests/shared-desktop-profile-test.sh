@@ -328,6 +328,20 @@ extract_active_hypr_commands() {
         return
       }
 
+      if (in_quoted_string) {
+        closing = index(line, "\"")
+        if (closing > 0) {
+          command = command substr(line, 1, closing - 1)
+          print FILENAME "\t" command
+          command = ""
+          in_exec = 0
+          in_quoted_string = 0
+        } else {
+          command = command line
+        }
+        return
+      }
+
       if (line ~ /\[\[/) {
         sub(/^.*\[\[/, "", line)
         closing = index(line, "]]")
@@ -346,6 +360,19 @@ extract_active_hypr_commands() {
         sub(/".*$/, "", line)
         print FILENAME "\t" line
         in_exec = 0
+        return
+      }
+
+      if (line ~ /^[[:space:]]*"/) {
+        sub(/^[[:space:]]*"/, "", line)
+        closing = index(line, "\"")
+        if (closing > 0) {
+          print FILENAME "\t" substr(line, 1, closing - 1)
+          in_exec = 0
+        } else {
+          command = line
+          in_quoted_string = 1
+        }
       }
     }
 
@@ -361,63 +388,116 @@ extract_active_hypr_commands() {
   ' "${source_files[@]}"
 }
 
-extract_runtime_command_names() {
-  local source command remainder candidate
+extract_shell_chain_segments() {
+  local command="$1"
+  local segment=""
+  local quote=""
+  local escaped=false
+  local char next
+  local i
 
-  while IFS=$'\t' read -r source command; do
-    [[ -n "$command" ]] || continue
+  for ((i = 0; i < ${#command}; i++)); do
+    char="${command:i:1}"
 
-    case "$command" in
-      *"launch-or-focus "*)
-        remainder="${command#*launch-or-focus }"
-        candidate="${remainder%%[[:space:]]*}"
-        candidate="${candidate//\"/}"
-        printf '%s\t%s\n' "$source" "$candidate"
+    if [[ "$escaped" == true ]]; then
+      segment+="$char"
+      escaped=false
+      continue
+    fi
 
-        if [[ "$remainder" == *'"uwsm app -- '* ]]; then
-          remainder="${remainder#*\"uwsm app -- }"
-          remainder="${remainder%%\"*}"
-          candidate="${remainder%%[[:space:]]*}"
-          printf '%s\t%s\n' "$source" "$candidate"
-        fi
+    if [[ "$char" == "\\" && "$quote" != "'" ]]; then
+      segment+="$char"
+      escaped=true
+      continue
+    fi
+
+    if [[ -n "$quote" ]]; then
+      segment+="$char"
+      [[ "$char" == "$quote" ]] && quote=""
+      continue
+    fi
+
+    case "$char" in
+      "'"|\")
+        quote="$char"
+        segment+="$char"
         ;;
-      *"launch-tui-large "*)
-        remainder="${command#*launch-tui-large }"
-        candidate="${remainder%%[[:space:]]*}"
-        printf '%s\t%s\n' "$source" "$candidate"
-        ;;
-      *"uwsm-app -- "*)
-        printf '%s\tuwsm-app\n' "$source"
-        remainder="${command#*uwsm-app -- }"
-        if [[ "$remainder" == env\ * ]]; then
-          remainder="${remainder#env }"
-          while [[ "${remainder%% *}" == *=* ]]; do
-            remainder="${remainder#* }"
-          done
-        fi
-        candidate="${remainder%%[[:space:]]*}"
-        candidate="${candidate##*/}"
-        printf '%s\t%s\n' "$source" "$candidate"
-        ;;
-      *"uwsm app -- "*)
-        printf '%s\tuwsm\n' "$source"
-        remainder="${command#*uwsm app -- }"
-        candidate="${remainder%%[[:space:]]*}"
-        candidate="${candidate##*/}"
-        printf '%s\t%s\n' "$source" "$candidate"
+      '&'|'|'|';')
+        printf '%s\n' "$segment"
+        segment=""
+        next="${command:i+1:1}"
+        [[ "$next" == "$char" ]] && i=$((i + 1))
         ;;
       *)
-        candidate="${command%%[[:space:]]*}"
-        candidate="${candidate##*/}"
-        printf '%s\t%s\n' "$source" "$candidate"
+        segment+="$char"
         ;;
     esac
+  done
+
+  printf '%s\n' "$segment"
+}
+
+extract_runtime_command_names() {
+  local source command segment remainder candidate
+
+  while IFS=$'\t' read -r source command; do
+    while IFS= read -r segment; do
+      segment="${segment#"${segment%%[![:space:]]*}"}"
+      segment="${segment%"${segment##*[![:space:]]}"}"
+      [[ -n "$segment" ]] || continue
+
+      case "$segment" in
+        *"launch-or-focus "*)
+          remainder="${segment#*launch-or-focus }"
+          candidate="${remainder%%[[:space:]]*}"
+          candidate="${candidate//\"/}"
+          printf '%s\t%s\n' "$source" "$candidate"
+
+          if [[ "$remainder" == *'"uwsm app -- '* ]]; then
+            remainder="${remainder#*\"uwsm app -- }"
+            remainder="${remainder%%\"*}"
+            candidate="${remainder%%[[:space:]]*}"
+            printf '%s\t%s\n' "$source" "$candidate"
+          fi
+          ;;
+        *"launch-tui-large "*)
+          remainder="${segment#*launch-tui-large }"
+          candidate="${remainder%%[[:space:]]*}"
+          printf '%s\t%s\n' "$source" "$candidate"
+          ;;
+        *"uwsm-app -- "*)
+          printf '%s\tuwsm-app\n' "$source"
+          remainder="${segment#*uwsm-app -- }"
+          if [[ "$remainder" == env\ * ]]; then
+            remainder="${remainder#env }"
+            while [[ "${remainder%% *}" == *=* ]]; do
+              remainder="${remainder#* }"
+            done
+          fi
+          candidate="${remainder%%[[:space:]]*}"
+          candidate="${candidate##*/}"
+          printf '%s\t%s\n' "$source" "$candidate"
+          ;;
+        *"uwsm app -- "*)
+          printf '%s\tuwsm\n' "$source"
+          remainder="${segment#*uwsm app -- }"
+          candidate="${remainder%%[[:space:]]*}"
+          candidate="${candidate##*/}"
+          printf '%s\t%s\n' "$source" "$candidate"
+          ;;
+        *)
+          candidate="${segment%%[[:space:]]*}"
+          candidate="${candidate##*/}"
+          printf '%s\t%s\n' "$source" "$candidate"
+          ;;
+      esac
+    done < <(extract_shell_chain_segments "$command")
   done < <(extract_active_hypr_commands "$@")
 }
 
 runtime_command_is_ignored() {
   case "$1" in
-    dbus-update-activation-environment|hyprctl|pkg-aur-install|pkg-install|pkg-remove|sleep|systemctl|update)
+    cut|dbus-update-activation-environment|env|false|hyprctl|pkg-aur-install|pkg-install|pkg-remove|sleep|systemctl|true|update)
       return 0
       ;;
     *)
@@ -512,6 +592,62 @@ assert_multiline_unknown_launcher_fails() {
     fail 'multiline runtime audit rejected an undeclared launcher without naming it'
 }
 
+assert_multiline_quoted_unknown_launcher_fails() {
+  local fixture output
+
+  fixture="$(mktemp)"
+  printf '%s\n' \
+    'hl.exec_cmd(' \
+    '  "uwsm-app -- synthetic-quoted-launcher"' \
+    ')' > "$fixture"
+
+  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
+    rm -f -- "$fixture"
+    fail 'multiline quoted runtime audit accepted an undeclared launcher'
+  fi
+
+  rm -f -- "$fixture"
+  grep -Fq -- synthetic-quoted-launcher <<< "$output" ||
+    fail 'multiline quoted runtime audit rejected an undeclared launcher without naming it'
+}
+
+assert_shell_chain_unknown_launcher_fails() {
+  local fixture output
+
+  fixture="$(mktemp)"
+  printf '%s\n' \
+    'hl.exec_cmd(' \
+    '  [[sleep 1 && synthetic-chain-launcher]]' \
+    ')' > "$fixture"
+
+  if output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
+    rm -f -- "$fixture"
+    fail 'shell-chain runtime audit accepted an undeclared launcher after sleep'
+  fi
+
+  rm -f -- "$fixture"
+  grep -Fq -- synthetic-chain-launcher <<< "$output" ||
+    fail 'shell-chain runtime audit rejected an undeclared launcher without naming it'
+}
+
+assert_supported_shell_chain_passes() {
+  local fixture output
+
+  fixture="$(mktemp)"
+  printf '%s\n' \
+    'hl.exec_cmd(' \
+    '  [[sleep 1 && hyprctl eval status || systemctl --user is-active; dbus-update-activation-environment --systemd --all | cut -d= -f1]]' \
+    ')' > "$fixture"
+
+  if ! output="$(assert_hyprland_runtime_ownership "$fixture" 2>&1)"; then
+    rm -f -- "$fixture"
+    printf '%s\n' "$output" >&2
+    fail 'runtime audit rejected recognized system commands in a supported shell chain'
+  fi
+
+  rm -f -- "$fixture"
+}
+
 assert_runtime_requirements() {
   assert_autostart_command_count
   assert_source_requires_package Linux/hypr/autostart.lua 'hl.exec_cmd("signal-desktop")' signal pacman signal-desktop
@@ -586,6 +722,9 @@ fi
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages
 assert_multiline_unknown_launcher_fails
+assert_multiline_quoted_unknown_launcher_fails
+assert_shell_chain_unknown_launcher_fails
+assert_supported_shell_chain_passes
 assert_runtime_requirements
 assert_focused_dry_run hyprland pacman hyprland
 assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-picker-git
