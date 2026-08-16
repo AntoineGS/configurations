@@ -85,6 +85,11 @@ tidydots --dir "$REPO_DIR" restore snapper -n
 
 Hostname-gated previews can report a condition mismatch when intentionally run on another host; that is the expected exclusion behavior.
 
+Focused previews such as `tidydots --dir "$REPO_DIR" install hyprland -n` are
+intentionally limited to that application and may install only its package.
+The canonical complete bootstrap package preview is the unscoped command:
+`tidydots --dir "$REPO_DIR" install -n`.
+
 Run the complete read-only profile and runtime audit with `bash Linux/pacman/tests/all-profiles-test.sh`.
 
 **Install hooks:**
