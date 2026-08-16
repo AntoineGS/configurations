@@ -20,7 +20,6 @@ extract_manifest_arch_declarations() {
     function reset( i) {
       application = ""
       in_managers = 0
-      has_non_arch_method = 0
       declaration_count = 0
       for (i in manager_names) {
         delete manager_names[i]
@@ -34,7 +33,7 @@ extract_manifest_arch_declarations() {
       }
 
       for (i = 1; i <= declaration_count; i++) {
-        print application "\t" manager_names[i] "\t" package_names[i] "\t" has_non_arch_method
+        print application "\t" manager_names[i] "\t" package_names[i]
       }
     }
 
@@ -63,11 +62,6 @@ extract_manifest_arch_declarations() {
       next
     }
 
-    in_managers && /^        (git|installer):/ {
-      has_non_arch_method = 1
-      next
-    }
-
     in_managers && /^        (pacman|yay):[[:space:]]+[^[:space:]]/ {
       declaration = $0
       sub(/^        /, "", declaration)
@@ -82,11 +76,6 @@ extract_manifest_arch_declarations() {
     }
 
     in_managers && /^        [^[:space:]]/ {
-      next
-    }
-
-    /^      (custom|url):/ {
-      has_non_arch_method = 1
       next
     }
 
@@ -170,23 +159,18 @@ assert_yazi_windows_dependencies() {
 }
 
 load_manifest() {
-  local application manager package_name has_non_arch_method key declaration
+  local application manager package_name key declaration
   local -a declarations=()
   declare -A seen_manager_packages=()
 
   declare -gA MANIFEST_PACKAGE_BY_KEY=()
-  declare -gA MANIFEST_NON_ARCH_BY_APP=()
   mapfile -t declarations < <(extract_manifest_arch_declarations)
 
   for declaration in "${declarations[@]}"; do
-    IFS=$'\t' read -r application manager package_name has_non_arch_method <<< "$declaration"
+    IFS=$'\t' read -r application manager package_name <<< "$declaration"
     key="$application|$manager"
     [[ -z "${MANIFEST_PACKAGE_BY_KEY[$key]+set}" ]] || fail "duplicate direct $manager declaration for $application"
     MANIFEST_PACKAGE_BY_KEY["$key"]="$package_name"
-
-    if [[ "$has_non_arch_method" == 1 ]]; then
-      MANIFEST_NON_ARCH_BY_APP["$application"]=1
-    fi
 
     key="$manager|$package_name"
     [[ -z "${seen_manager_packages[$key]+set}" ]] || fail "duplicate real Arch installation for $key"
@@ -246,7 +230,6 @@ expected_arch_operations() {
     package_name="${MANIFEST_PACKAGE_BY_KEY[$key]-}"
     [[ -n "$package_name" ]] || fail "selected $manager application $application has no direct manifest declaration"
 
-    [[ -z "${MANIFEST_NON_ARCH_BY_APP[$application]+set}" ]] || continue
     printf '%s\t%s\t%s\n' "$application" "$manager" "$package_name"
   done < <(printf '%s\n' "$list_output" | extract_selected_arch_applications)
 }
@@ -285,9 +268,9 @@ assert_operation_multiset() {
   if ! cmp -s "$temporary_directory/expected" "$temporary_directory/actual"; then
     printf 'FAIL: %s package operation multiset differs\n' "$label" >&2
     printf '%s\n' 'Missing operations:' >&2
-    comm -23 "$temporary_directory/expected" "$temporary_directory/actual" >&2 || true
+    LC_ALL=C comm -23 "$temporary_directory/expected" "$temporary_directory/actual" >&2 || true
     printf '%s\n' 'Extra operations:' >&2
-    comm -13 "$temporary_directory/expected" "$temporary_directory/actual" >&2 || true
+    LC_ALL=C comm -13 "$temporary_directory/expected" "$temporary_directory/actual" >&2 || true
     rm -rf -- "$temporary_directory"
     exit 1
   fi
@@ -314,12 +297,18 @@ assert_preview() {
   assert_operation_multiset "$label" "$expected" "$actual"
 }
 
-assert_windows_installer() {
+assert_windows_custom_command() {
   local application="$1"
   local command="$2"
   local output expected
 
-  if output="$(tidydots --dir "$REPO_DIR" --os windows install "$application" -n 2>&1)"; then
+  if output="$(docker run --rm --network none \
+    --volume "$REPO_DIR:/src:ro" \
+    --volume "$TIDYDOTS_BIN:/usr/local/bin/tidydots:ro" \
+    --workdir /src \
+    ubuntu:24.04 \
+    bash -c 'mkdir -p /tmp/tidydots-bin; PATH=/tmp/tidydots-bin:/usr/local/bin tidydots --dir /src --os windows install "$1" -n' \
+    bash "$application" 2>&1)"; then
     :
   else
     printf '%s\n' "$output" >&2
@@ -330,6 +319,37 @@ assert_windows_installer() {
   grep -Fqx -- "$expected" <<< "$output" || {
     printf 'Windows preview for %s:\n%s\n' "$application" "$output" >&2
     fail "Windows installer command changed for $application"
+  }
+}
+
+assert_focused_arch_preview() {
+  local application="$1"
+  local manager="$2"
+  local package_name="$3"
+  local output expected
+
+  if output="$(tidydots --dir "$REPO_DIR" --os linux install "$application" -n 2>&1)"; then
+    :
+  else
+    printf '%s\n' "$output" >&2
+    fail "Linux focused preview failed for $application"
+  fi
+
+  case "$manager" in
+    pacman)
+      expected="[ok] $application: Would run: sudo pacman -S --noconfirm $package_name"
+      ;;
+    yay)
+      expected="[ok] $application: Would run: yay -S --noconfirm $package_name"
+      ;;
+    *)
+      fail "unsupported focused Arch manager $manager"
+      ;;
+  esac
+
+  grep -Fqx -- "$expected" <<< "$output" || {
+    printf 'Linux focused preview for %s:\n%s\n' "$application" "$output" >&2
+    fail "Linux focused preview does not disclose $manager package $package_name for $application"
   }
 }
 
@@ -413,10 +433,20 @@ run_native_profile 'canonical native Linux host'
 run_container_profile 'DESKTOP-E07VTRN graphical' DESKTOP-E07VTRN graphical
 run_container_profile 'antoinews-linux graphical' antoinews-linux graphical
 run_container_profile 'antoinews-linux headless' antoinews-linux headless
+run_container_profile 'omarchbook graphical' omarchbook graphical
 run_container_profile 'omarchbook headless' omarchbook headless
 run_container_profile 'server headless' server headless
-assert_windows_installer posting-windows 'uv tool install --python 3.13 posting'
-assert_windows_installer eza-windows 'cargo install eza'
-assert_windows_installer sd-windows 'cargo install sd'
+assert_focused_arch_preview posting yay posting
+assert_focused_arch_preview eza pacman eza
+assert_focused_arch_preview sd pacman sd
+assert_focused_arch_preview rustup pacman rustup
+assert_focused_arch_preview oh-my-zsh yay oh-my-zsh-git
+assert_focused_arch_preview zsh-vi-mode yay zsh-vi-mode
+assert_focused_arch_preview zsh-autosuggestions yay zsh-autosuggestions
+assert_focused_arch_preview fzf-tab-completion yay fzf-tab-completion-git
+assert_focused_arch_preview zsh-transient-prompt yay zsh-transient-prompt-git
+assert_windows_custom_command posting 'uv tool install --python 3.13 posting'
+assert_windows_custom_command eza 'cargo install eza'
+assert_windows_custom_command sd 'cargo install sd'
 
 printf 'PASS: manifest-derived Arch package previews are complete for supported profiles\n'
