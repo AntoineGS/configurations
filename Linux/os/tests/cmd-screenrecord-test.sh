@@ -13,6 +13,7 @@ HOME_DIR="$TEST_ROOT/home"
 VIDEOS="$TEST_ROOT/videos"
 GSR_ARGS="$TEST_ROOT/gpu-screen-recorder-args"
 MENU_ARGS="$TEST_ROOT/menu-args"
+NOTIFY_ARGS="$TEST_ROOT/notify-args"
 WEBCAM_STARTED="$TEST_ROOT/webcam-started"
 STATE_FILE="$TEST_ROOT/screenrecord-filename"
 mkdir -p "$BIN" "$HOME_DIR/.config" "$VIDEOS"
@@ -30,7 +31,7 @@ EOF
 
 cat >"$BIN/notify-send" <<'EOF'
 #!/bin/bash
-exit 0
+printf '%s\n' "$@" >"$TEST_NOTIFY_ARGS"
 EOF
 
 cat >"$BIN/date" <<'EOF'
@@ -85,9 +86,20 @@ assert_equal() {
   fi
 }
 
+wait_for_notification() {
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    [[ -e $NOTIFY_ARGS ]] && return 0
+    sleep 0.01
+  done
+  printf 'notification stub was not called\n' >&2
+  exit 1
+}
+
 run_screenrecord() {
   rm -f "$GSR_ARGS"
-  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" SCREENRECORD_STATE_FILE="$STATE_FILE" \
+  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" \
+    SCREENRECORD_STATE_FILE="$STATE_FILE" SCREENRECORD_DIR="$VIDEOS" \
     "$SCREENRECORD" "$@"
 }
 
@@ -130,7 +142,7 @@ $VIDEOS/screenrecording-2026-07-25_00-00-00.mp4"
 assert_equal "$(<"$GSR_ARGS")" "$expected"
 
 rm -f "$GSR_ARGS"
-PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=true \
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=true SCREENRECORD_DIR="$VIDEOS" \
   TEST_WEBCAM_STARTED="$WEBCAM_STARTED" SCREENRECORD_STATE_FILE="$STATE_FILE" \
   "$SCREENRECORD" --region --with-webcam --webcam-device=/dev/video0 --resolution=0x0 || true
 [[ ! -e $GSR_ARGS ]] || {
@@ -167,5 +179,120 @@ assert_equal "$(<"$MENU_ARGS")" "--region"
 
 PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_MENU_ARGS="$MENU_ARGS" TEST_CAPTURE_CHOICE="Screen / window" "$MENU" screenrecord
 assert_equal "$(<"$MENU_ARGS")" ""
+
+cat >"$BIN/sleep" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+cat >"$BIN/pgrep" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+cat >"$BIN/pkill" <<'EOF'
+#!/bin/bash
+[[ ${1:-} == "-9" ]] && exit 1
+exit 0
+EOF
+
+chmod +x "$BIN/sleep" "$BIN/pgrep" "$BIN/pkill"
+
+stop_status=0
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" SCREENRECORD_DIR="$VIDEOS" \
+  SCREENRECORD_STATE_FILE="$STATE_FILE" \
+  "$SCREENRECORD" --stop-recording || stop_status=$?
+[[ ! -e $STATE_FILE ]] || {
+  printf 'screen recording state survived a raced hard kill\n' >&2
+  exit 1
+}
+assert_equal "$stop_status" "0"
+
+PGREP_COUNT="$TEST_ROOT/pgrep-count"
+PREVIEW_VIDEO="$VIDEOS/preview-source.mp4"
+: >"$PREVIEW_VIDEO"
+printf '%s\n' "$PREVIEW_VIDEO" >"$STATE_FILE"
+rm -f "$PGREP_COUNT"
+
+cat >"$BIN/pgrep" <<'EOF'
+#!/bin/bash
+
+count=0
+[[ -f $TEST_PGREP_COUNT ]] && count=$(<"$TEST_PGREP_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" >"$TEST_PGREP_COUNT"
+((count == 1))
+EOF
+
+# shellcheck disable=SC2016
+cat >"$BIN/ffmpeg" <<'EOF'
+#!/bin/bash
+
+output=""
+for arg in "$@"; do
+  case "$arg" in
+    *.mp4|*.png) output="$arg" ;;
+  esac
+done
+: >"$output"
+EOF
+
+chmod +x "$BIN/pgrep" "$BIN/ffmpeg"
+rm -f "$NOTIFY_ARGS"
+
+stop_status=0
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" TEST_PGREP_COUNT="$PGREP_COUNT" \
+  SCREENRECORD_DIR="$VIDEOS" SCREENRECORD_STATE_FILE="$STATE_FILE" \
+  "$SCREENRECORD" --stop-recording || stop_status=$?
+[[ ! -e $STATE_FILE ]] || {
+  printf 'screen recording state survived successful preview generation\n' >&2
+  exit 1
+}
+assert_equal "$stop_status" "0"
+expected_notification="Screen recording saved
+Open with Super + Alt + , (or click this)
+-t
+10000
+-i
+${PREVIEW_VIDEO%.mp4}-preview.png
+-A
+default=open"
+wait_for_notification
+assert_equal "$(<"$NOTIFY_ARGS")" "$expected_notification"
+
+printf '%s\n' "$PREVIEW_VIDEO" >"$STATE_FILE"
+rm -f "$PGREP_COUNT" "$NOTIFY_ARGS"
+
+cat >"$BIN/ffmpeg" <<'EOF'
+#!/bin/bash
+exit 1
+EOF
+
+cat >"$BIN/pkill" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+
+chmod +x "$BIN/pgrep" "$BIN/ffmpeg" "$BIN/pkill"
+
+stop_status=0
+PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" TEST_PGREP_COUNT="$PGREP_COUNT" \
+  SCREENRECORD_DIR="$VIDEOS" \
+  SCREENRECORD_STATE_FILE="$STATE_FILE" "$SCREENRECORD" --stop-recording || stop_status=$?
+[[ ! -e $STATE_FILE ]] || {
+  printf 'screen recording state survived preview generation failure\n' >&2
+  exit 1
+}
+assert_equal "$stop_status" "0"
+expected_notification="Screen recording saved
+Open with Super + Alt + , (or click this)
+-t
+10000
+-i
+$PREVIEW_VIDEO
+-A
+default=open"
+wait_for_notification
+assert_equal "$(<"$NOTIFY_ARGS")" "$expected_notification"
 
 printf '%s\n' 'screenrecord routing tests passed'

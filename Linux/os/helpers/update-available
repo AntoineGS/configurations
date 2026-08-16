@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+count_updates() {
+  awk 'NF { count++ } END { print count + 0 }'
+}
+
+official_updates=""
+if official_updates=$(checkupdates); then
+  :
+else
+  checkupdates_status=$?
+  if (( checkupdates_status != 2 )); then
+    printf 'Error: checkupdates failed with exit %d\n' "$checkupdates_status" >&2
+    exit "$checkupdates_status"
+  fi
+fi
+
+official_count=$(printf '%s\n' "$official_updates" | count_updates)
+aur_count=0
+
+if command -v yay >/dev/null 2>&1; then
+  aur_updates=$(yay -Qua)
+  aur_count=$(printf '%s\n' "$aur_updates" | count_updates)
+fi
+
+total=$((official_count + aur_count))
+if (( total > 0 )); then
+  printf '%d updates available\n' "$total"
+  exit 0
+fi
+
+printf '%s\n' 'System is up to date'
+exit 1

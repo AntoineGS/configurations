@@ -1,0 +1,771 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
+if [[ "${SNAPPER_INITIALIZER_TEST_MODE:-}" == 1 ]]; then
+  readonly ROOT_MOUNT="${SNAPPER_INITIALIZER_ROOT_MOUNT:-/}"
+  readonly HOME_MOUNT="${SNAPPER_INITIALIZER_HOME_MOUNT:-/home}"
+  readonly CONFIG_DIR="${SNAPPER_INITIALIZER_CONFIG_DIR:-/etc/snapper/configs}"
+  readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
+  readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
+  readonly RECOVERY_DIRECTORY="${SNAPPER_INITIALIZER_RECOVERY_DIRECTORY:-/var/lib/configurations/snapper-bootstrap}"
+  readonly LIFECYCLE_LOCK="${SNAPPER_INITIALIZER_LIFECYCLE_LOCK:-/run/lock/antoinews-linux-snapper.lock}"
+else
+  readonly ROOT_MOUNT="/"
+  readonly HOME_MOUNT="/home"
+  readonly CONFIG_DIR="/etc/snapper/configs"
+  readonly REGISTRATION_FILE="/etc/conf.d/snapper"
+  readonly CONFIG_TEMPLATE="/usr/share/snapper/config-templates/default"
+  readonly RECOVERY_DIRECTORY="/var/lib/configurations/snapper-bootstrap"
+  readonly LIFECYCLE_LOCK="/run/lock/antoinews-linux-snapper.lock"
+fi
+readonly BACKUP_DIRECTORY="$RECOVERY_DIRECTORY/backups"
+readonly INITIAL_SNAPSHOT_DESCRIPTION="initial recovery snapshot"
+readonly SNAPSHOT_DIR_MODE="750"
+readonly CONFIG_FILE_MODE="644"
+
+MODE=""
+ROOT_UUID=""
+HOME_UUID=""
+ROOT_SUBVOLUME_ID=""
+HOME_SUBVOLUME_ID=""
+LIFECYCLE_LOCK_FD=""
+LIFECYCLE_LOCK_HELD=false
+
+initializer_exit() {
+  local -r exit_status="$?"
+
+  if ! release_lifecycle_lock; then
+    printf '%s: could not release Snapper lifecycle lock: %s\n' "$SCRIPT_NAME" "$LIFECYCLE_LOCK" >&2
+    return 1
+  fi
+  return "$exit_status"
+}
+
+trap initializer_exit EXIT
+
+usage() {
+  printf 'Usage: %s --validate-topology|--check|--apply|--create-initial-snapshots\n' "$SCRIPT_NAME"
+  printf '\n'
+  printf 'Validate or initialize the root and home Snapper layout for Archinstall Btrfs subvolumes.\n'
+}
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+usage_error() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  usage >&2
+  exit 2
+}
+
+parse_args() {
+  [[ $# -eq 1 ]] || usage_error 'exactly one mode is required'
+
+  case "$1" in
+    --validate-topology|--check|--apply|--create-initial-snapshots)
+      MODE="${1#--}"
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage_error "unknown option: $1"
+      ;;
+  esac
+}
+
+require_root() {
+  [[ "$EUID" -eq 0 ]] || die 'must run as root'
+}
+
+require_commands() {
+  local command_name
+
+  if [[ "$MODE" == validate-topology ]]; then
+    for command_name in awk btrfs findmnt; do
+      command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
+    done
+    return 0
+  fi
+
+  for command_name in awk btrfs cat chmod chown findmnt flock grep mkdir mktemp mv rm snapper stat touch; do
+    command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
+  done
+}
+
+ensure_lifecycle_lock_file() {
+  local -r lock_directory="${LIFECYCLE_LOCK%/*}"
+  local directory_uid
+  local directory_gid
+  local directory_mode
+  local uid
+  local gid
+  local mode
+
+  [[ -d "$lock_directory" && ! -L "$lock_directory" ]] ||
+    die "Snapper lifecycle lock directory is not a real directory: $lock_directory"
+  directory_uid="$(stat -c %u -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory owner: $lock_directory"
+  directory_gid="$(stat -c %g -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory group: $lock_directory"
+  directory_mode="$(stat -c %a -- "$lock_directory")" ||
+    die "could not inspect Snapper lifecycle lock directory mode: $lock_directory"
+  [[ "$directory_uid" == 0 && "$directory_gid" == 0 ]] ||
+    die "Snapper lifecycle lock directory must be root:root: $lock_directory"
+  [[ "$directory_mode" =~ ^[0-7]{3,4}$ ]] ||
+    die "Snapper lifecycle lock directory has an invalid mode: $lock_directory ($directory_mode)"
+  (( (8#${directory_mode: -3} & 0022) == 0 )) ||
+    die "Snapper lifecycle lock directory must not be group/world writable: $lock_directory (mode $directory_mode)"
+  [[ ! -L "$LIFECYCLE_LOCK" ]] || die "Snapper lifecycle lock must not be a symlink: $LIFECYCLE_LOCK"
+  if [[ -e "$LIFECYCLE_LOCK" ]]; then
+    [[ -f "$LIFECYCLE_LOCK" ]] || die "Snapper lifecycle lock is not a regular file: $LIFECYCLE_LOCK"
+  else
+    touch -- "$LIFECYCLE_LOCK" || die "could not create Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  fi
+  chown root:root -- "$LIFECYCLE_LOCK" || die "could not set Snapper lifecycle lock ownership: $LIFECYCLE_LOCK"
+  chmod 0644 -- "$LIFECYCLE_LOCK" || die "could not secure Snapper lifecycle lock: $LIFECYCLE_LOCK"
+
+  uid="$(stat -c %u -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock owner: $LIFECYCLE_LOCK"
+  gid="$(stat -c %g -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock group: $LIFECYCLE_LOCK"
+  mode="$(stat -c %a -- "$LIFECYCLE_LOCK")" || die "could not inspect Snapper lifecycle lock mode: $LIFECYCLE_LOCK"
+  [[ "$uid" == 0 && "$gid" == 0 ]] || die "Snapper lifecycle lock must be root:root: $LIFECYCLE_LOCK"
+  [[ "$mode" == 644 ]] || die "Snapper lifecycle lock must be mode 0644: $LIFECYCLE_LOCK (mode $mode)"
+}
+
+acquire_lifecycle_lock() {
+  [[ "${SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD:-}" == 1 ]] && return 0
+  ensure_lifecycle_lock_file
+  exec {LIFECYCLE_LOCK_FD}<"$LIFECYCLE_LOCK" || die "could not open Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  if ! flock -n "$LIFECYCLE_LOCK_FD"; then
+    exec {LIFECYCLE_LOCK_FD}<&-
+    LIFECYCLE_LOCK_FD=""
+    die "could not acquire Snapper lifecycle lock: $LIFECYCLE_LOCK"
+  fi
+  LIFECYCLE_LOCK_HELD=true
+}
+
+release_lifecycle_lock() {
+  [[ "$LIFECYCLE_LOCK_HELD" == true ]] || return 0
+  flock -u "$LIFECYCLE_LOCK_FD" || return 1
+  exec {LIFECYCLE_LOCK_FD}<&-
+  LIFECYCLE_LOCK_FD=""
+  LIFECYCLE_LOCK_HELD=false
+}
+
+findmnt_value() {
+  local -r property="$1"
+  local -r target="$2"
+  local value
+
+  value="$(findmnt --noheadings --raw --output "$property" --target "$target")" ||
+    die "could not inspect mount: $target"
+  [[ -n "$value" ]] || die "mount property $property is empty for: $target"
+  printf '%s\n' "$value"
+}
+
+subvolume_details() {
+  local -r path="$1"
+  local details
+
+  details="$(btrfs subvolume show "$path" 2>/dev/null)" || return 1
+  printf '%s\n' "$details"
+}
+
+subvolume_field() {
+  local -r path="$1"
+  local -r field="$2"
+  local details
+
+  details="$(subvolume_details "$path")" || return 1
+  awk -F': *' -v wanted="$field" '$1 == wanted { print $2; exit }' <<<"$details"
+}
+
+require_subvolume_field() {
+  local -r path="$1"
+  local -r field="$2"
+  local value
+
+  value="$(subvolume_field "$path" "$field")" || die "could not inspect Btrfs subvolume: $path"
+  [[ -n "$value" ]] || die "Btrfs subvolume field $field is empty: $path"
+  printf '%s\n' "$value"
+}
+
+ensure_real_directory_chain() {
+  local path="$1"
+  local component
+  local current="/"
+  local remainder
+
+  [[ "$path" == /* ]] || die "directory path must be absolute: $path"
+  remainder="${path#/}"
+
+  while [[ -n "$remainder" ]]; do
+    component="${remainder%%/*}"
+    if [[ "$remainder" == */* ]]; then
+      remainder="${remainder#*/}"
+    else
+      remainder=""
+    fi
+
+    [[ -n "$component" ]] || continue
+    current="$current$component"
+    if [[ -L "$current" ]]; then
+      die "root-consumed directory must not be a symlink: $current"
+    fi
+    if [[ -e "$current" ]]; then
+      [[ -d "$current" ]] || die "root-consumed path is not a directory: $current"
+    else
+      mkdir -- "$current" || die "could not create directory: $current"
+      chmod 0750 -- "$current" || die "could not secure directory: $current"
+      chown root:root -- "$current" || die "could not set directory ownership: $current"
+    fi
+    current="$current/"
+  done
+}
+
+validate_mount_layout() {
+  local root_fstype
+  local home_fstype
+  local root_fsroot
+  local home_fsroot
+
+  [[ -d "$ROOT_MOUNT" && ! -L "$ROOT_MOUNT" ]] || die "root mount is not a real directory: $ROOT_MOUNT"
+  [[ -d "$HOME_MOUNT" && ! -L "$HOME_MOUNT" ]] || die "home mount is not a real directory: $HOME_MOUNT"
+
+  root_fstype="$(findmnt_value FSTYPE "$ROOT_MOUNT")"
+  home_fstype="$(findmnt_value FSTYPE "$HOME_MOUNT")"
+  [[ "$root_fstype" == btrfs && "$home_fstype" == btrfs ]] ||
+    die 'root and home must be mounted on Btrfs'
+
+  root_fsroot="$(findmnt_value FSROOT "$ROOT_MOUNT")"
+  home_fsroot="$(findmnt_value FSROOT "$HOME_MOUNT")"
+  [[ "$root_fsroot" == /@ ]] || die "root mount must use Btrfs subvolume /@: $root_fsroot"
+  [[ "$home_fsroot" == /@home ]] || die "home mount must use Btrfs subvolume /@home: $home_fsroot"
+
+  ROOT_UUID="$(findmnt_value UUID "$ROOT_MOUNT")"
+  HOME_UUID="$(findmnt_value UUID "$HOME_MOUNT")"
+  [[ "$ROOT_UUID" == "$HOME_UUID" ]] || die 'root and home must use the same Btrfs filesystem'
+
+  ROOT_SUBVOLUME_ID="$(require_subvolume_field "$ROOT_MOUNT" 'Subvolume ID')"
+  HOME_SUBVOLUME_ID="$(require_subvolume_field "$HOME_MOUNT" 'Subvolume ID')"
+  [[ "$ROOT_SUBVOLUME_ID" =~ ^[0-9]+$ ]] || die "root Btrfs subvolume ID is invalid: $ROOT_SUBVOLUME_ID"
+  [[ "$HOME_SUBVOLUME_ID" =~ ^[0-9]+$ ]] || die "home Btrfs subvolume ID is invalid: $HOME_SUBVOLUME_ID"
+}
+
+validate_snapshot_mount() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local -r expected_parent_id="$5"
+  local snapshot_path="$mount_path/.snapshots"
+  local snapshot_fstype
+  local snapshot_fsroot
+  local snapshot_uuid
+  local snapshot_parent_id
+
+  if [[ ! -e "$snapshot_path" && ! -L "$snapshot_path" ]]; then
+    return 1
+  fi
+  [[ ! -L "$snapshot_path" ]] || die "$name snapshot path must not be a symlink: $snapshot_path"
+  [[ -d "$snapshot_path" ]] || die "$name snapshot path is not a directory: $snapshot_path"
+
+  snapshot_fstype="$(findmnt_value FSTYPE "$snapshot_path")"
+  snapshot_fsroot="$(findmnt_value FSROOT "$snapshot_path")"
+  snapshot_uuid="$(findmnt_value UUID "$snapshot_path")"
+  [[ "$snapshot_fstype" == btrfs ]] || die "$name snapshot path is not on Btrfs: $snapshot_path"
+  [[ "$snapshot_fsroot" == "$expected_fsroot" ]] ||
+    die "$name snapshot mount is not nested under $expected_fsroot: $snapshot_fsroot"
+  [[ "$snapshot_uuid" == "$expected_uuid" ]] ||
+    die "$name snapshot path is on a different Btrfs filesystem: $snapshot_path"
+
+  snapshot_parent_id="$(subvolume_field "$snapshot_path" 'Parent ID')" ||
+    die "$name snapshot path is not a Btrfs subvolume: $snapshot_path"
+  [[ -n "$snapshot_parent_id" ]] || die "$name snapshot path is not a Btrfs subvolume: $snapshot_path"
+  [[ "$snapshot_parent_id" == "$expected_parent_id" ]] ||
+    die "$name snapshot subvolume parent is $snapshot_parent_id, expected $expected_parent_id: $snapshot_path"
+
+  require_subvolume_field "$snapshot_path" 'Subvolume ID' >/dev/null
+}
+
+validate_snapshot_metadata() {
+  local -r name="$1"
+  local -r path="$2"
+  local uid
+  local gid
+  local mode
+
+  uid="$(stat -c %u -- "$path")" || die "could not inspect $name snapshot owner: $path"
+  gid="$(stat -c %g -- "$path")" || die "could not inspect $name snapshot group: $path"
+  mode="$(stat -c %a -- "$path")" || die "could not inspect $name snapshot mode: $path"
+  [[ "$uid" == 0 && "$gid" == 0 ]] || die "$name snapshot directory must be root:root: $path"
+  [[ "$mode" == "$SNAPSHOT_DIR_MODE" ]] || die "$name snapshot directory must be mode 0750: $path (mode $mode)"
+}
+
+validate_snapshot_path() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local -r expected_parent_id="$5"
+  local -r strict_metadata="$6"
+
+  validate_snapshot_mount "$name" "$mount_path" "$expected_fsroot" "$expected_uuid" "$expected_parent_id" || return 1
+  [[ -n "$(subvolume_details "$mount_path/.snapshots")" ]] || die "$name snapshot path is not a Btrfs subvolume: $mount_path/.snapshots"
+  if [[ "$strict_metadata" == true ]]; then
+    validate_snapshot_metadata "$name" "$mount_path/.snapshots"
+  fi
+}
+
+validate_real_directory_chain() {
+  local path="$1"
+  local component
+  local current="/"
+  local remainder
+
+  [[ "$path" == /* ]] || die "directory path must be absolute: $path"
+  remainder="${path#/}"
+
+  while [[ -n "$remainder" ]]; do
+    component="${remainder%%/*}"
+    if [[ "$remainder" == */* ]]; then
+      remainder="${remainder#*/}"
+    else
+      remainder=""
+    fi
+
+    [[ -n "$component" ]] || continue
+    current="$current$component"
+    [[ -d "$current" && ! -L "$current" ]] || die "root-consumed directory must be real: $current"
+    current="$current/"
+  done
+}
+
+config_value() {
+  local -r config_path="$1"
+  local -r key="$2"
+
+  awk -v wanted="$key" '
+    $1 == wanted {
+      value = $2
+      sub(/^"/, "", value)
+      sub(/"$/, "", value)
+      print value
+      exit
+    }
+  ' FS='=' "$config_path"
+}
+
+validate_file_metadata() {
+  local -r path="$1"
+  local -r expected_mode="$2"
+  local uid
+  local gid
+  local mode
+
+  uid="$(stat -c %u -- "$path")" || die "could not inspect file owner: $path"
+  gid="$(stat -c %g -- "$path")" || die "could not inspect file group: $path"
+  mode="$(stat -c %a -- "$path")" || die "could not inspect file mode: $path"
+  [[ "$uid" == 0 && "$gid" == 0 ]] || die "root-consumed file must be root:root: $path"
+  [[ "$mode" == "$expected_mode" ]] || die "root-consumed file must be mode $expected_mode: $path (mode $mode)"
+}
+
+validate_config_file() {
+  local -r name="$1"
+  local -r expected_subvolume="$2"
+  local -r config_path="$CONFIG_DIR/$name"
+  local configured_subvolume
+  local configured_fstype
+  local timeline_create
+  local timeline_cleanup
+  local key
+  local value
+
+  if [[ ! -e "$config_path" && ! -L "$config_path" ]]; then
+    return 1
+  fi
+  [[ ! -L "$config_path" ]] || die "Snapper config must not be a symlink: $config_path"
+  [[ -f "$config_path" ]] || die "Snapper config is not a regular file: $config_path"
+
+  configured_subvolume="$(config_value "$config_path" SUBVOLUME)"
+  configured_fstype="$(config_value "$config_path" FSTYPE)"
+  [[ "$configured_subvolume" == "$expected_subvolume" ]] ||
+    die "Snapper config $name must target $expected_subvolume: $configured_subvolume"
+  [[ "$configured_fstype" == btrfs ]] || die "Snapper config $name must use Btrfs: $configured_fstype"
+
+  timeline_create="$(config_value "$config_path" TIMELINE_CREATE)"
+  timeline_cleanup="$(config_value "$config_path" TIMELINE_CLEANUP)"
+  [[ "$timeline_create" == yes && "$timeline_cleanup" == yes ]] ||
+    die "Snapper config $name must enable timeline creation and cleanup"
+  for key in TIMELINE_LIMIT_HOURLY TIMELINE_LIMIT_DAILY TIMELINE_LIMIT_WEEKLY \
+    TIMELINE_LIMIT_MONTHLY TIMELINE_LIMIT_QUARTERLY TIMELINE_LIMIT_YEARLY; do
+    value="$(config_value "$config_path" "$key")"
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "Snapper config $name has invalid $key: $value"
+  done
+  validate_file_metadata "$config_path" "$CONFIG_FILE_MODE"
+}
+
+registration_value() {
+  [[ -f "$REGISTRATION_FILE" ]] || return 0
+  awk -F'"' '$0 ~ /^[[:space:]]*SNAPPER_CONFIGS=/ { print $2; exit }' "$REGISTRATION_FILE"
+}
+
+registration_has() {
+  local -r name="$1"
+  local configs
+
+  configs="$(registration_value)"
+  case " $configs " in
+    *" $name "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+validate_registration_shape() {
+  if [[ ! -e "$REGISTRATION_FILE" && ! -L "$REGISTRATION_FILE" ]]; then
+    return 1
+  fi
+  [[ ! -L "$REGISTRATION_FILE" ]] || die "Snapper registration must not be a symlink: $REGISTRATION_FILE"
+  [[ -f "$REGISTRATION_FILE" ]] || die "Snapper registration is not a regular file: $REGISTRATION_FILE"
+  if grep -Eq '^[[:space:]]*SNAPPER_CONFIGS=' "$REGISTRATION_FILE" && [[ -z "$(registration_value)" ]]; then
+    die "Snapper registration has a malformed SNAPPER_CONFIGS entry: $REGISTRATION_FILE"
+  fi
+  validate_file_metadata "$REGISTRATION_FILE" "$CONFIG_FILE_MODE"
+}
+
+validate_existing_state() {
+  if ! validate_config_file root /; then
+    [[ "$MODE" == apply ]] || die "missing Snapper config: $CONFIG_DIR/root"
+  fi
+  if ! validate_config_file home /home; then
+    [[ "$MODE" == apply ]] || die "missing Snapper config: $CONFIG_DIR/home"
+  fi
+
+  if [[ -e "$ROOT_MOUNT/.snapshots" || -L "$ROOT_MOUNT/.snapshots" ]]; then
+    validate_snapshot_path root "$ROOT_MOUNT" /@ "$ROOT_UUID" "$ROOT_SUBVOLUME_ID" false
+  elif [[ "$MODE" == check ]]; then
+    die "missing root snapshot subvolume: $ROOT_MOUNT/.snapshots"
+  fi
+  if [[ -e "$HOME_MOUNT/.snapshots" || -L "$HOME_MOUNT/.snapshots" ]]; then
+    validate_snapshot_path home "$HOME_MOUNT" /@home "$HOME_UUID" "$HOME_SUBVOLUME_ID" false
+  elif [[ "$MODE" == check ]]; then
+    die "missing home snapshot subvolume: $HOME_MOUNT/.snapshots"
+  fi
+
+  if [[ -e "$REGISTRATION_FILE" || -L "$REGISTRATION_FILE" ]]; then
+    validate_registration_shape
+  elif [[ "$MODE" == check ]]; then
+    die "missing Snapper registration: $REGISTRATION_FILE"
+  fi
+}
+
+atomic_install_temp() {
+  local -r temp_file="$1"
+  local -r target="$2"
+  local -r mode="$3"
+
+  chmod "$mode" -- "$temp_file" || {
+    rm -f -- "$temp_file"
+    die "could not set temporary file mode: $temp_file"
+  }
+  chown root:root -- "$temp_file" || {
+    rm -f -- "$temp_file"
+    die "could not set temporary file ownership: $temp_file"
+  }
+  mv -f -- "$temp_file" "$target" || {
+    rm -f -- "$temp_file"
+    die "could not atomically install file: $target"
+  }
+}
+
+create_config_from_template() {
+  local -r name="$1"
+  local -r expected_subvolume="$2"
+  local -r config_path="$CONFIG_DIR/$name"
+  local temp_file
+
+  [[ -r "$CONFIG_TEMPLATE" ]] || die "missing Snapper config template: $CONFIG_TEMPLATE"
+  [[ ! -e "$config_path" && ! -L "$config_path" ]] || die "Snapper config appeared before creation: $config_path"
+
+  temp_file="$(mktemp "$CONFIG_DIR/.${name}.XXXXXX")" || die "could not create temporary Snapper config for $name"
+  if ! awk -v subvolume="$expected_subvolume" '
+    /^SUBVOLUME=/ { print "SUBVOLUME=\"" subvolume "\""; found_subvolume = 1; next }
+    /^FSTYPE=/ { print "FSTYPE=\"btrfs\""; found_fstype = 1; next }
+    /^TIMELINE_CREATE=/ { print "TIMELINE_CREATE=\"yes\""; found_timeline_create = 1; next }
+    /^TIMELINE_CLEANUP=/ { print "TIMELINE_CLEANUP=\"yes\""; found_timeline_cleanup = 1; next }
+    /^TIMELINE_LIMIT_HOURLY=/ { print "TIMELINE_LIMIT_HOURLY=\"6\""; found_hourly = 1; next }
+    /^TIMELINE_LIMIT_DAILY=/ { print "TIMELINE_LIMIT_DAILY=\"7\""; found_daily = 1; next }
+    /^TIMELINE_LIMIT_WEEKLY=/ { print "TIMELINE_LIMIT_WEEKLY=\"4\""; found_weekly = 1; next }
+    /^TIMELINE_LIMIT_MONTHLY=/ { print "TIMELINE_LIMIT_MONTHLY=\"6\""; found_monthly = 1; next }
+    /^TIMELINE_LIMIT_QUARTERLY=/ { print "TIMELINE_LIMIT_QUARTERLY=\"4\""; found_quarterly = 1; next }
+    /^TIMELINE_LIMIT_YEARLY=/ { print "TIMELINE_LIMIT_YEARLY=\"2\""; found_yearly = 1; next }
+    { print }
+    END {
+      if (!found_subvolume) print "SUBVOLUME=\"" subvolume "\""
+      if (!found_fstype) print "FSTYPE=\"btrfs\""
+      if (!found_timeline_create) print "TIMELINE_CREATE=\"yes\""
+      if (!found_timeline_cleanup) print "TIMELINE_CLEANUP=\"yes\""
+      if (!found_hourly) print "TIMELINE_LIMIT_HOURLY=\"6\""
+      if (!found_daily) print "TIMELINE_LIMIT_DAILY=\"7\""
+      if (!found_weekly) print "TIMELINE_LIMIT_WEEKLY=\"4\""
+      if (!found_monthly) print "TIMELINE_LIMIT_MONTHLY=\"6\""
+      if (!found_quarterly) print "TIMELINE_LIMIT_QUARTERLY=\"4\""
+      if (!found_yearly) print "TIMELINE_LIMIT_YEARLY=\"2\""
+    }
+  ' "$CONFIG_TEMPLATE" >"$temp_file"; then
+    rm -f -- "$temp_file"
+    die "could not render Snapper config for $name"
+  fi
+  atomic_install_temp "$temp_file" "$config_path" "$CONFIG_FILE_MODE"
+}
+
+normalize_snapshot_directory() {
+  local -r name="$1"
+  local -r path="$2"
+
+  chmod 0750 -- "$path" || die "could not set $name snapshot directory mode: $path"
+  chown root:root -- "$path" || die "could not set $name snapshot directory ownership: $path"
+}
+
+create_snapshot_subvolume() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local -r expected_parent_id="$5"
+  local path="$mount_path/.snapshots"
+
+  if [[ ! -e "$path" && ! -L "$path" ]]; then
+    btrfs subvolume create "$path" || die "Btrfs snapshot subvolume creation failed for $name: $path"
+  else
+    validate_snapshot_path "$name" "$mount_path" "$expected_fsroot" "$expected_uuid" "$expected_parent_id" false
+  fi
+  normalize_snapshot_directory "$name" "$path"
+  validate_snapshot_path "$name" "$mount_path" "$expected_fsroot" "$expected_uuid" "$expected_parent_id" true
+}
+
+find_initial_snapshot_number() {
+  local -r name="$1"
+  local output
+
+  output="$(snapper --no-dbus --config "$name" --csvout --no-headers list --columns number,description)" ||
+    die "could not list Snapper snapshots for $name"
+  awk -F',' -v wanted="$INITIAL_SNAPSHOT_DESCRIPTION" '
+    {
+      number = $1
+      description = $2
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", number)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", description)
+      gsub(/^"|"$/, "", description)
+      if (number ~ /^[0-9]+$/ && description == wanted) {
+        print number
+        exit
+      }
+    }
+  ' <<<"$output"
+}
+
+validate_initial_snapshot() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local -r snapshot_parent_id="$5"
+  local number="$6"
+  local snapshot_path="$mount_path/.snapshots/$number/snapshot"
+  local snapshot_fstype
+  local snapshot_fsroot
+  local snapshot_uuid
+  local actual_parent_id
+
+  [[ "$number" =~ ^[0-9]+$ ]] || die "Snapper returned an invalid initial snapshot number for $name: $number"
+  [[ -e "$snapshot_path" && ! -L "$snapshot_path" ]] ||
+    die "initial $name snapshot path is missing or unsafe: $snapshot_path"
+  snapshot_fstype="$(findmnt_value FSTYPE "$snapshot_path")"
+  snapshot_fsroot="$(findmnt_value FSROOT "$snapshot_path")"
+  snapshot_uuid="$(findmnt_value UUID "$snapshot_path")"
+  [[ "$snapshot_fstype" == btrfs ]] || die "initial $name snapshot path is not on Btrfs: $snapshot_path"
+  [[ "$snapshot_fsroot" == "$expected_fsroot" ]] ||
+    die "initial $name snapshot is not nested under $expected_fsroot: $snapshot_fsroot"
+  [[ "$snapshot_uuid" == "$expected_uuid" ]] ||
+    die "initial $name snapshot is on a different Btrfs filesystem: $snapshot_path"
+  actual_parent_id="$(require_subvolume_field "$snapshot_path" 'Parent ID')"
+  [[ "$actual_parent_id" == "$snapshot_parent_id" ]] ||
+    die "initial $name snapshot parent is $actual_parent_id, expected $snapshot_parent_id: $snapshot_path"
+}
+
+create_initial_snapshot() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local snapshot_parent_id
+  local number
+  local output
+
+  snapshot_parent_id="$(require_subvolume_field "$mount_path/.snapshots" 'Subvolume ID')"
+  number="$(find_initial_snapshot_number "$name")"
+  if [[ -z "$number" ]]; then
+    output="$(snapper --no-dbus --config "$name" create \
+      --description "$INITIAL_SNAPSHOT_DESCRIPTION" --cleanup-algorithm number --print-number)" ||
+      die "could not create initial recovery snapshot for $name"
+    number="$(awk '/^[[:space:]]*[0-9]+[[:space:]]*$/ { gsub(/[[:space:]]/, ""); print; exit }' <<<"$output")"
+  fi
+  [[ -n "$number" ]] || die "Snapper did not return an initial snapshot number for $name"
+  validate_initial_snapshot "$name" "$mount_path" "$expected_fsroot" "$expected_uuid" "$snapshot_parent_id" "$number"
+}
+
+require_initial_snapshot() {
+  local -r name="$1"
+  local -r mount_path="$2"
+  local -r expected_fsroot="$3"
+  local -r expected_uuid="$4"
+  local snapshot_parent_id
+  local number
+
+  snapshot_parent_id="$(require_subvolume_field "$mount_path/.snapshots" 'Subvolume ID')"
+  number="$(find_initial_snapshot_number "$name")"
+  [[ -n "$number" ]] || die "missing initial recovery snapshot for $name"
+  validate_initial_snapshot "$name" "$mount_path" "$expected_fsroot" "$expected_uuid" "$snapshot_parent_id" "$number"
+}
+
+ensure_registration() {
+  local configs
+  local updated_configs
+  local registration_parent="${REGISTRATION_FILE%/*}"
+  local temp_file
+
+  if [[ -e "$REGISTRATION_FILE" || -L "$REGISTRATION_FILE" ]]; then
+    validate_registration_shape
+    if registration_has root && registration_has home; then
+      return 0
+    fi
+    configs="$(registration_value)"
+    if [[ -z "$configs" ]]; then
+      updated_configs='root home'
+    else
+      updated_configs="$configs"
+      registration_has root || updated_configs+=" root"
+      registration_has home || updated_configs+=" home"
+    fi
+    temp_file="$(mktemp "$registration_parent/.snapper.XXXXXX")" ||
+      die 'could not create temporary Snapper registration'
+    if grep -Eq '^[[:space:]]*SNAPPER_CONFIGS=' "$REGISTRATION_FILE"; then
+      if ! awk -v replacement="SNAPPER_CONFIGS=\"$updated_configs\"" '
+        /^[[:space:]]*SNAPPER_CONFIGS=/ {
+          if (!replaced) {
+            print replacement
+            replaced = 1
+          }
+          next
+        }
+        { print }
+        END { exit !replaced }
+      ' "$REGISTRATION_FILE" >"$temp_file"; then
+        rm -f -- "$temp_file"
+        die "could not render Snapper registration: $REGISTRATION_FILE"
+      fi
+    else
+      if ! { cat "$REGISTRATION_FILE"; printf 'SNAPPER_CONFIGS="%s"\n' "$updated_configs"; } >"$temp_file"; then
+        rm -f -- "$temp_file"
+        die "could not render Snapper registration: $REGISTRATION_FILE"
+      fi
+    fi
+  else
+    temp_file="$(mktemp "$registration_parent/.snapper.XXXXXX")" ||
+      die 'could not create temporary Snapper registration'
+    printf 'SNAPPER_CONFIGS="root home"\n' >"$temp_file"
+  fi
+  atomic_install_temp "$temp_file" "$REGISTRATION_FILE" "$CONFIG_FILE_MODE"
+}
+
+apply_layout() {
+  ensure_real_directory_chain "$CONFIG_DIR"
+  ensure_real_directory_chain "${REGISTRATION_FILE%/*}"
+
+  if ! validate_config_file root /; then
+    create_config_from_template root /
+  fi
+  if ! validate_config_file home /home; then
+    create_config_from_template home /home
+  fi
+  validate_config_file root /
+  validate_config_file home /home
+
+  create_snapshot_subvolume root "$ROOT_MOUNT" /@ "$ROOT_UUID" "$ROOT_SUBVOLUME_ID"
+  create_snapshot_subvolume home "$HOME_MOUNT" /@home "$HOME_UUID" "$HOME_SUBVOLUME_ID"
+  ensure_registration
+  validate_registration_shape
+
+}
+
+validate_layout_without_initial_snapshots() {
+  validate_real_directory_chain "$CONFIG_DIR"
+  validate_real_directory_chain "${REGISTRATION_FILE%/*}"
+  validate_config_file root /
+  validate_config_file home /home
+  validate_snapshot_path root "$ROOT_MOUNT" /@ "$ROOT_UUID" "$ROOT_SUBVOLUME_ID" true
+  validate_snapshot_path home "$HOME_MOUNT" /@home "$HOME_UUID" "$HOME_SUBVOLUME_ID" true
+  validate_registration_shape
+  registration_has root || die "Snapper registration does not include root: $REGISTRATION_FILE"
+  registration_has home || die "Snapper registration does not include home: $REGISTRATION_FILE"
+}
+
+check_layout() {
+  validate_layout_without_initial_snapshots
+  require_initial_snapshot root "$ROOT_MOUNT" /@ "$ROOT_UUID"
+  require_initial_snapshot home "$HOME_MOUNT" /@home "$HOME_UUID"
+}
+
+require_snapshot_creation_safe() {
+  [[ ! -e "$RECOVERY_DIRECTORY" && ! -L "$RECOVERY_DIRECTORY" ]] ||
+    die "cannot create initial recovery snapshots while Snapper deployment recovery state exists: $RECOVERY_DIRECTORY"
+  [[ ! -e "$BACKUP_DIRECTORY" && ! -L "$BACKUP_DIRECTORY" ]] ||
+    die "cannot create initial recovery snapshots while Snapper deployment backups exist: $BACKUP_DIRECTORY"
+}
+
+create_initial_snapshots_phase() {
+  require_snapshot_creation_safe
+  validate_layout_without_initial_snapshots
+  create_initial_snapshot root "$ROOT_MOUNT" /@ "$ROOT_UUID"
+  create_initial_snapshot home "$HOME_MOUNT" /@home "$HOME_UUID"
+  check_layout
+}
+
+main() {
+  parse_args "$@"
+  require_root
+  require_commands
+
+  case "$MODE" in
+    validate-topology)
+      validate_mount_layout
+      printf 'Btrfs topology is compatible with Snapper for /@ and /@home\n'
+      ;;
+    check)
+      validate_mount_layout
+      check_layout
+      printf 'Snapper layout is ready for /@ and /@home\n'
+      ;;
+    apply)
+      acquire_lifecycle_lock
+      validate_mount_layout
+      validate_existing_state
+      apply_layout
+      validate_layout_without_initial_snapshots
+      printf 'Snapper layout initialized for /@ and /@home\n'
+      ;;
+    create-initial-snapshots)
+      acquire_lifecycle_lock
+      validate_mount_layout
+      create_initial_snapshots_phase
+      printf 'Snapper initial recovery snapshots are ready for /@ and /@home\n'
+      ;;
+  esac
+}
+
+main "$@"

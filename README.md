@@ -41,6 +41,61 @@
 
 # Linux
 
+## Arch Installation
+
+- Follow the [reproducible Arch installation guide](Linux/install/archinstall/README.md) for the ISO workflow.
+- After reboot, run `Linux/install/bootstrap` as the sole post-reboot setup entry point.
+- Run `Linux/install/bootstrap --dry-run` before applying changes. If `tidydots` is
+  unavailable, the command reports an incomplete preview with exit status `4`,
+  explicitly skips its package and configuration phases, and must be rerun after
+  installing the prerequisite.
+
+## Package Profiles
+
+`tidydots.yaml` is desired package state.
+`pkglist-pacman-<hostname>.txt` and `pkglist-aur-<hostname>.txt` are generated audit snapshots.
+- Graphical shared packages/configs require real Linux, a display, and non-WSL execution, except `antoinews-linux` is explicitly allowed headless.
+- Machine-wide shared services use real Linux/non-WSL conditions.
+Hardware and machine policy use exact hostname conditions.
+`antoinews-linux` is the Intel desktop profile.
+
+Focused previews such as `tidydots --dir "$REPO_DIR" install hyprland -n` are
+intentionally limited to that application and may install only its package.
+The canonical complete bootstrap package preview is the unscoped command:
+`tidydots --dir "$REPO_DIR" install -n`.
+
+Review only the relevant profile with a worktree-scoped dry-run. Set `REPO_DIR`
+to the checkout being reviewed; every command below is non-mutating:
+
+```bash
+REPO_DIR=/path/to/configurations
+
+# Shared desktop baseline
+tidydots --dir "$REPO_DIR" install hyprland -n
+tidydots --dir "$REPO_DIR" install pipewire-audio -n
+tidydots --dir "$REPO_DIR" install linux-services-packages -n
+
+# Intel desktop profile
+tidydots --dir "$REPO_DIR" install antoinews-linux-intel -n
+
+# Network stack
+tidydots --dir "$REPO_DIR" install antoinews-linux-network -n
+tidydots --dir "$REPO_DIR" restore antoinews-linux-network -n
+
+# Limine and Snapper
+tidydots --dir "$REPO_DIR" install limine -n
+tidydots --dir "$REPO_DIR" install limine-snapper-sync -n
+tidydots --dir "$REPO_DIR" restore limine-current-desktop-config -n
+tidydots --dir "$REPO_DIR" install snapper -n
+tidydots --dir "$REPO_DIR" restore snapper -n
+```
+
+Hostname-gated previews can report a condition mismatch when intentionally run
+on another host; that is the expected exclusion behavior.
+
+Run the complete read-only profile and runtime audit with
+`bash Linux/pacman/tests/all-profiles-test.sh`.
+
 ## Systemd Units Backup
 
 Daily timer to backup enabled services and timers to

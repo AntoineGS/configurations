@@ -1,6 +1,12 @@
 #!/bin/bash
 
-set -e
+set -Eeuo pipefail
+
+restore_noidle() {
+  hyprctl eval 'hl.dispatch(hl.dsp.window.tag({tag="-noidle"}))' &>/dev/null || true
+}
+
+trap restore_noidle EXIT
 
 # Ensure screensaver/sleep doesn't set in during updates
 hyprctl eval 'hl.dispatch(hl.dsp.window.tag({tag="+noidle"}))' &>/dev/null || true
@@ -17,11 +23,5 @@ update-system-pkgs
 # migrate
 update-aur-pkgs
 update-orphan-pkgs
-hook post-update
 
 update-analyze-logs
-
-update-restart
-
-# Re-enable screensaver/sleep after updates
-hyprctl eval 'hl.dispatch(hl.dsp.window.tag({tag="-noidle"}))' &>/dev/null || true

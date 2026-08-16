@@ -1,4 +1,6 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # Auto-detect and set the system timezone from geolocation, then refresh the clock.
-exec launch-floating-terminal-with-presentation "sudo tzupdate && restart-waybar"
+exec launch-floating-terminal-with-presentation tzupdate-and-restart-waybar
