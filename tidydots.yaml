@@ -18,6 +18,15 @@ applications:
     entries: []
   - package:
       managers:
+        apt: shellcheck
+        brew: shellcheck
+        pacman: shellcheck
+    name: shellcheck
+    description: Static analysis for shell scripts
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
         installer:
           command:
             linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
