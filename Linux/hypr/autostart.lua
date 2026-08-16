@@ -21,7 +21,7 @@ hl.on("hyprland.start", function()
 
 	-- Extra autostart processes
 	hl.exec_cmd("hyprpm reload -n")
-	hl.exec_cmd("signal")
+	hl.exec_cmd("signal-desktop")
 	hl.exec_cmd("teams-for-linux")
 
 	if hostname == "DESKTOP-E07VTRN" then
