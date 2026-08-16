@@ -7,4 +7,4 @@ usage() {
 
 (($# == 0)) || { usage; exit 2; }
 
-exec desktop-shell toggle-bar
+exec quickshell ipc -p "$HOME/.config/quickshell/desktop-shell" call desktop-shell toggleBar

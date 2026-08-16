@@ -539,11 +539,10 @@ applications:
         backup: ./Linux/quickshell/desktop-shell
       - targets:
           linux: ~/.local/share/helpers
-        name: desktop-shell-helpers
+        name: desktop-shell-service-helpers
         backup: ./Linux/os/helpers
         files:
           - desktop-shell-launch
-          - desktop-shell
           - toggle-desktop-shell-bar
       - targets:
           linux: ~/.config/systemd/user
