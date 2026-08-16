@@ -20,6 +20,7 @@ readonly PREREQUISITE_BIN="$TEST_ROOT/prerequisite-bin"
 readonly PREREQUISITE_TEMP_ROOT="$TEST_ROOT/prerequisite-temp"
 readonly YAY_STUB_TEMPLATE="$TEST_ROOT/yay-stub"
 readonly TIDYDOTS_STUB_TEMPLATE="$TEST_ROOT/tidydots-stub"
+readonly SUDO_CACHE_FILE="$TEST_ROOT/sudo-cache"
 readonly BASH_PATH="$BASH"
 UNSHARE="$(command -v unshare || true)"
 readonly UNSHARE
@@ -37,6 +38,8 @@ TIDYDOTS_FAIL_MODE=""
 SUDO_FAIL=false
 TOPOLOGY_FAIL=false
 MISSING_COMMANDS=""
+SUDO_CACHE_EXPIRED=false
+SUDO_V_FAIL=false
 
 shopt -s nullglob
 
@@ -72,6 +75,14 @@ assert_not_contains() {
   local -r context="$3"
 
   [[ "$haystack" != *"$needle"* ]] || fail "$context: output contained '$needle'\n$haystack"
+}
+
+assert_log_not_contains() {
+  local -r log_contents="$1"
+  local -r needle="$2"
+  local -r context="$3"
+
+  assert_not_contains "$log_contents" "$needle" "$context"
 }
 
 assert_no_mutation_commands() {
@@ -143,7 +154,13 @@ create_stub_path() {
       # shellcheck disable=SC2016
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
+        'if [[ "${1:-}" == -v ]]; then' \
+        '  [[ "${BOOTSTRAP_SUDO_V_FAIL:-false}" == true ]] && exit 1' \
+        '  : >"$BOOTSTRAP_SUDO_CACHE_FILE"' \
+        '  exit 0' \
+        'fi' \
         '[[ "${1:-}" == -n ]] || exit 2' \
+        'if [[ "${BOOTSTRAP_SUDO_CACHE_EXPIRED:-false}" == true && ! -e "$BOOTSTRAP_SUDO_CACHE_FILE" ]]; then exit 1; fi' \
         'shift' \
         '[[ "${1:-}" == -- ]] && shift' \
         'command_name="${1:-}"' \
@@ -198,6 +215,7 @@ run_bootstrap() {
   shift 3
 
   : >"$LIFECYCLE_LOCK"
+  rm -f -- "$SUDO_CACHE_FILE"
   if LAST_OUTPUT=$(PATH="$path" \
     BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
     BOOTSTRAP_TEST_HOSTNAME="$hostname" \
@@ -221,6 +239,9 @@ run_bootstrap() {
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
     BOOTSTRAP_TOPOLOGY_FAIL="$TOPOLOGY_FAIL" \
+    BOOTSTRAP_SUDO_CACHE_EXPIRED="$SUDO_CACHE_EXPIRED" \
+    BOOTSTRAP_SUDO_V_FAIL="$SUDO_V_FAIL" \
+    BOOTSTRAP_SUDO_CACHE_FILE="$SUDO_CACHE_FILE" \
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
@@ -240,6 +261,7 @@ run_bootstrap_with_input() {
   shift 4
 
   : >"$LIFECYCLE_LOCK"
+  rm -f -- "$SUDO_CACHE_FILE"
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
     PATH="$path" \
     BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
@@ -264,6 +286,9 @@ run_bootstrap_with_input() {
     BOOTSTRAP_TIDYDOTS_FAIL_MODE="$TIDYDOTS_FAIL_MODE" \
     BOOTSTRAP_SUDO_FAIL="$SUDO_FAIL" \
     BOOTSTRAP_TOPOLOGY_FAIL="$TOPOLOGY_FAIL" \
+    BOOTSTRAP_SUDO_CACHE_EXPIRED="$SUDO_CACHE_EXPIRED" \
+    BOOTSTRAP_SUDO_V_FAIL="$SUDO_V_FAIL" \
+    BOOTSTRAP_SUDO_CACHE_FILE="$SUDO_CACHE_FILE" \
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
@@ -368,6 +393,8 @@ reset_tidydots_flags() {
   TIDYDOTS_FAIL_MODE=""
   SUDO_FAIL=false
   TOPOLOGY_FAIL=false
+  SUDO_CACHE_EXPIRED=false
+  SUDO_V_FAIL=false
 }
 
 prepare_prerequisite_fixture() {
@@ -763,10 +790,56 @@ test_declining_prerequisites_exits_before_mutation() {
   assert_prerequisite_temp_empty
 }
 
+test_existing_prerequisites_refresh_expired_sudo_cache() {
+  prepare_prerequisite_fixture present present
+  SUDO_CACHE_EXPIRED=true
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'expired sudo cache refresh'
+  assert_contains "$LAST_OUTPUT" 'Apply privileged bootstrap operations?' 'privileged operation confirmation'
+  assert_log_count "$(<"$STUB_LOG")" 'sudo -v' 1 'interactive sudo validation'
+  assert_log_sequence "$(<"$STUB_LOG")" 'sudo -v' "sudo -n -- test -d $TEST_ROOT"
+}
+
+test_declining_privileged_operations_exits_before_mutation() {
+  prepare_prerequisite_fixture present present
+  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 3 "$LAST_STATUS" 'declined privileged operations'
+  assert_contains "$LAST_OUTPUT" 'privileged bootstrap operations declined' 'declined privileged operations'
+  assert_log_not_contains "$(<"$STUB_LOG")" 'sudo ' 'declined privileged operations sudo calls'
+  assert_log_not_contains "$(<"$STUB_LOG")" 'tidydots ' 'declined privileged operations tidydots calls'
+}
+
+test_sudo_validation_failure_exits_before_mutation() {
+  prepare_prerequisite_fixture present present
+  SUDO_V_FAIL=true
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+
+  assert_status 1 "$LAST_STATUS" 'sudo validation failure'
+  assert_contains "$LAST_OUTPUT" 'could not validate sudo credentials' 'sudo validation failure message'
+  assert_log_count "$(<"$STUB_LOG")" 'sudo -v' 1 'failed interactive sudo validation'
+  assert_log_not_contains "$(<"$STUB_LOG")" 'sudo -n ' 'no non-interactive sudo after validation failure'
+  assert_log_not_contains "$(<"$STUB_LOG")" 'tidydots ' 'no tidydots after validation failure'
+}
+
+test_privileged_confirmation_and_sudo_validation_order() {
+  prepare_prerequisite_fixture present present
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
+
+  assert_status 0 "$LAST_STATUS" 'privileged confirmation and sudo validation order'
+  assert_log_count "$(<"$STUB_LOG")" 'sudo -v' 1 'successful interactive sudo validation'
+  assert_log_sequence "$(<"$STUB_LOG")" \
+    'sudo -v' \
+    "sudo -n -- test -d $TEST_ROOT" \
+    "tidydots --dir $REPO_WITH_SPACES list" \
+    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply'
+}
+
 test_existing_yay_is_not_reinstalled() {
   prepare_prerequisite_fixture present missing
   PREREQUISITE_CREATE_TIDYDOTS=true
-  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'existing yay prerequisite installation'
   assert_not_contains "$LAST_OUTPUT" 'git clone' 'existing yay clone plan'
@@ -781,7 +854,7 @@ test_existing_yay_is_not_reinstalled() {
 test_existing_tidydots_is_not_reinstalled() {
   prepare_prerequisite_fixture missing present
   PREREQUISITE_CREATE_YAY=true
-  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'existing tidydots prerequisite installation'
   assert_contains "$LAST_OUTPUT" 'git clone https://aur.archlinux.org/yay-bin.git' 'existing tidydots clone plan'
@@ -797,7 +870,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
   prepare_prerequisite_fixture missing missing
   PREREQUISITE_CREATE_YAY=true
   PREREQUISITE_CREATE_TIDYDOTS=true
-  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'missing prerequisite installation'
   assert_contains "$(<"$STUB_LOG")" 'mktemp -d' 'missing prerequisite temporary directory'
@@ -811,7 +884,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
 
   : >"$STUB_LOG"
   MISSING_COMMANDS=""
-  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'second prerequisite run'
   assert_not_contains "$LAST_OUTPUT" 'Prerequisite installation plan' 'second prerequisite plan'
@@ -823,7 +896,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
 test_failed_yay_clone_names_failed_step() {
   prepare_prerequisite_fixture missing missing
   PREREQUISITE_GIT_FAIL=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed yay clone'
   assert_contains "$LAST_OUTPUT" 'failed to clone yay-bin' 'failed yay clone'
@@ -836,7 +909,7 @@ test_failed_yay_clone_names_failed_step() {
 test_failed_makepkg_names_failed_step() {
   prepare_prerequisite_fixture missing missing
   PREREQUISITE_MAKEPKG_FAIL=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed yay makepkg'
   assert_contains "$LAST_OUTPUT" 'failed to build yay-bin' 'failed yay makepkg'
@@ -849,7 +922,7 @@ test_failed_makepkg_names_failed_step() {
 test_failed_yay_install_names_failed_step() {
   prepare_prerequisite_fixture present missing
   PREREQUISITE_YAY_FAIL=true
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed tidydots installation'
   assert_contains "$LAST_OUTPUT" 'failed to install tidydots-git' 'failed tidydots installation'
@@ -884,7 +957,7 @@ test_tidydots_dry_run_uses_exact_unscoped_commands() {
 
 test_tidydots_phases_have_separate_confirmations() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'tidydots confirmed phases'
   assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES list" 1 'confirmed tidydots list'
@@ -918,7 +991,7 @@ test_tidydots_phases_have_separate_confirmations() {
 
 test_tidydots_install_decline_exits_before_restore() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined tidydots install'
   assert_contains "$LAST_OUTPUT" 'tidydots install declined' 'declined tidydots install'
@@ -930,7 +1003,7 @@ test_tidydots_install_decline_exits_before_restore() {
 
 test_tidydots_restore_decline_exits_after_install() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'tidydots restore declined' 'declined broad tidydots restore'
@@ -944,7 +1017,7 @@ test_tidydots_restore_decline_exits_after_install() {
 
 test_tidydots_broad_restore_decline_exits_after_snapper() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'tidydots restore declined' 'declined broad tidydots restore'
@@ -986,7 +1059,7 @@ test_tidydots_restore_apply_failure_stops_before_boundaries() {
   prepare_tidydots_fixture
   TIDYDOTS_FAIL_ACTION=restore
   TIDYDOTS_FAIL_MODE=apply
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed tidydots restore apply'
   assert_contains "$LAST_OUTPUT" 'failed to apply tidydots restore' 'failed tidydots restore apply'
@@ -1001,7 +1074,7 @@ test_tidydots_restore_apply_failure_stops_before_boundaries() {
 test_snapper_initializer_failure_stops_before_broad_restore() {
   prepare_tidydots_fixture
   SUDO_FAIL=true
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
   assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
@@ -1015,7 +1088,7 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
 
 test_antoinews_topology_validation_precedes_tidydots_install() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
+  run_bootstrap_with_input $'yes\nyes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'antoinews topology validation ordering'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -1180,6 +1253,10 @@ run_prerequisite_tests() {
   test_prerequisites_dry_run_prints_only_missing_commands
   test_missing_tidydots_dry_run_reports_incomplete_preview
   test_declining_prerequisites_exits_before_mutation
+  test_existing_prerequisites_refresh_expired_sudo_cache
+  test_declining_privileged_operations_exits_before_mutation
+  test_sudo_validation_failure_exits_before_mutation
+  test_privileged_confirmation_and_sudo_validation_order
   test_existing_yay_is_not_reinstalled
   test_existing_tidydots_is_not_reinstalled
   test_missing_prerequisites_install_once_and_second_run_is_idempotent
