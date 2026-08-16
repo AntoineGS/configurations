@@ -16,11 +16,11 @@ QtObject {
   readonly property string stateHome: home + "/.local/state"
   readonly property string currentThemePath: stateHome + "/desktop-shell/current/theme"
 
-  property color foreground: "#cacccc"
-  property color background: "#101315"
-  property color accent: "#cacccc"
-  property color urgent: "#a55555"
-  property color muted: "#707880"
+  property color foreground: "#cdd6f4"
+  property color background: "#1e1e2e"
+  property color accent: "#cba6f7"
+  property color urgent: "#f38ba8"
+  property color muted: "#7f849c"
 
   // Flat dictionary of "section.key" -> raw string from shell.toml.
   // Reassigning this whole property is what makes surface bindings below
