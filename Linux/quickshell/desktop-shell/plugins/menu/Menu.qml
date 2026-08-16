@@ -323,6 +323,7 @@ Item {
       Item {
         id: keyCatcher
         anchors.fill: parent
+        anchors.margins: card.padding
         focus: true
 
         Keys.onPressed: function(event) {
