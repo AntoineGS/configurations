@@ -232,29 +232,19 @@ applications:
           windows: ~/AppData/Roaming/yazi/config
         name: config
         backup: ./Both/Yazi
-  - name: posting
+  - package:
+      managers:
+        brew: posting
+        yay: posting
+      custom:
+        windows: uv tool install --python 3.13 posting
+    name: posting
     entries:
       - targets:
           linux: ~/.config/posting
           windows: ~/.config/posting
         name: config
         backup: ./Both/posting
-  - package:
-      managers:
-        brew: posting
-        yay: posting
-    name: posting-linux
-    when: '{{ eq .OS "linux" }}'
-    entries: []
-  - package:
-      managers:
-        installer:
-          command:
-            windows: uv tool install --python 3.13 posting
-          binary: posting
-    name: posting-windows
-    when: '{{ eq .OS "windows" }}'
-    entries: []
   - name: xcompose
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -1380,15 +1370,27 @@ applications:
     entries: []
   - package:
       managers:
+        yay: oh-my-zsh-git
+    name: oh-my-zsh
+    description: Zsh framework (Arch package)
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
+    entries: []
+  - package:
+      managers:
         git:
           url: https://github.com/ohmyzsh/ohmyzsh.git
           targets:
             linux: /usr/share/oh-my-zsh
           sudo: true
-        yay: oh-my-zsh-git
-    name: oh-my-zsh
-    description: Zsh framework (skip on Arch - use oh-my-zsh-git)
-    when: '{{ eq .OS "linux" }}'
+    name: oh-my-zsh-non-arch
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
+    entries: []
+  - package:
+      managers:
+        yay: zsh-vi-mode
+    name: zsh-vi-mode
+    description: Zsh vi mode plugin (Arch package)
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
     entries: []
   - package:
       managers:
@@ -1397,10 +1399,15 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-vi-mode
           sudo: true
-        yay: zsh-vi-mode
-    name: zsh-vi-mode
-    description: Zsh vi mode plugin (skip on Arch - use zsh-vi-mode)
-    when: '{{ eq .OS "linux" }}'
+    name: zsh-vi-mode-non-arch
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
+    entries: []
+  - package:
+      managers:
+        yay: zsh-autosuggestions
+    name: zsh-autosuggestions
+    description: Zsh autosuggestions plugin (Arch package)
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
     entries: []
   - package:
       managers:
@@ -1409,10 +1416,15 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-autosuggestions
           sudo: true
-        yay: zsh-autosuggestions
-    name: zsh-autosuggestions
-    description: Zsh autosuggestions plugin (skip on Arch - use zsh-autosuggestions)
-    when: '{{ eq .OS "linux" }}'
+    name: zsh-autosuggestions-non-arch
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
+    entries: []
+  - package:
+      managers:
+        yay: fzf-tab-completion-git
+    name: fzf-tab-completion
+    description: Fzf tab completion for various shells (Arch package)
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
     entries: []
   - package:
       managers:
@@ -1421,9 +1433,15 @@ applications:
           targets:
             linux: /usr/share/fzf-tab-completion
           sudo: true
-        yay: fzf-tab-completion-git
-    name: fzf-tab-completion
-    description: Fzf tab completion for various shells
+    name: fzf-tab-completion-non-arch
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
+    entries: []
+  - package:
+      managers:
+        yay: zsh-transient-prompt-git
+    name: zsh-transient-prompt
+    description: Zsh transient prompt plugin (Arch package)
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
     entries: []
   - package:
       managers:
@@ -1432,10 +1450,8 @@ applications:
           targets:
             linux: /usr/share/zsh/plugins/zsh-transient-prompt
           sudo: true
-        yay: zsh-transient-prompt-git
-    name: zsh-transient-prompt
-    description: Zsh transient prompt plugin
-    when: '{{ eq .OS "linux" }}'
+    name: zsh-transient-prompt-non-arch
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
     entries: []
   - package:
       managers:
@@ -1505,30 +1521,26 @@ applications:
     entries: []
   - package:
       managers:
-        installer:
-          command:
-            linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          binary: rustup
         pacman: rustup
         winget: Rustlang.Rustup
     name: rustup
-    description: Rust toolchain installer
+    description: Rust toolchain package
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (eq .Distro "arch")) }}'
+    entries: []
+  - package:
+      custom:
+        linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    name: rustup-non-arch
+    description: Rust toolchain installer fallback
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
     entries: []
   - package:
       managers:
         brew: eza
         pacman: eza
+      custom:
+        windows: cargo install eza
     name: eza
-    when: '{{ eq .OS "linux" }}'
-    entries: []
-  - package:
-      managers:
-        installer:
-          command:
-            windows: cargo install eza
-          binary: eza
-    name: eza-windows
-    when: '{{ eq .OS "windows" }}'
     entries: []
   - package:
       managers:
@@ -1663,17 +1675,9 @@ applications:
       managers:
         apt: sd
         pacman: sd
+      custom:
+        windows: cargo install sd
     name: sd
-    when: '{{ eq .OS "linux" }}'
-    entries: []
-  - package:
-      managers:
-        installer:
-          command:
-            windows: cargo install sd
-          binary: sd
-    name: sd-windows
-    when: '{{ eq .OS "windows" }}'
     entries: []
   - package:
       managers:
