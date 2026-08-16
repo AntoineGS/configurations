@@ -2,23 +2,15 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_NAME="${BASH_SOURCE[0]##*/}"
-if [[ "${SNAPPER_INITIALIZER_TEST_MODE:-}" == 1 ]]; then
-  readonly ROOT_MOUNT="${SNAPPER_INITIALIZER_ROOT_MOUNT:-/}"
-  readonly HOME_MOUNT="${SNAPPER_INITIALIZER_HOME_MOUNT:-/home}"
-  readonly CONFIG_DIR="${SNAPPER_INITIALIZER_CONFIG_DIR:-/etc/snapper/configs}"
-  readonly REGISTRATION_FILE="${SNAPPER_INITIALIZER_REGISTRATION_FILE:-/etc/conf.d/snapper}"
-  readonly CONFIG_TEMPLATE="${SNAPPER_INITIALIZER_TEMPLATE:-/usr/share/snapper/config-templates/default}"
-  readonly RECOVERY_DIRECTORY="${SNAPPER_INITIALIZER_RECOVERY_DIRECTORY:-/var/lib/configurations/snapper-bootstrap}"
-  readonly LIFECYCLE_LOCK="${SNAPPER_INITIALIZER_LIFECYCLE_LOCK:-/run/lock/antoinews-linux-snapper.lock}"
-else
-  readonly ROOT_MOUNT="/"
-  readonly HOME_MOUNT="/home"
-  readonly CONFIG_DIR="/etc/snapper/configs"
-  readonly REGISTRATION_FILE="/etc/conf.d/snapper"
-  readonly CONFIG_TEMPLATE="/usr/share/snapper/config-templates/default"
-  readonly RECOVERY_DIRECTORY="/var/lib/configurations/snapper-bootstrap"
-  readonly LIFECYCLE_LOCK="/run/lock/antoinews-linux-snapper.lock"
-fi
+# BEGIN PRODUCTION PATHS
+readonly ROOT_MOUNT="/"
+readonly HOME_MOUNT="/home"
+readonly CONFIG_DIR="/etc/snapper/configs"
+readonly REGISTRATION_FILE="/etc/conf.d/snapper"
+readonly CONFIG_TEMPLATE="/usr/share/snapper/config-templates/default"
+readonly RECOVERY_DIRECTORY="/var/lib/configurations/snapper-bootstrap"
+readonly LIFECYCLE_LOCK="/run/lock/antoinews-linux-snapper-initialize.lock"
+# END PRODUCTION PATHS
 readonly BACKUP_DIRECTORY="$RECOVERY_DIRECTORY/backups"
 readonly INITIAL_SNAPSHOT_DESCRIPTION="initial recovery snapshot"
 readonly SNAPSHOT_DIR_MODE="750"
@@ -137,7 +129,6 @@ ensure_lifecycle_lock_file() {
 }
 
 acquire_lifecycle_lock() {
-  [[ "${SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD:-}" == 1 ]] && return 0
   ensure_lifecycle_lock_file
   exec {LIFECYCLE_LOCK_FD}<"$LIFECYCLE_LOCK" || die "could not open Snapper lifecycle lock: $LIFECYCLE_LOCK"
   if ! flock -n "$LIFECYCLE_LOCK_FD"; then

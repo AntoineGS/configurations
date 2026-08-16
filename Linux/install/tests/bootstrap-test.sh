@@ -851,7 +851,7 @@ test_privileged_confirmation_and_sudo_validation_order() {
     'sudo -v' \
     "sudo -n -- test -d $TEST_ROOT" \
     "tidydots --dir $REPO_WITH_SPACES list" \
-    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply'
+    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply'
 }
 
 test_existing_yay_is_not_reinstalled() {
@@ -983,9 +983,9 @@ test_tidydots_phases_have_separate_confirmations() {
   assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 2 'confirmed tidydots install plan and apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'server Snapper restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'server Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 0 'server Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 0 'server Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'server Snapper initializer check'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'server initial snapshot creation'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'server initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'confirmed tidydots restore dry-run'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
@@ -1097,7 +1097,7 @@ test_snapper_initializer_failure_stops_before_broad_restore() {
   assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
   assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'failed Snapper restore apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'failed initial snapshot creation'
   assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 0 'failed broad restore plan'

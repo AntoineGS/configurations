@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SCRIPT="${SCRIPT_DIR}/../snapper-initialize"
 TEST_ROOT="$(mktemp -d)"
+TEST_SCRIPT="$TEST_ROOT/snapper-initialize-test-wrapper"
 BIN="$TEST_ROOT/bin"
 FIXTURE_ROOT="$TEST_ROOT/system"
 ROOT_MOUNT="$FIXTURE_ROOT/root"
@@ -16,6 +17,7 @@ SUBVOLUME_STATE="$TEST_ROOT/subvolumes"
 CONFIG_TEMPLATE="$TEST_ROOT/default-template"
 RECOVERY_DIRECTORY="$TEST_ROOT/snapper-bootstrap"
 LIFECYCLE_LOCK="$TEST_ROOT/snapper-lifecycle.lock"
+DEPLOYMENT_LIFECYCLE_LOCK="$TEST_ROOT/deployment-lifecycle.lock"
 ORIGINAL_PATH="$PATH"
 UNSHARE="$(command -v unshare || true)"
 BASH_PATH="$BASH"
@@ -95,6 +97,42 @@ assert_log_not_contains() {
 
   log_contents="$(<"$COMMAND_LOG")"
   assert_not_contains "$log_contents" "$needle" "$context"
+}
+
+generate_test_script() {
+  if ! awk \
+    -v root_mount="$ROOT_MOUNT" \
+    -v home_mount="$HOME_MOUNT" \
+    -v config_dir="$CONFIG_DIR" \
+    -v registration_file="$REGISTRATION_FILE" \
+    -v config_template="$CONFIG_TEMPLATE" \
+    -v recovery_directory="$RECOVERY_DIRECTORY" \
+    -v lifecycle_lock="$LIFECYCLE_LOCK" '
+      /^# BEGIN PRODUCTION PATHS$/ {
+        print
+        printf "readonly ROOT_MOUNT=\"%s\"\n", root_mount
+        printf "readonly HOME_MOUNT=\"%s\"\n", home_mount
+        printf "readonly CONFIG_DIR=\"%s\"\n", config_dir
+        printf "readonly REGISTRATION_FILE=\"%s\"\n", registration_file
+        printf "readonly CONFIG_TEMPLATE=\"%s\"\n", config_template
+        printf "readonly RECOVERY_DIRECTORY=\"%s\"\n", recovery_directory
+        printf "readonly LIFECYCLE_LOCK=\"%s\"\n", lifecycle_lock
+        in_path_block = 1
+        found_begin = 1
+        next
+      }
+      /^# END PRODUCTION PATHS$/ {
+        print
+        in_path_block = 0
+        found_end = 1
+        next
+      }
+      !in_path_block { print }
+      END { exit !(found_begin && found_end) }
+    ' "$SCRIPT" >"$TEST_SCRIPT"; then
+    fail 'production initializer path block markers are missing'
+  fi
+  chmod +x -- "$TEST_SCRIPT"
 }
 
 assert_log_sequence() {
@@ -337,7 +375,7 @@ create_stubs() {
 reset_fixture() {
   rm -rf -- "$FIXTURE_ROOT"
   rm -rf -- "$RECOVERY_DIRECTORY"
-  rm -f -- "$LIFECYCLE_LOCK"
+  rm -f -- "$LIFECYCLE_LOCK" "$DEPLOYMENT_LIFECYCLE_LOCK"
   mkdir -p -- "$ROOT_MOUNT" "$HOME_MOUNT" "$CONFIG_DIR" "$CONF_DIR"
   : >"$COMMAND_LOG"
   : >"$SUBVOLUME_STATE"
@@ -367,7 +405,6 @@ reset_fixture() {
   TEST_INITIAL_SNAPSHOT_NUMBER="1"
   TEST_INITIAL_SNAPSHOT_VALID=true
   TEST_INITIAL_SNAPSHOT_EXISTS=false
-  unset TEST_INTERNAL_LOCK_HELD
 }
 
 write_config() {
@@ -427,17 +464,7 @@ run_as_root() {
     SNAPPER_TEST_INITIAL_SNAPSHOT_EXISTS="$TEST_INITIAL_SNAPSHOT_EXISTS" \
     SNAPPER_TEST_FAIL="$TEST_SNAPPER_FAIL" \
     SNAPPER_TEST_FAIL_IF_SNAPSHOT_EXISTS="$TEST_SNAPPER_FAIL_IF_SNAPSHOT_EXISTS" \
-    SNAPPER_INITIALIZER_TEST_MODE=1 \
-    SNAPPER_INITIALIZER_ROOT_MOUNT="$ROOT_MOUNT" \
-    SNAPPER_INITIALIZER_HOME_MOUNT="$HOME_MOUNT" \
-    SNAPPER_INITIALIZER_TEST_MODE=1 \
-    SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
-    SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
-    SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
-    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
-    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
-    "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
+    "$UNSHARE" --user --map-root-user "$BASH_PATH" "$TEST_SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -451,28 +478,21 @@ run_as_current_user() {
     SNAPPER_TEST_SUBVOLUMES="$SUBVOLUME_STATE" \
     SNAPPER_TEST_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_TEST_REGISTRATION="$REGISTRATION_FILE" \
-    SNAPPER_INITIALIZER_ROOT_MOUNT="$ROOT_MOUNT" \
-    SNAPPER_INITIALIZER_HOME_MOUNT="$HOME_MOUNT" \
-    SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
-    SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
-    SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
-    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
-    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
-    "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
+    "$BASH_PATH" "$TEST_SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
   fi
 }
 
-run_without_test_mode() {
-  if LAST_OUTPUT=$(env -u SNAPPER_INITIALIZER_TEST_MODE \
+run_with_production_overrides() {
+  if LAST_OUTPUT=$(env \
     PATH="$BIN:$ORIGINAL_PATH" \
     SNAPPER_TEST_COMMAND_LOG="$COMMAND_LOG" \
     SNAPPER_TEST_SUBVOLUMES="$SUBVOLUME_STATE" \
     SNAPPER_TEST_CONFIG_DIR="$CONFIG_DIR" \
     SNAPPER_TEST_REGISTRATION="$REGISTRATION_FILE" \
+    SNAPPER_INITIALIZER_TEST_MODE=1 \
     SNAPPER_INITIALIZER_ROOT_MOUNT="$ROOT_MOUNT" \
     SNAPPER_INITIALIZER_HOME_MOUNT="$HOME_MOUNT" \
     SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
@@ -480,7 +500,6 @@ run_without_test_mode() {
     SNAPPER_INITIALIZER_TEMPLATE="$CONFIG_TEMPLATE" \
     SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$RECOVERY_DIRECTORY" \
     SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD="${TEST_INTERNAL_LOCK_HELD:-}" \
     "$UNSHARE" --user --map-root-user "$BASH_PATH" "$SCRIPT" "$@" 2>&1); then
     LAST_STATUS=0
   else
@@ -490,6 +509,7 @@ run_without_test_mode() {
 
 test_script_is_executable() {
   [[ -x "$SCRIPT" ]] || fail "$SCRIPT must exist and be executable"
+  [[ -x "$TEST_SCRIPT" ]] || fail "$TEST_SCRIPT must exist and be executable"
 }
 
 test_help_and_unknown_option() {
@@ -530,13 +550,13 @@ test_non_root_is_rejected_before_commands() {
   assert_log_not_contains 'snapper ' 'non-root command log'
 }
 
-test_initializer_overrides_require_test_mode() {
+test_production_initializer_ignores_environment_overrides() {
   reset_fixture
-  run_without_test_mode --check
+  run_with_production_overrides --check
 
-  assert_status 1 "$LAST_STATUS" 'initializer override gate'
-  assert_not_contains "$LAST_OUTPUT" "$ROOT_MOUNT" 'initializer override gate root path'
-  assert_log_not_contains "$ROOT_MOUNT" 'initializer override gate command path'
+  assert_status 1 "$LAST_STATUS" 'production initializer override isolation'
+  assert_not_contains "$LAST_OUTPUT" "$ROOT_MOUNT" 'production initializer override output path'
+  assert_log_not_contains "$ROOT_MOUNT" 'production initializer override command path'
 }
 
 test_check_is_read_only_when_layout_is_ready() {
@@ -910,7 +930,7 @@ test_initial_snapshot_phase_releases_lock_after_validation() {
     'flock -u'
 }
 
-test_internal_snapshot_call_does_not_deadlock_on_lifecycle_lock() {
+test_standalone_initializer_rejects_helper_lock_contention() {
   reset_fixture
   write_config root /
   write_config home /home
@@ -918,15 +938,34 @@ test_internal_snapshot_call_does_not_deadlock_on_lifecycle_lock() {
   mark_subvolumes
   exec {held_lock_fd}>"$LIFECYCLE_LOCK"
   flock -n "$held_lock_fd"
-  TEST_INTERNAL_LOCK_HELD=1
 
   run_as_root --create-initial-snapshots
 
   flock -u "$held_lock_fd"
   exec {held_lock_fd}>&-
 
-  assert_status 0 "$LAST_STATUS" 'internal snapshot lifecycle lock bypass'
-  assert_log_not_contains 'flock ' 'internal snapshot lifecycle lock bypass'
+  assert_status 1 "$LAST_STATUS" 'standalone helper lock contention'
+  assert_contains "$LAST_OUTPUT" 'could not acquire Snapper lifecycle lock' 'standalone helper lock contention message'
+  assert_log_contains 'flock -n' 'standalone helper lock contention attempt'
+  assert_log_not_contains 'snapper --no-dbus --config root create' 'standalone helper lock contention safety'
+}
+
+test_standalone_initializer_uses_distinct_helper_lock() {
+  reset_fixture
+  write_config root /
+  write_config home /home
+  write_registration
+  mark_subvolumes
+  exec {held_lock_fd}>"$DEPLOYMENT_LIFECYCLE_LOCK"
+  flock -n "$held_lock_fd"
+
+  run_as_root --create-initial-snapshots
+
+  flock -u "$held_lock_fd"
+  exec {held_lock_fd}>&-
+
+  assert_status 0 "$LAST_STATUS" 'standalone helper distinct lock'
+  assert_log_contains 'flock -n' 'standalone helper distinct lock acquisition'
 }
 
 test_apply_rejects_unvalidated_initial_snapshot() {
@@ -968,14 +1007,15 @@ test_apply_propagates_snapper_failure() {
   assert_log_contains 'snapper --no-dbus --config root --csvout' 'snapper failure command'
 }
 
-test_script_is_executable
 [[ -n "$UNSHARE" ]] || fail 'unshare is required for the root execution tests'
 create_stubs
+generate_test_script
+test_script_is_executable
 
 test_help_and_unknown_option
 test_validate_topology_is_read_only
 test_non_root_is_rejected_before_commands
-test_initializer_overrides_require_test_mode
+test_production_initializer_ignores_environment_overrides
 test_check_is_read_only_when_layout_is_ready
 test_check_rejects_non_btrfs_without_mutation
 test_check_rejects_mismatched_btrfs_uuid_without_mutation
@@ -999,7 +1039,8 @@ test_initial_snapshot_phase_rejects_recovery_state
 test_initial_snapshot_phase_locks_before_recovery_guard
 test_initial_snapshot_phase_fails_when_lifecycle_lock_is_held
 test_initial_snapshot_phase_releases_lock_after_validation
-test_internal_snapshot_call_does_not_deadlock_on_lifecycle_lock
+test_standalone_initializer_rejects_helper_lock_contention
+test_standalone_initializer_uses_distinct_helper_lock
 test_apply_rejects_unvalidated_initial_snapshot
 test_apply_uses_atomic_config_and_registration_replacements
 test_apply_propagates_snapper_failure

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SCRIPT="${SCRIPT_DIR}/../snapper-initialize"
 TEST_ROOT="$(mktemp -d)"
+TEST_SCRIPT="$TEST_ROOT/snapper-initialize-test-wrapper"
 IMAGE="$TEST_ROOT/fixture.img"
 SECOND_IMAGE="$TEST_ROOT/second.img"
 MOUNT_ROOT="$TEST_ROOT/mnt"
@@ -44,6 +45,44 @@ done
 
 [[ "$EUID" -eq 0 ]] || skip 'root privileges are required to mount the disposable fixture'
 [[ -w /dev/loop-control ]] || skip '/dev/loop-control is not writable'
+
+generate_test_script() {
+  if ! awk \
+    -v root_mount="$MOUNT_ROOT/root" \
+    -v home_mount="$MOUNT_ROOT/home" \
+    -v config_dir="$CONFIG_DIR" \
+    -v registration_file="$REGISTRATION_FILE" \
+    -v config_template="$TEMPLATE" \
+    -v recovery_directory="$TEST_ROOT/snapper-bootstrap" \
+    -v lifecycle_lock="$LIFECYCLE_LOCK" '
+      /^# BEGIN PRODUCTION PATHS$/ {
+        print
+        printf "readonly ROOT_MOUNT=\"%s\"\n", root_mount
+        printf "readonly HOME_MOUNT=\"%s\"\n", home_mount
+        printf "readonly CONFIG_DIR=\"%s\"\n", config_dir
+        printf "readonly REGISTRATION_FILE=\"%s\"\n", registration_file
+        printf "readonly CONFIG_TEMPLATE=\"%s\"\n", config_template
+        printf "readonly RECOVERY_DIRECTORY=\"%s\"\n", recovery_directory
+        printf "readonly LIFECYCLE_LOCK=\"%s\"\n", lifecycle_lock
+        in_path_block = 1
+        found_begin = 1
+        next
+      }
+      /^# END PRODUCTION PATHS$/ {
+        print
+        in_path_block = 0
+        found_end = 1
+        next
+      }
+      !in_path_block { print }
+      END { exit !(found_begin && found_end) }
+    ' "$SCRIPT" >"$TEST_SCRIPT"; then
+    skip 'production initializer path block markers are missing'
+  fi
+  chmod +x -- "$TEST_SCRIPT"
+}
+
+generate_test_script
 
 write_executable() {
   local -r path="$1"
@@ -136,15 +175,7 @@ run_initializer() {
     SNAPPER_TEST_STATE_DIR="$STATE_DIR" \
     SNAPPER_TEST_ROOT_MOUNT="$MOUNT_ROOT/root" \
     SNAPPER_TEST_HOME_MOUNT="$MOUNT_ROOT/home" \
-    SNAPPER_INITIALIZER_TEST_MODE=1 \
-    SNAPPER_INITIALIZER_ROOT_MOUNT="$MOUNT_ROOT/root" \
-    SNAPPER_INITIALIZER_HOME_MOUNT="$MOUNT_ROOT/home" \
-    SNAPPER_INITIALIZER_CONFIG_DIR="$CONFIG_DIR" \
-    SNAPPER_INITIALIZER_REGISTRATION_FILE="$REGISTRATION_FILE" \
-    SNAPPER_INITIALIZER_TEMPLATE="$TEMPLATE" \
-    SNAPPER_INITIALIZER_RECOVERY_DIRECTORY="$TEST_ROOT/snapper-bootstrap" \
-    SNAPPER_INITIALIZER_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
-    "$SCRIPT" "$@"
+    "$TEST_SCRIPT" "$@"
 }
 
 run_initializer --apply >/dev/null

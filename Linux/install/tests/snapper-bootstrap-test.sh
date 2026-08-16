@@ -82,6 +82,17 @@ assert_log_not_contains_after() {
   assert_not_contains "$after_marker" "$needle" "$context"
 }
 
+assert_no_recovery_mutation() {
+  local -r context="$1"
+
+  assert_log_not_contains 'sudo -n -- rm -f --' "$context: no recovery file deletion"
+  assert_log_not_contains 'sudo -n -- rm -rf -- /var/lib/configurations/snapper-bootstrap' "$context: no recovery directory deletion"
+  assert_log_not_contains 'sudo -n -- mv --' "$context: no recovery move"
+  assert_log_not_contains 'sudo -n -- cp --preserve=all' "$context: no recovery copy"
+  assert_log_not_contains 'sudo -n -- chown 1001:1002 --' "$context: no recovery ownership restore"
+  assert_log_not_contains 'sudo -n -- chmod 640 --' "$context: no recovery mode restore"
+}
+
 assert_source_contains() {
   local -r needle="$1"
   local -r context="$2"
@@ -198,8 +209,14 @@ create_stubs() {
     '    -d:/var/lib/configurations/snapper-bootstrap)' \
       '      result=true' \
       '      ;;' \
+    '    -L:/var/lib/configurations/snapper-bootstrap/state)' \
+      '      [[ "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_SYMLINK:-false}" == true ]] && result=true' \
+      '      ;;' \
     '    -e:/var/lib/configurations/snapper-bootstrap/state|-f:/var/lib/configurations/snapper-bootstrap/state)' \
       '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE:-}" ]] && result=true' \
+      '      ;;' \
+    '    -L:/var/lib/configurations/snapper-bootstrap/manifest)' \
+      '      [[ "${SNAPPER_BOOTSTRAP_TEST_MANIFEST_SYMLINK:-false}" == true ]] && result=true' \
       '      ;;' \
     '    -e:/var/lib/configurations/snapper-bootstrap/manifest|-f:/var/lib/configurations/snapper-bootstrap/manifest)' \
       '      [[ -n "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" ]] && result=true' \
@@ -324,6 +341,16 @@ create_stubs() {
     '      %a) printf "644\\n" ;;' \
     '      *) exit 1 ;;' \
     '    esac' \
+    '  elif [[ "$path" == /var/lib/configurations/snapper-bootstrap/state || "$path" == /var/lib/configurations/snapper-bootstrap/manifest ]]; then' \
+    '    case "$path:$format" in' \
+    '      /var/lib/configurations/snapper-bootstrap/state:%u) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_UID:-0}" ;;' \
+    '      /var/lib/configurations/snapper-bootstrap/state:%g) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_GID:-0}" ;;' \
+    '      /var/lib/configurations/snapper-bootstrap/state:%a) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MODE:-600}" ;;' \
+    '      /var/lib/configurations/snapper-bootstrap/manifest:%u) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_MANIFEST_UID:-0}" ;;' \
+    '      /var/lib/configurations/snapper-bootstrap/manifest:%g) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_MANIFEST_GID:-0}" ;;' \
+    '      /var/lib/configurations/snapper-bootstrap/manifest:%a) printf "%s\n" "${SNAPPER_BOOTSTRAP_TEST_MANIFEST_MODE:-600}" ;;' \
+    '      *) exit 1 ;;' \
+    '    esac' \
     '  elif [[ "$path" == /var/lib/configurations/snapper-bootstrap || "$path" == /var/lib/configurations/snapper-bootstrap/backups ]]; then' \
     '    case "$format:${SNAPPER_BOOTSTRAP_TEST_RECOVERY_DIRECTORY_MODE:-}" in' \
     '      %a:bad) printf "777\n" ;;' \
@@ -401,7 +428,15 @@ reset_fixture() {
     SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES \
     SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE \
-    SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE
+    SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_SYMLINK \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_SYMLINK \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_UID \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_GID \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_MODE \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_UID \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_GID \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_MODE
   unset SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST
 }
 
@@ -440,6 +475,14 @@ run_bootstrap() {
     SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST:-}" \
     SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE="${SNAPPER_BOOTSTRAP_TEST_PATH_FAILURE:-}" \
     SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE="${SNAPPER_BOOTSTRAP_TEST_LOCK_FAILURE:-false}" \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_SYMLINK="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_SYMLINK:-false}" \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_SYMLINK="${SNAPPER_BOOTSTRAP_TEST_MANIFEST_SYMLINK:-false}" \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_UID="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_UID:-0}" \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_GID="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_GID:-0}" \
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_MODE="${SNAPPER_BOOTSTRAP_TEST_JOURNAL_MODE:-600}" \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_UID="${SNAPPER_BOOTSTRAP_TEST_MANIFEST_UID:-0}" \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_GID="${SNAPPER_BOOTSTRAP_TEST_MANIFEST_GID:-0}" \
+    SNAPPER_BOOTSTRAP_TEST_MANIFEST_MODE="${SNAPPER_BOOTSTRAP_TEST_MANIFEST_MODE:-600}" \
     SNAPPER_BOOTSTRAP_TEST_LIFECYCLE_LOCK="$LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_LIFECYCLE_LOCK="$CALLER_LIFECYCLE_LOCK" \
     SNAPPER_BOOTSTRAP_TEST_MODE=1 \
@@ -449,6 +492,91 @@ run_bootstrap() {
   else
     LAST_STATUS=$?
   fi
+}
+
+prepare_valid_deploying_recovery() {
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\ntarget=\nstaged='
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640"
+}
+
+assert_recovery_rejected() {
+  local -r context="$1"
+
+  run_bootstrap $'yes\nyes\nyes'
+  assert_status 1 "$LAST_STATUS" "$context"
+  assert_contains "$LAST_OUTPUT" 'Snapper' "$context message"
+  assert_no_recovery_mutation "$context"
+}
+
+test_recovery_rejects_journal_staged_path_escape() {
+  reset_fixture
+  prepare_valid_deploying_recovery
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\ntarget=/etc/snapper/configs/root\nstaged=/etc/passwd'
+
+  assert_recovery_rejected 'journal staged path escape'
+}
+
+test_recovery_rejects_journal_unknown_and_duplicate_fields() {
+  local state
+
+  for state in \
+    $'version=1\nphase=deploying\ntarget=\nstaged=\nunknown=value' \
+    $'version=1\nphase=deploying\nphase=cleanup\ntarget=\nstaged=' \
+    $'version=1\nphase=planned\ntarget=\nstaged='; do
+    reset_fixture
+    prepare_valid_deploying_recovery
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE="$state"
+
+    assert_recovery_rejected "journal schema: $state"
+  done
+}
+
+test_recovery_rejects_journal_target_escape() {
+  reset_fixture
+  prepare_valid_deploying_recovery
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\ntarget=/etc/passwd\nstaged='
+
+  assert_recovery_rejected 'journal target escape'
+}
+
+test_recovery_rejects_untrusted_state_file_metadata() {
+  local metadata_case
+
+  for metadata_case in journal-symlink manifest-symlink journal-owner manifest-owner journal-mode manifest-mode; do
+    reset_fixture
+    prepare_valid_deploying_recovery
+    case "$metadata_case" in
+      journal-symlink) SNAPPER_BOOTSTRAP_TEST_JOURNAL_SYMLINK=true ;;
+      manifest-symlink) SNAPPER_BOOTSTRAP_TEST_MANIFEST_SYMLINK=true ;;
+      journal-owner) SNAPPER_BOOTSTRAP_TEST_JOURNAL_UID=1000 ;;
+      manifest-owner) SNAPPER_BOOTSTRAP_TEST_MANIFEST_GID=1000 ;;
+      journal-mode) SNAPPER_BOOTSTRAP_TEST_JOURNAL_MODE=644 ;;
+      manifest-mode) SNAPPER_BOOTSTRAP_TEST_MANIFEST_MODE=644 ;;
+    esac
+
+    assert_recovery_rejected "recovery file metadata: $metadata_case"
+  done
+}
+
+test_recovery_rejects_manifest_paths_and_schema() {
+  local manifest
+  local -a manifests=(
+    "file|/etc/passwd|${BACKUP_DIRECTORY}/root|yes|1001|1002|640"
+    "file|/etc/snapper/configs/root|/tmp/backup|yes|1001|1002|640"
+    'unknown|/etc/snapper/configs/root|/var/lib/configurations/snapper-bootstrap/backups/root'
+    "file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640|extra"
+    "file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|not-uid|1002|640"
+    $'file|/etc/snapper/configs/root|/var/lib/configurations/snapper-bootstrap/backups/root|yes|1001|1002|640\nfile|/etc/snapper/configs/root|/var/lib/configurations/snapper-bootstrap/backups/root|yes|1001|1002|640'
+    'legacy|/etc/snapper/configs|/var/lib/configurations/snapper-bootstrap/backups/legacy-configs|/tmp/old-configs'
+  )
+
+  for manifest in "${manifests[@]}"; do
+    reset_fixture
+    prepare_valid_deploying_recovery
+    SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="$manifest"
+
+    assert_recovery_rejected "manifest schema: $manifest"
+  done
 }
 
 test_snapper_decline_preserves_legacy_links() {
@@ -491,11 +619,11 @@ test_snapper_deployment_is_rollback_assisted_and_after_confirmation() {
     'sudo -n -- chmod 0644' \
     'sudo -n -- mv -f' \
     'sudo -n -- test ! -L /usr/local/libexec/antoinews-linux/snapper-initialize' \
-    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
     "sudo -n -- rm -rf -- ${BACKUP_DIRECTORY}" \
     "sudo -n -- rm -f -- ${RECOVERY_DIRECTORY}/state ${RECOVERY_DIRECTORY}/manifest" \
     "sudo -n -- rmdir -- ${RECOVERY_DIRECTORY}" \
-    'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
+    'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots' \
     'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check' \
     'restore -n' \
     'restore' \
@@ -633,7 +761,7 @@ test_cleanup_failure_keeps_journal_and_stops_without_destructive_rollback() {
 test_partial_install_journal_recovers_before_new_deployment() {
   reset_fixture
   SNAPPER_BOOTSTRAP_TEST_LEGACY_LINKS=true
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=deploying\ntarget=\nstaged='
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="legacy|/etc/snapper/configs|${BACKUP_DIRECTORY}/legacy-configs|$FIXTURE_REPO/Linux/Snapper/configs
 file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640
 "
@@ -650,7 +778,7 @@ file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|640
 test_preparation_recovery_removes_only_manifest_directories() {
   reset_fixture
   SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES=true
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\ntarget=\nstaged='
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST=$'dir|/etc/snapper/configs\ndir|/etc/conf.d\n'
   run_bootstrap $'yes\nyes\nyes'
 
@@ -669,7 +797,7 @@ test_preparation_recovery_failure_retains_journal() {
   reset_fixture
   SNAPPER_BOOTSTRAP_TEST_PLANNED_DIRECTORIES=true
   SNAPPER_BOOTSTRAP_TEST_PREPARATION_RECOVERY_FAILURE=true
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=preparing\ntarget=\nstaged='
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST=$'dir|/etc/snapper/configs\ndir|/etc/conf.d\n'
   run_bootstrap $'yes\nyes\nyes'
 
@@ -690,7 +818,7 @@ test_production_initializer_rejects_inherited_overrides() {
     run_bootstrap $'yes\nyes\nyes'
 
   assert_status 0 "$LAST_STATUS" 'production initializer environment isolation'
-  assert_log_contains 'sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
+  assert_log_contains 'sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --apply' \
     'production initializer clean environment'
   assert_log_not_contains 'SNAPPER_INITIALIZER_' 'inherited initializer override'
   assert_log_not_contains '/untrusted/' 'inherited initializer path redirect'
@@ -835,7 +963,7 @@ test_recovery_directory_metadata_is_validated() {
 
 test_cleanup_phase_blocks_restart_without_rollback() {
   reset_fixture
-  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=cleanup\n'
+  SNAPPER_BOOTSTRAP_TEST_JOURNAL_STATE=$'version=1\nphase=cleanup\ntarget=\nstaged='
   SNAPPER_BOOTSTRAP_TEST_JOURNAL_MANIFEST="file|/etc/snapper/configs/root|${BACKUP_DIRECTORY}/root|yes|1001|1002|6755
 "
   run_bootstrap $'yes\nyes\nyes'
@@ -880,6 +1008,11 @@ run_test test_snapper_deployment_is_rollback_assisted_and_after_confirmation
 run_test test_snapper_lifecycle_lock_failure_stops_before_recovery
 run_test test_snapper_lifecycle_lock_contention_stops_before_recovery
 run_test test_caller_environment_cannot_select_snapper_lifecycle_lock
+run_test test_recovery_rejects_journal_staged_path_escape
+run_test test_recovery_rejects_journal_unknown_and_duplicate_fields
+run_test test_recovery_rejects_journal_target_escape
+run_test test_recovery_rejects_untrusted_state_file_metadata
+run_test test_recovery_rejects_manifest_paths_and_schema
 run_test test_existing_snapper_directories_are_not_misclassified_as_legacy_links
 run_test test_initializer_integrity_fails_closed
 run_test test_deployment_failure_rolls_back_before_initializer
