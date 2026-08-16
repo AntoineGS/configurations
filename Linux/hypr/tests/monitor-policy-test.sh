@@ -131,9 +131,9 @@ assert_host_policy() {
   assert_contains "$autostart_output" "dp2_workaround=$expected_dp2_workarounds" "$hostname DP-2 workaround count"
 }
 
-assert_host_policy DESKTOP-E07VTRN 4 10 8 1 1
+assert_host_policy DESKTOP-E07VTRN 4 10 7 1 1
 assert_host_policy omarchbook 2 0 0 0 0
-assert_host_policy antoinews-linux 1 0 0 0 0
+assert_host_policy antoinews-linux 3 7 4 1 1
 assert_host_policy unknown-host 1 0 0 0 0
 
 laptop_output=$(run_lua_config omarchbook "$MONITORS_LUA" monitors)
@@ -143,9 +143,9 @@ assert_contains "$laptop_output" 'laptop_mirror=1' 'laptop external mirror'
 fallback_output=$(run_lua_config unknown-host "$MONITORS_LUA" monitors)
 assert_contains "$fallback_output" 'preferred_fallback=1' 'unknown-host preferred fallback'
 
-grep -Fq '{{- if eq .Hostname "DESKTOP-E07VTRN" }},' "$WAYBAR_TEMPLATE" || \
-  fail 'Waybar persistent-workspace section is not hostname-gated'
-grep -Fq '"persistent-workspaces": {' "$WAYBAR_TEMPLATE" || \
-  fail 'Waybar persistent-workspace section is missing'
+grep -Fq '{{- if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "antoinews-linux") }}' "$WAYBAR_TEMPLATE" || \
+  fail 'Waybar workspace icon format is not hostname-gated'
+grep -Fq '"ext/workspaces": {' "$WAYBAR_TEMPLATE" || \
+  fail 'Waybar workspace module is missing'
 
 printf 'PASS: host monitor policy tests\n'

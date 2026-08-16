@@ -2,7 +2,25 @@
 
 set -Eeuo pipefail
 
-trap 'echo ""; printf "\033[0;31mSomething went wrong during the update!\n\nPlease review the output above carefully, correct the error, and retry the update.\n\nIf you need assistance, consult your distribution documentation or local support resources.\033[0m\n"' ERR
+pause_before_close() {
+  if [[ -t 0 ]]; then
+    echo
+    read -n 1 -s -r -p "Press any key to close..." || true
+    echo
+  fi
+}
+
+handle_error() {
+  local status=$?
+
+  trap - ERR
+  echo ""
+  printf "\033[0;31mSomething went wrong during the update!\n\nPlease review the output above carefully, correct the error, and retry the update.\n\nIf you need assistance, consult your distribution documentation or local support resources.\033[0m\n"
+  pause_before_close
+  return "$status"
+}
+
+trap handle_error ERR
 
 if [[ ${1:-} == "-y" ]] || update-confirm; then
   snapshot create || (($? == 127))
@@ -10,9 +28,5 @@ if [[ ${1:-} == "-y" ]] || update-confirm; then
   update-perform
 
   # Keep the window open so the output can be reviewed before it closes.
-  if [[ -t 0 ]]; then
-    echo
-    read -n 1 -s -r -p "Press any key to close..."
-    echo
-  fi
+  pause_before_close
 fi

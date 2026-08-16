@@ -37,6 +37,9 @@ run_shellcheck() {
     Linux/os/tests/system-helper-independence-test.sh
     Linux/os/tests/theme-independence-test.sh
     Linux/os/tests/power-profile-availability-test.sh
+    Linux/vicinae/scripts/*.sh
+    Both/ShellPicker/setup-shell-picker.sh
+    Both/ShellPicker/tests/test-setup-shell-picker.sh
   )
 
   if command -v docker >/dev/null 2>&1 && docker image inspect "$SHELLCHECK_IMAGE" >/dev/null 2>&1; then
@@ -70,6 +73,7 @@ run bash Linux/opencode/tests/test-setup-context-tokenizers.sh
 run bash Linux/opencode/tests/test-setup-temp-cleanup.sh
 run bash Linux/os/tests/no-omarchy-runtime-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-error-test.sh
+run bash Both/ShellPicker/tests/test-setup-shell-picker.sh
 run bash Linux/hypr/tests/monitor-policy-test.sh
 run bash Linux/hypr/tests/watch-rustdesk-submap-test.sh
 run bash Linux/os/tests/power-profile-availability-test.sh

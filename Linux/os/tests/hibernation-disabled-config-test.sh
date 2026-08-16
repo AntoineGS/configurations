@@ -72,7 +72,7 @@ expected_limine_rebuild=$(cat <<'EOF'
           - limine
         sudo: true
       - check:
-          linux: "test -r /boot/EFI/Linux/omarchy_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
+          linux: "test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
         run:
           linux: limine-update
         name: rebuild-boot-config

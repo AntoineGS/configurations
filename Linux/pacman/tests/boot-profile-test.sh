@@ -264,7 +264,12 @@ limine_mapping_owners="$(awk '
   fail "Linux/limine mappings are owned by unexpected applications: $limine_mapping_owners"
 
 grep -Fq 'PARTUUID=' "$LIMINE_CONFIG" || fail "current-desktop Limine configuration lost PARTUUID data"
-grep -Fq 'resume_offset=' "$LIMINE_CONFIG" || fail "current-desktop Limine configuration lost resume_offset data"
+grep -Fq 'CUSTOM_UKI_NAME="arch"' "$LIMINE_CONFIG" || fail "current-desktop Limine configuration lost the Arch UKI name"
+if grep -Eq 'resume=|resume_offset=' "$LIMINE_CONFIG"; then
+  fail "current-desktop Limine configuration still enables hibernation resume"
+fi
+grep -Fq '/boot/EFI/Linux/arch_linux.efi' "$CONFIG_FILE" ||
+  fail "tidydots boot check does not target the Arch UKI"
 
 antoinews_machine_data_owners="$(awk '
   function flush() {

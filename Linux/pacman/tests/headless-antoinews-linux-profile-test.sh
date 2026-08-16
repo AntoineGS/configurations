@@ -77,6 +77,7 @@ GRAPHICAL_APPLICATIONS=(
   1password
   brave
   xcompose
+  desktop-shell
   hyprland
   pipewire-audio
   waybar
