@@ -904,10 +904,157 @@ read_snapper_recovery_file() {
   root_capture cat -- "$path"
 }
 
+validate_snapper_recovery_file() {
+  local -r path="$1"
+  local -r description="$2"
+  local mode
+
+  validate_root_file "$path" "$description"
+  mode="$(root_stat %a "$path")" || die "could not inspect $description mode: $path"
+  [[ "$mode" == 600 ]] || die "$description must be mode 0600: $path (mode $mode)"
+}
+
+SNAPPER_RECOVERY_PHASE=""
+SNAPPER_RECOVERY_STAGED=""
+
+validate_snapper_recovery_journal() {
+  local -r state="$1"
+  local line
+  local phase
+  local target
+  local staged
+  local -a lines=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lines+=("$line")
+  done <<<"$state"
+
+  [[ "${#lines[@]}" -eq 4 ]] || return 1
+  [[ "${lines[0]}" == version=1 ]] || return 1
+  [[ "${lines[1]}" == phase=* ]] || return 1
+  [[ "${lines[2]}" == target=* ]] || return 1
+  [[ "${lines[3]}" == staged=* ]] || return 1
+
+  phase="${lines[1]#phase=}"
+  target="${lines[2]#target=}"
+  staged="${lines[3]#staged=}"
+
+  case "$phase" in
+    preparing|backing-up|backed-up|deploying|cleanup)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  case "$target" in
+    ""|"$SNAPPER_CONFIG_DIRECTORY/root"|"$SNAPPER_CONFIG_DIRECTORY/home"|"$SNAPPER_REGISTRATION_DIRECTORY/snapper"|"$SNAPPER_INITIALIZER")
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  if [[ "$phase" != deploying ]]; then
+    [[ -z "$target" && -z "$staged" ]] || return 1
+  elif [[ -n "$staged" ]]; then
+    case "$target" in
+      "$SNAPPER_CONFIG_DIRECTORY/root")
+        [[ "$staged" =~ ^/etc/snapper/configs/\.root\.[[:alnum:]]{6}$ ]] || return 1
+        ;;
+      "$SNAPPER_CONFIG_DIRECTORY/home")
+        [[ "$staged" =~ ^/etc/snapper/configs/\.home\.[[:alnum:]]{6}$ ]] || return 1
+        ;;
+      "$SNAPPER_REGISTRATION_DIRECTORY/snapper")
+        [[ "$staged" =~ ^/etc/conf\.d/\.snapper\.[[:alnum:]]{6}$ ]] || return 1
+        ;;
+      "$SNAPPER_INITIALIZER")
+        [[ "$staged" =~ ^/usr/local/libexec/antoinews-linux/\.snapper-initialize\.[[:alnum:]]{6}$ ]] || return 1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  fi
+
+  SNAPPER_RECOVERY_PHASE="$phase"
+  SNAPPER_RECOVERY_STAGED="$staged"
+}
+
+validate_snapper_recovery_manifest() {
+  local -r manifest="$1"
+  local line
+  local kind
+  local target
+  local backup
+  local present
+  local uid
+  local gid
+  local mode
+  local expected_target
+  local line_count=0
+  local -A seen_targets=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] || return 1
+
+    if [[ "$line" =~ ^dir\|([^|]+)$ ]]; then
+      kind="dir"
+      target="${BASH_REMATCH[1]}"
+      case "$target" in
+        "$SNAPPER_CONFIG_DIRECTORY"|"$SNAPPER_REGISTRATION_DIRECTORY"|"${SNAPPER_CONFIG_DIRECTORY%/*}"|/usr/local|/usr/local/libexec|"${SNAPPER_INITIALIZER%/*}")
+          ;;
+        *)
+          return 1
+          ;;
+      esac
+    elif [[ "$line" =~ ^file\|([^|]+)\|([^|]+)\|(yes|no)\|([^|]*)\|([^|]*)\|([^|]*)$ ]]; then
+      kind="file"
+      target="${BASH_REMATCH[1]}"
+      backup="${BASH_REMATCH[2]}"
+      present="${BASH_REMATCH[3]}"
+      uid="${BASH_REMATCH[4]}"
+      gid="${BASH_REMATCH[5]}"
+      mode="${BASH_REMATCH[6]}"
+      case "$target:$backup" in
+        "$SNAPPER_CONFIG_DIRECTORY/root:$SNAPPER_BACKUP_DIRECTORY/root"|"$SNAPPER_CONFIG_DIRECTORY/home:$SNAPPER_BACKUP_DIRECTORY/home"|"$SNAPPER_REGISTRATION_DIRECTORY/snapper:$SNAPPER_BACKUP_DIRECTORY/registration"|"$SNAPPER_INITIALIZER:$SNAPPER_BACKUP_DIRECTORY/initializer")
+          ;;
+        *)
+          return 1
+          ;;
+      esac
+      if [[ "$present" == yes ]]; then
+        [[ "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+      else
+        [[ -z "$uid" && -z "$gid" && -z "$mode" ]] || return 1
+      fi
+    elif [[ "$line" =~ ^legacy\|([^|]+)\|([^|]+)\|([^|]+)$ ]]; then
+      kind="legacy"
+      target="${BASH_REMATCH[1]}"
+      backup="${BASH_REMATCH[2]}"
+      expected_target="${BASH_REMATCH[3]}"
+      case "$target:$backup:$expected_target" in
+        "$SNAPPER_CONFIG_DIRECTORY:$SNAPPER_BACKUP_DIRECTORY/legacy-configs:$REPO_ROOT/Linux/Snapper/configs"|"$SNAPPER_REGISTRATION_DIRECTORY:$SNAPPER_BACKUP_DIRECTORY/legacy-conf.d:$REPO_ROOT/Linux/Snapper/conf.d")
+          ;;
+        *)
+          return 1
+          ;;
+      esac
+    else
+      return 1
+    fi
+
+    [[ -z "${seen_targets[$target]+present}" ]] || return 1
+    seen_targets["$target"]="$kind"
+    line_count=$((line_count + 1))
+  done <<<"$manifest"
+
+  (( line_count > 0 )) || return 1
+}
+
 recover_snapper_deployment() {
   local state
-  local phase
-  local staged
+  local manifest
 
   root_test ! -L "$SNAPPER_RECOVERY_DIRECTORY" || die 'Snapper recovery directory must not be a symlink'
   if ! root_test -e "$SNAPPER_RECOVERY_DIRECTORY"; then
@@ -922,23 +1069,24 @@ recover_snapper_deployment() {
     [[ "$(root_stat %a "$SNAPPER_BACKUP_DIRECTORY")" == 700 ]] ||
       die "Snapper backup directory must be mode 0700: $SNAPPER_BACKUP_DIRECTORY"
   fi
-  root_test -f "$SNAPPER_JOURNAL_FILE" || die 'Snapper recovery journal is missing; manual recovery is required'
-  root_test -f "$SNAPPER_MANIFEST_FILE" || die 'Snapper recovery manifest is missing; manual recovery is required'
+  validate_snapper_recovery_file "$SNAPPER_JOURNAL_FILE" 'Snapper recovery journal'
+  validate_snapper_recovery_file "$SNAPPER_MANIFEST_FILE" 'Snapper recovery manifest'
   state="$(read_snapper_recovery_file "$SNAPPER_JOURNAL_FILE")" || die 'could not read Snapper recovery journal'
-  phase="$(awk -F= '$1 == "phase" { print $2; exit }' <<<"$state")"
-  staged="$(awk -F= '$1 == "staged" { print $2; exit }' <<<"$state")"
-  if [[ -n "$staged" ]]; then
-    [[ "$staged" == /* && "$staged" != *$'\n'* && "$staged" != *'/../'* ]] ||
-      die 'Snapper recovery staged path is invalid; manual recovery is required'
-    root_exec rm -f -- "$staged" || die 'could not remove incomplete staged Snapper file'
-  fi
-  SNAPPER_MANIFEST_CONTENT="$(read_snapper_recovery_file "$SNAPPER_MANIFEST_FILE")" ||
+  validate_snapper_recovery_journal "$state" ||
+    die 'Snapper recovery journal is malformed; manual recovery is required'
+  manifest="$(read_snapper_recovery_file "$SNAPPER_MANIFEST_FILE")" ||
     die 'could not read Snapper recovery manifest'
-  case "$phase" in
+  validate_snapper_recovery_manifest "$manifest" ||
+    die 'Snapper recovery manifest is malformed; manual recovery is required'
+  SNAPPER_MANIFEST_CONTENT="$manifest"
+  if [[ -n "$SNAPPER_RECOVERY_STAGED" ]]; then
+    root_exec rm -f -- "$SNAPPER_RECOVERY_STAGED" || die 'could not remove incomplete staged Snapper file'
+  fi
+  case "$SNAPPER_RECOVERY_PHASE" in
     cleanup)
       die 'Snapper deployment cleanup is incomplete; manual recovery is required'
       ;;
-    planned|preparing|backing-up|backed-up)
+    preparing|backing-up|backed-up)
       if ! remove_snapper_manifest_directories; then
         die 'Snapper preparation recovery failed; journal and backups were retained for manual recovery'
       fi
@@ -959,7 +1107,7 @@ recover_snapper_deployment() {
       printf 'bootstrap: recovered incomplete Snapper deployment before continuing\n'
       ;;
     *)
-      die "unknown Snapper recovery phase: $phase"
+      die "unknown Snapper recovery phase: $SNAPPER_RECOVERY_PHASE"
       ;;
   esac
 }
@@ -1050,11 +1198,7 @@ cleanup_snapper_staging_files() {
 }
 
 root_run_initializer() {
-  if [[ "${1:-}" == --check ]]; then
-    root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER" "$@"
-  else
-    root_exec env -i "PATH=$SNAPPER_FIXED_PATH" SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 "$SNAPPER_INITIALIZER" "$@"
-  fi
+  root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$SNAPPER_INITIALIZER" "$@"
 }
 
 retain_snapper_cleanup_state() {

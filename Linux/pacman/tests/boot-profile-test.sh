@@ -341,7 +341,12 @@ grep -Fq -- '--validate-topology|--check|--apply' "$SNAPPER_INITIALIZER" || fail
 if grep -Fq 'sudo' "$SNAPPER_INITIALIZER"; then
   fail "Snapper initializer invokes sudo internally"
 fi
-grep -Fq 'SNAPPER_INITIALIZER_TEST_MODE' "$SNAPPER_INITIALIZER" || fail 'Snapper initializer lacks explicit test override gate'
+if grep -Fq 'SNAPPER_INITIALIZER_' "$SNAPPER_INITIALIZER"; then
+  fail 'Snapper initializer contains environment-controlled path overrides'
+fi
+grep -Fxq 'readonly ROOT_MOUNT="/"' "$SNAPPER_INITIALIZER" || fail 'Snapper initializer root path is not hardcoded'
+grep -Fxq 'readonly LIFECYCLE_LOCK="/run/lock/antoinews-linux-snapper-initialize.lock"' "$SNAPPER_INITIALIZER" ||
+  fail 'Snapper initializer helper lock path is not hardcoded'
 grep -Fq 'env -i' "$BOOTSTRAP" || fail 'bootstrap does not clear initializer environment'
 
 snapper_mapping_owners="$(awk '
