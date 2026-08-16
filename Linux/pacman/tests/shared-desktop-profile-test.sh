@@ -178,6 +178,8 @@ assert_source_requires_package() {
 }
 
 GRAPHICAL_SHARED_APPLICATIONS=(
+  1password
+  brave
   hyprland
   bluetui
   brightnessctl
@@ -224,6 +226,9 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   claudebar
   codexbar
   hyprland-preview-share-picker
+  insync
+  obsidian
+  signal
   xdg-terminal-exec
 )
 
@@ -297,6 +302,150 @@ assert_no_duplicate_arch_packages() {
   done
 }
 
+extract_active_hypr_commands() {
+  awk '
+    /hl\.(dsp\.)?exec_cmd/ {
+      line = $0
+      if (line ~ /exec_cmd\("/) {
+        sub(/^.*exec_cmd\("/, "", line)
+        sub(/".*$/, "", line)
+        print FILENAME "\t" line
+      } else if (line ~ /exec_cmd\(\[\[/) {
+        sub(/^.*exec_cmd\(\[\[/, "", line)
+        sub(/\]\].*$/, "", line)
+        print FILENAME "\t" line
+      }
+    }
+  ' \
+    "$REPO_DIR/Linux/hypr/bindings/apps.lua" \
+    "$REPO_DIR/Linux/hypr/autostart.lua"
+}
+
+extract_runtime_command_names() {
+  local source command remainder candidate
+
+  while IFS=$'\t' read -r source command; do
+    [[ -n "$command" ]] || continue
+
+    case "$command" in
+      *"launch-or-focus "*)
+        remainder="${command#*launch-or-focus }"
+        candidate="${remainder%%[[:space:]]*}"
+        candidate="${candidate//\"/}"
+        printf '%s\t%s\n' "$source" "$candidate"
+
+        if [[ "$remainder" == *'"uwsm app -- '* ]]; then
+          remainder="${remainder#*\"uwsm app -- }"
+          remainder="${remainder%%\"*}"
+          candidate="${remainder%%[[:space:]]*}"
+          printf '%s\t%s\n' "$source" "$candidate"
+        fi
+        ;;
+      *"launch-tui-large "*)
+        remainder="${command#*launch-tui-large }"
+        candidate="${remainder%%[[:space:]]*}"
+        printf '%s\t%s\n' "$source" "$candidate"
+        ;;
+      *"uwsm-app -- "*)
+        printf '%s\tuwsm-app\n' "$source"
+        remainder="${command#*uwsm-app -- }"
+        if [[ "$remainder" == env\ * ]]; then
+          remainder="${remainder#env }"
+          while [[ "${remainder%% *}" == *=* ]]; do
+            remainder="${remainder#* }"
+          done
+        fi
+        candidate="${remainder%%[[:space:]]*}"
+        candidate="${candidate##*/}"
+        printf '%s\t%s\n' "$source" "$candidate"
+        ;;
+      *"uwsm app -- "*)
+        printf '%s\tuwsm\n' "$source"
+        remainder="${command#*uwsm app -- }"
+        candidate="${remainder%%[[:space:]]*}"
+        candidate="${candidate##*/}"
+        printf '%s\t%s\n' "$source" "$candidate"
+        ;;
+      *)
+        candidate="${command%%[[:space:]]*}"
+        candidate="${candidate##*/}"
+        printf '%s\t%s\n' "$source" "$candidate"
+        ;;
+    esac
+  done < <(extract_active_hypr_commands)
+}
+
+runtime_command_is_ignored() {
+  case "$1" in
+    dbus-update-activation-environment|pkg-aur-install|pkg-install|pkg-remove|systemctl|update)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+runtime_application_for_command() {
+  local command="$1"
+  local block
+
+  case "$command" in
+    brave-browser)
+      printf 'brave\n'
+      ;;
+    hyprpm)
+      printf 'hyprland\n'
+      ;;
+    launch-editor)
+      printf 'neovim\n'
+      ;;
+    polkit-gnome-authentication-agent-1)
+      printf 'polkit-gnome\n'
+      ;;
+    signal-desktop)
+      printf 'signal\n'
+      ;;
+    swayosd-server)
+      printf 'swayosd\n'
+      ;;
+    uwsm|uwsm-app)
+      printf 'uwsm\n'
+      ;;
+    *)
+      block="$(extract_application "$command")"
+      [[ -n "$block" ]] || return 1
+      printf '%s\n' "$command"
+      ;;
+  esac
+}
+
+assert_hyprland_runtime_ownership() {
+  local source command application block key
+  declare -A seen_commands=()
+
+  while IFS=$'\t' read -r source command; do
+    [[ -n "$command" ]] || continue
+    runtime_command_is_ignored "$command" && continue
+
+    key="$source|$command"
+    [[ -z "${seen_commands[$key]+set}" ]] || continue
+    seen_commands["$key"]=1
+
+    application="$(runtime_application_for_command "$command" || true)"
+    [[ -n "$application" ]] ||
+      fail "active Hyprland command $command from ${source#"$REPO_DIR"/} has no manifest application owner"
+
+    block="$(extract_application "$application")"
+    if ! {
+      printf '%s\n' "$block" | extract_direct_manager_packages pacman
+      printf '%s\n' "$block" | extract_direct_manager_packages yay
+    } | grep -E '[^[:space:]]' >/dev/null; then
+      fail "active Hyprland command $command from ${source#"$REPO_DIR"/} has no direct Arch package owner in $application"
+    fi
+  done < <(extract_runtime_command_names)
+}
+
 assert_runtime_requirements() {
   assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
   assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
@@ -308,6 +457,7 @@ assert_runtime_requirements() {
   assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Nautilus nautilus pacman nautilus
   assert_source_requires_package Linux/os/helpers/cmd-share 'localsend --headless send' localsend yay localsend
   assert_source_requires_package Linux/hypr/apps/localsend.lua 'class = "(Share|localsend)"' localsend yay localsend
+  assert_hyprland_runtime_ownership
 }
 
 assert_focused_dry_run() {
@@ -373,6 +523,11 @@ assert_focused_dry_run hyprland-preview-share-picker yay hyprland-preview-share-
 assert_focused_dry_run localsend yay localsend
 assert_focused_dry_run pipewire-audio pacman pipewire
 assert_focused_dry_run linux-services-packages pacman ufw
+assert_focused_dry_run brave yay brave-bin
+assert_focused_dry_run signal pacman signal-desktop
+assert_focused_dry_run insync yay insync
+assert_focused_dry_run obsidian pacman obsidian
+assert_focused_dry_run 1password yay 1password-beta
 
 GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 POWER_PROFILE_WHEN="'{{ and (eq .OS \"linux\") .HasDisplay (not .IsWSL) (ne .Hostname \"antoinews-linux\") }}'"

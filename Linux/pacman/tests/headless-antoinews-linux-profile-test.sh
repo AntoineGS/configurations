@@ -74,6 +74,8 @@ assert_excluded() {
 }
 
 GRAPHICAL_APPLICATIONS=(
+  1password
+  brave
   xcompose
   hyprland
   pipewire-audio
@@ -86,7 +88,10 @@ GRAPHICAL_APPLICATIONS=(
   fontconfig
   hyprland-preview-share-picker
   imv
+  insync
   mako
+  obsidian
+  signal
   swayosd
   typora
   wiremix
