@@ -23,6 +23,14 @@ class Command:
 
 
 @dataclass(frozen=True)
+class LuaToken:
+    kind: str
+    value: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
 class PackageOwner:
     application: str
     manager: str
@@ -76,7 +84,7 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
         (),
         ("-disable-gpu", "--enable-wayland-ime"),
     ),
-    "polkit-gnome-authentication-agent-1": _spec(
+    "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1": _spec(
         "polkit-gnome",
         "pacman",
         "polkit-gnome",
@@ -101,8 +109,36 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
 
 HELPER_COMMANDS = {"launch-or-focus", "launch-tui-large"}
 
-_EXEC_CALL = re.compile(r"\bhl(?:\.dsp)?\.exec_cmd\s*\(")
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_LONG_STRING_OPEN = re.compile(r"\[(=*)\[")
+
+_WORKSPACE_EVAL = (
+    'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="DVI-D-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="DVI-D-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="HDMI-A-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="HDMI-A-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="HDMI-A-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.focus({workspace=2}))'
+)
+_MONITOR_EVAL_1 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3601x0", scale = 1 })'
+_MONITOR_EVAL_2 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })'
+
+# Shell-bearing commands are allowlisted as complete strings. This prevents a recognized
+# outer executable from authorizing arbitrary payloads, substitutions, or command chains.
+APPROVED_FULL_COMMANDS = frozenset(
+    {
+        "systemctl --user import-environment $(env | cut -d'=' -f 1)",
+        "dbus-update-activation-environment --systemd --all",
+        f"sleep 1 && hyprctl eval '{_WORKSPACE_EVAL}'",
+        f"sleep 2 && hyprctl eval '{_MONITOR_EVAL_1}' && hyprctl eval '{_MONITOR_EVAL_2}'",
+    }
+)
 
 
 def _strip_yaml_scalar(value: str) -> str:
@@ -151,19 +187,6 @@ def parse_manifest_packages(manifest: Path) -> dict[str, tuple[PackageOwner, ...
     return packages
 
 
-def _skip_lua_space(text: str, index: int) -> int:
-    while index < len(text):
-        if text[index].isspace():
-            index += 1
-            continue
-        if text.startswith("--", index):
-            newline = text.find("\n", index)
-            index = len(text) if newline < 0 else newline + 1
-            continue
-        break
-    return index
-
-
 def _decode_lua_escape(text: str, index: int) -> tuple[str, int]:
     if index + 1 >= len(text):
         raise AuditError("unterminated Lua string escape")
@@ -193,12 +216,13 @@ def _decode_lua_escape(text: str, index: int) -> tuple[str, int]:
 
 
 def _parse_lua_string(text: str, index: int) -> tuple[str, int]:
-    if text[index] == '"':
+    if index < len(text) and text[index] in "'\"":
+        quote = text[index]
         characters: list[str] = []
         index += 1
         while index < len(text):
             character = text[index]
-            if character == '"':
+            if character == quote:
                 return "".join(characters), index + 1
             if character == "\\":
                 replacement, index = _decode_lua_escape(text, index)
@@ -208,12 +232,12 @@ def _parse_lua_string(text: str, index: int) -> tuple[str, int]:
             index += 1
         raise AuditError("unterminated quoted Lua command")
 
-    opening = re.match(r"\[(=*)\[", text[index:])
+    opening = _LONG_STRING_OPEN.match(text, index)
     if opening is None:
         raise AuditError("hl.exec_cmd first argument is not a literal Lua string")
 
     marker = opening.group(1)
-    content_start = index + len(opening.group(0))
+    content_start = opening.end()
     closing_marker = "]" + marker + "]"
     content_end = text.find(closing_marker, content_start)
     if content_end < 0:
@@ -221,16 +245,120 @@ def _parse_lua_string(text: str, index: int) -> tuple[str, int]:
     return text[content_start:content_end], content_end + len(closing_marker)
 
 
+def _scan_lua(text: str) -> list[LuaToken]:
+    tokens: list[LuaToken] = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character.isspace():
+            index += 1
+            continue
+
+        if text.startswith("--", index):
+            comment_start = index + 2
+            opening = _LONG_STRING_OPEN.match(text, comment_start)
+            if opening is not None:
+                marker = opening.group(1)
+                closing_marker = "]" + marker + "]"
+                comment_end = text.find(closing_marker, opening.end())
+                if comment_end < 0:
+                    raise AuditError("unterminated Lua block comment")
+                index = comment_end + len(closing_marker)
+            else:
+                newline = text.find("\n", comment_start)
+                index = len(text) if newline < 0 else newline + 1
+            continue
+
+        if character in "'\"" or _LONG_STRING_OPEN.match(text, index) is not None:
+            value, end = _parse_lua_string(text, index)
+            tokens.append(LuaToken("string", value, index, end))
+            index = end
+            continue
+
+        identifier = _IDENTIFIER.match(text, index)
+        if identifier is not None:
+            tokens.append(LuaToken("identifier", identifier.group(), index, identifier.end()))
+            index = identifier.end()
+            continue
+
+        tokens.append(LuaToken("symbol", character, index, index + 1))
+        index += 1
+    return tokens
+
+
+def _tokens_are_adjacent(text: str, left: LuaToken, right: LuaToken) -> bool:
+    return text[left.end : right.start] == ""
+
+
+def _is_canonical_exec_call(tokens: Sequence[LuaToken], index: int, text: str) -> bool:
+    if tokens[index].kind != "identifier" or tokens[index].value != "exec_cmd":
+        return False
+
+    direct = index >= 2 and [token.value for token in tokens[index - 2 : index]] == ["hl", "."]
+    dsp = index >= 4 and [token.value for token in tokens[index - 4 : index]] == ["hl", ".", "dsp", "."]
+    if direct:
+        prefix_start = index - 2
+    elif dsp:
+        prefix_start = index - 4
+    else:
+        return False
+
+    for left, right in zip(tokens[prefix_start:index], tokens[prefix_start + 1 : index + 1]):
+        if not _tokens_are_adjacent(text, left, right):
+            return False
+    return index + 1 < len(tokens) and tokens[index + 1].value == "(" and _tokens_are_adjacent(
+        text, tokens[index], tokens[index + 1]
+    )
+
+
+def _is_bracket_exec_reference(tokens: Sequence[LuaToken], index: int) -> bool:
+    return (
+        tokens[index].kind == "string"
+        and tokens[index].value == "exec_cmd"
+        and index > 0
+        and index + 1 < len(tokens)
+        and tokens[index - 1].value == "["
+        and tokens[index + 1].value == "]"
+        and index > 1
+        and (
+            tokens[index - 2].kind in {"identifier", "string"}
+            or tokens[index - 2].value in {")", "]"}
+        )
+    )
+
+
+def _line_number(text: str, index: int) -> int:
+    return text.count("\n", 0, index) + 1
+
+
 def extract_exec_commands(source: Path) -> list[Command]:
     """Extract literal command arguments from hl.exec_cmd and hl.dsp.exec_cmd calls."""
 
     text = source.read_text(encoding="utf-8")
+    tokens = _scan_lua(text)
     commands: list[Command] = []
-    for match in _EXEC_CALL.finditer(text):
-        argument_start = _skip_lua_space(text, match.end())
-        command, _ = _parse_lua_string(text, argument_start)
-        line = text.count("\n", 0, match.start()) + 1
-        commands.append(Command(source, command, line))
+    consumed_exec_tokens: set[int] = set()
+
+    for index, token in enumerate(tokens):
+        if not _is_canonical_exec_call(tokens, index, text):
+            continue
+        argument_index = index + 2
+        if argument_index >= len(tokens) or tokens[argument_index].kind != "string":
+            raise AuditError(f"{source}:{_line_number(text, token.start)}: exec_cmd requires a literal string")
+        if argument_index + 1 >= len(tokens) or tokens[argument_index + 1].value != ")":
+            raise AuditError(f"{source}:{_line_number(text, token.start)}: exec_cmd accepts one literal string")
+        command_token = tokens[argument_index]
+        line = _line_number(text, token.start)
+        commands.append(Command(source, command_token.value, line))
+        consumed_exec_tokens.add(index)
+
+    for index, token in enumerate(tokens):
+        unconsumed_identifier = (
+            token.kind == "identifier" and token.value == "exec_cmd" and index not in consumed_exec_tokens
+        )
+        if unconsumed_identifier or _is_bracket_exec_reference(tokens, index):
+            line = _line_number(text, token.start)
+            raise AuditError(f"{source}:{line}: unconsumed exec_cmd reference")
     return commands
 
 
@@ -315,6 +443,11 @@ def _split_shell_segments(command: str) -> list[str]:
         if command.startswith("&&", index) or command.startswith("||", index):
             segments.append(command[segment_start:index].strip())
             index += 2
+            segment_start = index
+            continue
+        if character in "\n\r":
+            segments.append(command[segment_start:index].strip())
+            index += 1
             segment_start = index
             continue
         if character in ";|":
@@ -458,7 +591,7 @@ def _audit_owned_words(
 ) -> None:
     if not words:
         raise AuditError(f"{command.source}:{command.line}: empty command segment")
-    executable = Path(words[0]).name
+    executable = words[0]
     spec = EXECUTABLE_SPECS.get(executable)
     if spec is None:
         raise AuditError(
@@ -487,36 +620,29 @@ def _audit_system_words(words: Sequence[str], command: Command) -> bool:
     if not words:
         raise AuditError(f"{command.source}:{command.line}: empty command segment")
 
-    executable = Path(words[0]).name
-    if executable == "sleep":
-        if len(words) == 2 and words[1].isdigit():
-            return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported sleep command {command.text!r}")
-    if executable == "hyprctl":
-        if len(words) >= 3 and words[1] == "eval":
-            return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported hyprctl command {command.text!r}")
-    if executable == "systemctl":
-        if words == ["systemctl", "--user", "is-active"]:
-            return True
-        if words[:3] == ["systemctl", "--user", "import-environment"] and len(words) == 4:
-            normalized = words[3].replace("'", "")
-            if normalized == "$(env | cut -d= -f 1)":
-                return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported systemctl command {command.text!r}")
-    if executable == "dbus-update-activation-environment":
-        if words == ["dbus-update-activation-environment", "--systemd", "--all"]:
-            return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported dbus command {command.text!r}")
-    if executable == "env":
-        if len(words) == 1:
-            return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported env command {command.text!r}")
-    if executable == "cut":
-        if words == ["cut", "-d=", "-f", "1"]:
-            return True
-        raise AuditError(f"{command.source}:{command.line}: unsupported cut command {command.text!r}")
-    return False
+    if words[0] not in {
+        "cut",
+        "dbus-update-activation-environment",
+        "env",
+        "hyprctl",
+        "sleep",
+        "systemctl",
+    }:
+        return False
+    if command.text not in APPROVED_FULL_COMMANDS:
+        raise AuditError(f"{command.source}:{command.line}: unsupported full command {command.text!r}")
+    return True
+
+
+def _validate_full_command(command: Command) -> None:
+    if "`" in command.text:
+        raise AuditError(f"{command.source}:{command.line}: backtick substitution is unsupported")
+    if "$(" in command.text and command.text not in APPROVED_FULL_COMMANDS:
+        raise AuditError(f"{command.source}:{command.line}: unsupported command substitution")
+    if ("\n" in command.text or "\r" in command.text) and command.text not in APPROVED_FULL_COMMANDS:
+        raise AuditError(f"{command.source}:{command.line}: unsupported newline in full command")
+    if len(_split_shell_segments(command.text)) > 1 and command.text not in APPROVED_FULL_COMMANDS:
+        raise AuditError(f"{command.source}:{command.line}: unsupported full command {command.text!r}")
 
 
 def _audit_segment(
@@ -532,7 +658,7 @@ def _audit_segment(
     if not words:
         return
 
-    executable = Path(words[0]).name
+    executable = words[0]
     if _audit_system_words(words, command):
         return
     if executable in HELPER_COMMANDS:
@@ -572,11 +698,9 @@ def audit_commands(
     packages: dict[str, tuple[PackageOwner, ...]],
 ) -> None:
     for command in commands:
-        try:
-            for segment in _split_shell_segments(command.text):
-                _audit_segment(segment, command, packages)
-        except AuditError:
-            raise
+        _validate_full_command(command)
+        for segment in _split_shell_segments(command.text):
+            _audit_segment(segment, command, packages)
 
 
 def audit_sources(manifest: Path, sources: Iterable[Path]) -> list[Command]:

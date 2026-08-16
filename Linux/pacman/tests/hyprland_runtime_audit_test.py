@@ -40,6 +40,37 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
         self.assertEqual(sum(command.source.name == "apps.lua" for command in commands), 12)
         self.assertEqual(sum(command.source.name == "autostart.lua" for command in commands), 14)
 
+    def test_unconsumed_exec_cmd_references_fail_closed(self) -> None:
+        cases = (
+            "local run = hl.exec_cmd\n",
+            'hl["exec_cmd"]("signal-desktop")\n',
+            'hl.dsp["exec_cmd"]("signal-desktop")\n',
+            'hl . exec_cmd("signal-desktop")\n',
+            'hl.exec_cmd ("signal-desktop")\n',
+        )
+
+        for source in cases:
+            with self.subTest(source=source):
+                temporary_directory, path = self.write_fixture(source)
+                self.addCleanup(temporary_directory.cleanup)
+
+                with self.assertRaises(AuditError):
+                    extract_exec_commands(path)
+
+    def test_comments_and_strings_do_not_create_exec_cmd_references(self) -> None:
+        temporary_directory, path = self.write_fixture(
+            '-- hl.exec_cmd("commented-out")\n'
+            'local note = "hl.exec_cmd(\\"quoted\\")"\n'
+            'local long_note = [[hl["exec_cmd"]]]\n'
+            'local table = { ["exec_cmd"] = true }\n'
+            'hl.exec_cmd("signal-desktop")\n'
+        )
+        self.addCleanup(temporary_directory.cleanup)
+
+        commands = extract_exec_commands(path)
+
+        self.assertEqual([command.text for command in commands], ["signal-desktop"])
+
     def test_multiline_quoted_string_handles_escaped_quotes(self) -> None:
         temporary_directory, path = self.write_fixture(
             'hl.exec_cmd(\n  "signal-desktop --label \\"quoted\\""\n)\n'
@@ -80,7 +111,13 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
             "hl.exec_cmd(\n  [[uwsm-app -- env FOO=bar xdg-terminal-exec synthetic-launcher]]\n)\n",
             "hl.exec_cmd(\n  [[systemctl --user $(synthetic-command)]]\n)\n",
             "hl.exec_cmd(\n  [[sleep 1 &&\nsynthetic-newline-launcher]]\n)\n",
+            "hl.exec_cmd(\n  [[sleep 1 && hyprctl eval status]]\n)\n",
+            "hl.exec_cmd(\n  [[sleep 1 && hyprctl eval `synthetic-command`]]\n)\n",
+            "hl.exec_cmd(\n  [[sleep 1 && hyprctl eval $(sleep 1)]]\n)\n",
+            "hl.exec_cmd(\n  [[sleep 1 && hyprctl eval status;]]\n)\n",
+            "hl.exec_cmd(\n  [[sleep 1 && hyprctl eval status\nhyprctl eval status]]\n)\n",
             'hl.exec_cmd(\n  "signal-desktop --label \\"escaped\\""\n)\n',
+            "hl.exec_cmd(\n  [[/tmp/signal-desktop]]\n)\n",
         )
         packages = parse_manifest_packages(self.manifest)
 
