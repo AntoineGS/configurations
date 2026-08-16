@@ -44,6 +44,10 @@ cleanup() {
     printf 'FAIL: Loader.Error found in the Quickshell preview log\n' >&2
     status=1
   fi
+  if grep -Eq 'Plugin widget [^[:space:]]+ failed:' "$preview_log"; then
+    printf 'FAIL: plugin widget failure found in the Quickshell preview log\n' >&2
+    status=1
+  fi
   if ((status != 0)) && [[ -s $preview_log ]]; then
     printf '%s\n' '--- quickshell preview log ---' >&2
     printf '%s\n' "$(<"$preview_log")" >&2
