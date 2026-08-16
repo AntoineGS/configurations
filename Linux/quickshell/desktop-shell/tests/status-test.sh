@@ -14,16 +14,26 @@ fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
 
 fake_bin="$fixture/bin"
+failing_bin="$fixture/failing-bin"
 proc_root="$fixture/proc"
 cache_home="$fixture/cache"
 home_root="$fixture/home"
-mkdir -p "$fake_bin" "$proc_root" "$cache_home" "$home_root"
+mkdir -p "$fake_bin" "$failing_bin" "$proc_root" "$cache_home" "$home_root"
 
 sleep_trace="$fixture/sleep.trace"
 pgrep_trace="$fixture/pgrep.trace"
 voxtype_trace="$fixture/voxtype.trace"
 codex_trace="$fixture/codex.trace"
 command_trace="$fixture/command.trace"
+
+cat >"$failing_bin/mktemp" <<'FAKE_MKTEMP'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf 'mktemp fixture failure\n' >&2
+exit 1
+FAKE_MKTEMP
+chmod +x "$failing_bin/mktemp"
 
 printf '%s\n' 'cpu 100 0 100 800 0 0 0 0 0 0' >"$proc_root/stat"
 printf '%s\n' 'MemTotal:       100000 kB' 'MemAvailable:    25000 kB' >"$proc_root/meminfo"
@@ -88,7 +98,17 @@ if [[ ${CODEX_FAIL:-0} == 1 ]]; then
   printf 'codexbar fixture failure\n' >&2
   exit 1
 fi
-printf '%s\n' '{"text":"1%/4d 7h","tooltip":"Codex quota","class":"source","extra":"preserve"}'
+case ${CODEX_PAYLOAD:-valid} in
+valid)
+  printf '%s\n' '{"text":"1%/4d 7h","tooltip":"Codex quota","class":"source","extra":"preserve"}'
+  ;;
+missing-tooltip)
+  printf '%s\n' '{"text":"1%/4d 7h","class":"source"}'
+  ;;
+non-string-tooltip)
+  printf '%s\n' '{"text":"1%/4d 7h","tooltip":42,"class":"source"}'
+  ;;
+esac
 FAKE_CODEXBAR
 
 cat >"$fake_bin/df" <<'FAKE_DF'
@@ -121,6 +141,7 @@ export DESKTOP_SHELL_COMMAND_TRACE="$command_trace"
 export RECORDING_ACTIVE=0
 export VOXTYPE_STATE=idle
 export CODEX_FAIL=0
+export CODEX_PAYLOAD=valid
 export DF_FAIL=0
 
 original_path="$PATH"
@@ -136,6 +157,20 @@ invoke() {
 
   if last_output=$(PATH="$fake_bin:$original_path" HOME="$home_root" XDG_CACHE_HOME="$selected_cache_home" \
     "$HELPER" "$kind" 2>"$stderr_file"); then
+    last_status=0
+  else
+    last_status=$?
+  fi
+  last_stderr=$(<"$stderr_file")
+}
+
+invoke_arguments() {
+  local label=$1
+  shift
+  local stderr_file="$fixture/$label.stderr"
+
+  if last_output=$(PATH="$failing_bin:$original_path" HOME="$home_root" XDG_CACHE_HOME="$fixture/invalid-args-cache" \
+    "$HELPER" "$@" 2>"$stderr_file"); then
     last_status=0
   else
     last_status=$?
@@ -167,6 +202,14 @@ assert_json_field() {
 
 assert_status() {
   assert_equal "$1" "$last_status" "$2 exit status"
+}
+
+assert_no_output() {
+  local message=$1
+  if [[ -n $last_output ]]; then
+    printf 'status-test: %s unexpectedly produced stdout: %s\n' "$message" "$last_output" >&2
+    exit 1
+  fi
 }
 
 assert_no_command_side_effects() {
@@ -254,10 +297,29 @@ status_cache="$cache_home/desktop-shell/status"
   exit 1
 }
 shopt -s nullglob
-temporary_cache_files=("$status_cache"/*.tmp "$status_cache"/.*.XXXXXX)
+temporary_cache_files=("$status_cache"/*.tmp "$status_cache"/.*.??????)
 shopt -u nullglob
 assert_equal 0 "${#temporary_cache_files[@]}" 'atomic cache leaves no temporary files'
 
+CODEX_PAYLOAD=missing-tooltip
+invoke codex-missing-field codex "$fixture/no-cache-missing-field"
+assert_status 1 codex-missing-field
+assert_no_output 'malformed successful payload with a missing field'
+[[ -n $last_stderr ]] || {
+  printf 'status-test: missing-field payload did not report its schema error\n' >&2
+  exit 1
+}
+
+CODEX_PAYLOAD=non-string-tooltip
+invoke codex-non-string-field codex "$fixture/no-cache-non-string-field"
+assert_status 1 codex-non-string-field
+assert_no_output 'malformed successful payload with a non-string field'
+[[ -n $last_stderr ]] || {
+  printf 'status-test: non-string payload did not report its schema error\n' >&2
+  exit 1
+}
+
+CODEX_PAYLOAD=valid
 CODEX_FAIL=1
 invoke codex-stale codex
 assert_status 0 codex-stale
@@ -269,6 +331,24 @@ stale_tooltip=$(jq -er '.tooltip' <<<"$last_output")
   exit 1
 }
 assert_equal 'muted' "$(jq -er '.class' "$status_cache/codex.json")" 'good Codex cache remains fresh'
+
+printf '%s\n' '{"text":"cached","class":"muted"}' >"$status_cache/codex.json"
+invoke codex-cache-missing-field codex
+assert_status 1 codex-cache-missing-field
+assert_no_output 'malformed cached payload with a missing field'
+[[ -n $last_stderr ]] || {
+  printf 'status-test: missing-field cache did not report its schema error\n' >&2
+  exit 1
+}
+
+printf '%s\n' '{"text":"cached","tooltip":42,"class":"muted"}' >"$status_cache/codex.json"
+invoke codex-cache-non-string-field codex
+assert_status 1 codex-cache-non-string-field
+assert_no_output 'malformed cached payload with a non-string field'
+[[ -n $last_stderr ]] || {
+  printf 'status-test: non-string cache did not report its schema error\n' >&2
+  exit 1
+}
 
 DF_FAIL=1
 invoke disk-no-cache disk "$fixture/no-cache"
@@ -283,6 +363,22 @@ invoke disk-no-cache disk "$fixture/no-cache"
 
 invoke unknown unknown
 assert_status 2 unknown
+
+invoke_arguments missing-arguments
+assert_status 2 missing-arguments
+assert_no_output 'missing arguments'
+[[ $last_stderr != *'mktemp fixture failure'* ]] || {
+  printf 'status-test: missing-argument validation attempted mktemp\n' >&2
+  exit 1
+}
+
+invoke_arguments extra-arguments recording extra
+assert_status 2 extra-arguments
+assert_no_output 'extra arguments'
+[[ $last_stderr != *'mktemp fixture failure'* ]] || {
+  printf 'status-test: extra-argument validation attempted mktemp\n' >&2
+  exit 1
+}
 
 assert_no_command_side_effects
 
