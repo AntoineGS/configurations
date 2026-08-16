@@ -1,4 +1,4 @@
--- This file replaces tiling.conf (now deprecated in favor of tiling-v2 per Omarchy).
+-- This file replaces the deprecated tiling.conf with the tiling-v2 bindings.
 -- All bindings below preserve the behavior of the previous .conf.
 
 -- Fullscreen management

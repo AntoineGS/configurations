@@ -23,7 +23,7 @@ elseif hostname == "DESKTOP-E07VTRN" then
 	hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })
 	hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
-	-- layout pinned to dwindle so omarchy-hyprland-workspace-layout-toggle can't silently drift a workspace into master/scrolling
+	-- Keep workspace layouts pinned to dwindle so they cannot silently drift into master/scrolling.
 	hl.workspace_rule({ workspace = "1", monitor = "DVI-D-1", layout = "dwindle", persistent = true, default = true })
 	hl.workspace_rule({ workspace = "2", monitor = "HDMI-A-1", layout = "dwindle", persistent = true, default = true })
 	hl.workspace_rule({ workspace = "3", monitor = "DP-2", layout = "dwindle", persistent = true, default = true })
