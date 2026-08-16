@@ -314,6 +314,12 @@ prepare_prerequisite_fixture() {
 
   rm -rf -- "$PREREQUISITE_BIN" "$PREREQUISITE_TEMP_ROOT"
   mkdir -p -- "$PREREQUISITE_TEMP_ROOT"
+  mkdir -p -- "$REPO_WITH_SPACES/Linux/Snapper/configs" "$REPO_WITH_SPACES/Linux/Snapper/conf.d"
+  printf 'SUBVOLUME="/"\nFSTYPE="btrfs"\n' >"$REPO_WITH_SPACES/Linux/Snapper/configs/root"
+  printf 'SUBVOLUME="/home"\nFSTYPE="btrfs"\n' >"$REPO_WITH_SPACES/Linux/Snapper/configs/home"
+  printf 'SNAPPER_CONFIGS="root home"\n' >"$REPO_WITH_SPACES/Linux/Snapper/conf.d/snapper"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
+  chmod +x -- "$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
   create_stub_path "$PREREQUISITE_BIN"
   write_executable "$PREREQUISITE_BIN/rm" \
     "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
