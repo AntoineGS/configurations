@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+COLLECTOR_DIR="${DESKTOP_SHELL_AGENT_COLLECTOR_DIR:-$SCRIPT_DIR}"
+readonly COLLECTOR_DIR
+USAGE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell/agents/usage"
+readonly USAGE_DIR
+
+command -v jq >/dev/null 2>&1 || {
+  printf 'desktop-agent-usage-update: jq is required\n' >&2
+  exit 1
+}
+
+flags=()
+providers=()
+
+while (($# > 0)); do
+  case $1 in
+    --force|--limits-only)
+      flags+=("$1")
+      ;;
+    codex|claude)
+      providers+=("$1")
+      ;;
+    *)
+      printf 'desktop-agent-usage-update: expected codex, claude, or no provider; got %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if ((${#providers[@]} == 0)); then
+  providers=(codex claude)
+fi
+
+write_record() {
+  local provider=$1
+  local payload=$2
+  local target="$USAGE_DIR/$provider.json"
+  local temporary
+
+  mkdir -p "$USAGE_DIR"
+  temporary=$(mktemp "$USAGE_DIR/.$provider.XXXXXX.tmp")
+  if ! printf '%s\n' "$payload" >"$temporary"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+  if ! mv -f -- "$temporary" "$target"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+}
+
+valid_record() {
+  local provider=$1
+  jq -e -s --arg provider "$provider" '
+    length == 1 and
+    (.[0] | type == "object" and
+      .id == $provider and
+      (.name | type == "string") and
+      (.limits | type == "array") and
+      (.dailyUsage | type == "array") and
+      (.modelUsage | type == "object") and
+      (.updatedAt | type == "string"))
+  ' >/dev/null
+}
+
+normalize_record() {
+  jq -c -s '
+    .[0] as $record |
+    {
+      schemaVersion: 1,
+      id: $record.id,
+      name: $record.name,
+      updatedAt: $record.updatedAt,
+      stale: ($record.stale == true),
+      error: ($record.error // null),
+      ready: ($record.ready == true),
+      hasLocalStats: ($record.hasLocalStats != false),
+      tierLabel: ($record.tierLabel // ""),
+      usageStatusText: ($record.usageStatusText // ""),
+      authHelpText: ($record.authHelpText // ""),
+      limits: $record.limits,
+      dailyUsage: $record.dailyUsage,
+      todayPrompts: ($record.todayPrompts // 0),
+      todaySessions: ($record.todaySessions // 0),
+      todayTotalTokens: ($record.todayTotalTokens // 0),
+      todayTokensByModel: ($record.todayTokensByModel // {}),
+      totalPrompts: ($record.totalPrompts // 0),
+      totalSessions: ($record.totalSessions // 0),
+      activeDays: ($record.activeDays // 0),
+      modelUsage: $record.modelUsage
+    }
+  '
+}
+
+remove_record() {
+  local provider=$1
+  rm -f -- "$USAGE_DIR/$provider.json"
+}
+
+stale_record() {
+  local provider=$1
+  local existing="$USAGE_DIR/$provider.json"
+  local stale
+
+  [[ -s $existing ]] || return 0
+  if ! valid_record "$provider" <"$existing"; then
+    remove_record "$provider"
+    return 0
+  fi
+  stale=$(jq -c '.stale = true | .error = "provider update failed; showing the last valid record"' "$existing") || {
+    remove_record "$provider"
+    return 0
+  }
+  stale=$(normalize_record <<<"$stale") || {
+    remove_record "$provider"
+    return 0
+  }
+  write_record "$provider" "$stale"
+}
+
+collect_provider() {
+  local provider=$1
+  local collector="$COLLECTOR_DIR/desktop-agent-usage-$provider"
+  local output=""
+  local stderr_file
+  local status=0
+
+  stderr_file=$(mktemp)
+  if [[ -x $collector ]]; then
+    output=$("$collector" "${flags[@]}" 2>"$stderr_file") || status=$?
+  else
+    status=127
+  fi
+  rm -f -- "$stderr_file"
+
+  if ((status == 0)) && [[ -z $output ]]; then
+    remove_record "$provider"
+    return 0
+  fi
+
+  if ((status == 0)) && valid_record "$provider" <<<"$output"; then
+    output=$(normalize_record <<<"$output") || {
+      stale_record "$provider"
+      printf 'desktop-agent-usage-update: %s update failed; retained the last valid record\n' "$provider" >&2
+      return 1
+    }
+    write_record "$provider" "$output"
+    return 0
+  fi
+
+  stale_record "$provider"
+  printf 'desktop-agent-usage-update: %s update failed; retained the last valid record\n' "$provider" >&2
+  return 1
+}
+
+status=0
+for provider in "${providers[@]}"; do
+  collect_provider "$provider" || status=1
+done
+
+exit "$status"
