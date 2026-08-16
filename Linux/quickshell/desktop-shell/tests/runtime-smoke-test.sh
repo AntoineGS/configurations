@@ -22,11 +22,17 @@ command -v timeout >/dev/null 2>&1 || {
 test_root=$(mktemp -d)
 preview_log="$test_root/quickshell.log"
 wayland_log="$test_root/wayland.log"
+main_pid=$BASHPID
 preview_pid=""
 preview_start_time=""
 wayland_pid=""
 wayland_start_time=""
 cleanup_error=0
+cleanup_running=0
+launch_critical_section=0
+pending_signal_status=0
+launch_failure_reason=""
+ownership_timeout_ns=500000000
 ipc_timeout=3s
 ipc_kill_after=1s
 
@@ -35,55 +41,138 @@ fail() {
   exit 1
 }
 
-proc_stat_field() {
+handle_signal() {
+  local status=$1
+
+  if ((launch_critical_section)); then
+    if ((pending_signal_status == 0)); then
+      pending_signal_status=$status
+    fi
+    return 0
+  fi
+
+  if ((cleanup_running)); then
+    return 0
+  fi
+
+  exit "$status"
+}
+
+honor_pending_signal() {
+  local status=$pending_signal_status
+
+  pending_signal_status=0
+  if ((status != 0)); then
+    exit "$status"
+  fi
+}
+
+capture_process_identity() {
   local pid=$1
-  local index=$2
   local stat_text
   local -a fields=()
 
-  [[ -r "/proc/$pid/stat" ]] || return 1
+  observed_process_state=""
+  observed_process_parent_pid=""
+  observed_process_start_time=""
+
+  [[ $pid =~ ^[1-9][0-9]*$ && -r "/proc/$pid/stat" ]] || return 1
   stat_text=$(<"/proc/$pid/stat") || return 1
   stat_text=${stat_text##*) }
   read -r -a fields <<<"$stat_text"
-  ((index >= 0 && index < ${#fields[@]})) || return 1
-  printf '%s\n' "${fields[index]}"
-}
+  (( ${#fields[@]} > 19 )) || return 1
 
-process_start_time() {
-  proc_stat_field "$1" 19
-}
-
-process_state() {
-  proc_stat_field "$1" 0
-}
-
-capture_process_start_time() {
-  local pid=$1
-
-  process_start_time "$pid" 2>/dev/null || true
+  observed_process_state=${fields[0]}
+  observed_process_parent_pid=${fields[1]}
+  observed_process_start_time=${fields[19]}
+  [[ $observed_process_parent_pid =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ $observed_process_start_time =~ ^[1-9][0-9]*$ ]]
 }
 
 process_identity_matches() {
   local pid=$1
   local expected_start_time=$2
-  local actual_start_time
 
-  [[ $pid =~ ^[1-9][0-9]*$ && -n $expected_start_time ]] || return 1
-  actual_start_time=$(process_start_time "$pid" 2>/dev/null) || return 1
-  [[ $actual_start_time == "$expected_start_time" ]]
+  [[ $pid =~ ^[1-9][0-9]*$ && $expected_start_time =~ ^[1-9][0-9]*$ ]] || return 1
+  capture_process_identity "$pid" 2>/dev/null || return 1
+  [[ $observed_process_start_time == "$expected_start_time" &&
+    $observed_process_parent_pid == "$main_pid" &&
+    $observed_process_state != Z ]]
 }
 
 process_is_running() {
   local pid=$1
   local expected_start_time=$2
-  local state
 
-  process_identity_matches "$pid" "$expected_start_time" || return 1
-  state=$(process_state "$pid" 2>/dev/null) || return 1
-  [[ $state != Z ]]
+  process_identity_matches "$pid" "$expected_start_time"
 }
 
-monotonic_ns() {
+establish_process_ownership() {
+  local pid=$1
+  local deadline_ns=$2
+  local now_ns candidate_start_time
+
+  child_start_time=""
+  launch_failure_reason=""
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || {
+    launch_failure_reason='invalid-pid'
+    return 1
+  }
+
+  while :; do
+    if ! capture_process_identity "$pid" 2>/dev/null; then
+      [[ -r "/proc/$pid/stat" ]] || {
+        launch_failure_reason='exited'
+        return 1
+      }
+    elif [[ $observed_process_state == Z ]]; then
+      launch_failure_reason='exited'
+      return 1
+    elif [[ $observed_process_parent_pid != "$main_pid" ]]; then
+      launch_failure_reason='ppid-mismatch'
+      return 1
+    else
+      candidate_start_time=$observed_process_start_time
+      if capture_process_identity "$pid" 2>/dev/null; then
+        if [[ $observed_process_start_time == "$candidate_start_time" &&
+          $observed_process_parent_pid == "$main_pid" &&
+          $observed_process_state != Z ]]; then
+          child_start_time=$candidate_start_time
+          return 0
+        fi
+        if [[ $observed_process_state == Z ]]; then
+          launch_failure_reason='exited'
+        else
+          launch_failure_reason='identity-changed'
+        fi
+        return 1
+      fi
+      if [[ ! -r "/proc/$pid/stat" ]]; then
+        launch_failure_reason='exited'
+      else
+        launch_failure_reason='identity-unreadable'
+      fi
+      return 1
+    fi
+
+    read_monotonic_ns || {
+      launch_failure_reason='clock'
+      return 1
+    }
+    now_ns=$monotonic_value_ns
+    if ((now_ns >= deadline_ns)); then
+      if [[ ! -r "/proc/$pid/stat" ]]; then
+        launch_failure_reason='exited'
+      else
+        launch_failure_reason='timeout'
+      fi
+      return 1
+    fi
+  done
+}
+
+read_monotonic_ns() {
   local uptime seconds fraction
 
   read -r uptime _ < /proc/uptime || return 1
@@ -92,7 +181,12 @@ monotonic_ns() {
   [[ $seconds =~ ^[0-9]+$ && $fraction =~ ^[0-9]+$ ]] || return 1
   fraction=${fraction}000000000
   fraction=${fraction:0:9}
-  printf '%d\n' "$((10#$seconds * 1000000000 + 10#$fraction))"
+  monotonic_value_ns=$((10#$seconds * 1000000000 + 10#$fraction))
+}
+
+monotonic_ns() {
+  read_monotonic_ns || return 1
+  printf '%d\n' "$monotonic_value_ns"
 }
 
 format_duration() {
@@ -142,27 +236,19 @@ wait_for_process_exit() {
   local pid=$1
   local expected_start_time=$2
   local deadline_ns=$(( $(monotonic_ns) + 2000000000 ))
-  local actual_start_time state now_ns
+  local now_ns
 
   while :; do
-    [[ -r "/proc/$pid/stat" ]] || return 0
-    actual_start_time=$(process_start_time "$pid" 2>/dev/null) || {
-      now_ns=$(monotonic_ns)
-      ((now_ns < deadline_ns)) || return 1
-      sleep 0.05
-      continue
-    }
-    [[ $actual_start_time == "$expected_start_time" ]] || return 0
-    state=$(process_state "$pid" 2>/dev/null) || {
-      now_ns=$(monotonic_ns)
-      ((now_ns < deadline_ns)) || return 1
-      sleep 0.05
-      continue
-    }
-    [[ $state == Z ]] && return 0
+    if ! capture_process_identity "$pid" 2>/dev/null; then
+      [[ -r "/proc/$pid/stat" ]] || return 0
+      return 2
+    fi
+    [[ $observed_process_start_time == "$expected_start_time" &&
+      $observed_process_parent_pid == "$main_pid" ]] || return 2
+    [[ $observed_process_state == Z ]] && return 0
     now_ns=$(monotonic_ns)
     ((now_ns < deadline_ns)) || return 1
-    sleep 0.05
+    sleep 0.05 || true
   done
 }
 
@@ -174,32 +260,39 @@ terminate_process() {
   local pid=$1
   local expected_start_time=$2
   local label=$3
+  local wait_status
 
-  [[ -n $pid ]] || return 0
+  [[ -n $pid && -n $expected_start_time ]] || return 0
 
-  if [[ -z $expected_start_time ]]; then
-    # The child was gone before /proc identity capture; only reap the known job.
-    reap_child "$pid"
-    return 0
-  fi
-
-  if process_is_running "$pid" "$expected_start_time" &&
-    process_identity_matches "$pid" "$expected_start_time"; then
+  if process_is_running "$pid" "$expected_start_time"; then
     kill -TERM "$pid" 2>/dev/null || true
   fi
 
-  if wait_for_process_exit "$pid" "$expected_start_time"; then
+  wait_status=0
+  wait_for_process_exit "$pid" "$expected_start_time" || wait_status=$?
+  if ((wait_status == 0)); then
     reap_child "$pid"
     return 0
   fi
+  if ((wait_status == 2)); then
+    printf 'FAIL: lost ownership while terminating %s (PID %s)\n' "$label" "$pid" >&2
+    cleanup_error=1
+    return 0
+  fi
 
-  if process_is_running "$pid" "$expected_start_time" &&
-    process_identity_matches "$pid" "$expected_start_time"; then
+  if process_is_running "$pid" "$expected_start_time"; then
     kill -KILL "$pid" 2>/dev/null || true
   fi
 
-  if wait_for_process_exit "$pid" "$expected_start_time"; then
+  wait_status=0
+  wait_for_process_exit "$pid" "$expected_start_time" || wait_status=$?
+  if ((wait_status == 0)); then
     reap_child "$pid"
+    return 0
+  fi
+  if ((wait_status == 2)); then
+    printf 'FAIL: lost ownership while terminating %s (PID %s)\n' "$label" "$pid" >&2
+    cleanup_error=1
     return 0
   fi
 
@@ -207,9 +300,53 @@ terminate_process() {
   cleanup_error=1
 }
 
+launch_background() {
+  local pid_variable=$1
+  local start_variable=$2
+  local output_log=$3
+  local child_pid launch_start_ns launch_deadline_ns
+
+  shift 3
+  launch_failure_reason=""
+  printf -v "$pid_variable" '%s' ''
+  printf -v "$start_variable" '%s' ''
+  launch_start_ns=$(monotonic_ns) || {
+    launch_failure_reason='clock'
+    return 1
+  }
+  launch_deadline_ns=$((launch_start_ns + ownership_timeout_ns))
+  launch_critical_section=1
+
+  "$@" >"$output_log" 2>&1 &
+  child_pid=$!
+  printf -v "$pid_variable" '%s' "$child_pid"
+
+  if establish_process_ownership "$child_pid" "$launch_deadline_ns"; then
+    printf -v "$start_variable" '%s' "$child_start_time"
+    launch_critical_section=0
+    honor_pending_signal
+    return 0
+  fi
+
+  if [[ $launch_failure_reason == exited ]]; then
+    reap_child "$child_pid"
+  fi
+  printf -v "$pid_variable" '%s' ''
+  printf -v "$start_variable" '%s' ''
+  launch_critical_section=0
+  honor_pending_signal
+  return 1
+}
+
 cleanup() {
   local status=$?
-  trap - EXIT HUP INT TERM
+
+  if ((cleanup_running)); then
+    return "$status"
+  fi
+  cleanup_running=1
+  trap - EXIT
+  trap ':' HUP INT TERM
 
   terminate_process "$preview_pid" "$preview_start_time" 'Quickshell preview'
   terminate_process "$wayland_pid" "$wayland_start_time" 'Wayland session'
@@ -237,9 +374,9 @@ cleanup() {
 }
 
 trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
 
 wayland_socket() {
   local display=${WAYLAND_DISPLAY:-}
@@ -261,22 +398,26 @@ start_nested_wayland() {
   export WAYLAND_DISPLAY=desktop-shell-test-wayland
 
   if command -v weston >/dev/null 2>&1; then
-    weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0 \
-      >"$wayland_log" 2>&1 &
-    wayland_pid=$!
+    if ! launch_background wayland_pid wayland_start_time "$wayland_log" \
+      weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0; then
+      case $launch_failure_reason in
+        exited) fail 'nested Wayland compositor exited before process identity was captured' ;;
+        ppid-mismatch) fail 'nested Wayland compositor did not remain a direct child' ;;
+        *) fail 'could not establish ownership of the nested Wayland compositor' ;;
+      esac
+    fi
   elif command -v sway >/dev/null 2>&1; then
     printf '%s\n' 'output * bg #000000 solid_color' >"$config"
-    WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 sway --unsupported-gpu -c "$config" \
-      >"$wayland_log" 2>&1 &
-    wayland_pid=$!
+    if ! WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 launch_background \
+      wayland_pid wayland_start_time "$wayland_log" sway --unsupported-gpu -c "$config"; then
+      case $launch_failure_reason in
+        exited) fail 'nested Wayland compositor exited before process identity was captured' ;;
+        ppid-mismatch) fail 'nested Wayland compositor did not remain a direct child' ;;
+        *) fail 'could not establish ownership of the nested Wayland compositor' ;;
+      esac
+    fi
   else
     fail 'no current or nested/test Wayland session is available'
-  fi
-
-  wayland_start_time=$(capture_process_start_time "$wayland_pid")
-  if [[ -z $wayland_start_time ]]; then
-    reap_child "$wayland_pid"
-    fail 'nested Wayland compositor exited before process identity was captured'
   fi
 
   for _ in {1..50}; do
@@ -294,12 +435,13 @@ if ! current_socket=$(wayland_socket) || [[ ! -S $current_socket ]]; then
   start_nested_wayland
 fi
 
-DESKTOP_SHELL_PREVIEW=1 quickshell -p "$SHELL_ROOT" >"$preview_log" 2>&1 &
-preview_pid=$!
-preview_start_time=$(capture_process_start_time "$preview_pid")
-if [[ -z $preview_start_time ]]; then
-  reap_child "$preview_pid"
-  fail 'Quickshell preview exited before process identity was captured'
+if ! DESKTOP_SHELL_PREVIEW=1 launch_background \
+  preview_pid preview_start_time "$preview_log" quickshell -p "$SHELL_ROOT"; then
+  case $launch_failure_reason in
+    exited) fail 'Quickshell preview exited before process identity was captured' ;;
+    ppid-mismatch) fail 'Quickshell preview did not remain a direct child' ;;
+    *) fail 'could not establish ownership of the Quickshell preview' ;;
+  esac
 fi
 
 require_preview_alive() {
