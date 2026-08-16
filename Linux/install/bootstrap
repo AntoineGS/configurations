@@ -110,7 +110,7 @@ check_user() {
 }
 
 check_arch() {
-  local -r os_release="${BOOTSTRAP_OS_RELEASE:-/etc/os-release}"
+  local -r os_release=/etc/os-release
   local line=""
   local os_id=""
 
@@ -129,11 +129,6 @@ check_arch() {
 }
 
 resolve_hostname() {
-  if [[ -n "${BOOTSTRAP_HOSTNAME:-}" ]]; then
-    printf '%s\n' "$BOOTSTRAP_HOSTNAME"
-    return 0
-  fi
-
   command -v hostnamectl >/dev/null 2>&1 || die 'missing required command: hostnamectl'
   hostnamectl --static || die 'could not resolve the static hostname'
 }

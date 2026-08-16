@@ -190,8 +190,8 @@ run_bootstrap() {
 
   : >"$LIFECYCLE_LOCK"
   if LAST_OUTPUT=$(PATH="$path" \
-    BOOTSTRAP_OS_RELEASE="$os_release" \
-    BOOTSTRAP_HOSTNAME="$hostname" \
+    BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
+    BOOTSTRAP_TEST_HOSTNAME="$hostname" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
     BOOTSTRAP_STUB_BIN="$path" \
@@ -228,8 +228,8 @@ run_bootstrap_with_input() {
   : >"$LIFECYCLE_LOCK"
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
     PATH="$path" \
-    BOOTSTRAP_OS_RELEASE="$os_release" \
-    BOOTSTRAP_HOSTNAME="$hostname" \
+    BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
+    BOOTSTRAP_TEST_HOSTNAME="$hostname" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
     BOOTSTRAP_STUB_BIN="$path" \
@@ -480,12 +480,11 @@ test_non_arch_rejected() {
 
 test_hostname_command_failure_is_not_masked() {
   : >"$STUB_LOG"
-  if LAST_OUTPUT=$(env -u BOOTSTRAP_HOSTNAME \
-    PATH="$STUB_BIN" \
-    BOOTSTRAP_OS_RELEASE="$ARCH_RELEASE" \
+  # shellcheck disable=SC2016
+  if LAST_OUTPUT=$(PATH="$STUB_BIN" \
+    BOOTSTRAP_HOSTNAME=antoinews-linux \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
-    BOOTSTRAP_CURL_FAIL=false \
-    "$BASH_PATH" "$BOOTSTRAP" --dry-run --repo "$REPO_WITH_SPACES" 2>&1); then
+    "$BASH_PATH" -c 'source "$1"; resolve_hostname' _ "$BOOTSTRAP" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -493,6 +492,7 @@ test_hostname_command_failure_is_not_masked() {
 
   assert_status 1 "$LAST_STATUS" 'hostname command failure'
   assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostname command failure'
+  assert_not_contains "$LAST_OUTPUT" 'antoinews-linux' 'hostname override is not trusted'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
   assert_not_contains "$(<"$STUB_LOG")" 'curl ' 'hostname command failure network check'
 }
@@ -563,11 +563,11 @@ test_invocation_outside_repository_resolves_repo() {
   CURL_FAIL=false
   if LAST_OUTPUT=$(cd -- "$OUTSIDE_REPOSITORY" && \
     PATH="$STUB_BIN" \
-    BOOTSTRAP_OS_RELEASE="$ARCH_RELEASE" \
-    BOOTSTRAP_HOSTNAME=server \
+    BOOTSTRAP_TEST_OS_RELEASE="$ARCH_RELEASE" \
+    BOOTSTRAP_TEST_HOSTNAME=server \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
-    "$BASH_PATH" "$BOOTSTRAP" --dry-run 2>&1); then
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --dry-run 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -926,6 +926,37 @@ test_all_known_hosts_select_only_declared_snapper_lifecycle() {
   done
 }
 
+test_inherited_hostname_cannot_split_brain_writer_selection() {
+  prepare_tidydots_fixture
+  : >"$STUB_LOG"
+  if LAST_OUTPUT=$(PATH="$PREREQUISITE_BIN" \
+    BOOTSTRAP_OS_RELEASE="$NON_ARCH_RELEASE" \
+    BOOTSTRAP_HOSTNAME=antoinews-linux \
+    BOOTSTRAP_TEST_OS_RELEASE="$ARCH_RELEASE" \
+    BOOTSTRAP_TEST_HOSTNAME=server \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    BOOTSTRAP_CURL_FAIL=false \
+    BOOTSTRAP_STUB_BIN="$PREREQUISITE_BIN" \
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --dry-run --repo "$ROOT" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+
+  assert_status 0 "$LAST_STATUS" 'inherited hostname split-brain defense'
+  assert_not_contains "$LAST_OUTPUT" 'Snapper deployment plan:' 'inherited hostname cannot select custom writer'
+  assert_not_contains "$LAST_OUTPUT" 'snapper-initialize --apply' 'inherited hostname cannot select initializer'
+  assert_not_contains "$(<"$STUB_LOG")" 'validate-topology' 'inherited hostname cannot trigger custom topology validation'
+  assert_contains "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 'explicit test host keeps broad restore'
+}
+
+test_production_bootstrap_does_not_read_fixture_override_names() {
+  local -r source="$(<"$BOOTSTRAP")"
+
+  assert_not_contains "$source" 'BOOTSTRAP_HOSTNAME' 'production hostname override name'
+  assert_not_contains "$source" 'BOOTSTRAP_OS_RELEASE' 'production os-release override name'
+}
+
 run_preflight_tests() {
   test_help
   test_unknown_option
@@ -972,6 +1003,8 @@ run_tidydots_tests() {
   test_antoinews_topology_validation_precedes_tidydots_install
   test_antoinews_topology_failure_stops_before_prerequisites
   test_all_known_hosts_select_only_declared_snapper_lifecycle
+  test_inherited_hostname_cannot_split_brain_writer_selection
+  test_production_bootstrap_does_not_read_fixture_override_names
   printf 'bootstrap tidydots tests passed\n'
 }
 
