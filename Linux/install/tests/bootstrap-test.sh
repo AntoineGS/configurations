@@ -12,6 +12,7 @@ readonly NON_ARCH_RELEASE="$TEST_ROOT/non-arch-release"
 readonly REPO_WITH_SPACES="$TEST_ROOT/repository with spaces"
 readonly OUTSIDE_REPOSITORY="$TEST_ROOT/outside"
 readonly STUB_BIN="$TEST_ROOT/bin"
+readonly FIXTURE_MARKER="$TEST_ROOT/.bootstrap-test-fixture"
 readonly STUB_LOG="$TEST_ROOT/stub.log"
 readonly LIFECYCLE_LOCK="$TEST_ROOT/snapper-lifecycle.lock"
 readonly CALLER_LIFECYCLE_LOCK="$TEST_ROOT/caller-selected.lock"
@@ -35,6 +36,7 @@ TIDYDOTS_FAIL_ACTION=""
 TIDYDOTS_FAIL_MODE=""
 SUDO_FAIL=false
 TOPOLOGY_FAIL=false
+MISSING_COMMANDS=""
 
 shopt -s nullglob
 
@@ -122,7 +124,7 @@ create_stub_path() {
   local command_name
 
   mkdir -p -- "$path"
-  for command_name in awk bash curl env find flock git pacman sudo sync systemctl tee yay tidydots; do
+  for command_name in awk bash curl dirname env find flock git hostname hostnamectl makepkg mktemp pacman pwd rm sudo sync systemctl tee tidydots yay; do
     if [[ "$command_name" == curl ]]; then
       write_executable "$path/$command_name" \
         "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
@@ -131,6 +133,11 @@ create_stub_path() {
       write_executable "$path/$command_name" 'exit 0'
     elif [[ "$command_name" == bash ]]; then
       write_executable "$path/$command_name" 'exit 0'
+    elif [[ "$command_name" == dirname ]]; then
+      # shellcheck disable=SC2016
+      write_executable "$path/$command_name" 'printf "%s\\n" "${1%/*}"'
+    elif [[ "$command_name" == pwd ]]; then
+      write_executable "$path/$command_name" '/usr/bin/pwd "$@"'
     elif [[ "$command_name" == sudo ]]; then
       # These single-quoted arguments are source for the generated sudo stub; their variables must expand at stub runtime.
       # shellcheck disable=SC2016
@@ -161,7 +168,9 @@ create_stub_path() {
         '  exit 0' \
         'fi' \
         'if [[ "$command_name" == touch ]]; then' \
-        '  /usr/bin/touch "$@"' \
+        '  target="${!#}"' \
+        '  [[ "$target" == "$BOOTSTRAP_TEST_ROOT"/* ]] || exit 1' \
+        '  : >"$target"' \
         '  exit 0' \
         'fi' \
         'if [[ "$command_name" == mktemp ]]; then' \
@@ -192,6 +201,11 @@ run_bootstrap() {
   if LAST_OUTPUT=$(PATH="$path" \
     BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
     BOOTSTRAP_TEST_HOSTNAME="$hostname" \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$FIXTURE_MARKER" \
+    BOOTSTRAP_TEST_BIN="$path" \
+    BOOTSTRAP_TEST_REPO="$REPO_WITH_SPACES" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="$MISSING_COMMANDS" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
     BOOTSTRAP_STUB_BIN="$path" \
@@ -230,6 +244,11 @@ run_bootstrap_with_input() {
     PATH="$path" \
     BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
     BOOTSTRAP_TEST_HOSTNAME="$hostname" \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$FIXTURE_MARKER" \
+    BOOTSTRAP_TEST_BIN="$path" \
+    BOOTSTRAP_TEST_REPO="$REPO_WITH_SPACES" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="$MISSING_COMMANDS" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
     BOOTSTRAP_STUB_BIN="$path" \
@@ -254,6 +273,42 @@ run_bootstrap_with_input() {
   else
     LAST_STATUS=$?
   fi
+}
+
+run_runner_with_contract() {
+  local -r path="$1"
+  local -r bin="$2"
+  local -r repo="$3"
+  local -r marker="$4"
+  local -r os_release="$5"
+  local -r hostname="$6"
+  shift 6
+
+  : >"$LIFECYCLE_LOCK"
+  if LAST_OUTPUT=$(PATH="$path" \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$marker" \
+    BOOTSTRAP_TEST_BIN="$bin" \
+    BOOTSTRAP_TEST_REPO="$repo" \
+    BOOTSTRAP_TEST_OS_RELEASE="$os_release" \
+    BOOTSTRAP_TEST_HOSTNAME="$hostname" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="$MISSING_COMMANDS" \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    BOOTSTRAP_CURL_FAIL=false \
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" "$@" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+}
+
+assert_runner_rejected() {
+  local -r context="$1"
+  local -r message="$2"
+
+  assert_status 2 "$LAST_STATUS" "$context"
+  assert_contains "$LAST_OUTPUT" "$message" "$context message"
+  [[ -z "$(<"$STUB_LOG")" ]] || fail "$context: command stubs were reached\n$(<"$STUB_LOG")"
 }
 
 assert_log_count() {
@@ -343,18 +398,18 @@ prepare_prerequisite_fixture() {
     "if [[ \"\${BOOTSTRAP_MAKEPKG_FAIL:-false}\" == true ]]; then exit 1; fi" \
     "if [[ \"\${BOOTSTRAP_CREATE_YAY:-false}\" == true ]]; then /usr/bin/cp -- \"\$BOOTSTRAP_YAY_STUB\" \"\$BOOTSTRAP_STUB_BIN/yay\"; /usr/bin/chmod +x -- \"\$BOOTSTRAP_STUB_BIN/yay\"; fi"
 
+  MISSING_COMMANDS=""
+  [[ "$yay_state" == missing ]] && MISSING_COMMANDS+=' yay'
+  [[ "$tidydots_state" == missing ]] && MISSING_COMMANDS+=' tidydots'
+
   if [[ "$yay_state" == present ]]; then
     /usr/bin/cp -- "$YAY_STUB_TEMPLATE" "$PREREQUISITE_BIN/yay"
     chmod +x -- "$PREREQUISITE_BIN/yay"
-  else
-    rm -f -- "$PREREQUISITE_BIN/yay"
   fi
 
   if [[ "$tidydots_state" == present ]]; then
     /usr/bin/cp -- "$TIDYDOTS_STUB_TEMPLATE" "$PREREQUISITE_BIN/tidydots"
     chmod +x -- "$PREREQUISITE_BIN/tidydots"
-  else
-    rm -f -- "$PREREQUISITE_BIN/tidydots"
   fi
 
   reset_prerequisite_flags
@@ -369,8 +424,15 @@ assert_preflight_success() {
 
 mkdir -p -- "$REPO_WITH_SPACES" "$OUTSIDE_REPOSITORY"
 printf '%s\n' 'name: bootstrap-test-fixture' >"$REPO_WITH_SPACES/tidydots.yaml"
+mkdir -p -- "$REPO_WITH_SPACES/Linux/Snapper/configs" "$REPO_WITH_SPACES/Linux/Snapper/conf.d"
+printf 'SUBVOLUME="/"\nFSTYPE="btrfs"\n' >"$REPO_WITH_SPACES/Linux/Snapper/configs/root"
+printf 'SUBVOLUME="/home"\nFSTYPE="btrfs"\n' >"$REPO_WITH_SPACES/Linux/Snapper/configs/home"
+printf 'SNAPPER_CONFIGS="root home"\n' >"$REPO_WITH_SPACES/Linux/Snapper/conf.d/snapper"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
+chmod +x -- "$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
 printf '%s\n' 'ID=arch' >"$ARCH_RELEASE"
 printf '%s\n' 'ID=debian' >"$NON_ARCH_RELEASE"
+printf '%s' 'bootstrap-test-fixture-v1' >"$FIXTURE_MARKER"
 create_stub_path "$STUB_BIN"
 write_executable "$YAY_STUB_TEMPLATE" \
   "printf \"%s\\\\n\" \"\${0##*/} \$*\" >> \"\$BOOTSTRAP_STUB_LOG\"" \
@@ -385,6 +447,38 @@ write_executable "$STUB_BIN/hostnamectl" \
 : >"$STUB_LOG"
 
 [[ -n "$UNSHARE" ]] || fail 'unshare is required for the root execution test'
+
+run_hostname_resolution() {
+  local -r static_hostname="$1"
+  local -r static_status="$2"
+  local -r kernel_hostname="$3"
+  local -r kernel_status="$4"
+  local -r identity_bin="$TEST_ROOT/hostname-resolution-bin"
+
+  rm -rf -- "$identity_bin"
+  mkdir -p -- "$identity_bin"
+  # shellcheck disable=SC2016
+  write_executable "$identity_bin/dirname" 'printf "%s\\n" "${1%/*}"'
+  write_executable "$identity_bin/pwd" '/usr/bin/pwd "$@"'
+  # shellcheck disable=SC2016
+  write_executable "$identity_bin/hostnamectl" \
+    'printf "%s\\n" "hostnamectl $*" >>"$BOOTSTRAP_STUB_LOG"' \
+    "if [[ \"\${1:-}\" == --static ]]; then printf '%s\\n' '$static_hostname'; exit $static_status; fi" \
+    'exit 2'
+  # shellcheck disable=SC2016
+  write_executable "$identity_bin/hostname" \
+    'printf "%s\\n" "hostname $*" >>"$BOOTSTRAP_STUB_LOG"' \
+    "printf '%s\\n' '$kernel_hostname'; exit $kernel_status"
+
+  # shellcheck disable=SC2016
+  if LAST_OUTPUT=$(PATH="$identity_bin" \
+    BOOTSTRAP_STUB_LOG="$STUB_LOG" \
+    "$BASH_PATH" -c 'source "$1"; resolve_hostname' _ "$BOOTSTRAP" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
+}
 
 test_help() {
   run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --help
@@ -448,7 +542,15 @@ test_missing_repo_value() {
 }
 
 test_missing_repository_is_environment_failure() {
-  run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --dry-run --repo "$TEST_ROOT/missing-repository"
+  local -r missing_repository="$TEST_ROOT/missing-repository"
+
+  # shellcheck disable=SC2016
+  if LAST_OUTPUT=$(PATH="$STUB_BIN" \
+    "$BASH_PATH" -c 'source "$1"; REPO_ROOT="$2"; check_repository' _ "$BOOTSTRAP" "$missing_repository" 2>&1); then
+    LAST_STATUS=0
+  else
+    LAST_STATUS=$?
+  fi
 
   assert_status 1 "$LAST_STATUS" 'missing repository'
   assert_contains "$LAST_OUTPUT" 'repository directory does not exist' 'missing repository'
@@ -476,6 +578,47 @@ test_non_arch_rejected() {
 
   assert_status 1 "$LAST_STATUS" 'non-Arch os-release'
   assert_contains "$LAST_OUTPUT" 'ID=arch' 'non-Arch os-release'
+}
+
+test_hostname_sources_must_match() {
+  : >"$STUB_LOG"
+  run_hostname_resolution server 0 server 0
+
+  assert_status 0 "$LAST_STATUS" 'matching hostname sources'
+  [[ "$LAST_OUTPUT" == server ]] || fail "matching hostname sources: expected canonical server, got '$LAST_OUTPUT'"
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'matching hostname static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'matching hostname kernel lookup'
+}
+
+test_hostname_mismatch_is_rejected() {
+  : >"$STUB_LOG"
+  run_hostname_resolution server 0 other-host 0
+
+  assert_status 1 "$LAST_STATUS" 'hostname mismatch'
+  assert_contains "$LAST_OUTPUT" 'hostname mismatch' 'hostname mismatch message'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostname mismatch static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'hostname mismatch kernel lookup'
+  assert_no_mutation_commands "$(<"$STUB_LOG")"
+}
+
+test_hostname_static_failure_is_rejected() {
+  : >"$STUB_LOG"
+  run_hostname_resolution server 1 server 0
+
+  assert_status 1 "$LAST_STATUS" 'hostnamectl failure'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the static hostname' 'hostnamectl failure message'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostnamectl failure lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 0 'hostnamectl failure stops kernel lookup'
+}
+
+test_hostname_kernel_failure_is_rejected() {
+  : >"$STUB_LOG"
+  run_hostname_resolution server 0 server 1
+
+  assert_status 1 "$LAST_STATUS" 'hostname failure'
+  assert_contains "$LAST_OUTPUT" 'could not resolve the kernel hostname' 'hostname failure message'
+  assert_log_count "$(<"$STUB_LOG")" 'hostnamectl --static' 1 'hostname failure static lookup'
+  assert_log_count "$(<"$STUB_LOG")" 'hostname ' 1 'hostname failure kernel lookup'
 }
 
 test_hostname_command_failure_is_not_masked() {
@@ -508,30 +651,18 @@ test_unknown_hostname_rejected_before_commands() {
 }
 
 test_missing_command_names_command() {
-  local -r missing_bin="$TEST_ROOT/missing-pacman-bin"
-  local command_name
-
-  mkdir -p -- "$missing_bin"
-  for command_name in awk bash curl env find flock git sudo systemctl sync tee yay tidydots dirname pwd; do
-    cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
-  done
-
-  run_bootstrap "$missing_bin" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  MISSING_COMMANDS='pacman'
+  run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  MISSING_COMMANDS=""
 
   assert_status 1 "$LAST_STATUS" 'missing required command'
   assert_contains "$LAST_OUTPUT" 'missing required command: pacman' 'missing required command'
 }
 
 test_missing_find_names_command() {
-  local -r missing_bin="$TEST_ROOT/missing-find-bin"
-  local command_name
-
-  mkdir -p -- "$missing_bin"
-  for command_name in awk bash curl env flock git pacman sudo systemctl sync tee yay tidydots dirname pwd; do
-    cp -- "$STUB_BIN/$command_name" "$missing_bin/$command_name"
-  done
-
-  run_bootstrap "$missing_bin" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  MISSING_COMMANDS='find'
+  run_bootstrap "$STUB_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  MISSING_COMMANDS=""
 
   assert_status 1 "$LAST_STATUS" 'missing find command'
   assert_contains "$LAST_OUTPUT" 'missing required command: find' 'missing find command'
@@ -565,6 +696,11 @@ test_invocation_outside_repository_resolves_repo() {
     PATH="$STUB_BIN" \
     BOOTSTRAP_TEST_OS_RELEASE="$ARCH_RELEASE" \
     BOOTSTRAP_TEST_HOSTNAME=server \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$FIXTURE_MARKER" \
+    BOOTSTRAP_TEST_BIN="$STUB_BIN" \
+    BOOTSTRAP_TEST_REPO="$REPO_WITH_SPACES" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="$MISSING_COMMANDS" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL="$CURL_FAIL" \
     "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --dry-run 2>&1); then
@@ -574,7 +710,7 @@ test_invocation_outside_repository_resolves_repo() {
   fi
 
   assert_preflight_success
-  assert_contains "$LAST_OUTPUT" "$ROOT" 'invocation outside repository'
+  assert_contains "$LAST_OUTPUT" "$REPO_WITH_SPACES" 'invocation outside repository'
   assert_no_mutation_commands "$(<"$STUB_LOG")"
 }
 
@@ -674,6 +810,7 @@ test_missing_prerequisites_install_once_and_second_run_is_idempotent() {
   assert_prerequisite_temp_empty
 
   : >"$STUB_LOG"
+  MISSING_COMMANDS=""
   run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'second prerequisite run'
@@ -728,18 +865,18 @@ prepare_tidydots_fixture() {
 
 test_tidydots_dry_run_uses_exact_unscoped_commands() {
   prepare_tidydots_fixture
-  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$ROOT"
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'tidydots dry-run'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'tidydots list'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'tidydots install dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 0 'server Snapper restore dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'tidydots restore dry-run'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 1 'tidydots install command prefix'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES list" 1 'tidydots list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install -n" 1 'tidydots install dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'server Snapper restore dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'tidydots restore dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 1 'tidydots install command prefix'
   assert_log_sequence "$(<"$STUB_LOG")" \
-    "tidydots --dir $ROOT list" \
-    "tidydots --dir $ROOT install -n" \
-    "tidydots --dir $ROOT restore -n"
+    "tidydots --dir $REPO_WITH_SPACES list" \
+    "tidydots --dir $REPO_WITH_SPACES install -n" \
+    "tidydots --dir $REPO_WITH_SPACES restore -n"
   assert_not_contains "$(<"$STUB_LOG")" 'snapper-initialize' 'tidydots dry-run root initializer'
   assert_not_contains "$LAST_OUTPUT" 'Snapper deployment plan:' 'server custom Snapper plan'
   assert_no_tidydots_apply_commands "$(<"$STUB_LOG")"
@@ -747,25 +884,25 @@ test_tidydots_dry_run_uses_exact_unscoped_commands() {
 
 test_tidydots_phases_have_separate_confirmations() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'tidydots confirmed phases'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'confirmed tidydots list'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'confirmed tidydots install dry-run'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'confirmed tidydots install plan and apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 0 'server Snapper restore dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'server Snapper restore apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES list" 1 'confirmed tidydots list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install -n" 1 'confirmed tidydots install dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 2 'confirmed tidydots install plan and apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'server Snapper restore dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'server Snapper restore apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 0 'server Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'server Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'server initial snapshot creation'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'confirmed tidydots restore dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'confirmed tidydots restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'confirmed tidydots restore dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 1 'confirmed tidydots restore apply'
   assert_log_sequence "$(<"$STUB_LOG")" \
-    "tidydots --dir $ROOT list" \
-    "tidydots --dir $ROOT install -n" \
-    "tidydots --dir $ROOT install" \
-    "tidydots --dir $ROOT restore -n" \
-    "tidydots --dir $ROOT restore"
+    "tidydots --dir $REPO_WITH_SPACES list" \
+    "tidydots --dir $REPO_WITH_SPACES install -n" \
+    "tidydots --dir $REPO_WITH_SPACES install" \
+    "tidydots --dir $REPO_WITH_SPACES restore -n" \
+    "tidydots --dir $REPO_WITH_SPACES restore"
   assert_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'tidydots install confirmation'
   assert_contains "$LAST_OUTPUT" 'Apply tidydots restore?' 'tidydots restore confirmation'
   assert_contains "$LAST_OUTPUT" 'SSH private keys' 'post-install SSH boundary'
@@ -781,67 +918,67 @@ test_tidydots_phases_have_separate_confirmations() {
 
 test_tidydots_install_decline_exits_before_restore() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input no "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined tidydots install'
   assert_contains "$LAST_OUTPUT" 'tidydots install declined' 'declined tidydots install'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'declined install dry-run'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 1 'declined install plan and apply'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'declined install restore'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'declined install Snapper restore'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install -n" 1 'declined install dry-run'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 1 'declined install plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'declined install restore'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'declined install Snapper restore'
 }
 
 test_tidydots_restore_decline_exits_after_install() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'tidydots restore declined' 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'Apply tidydots restore?' 'declined broad tidydots prompt'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'declined restore install plan and apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 0 'declined restore Snapper dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'declined restore dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'declined restore Snapper apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'declined restore apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 2 'declined restore install plan and apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'declined restore Snapper dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'declined restore dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'declined restore Snapper apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'declined restore apply'
 }
 
 test_tidydots_broad_restore_decline_exits_after_snapper() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nno' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 3 "$LAST_STATUS" 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'tidydots restore declined' 'declined broad tidydots restore'
   assert_contains "$LAST_OUTPUT" 'Apply tidydots restore?' 'declined broad tidydots restore prompt'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 0 'declined broad restore Snapper dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'declined broad restore Snapper apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'declined broad restore dry-run'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'declined broad restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'declined broad restore Snapper dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'declined broad restore Snapper apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'declined broad restore dry-run'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'declined broad restore apply'
 }
 
 test_tidydots_list_failure_stops_before_phases() {
   prepare_tidydots_fixture
   TIDYDOTS_FAIL_ACTION=list
   TIDYDOTS_FAIL_MODE=apply
-  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$ROOT"
+  run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed tidydots list'
   assert_contains "$LAST_OUTPUT" 'failed to list tidydots configuration' 'failed tidydots list'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'failed tidydots list command'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 0 'failed tidydots list install'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed tidydots list restore'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES list" 1 'failed tidydots list command'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 0 'failed tidydots list install'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'failed tidydots list restore'
 }
 
 test_tidydots_install_plan_failure_stops_before_confirmation() {
   prepare_tidydots_fixture
   TIDYDOTS_FAIL_ACTION=install
   TIDYDOTS_FAIL_MODE=preview
-  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input yes "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed tidydots install plan'
   assert_contains "$LAST_OUTPUT" 'failed to plan tidydots install' 'failed tidydots install plan'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT list" 1 'failed install plan list'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install -n" 1 'failed install plan command'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed install plan restore'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES list" 1 'failed install plan list'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install -n" 1 'failed install plan command'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'failed install plan restore'
   assert_not_contains "$LAST_OUTPUT" 'Apply tidydots install?' 'failed install plan confirmation'
 }
 
@@ -849,45 +986,45 @@ test_tidydots_restore_apply_failure_stops_before_boundaries() {
   prepare_tidydots_fixture
   TIDYDOTS_FAIL_ACTION=restore
   TIDYDOTS_FAIL_MODE=apply
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" server --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed tidydots restore apply'
   assert_contains "$LAST_OUTPUT" 'failed to apply tidydots restore' 'failed tidydots restore apply'
-  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT install" 2 'failed restore install plan and apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper -n" 0 'failed Snapper restore plan command'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'failed Snapper restore plan and apply'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 1 'failed broad restore plan command'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 1 'failed broad restore plan and apply'
+  assert_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES install" 2 'failed restore install plan and apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper -n" 0 'failed Snapper restore plan command'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'failed Snapper restore plan and apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 1 'failed broad restore plan command'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 1 'failed broad restore plan and apply'
   assert_not_contains "$LAST_OUTPUT" 'Post-install boundaries' 'failed restore boundaries'
 }
 
 test_snapper_initializer_failure_stops_before_broad_restore() {
   prepare_tidydots_fixture
   SUDO_FAIL=true
-  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
 
   assert_status 1 "$LAST_STATUS" 'failed Snapper initializer'
   assert_contains "$LAST_OUTPUT" 'failed to apply Snapper initializer' 'failed Snapper initializer message'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 0 'failed Snapper restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 0 'failed Snapper restore apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin SNAPPER_INTERNAL_LIFECYCLE_LOCK_HELD=1 /usr/local/libexec/antoinews-linux/snapper-initialize --apply" 1 'failed Snapper initializer apply'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --check" 0 'failed Snapper initializer check'
   assert_exact_log_count "$(<"$STUB_LOG")" "sudo -n -- env -i PATH=/usr/bin:/bin /usr/local/libexec/antoinews-linux/snapper-initialize --create-initial-snapshots" 0 'failed initial snapshot creation'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 0 'failed broad restore plan'
-  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore" 0 'failed broad restore apply'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 0 'failed broad restore plan'
+  assert_exact_log_count "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore" 0 'failed broad restore apply'
 }
 
 test_antoinews_topology_validation_precedes_tidydots_install() {
   prepare_tidydots_fixture
-  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$ROOT"
+  run_bootstrap_with_input $'yes\nyes\nyes' "$PREREQUISITE_BIN" "$ARCH_RELEASE" antoinews-linux --repo "$REPO_WITH_SPACES"
 
   assert_status 0 "$LAST_STATUS" 'antoinews topology validation ordering'
   assert_log_sequence "$(<"$STUB_LOG")" \
-    "sudo -n -- env -i PATH=/usr/bin:/bin $ROOT/Linux/Snapper/snapper-initialize --validate-topology" \
-    "tidydots --dir $ROOT install -n" \
-    "tidydots --dir $ROOT install" \
+    "sudo -n -- env -i PATH=/usr/bin:/bin $REPO_WITH_SPACES/Linux/Snapper/snapper-initialize --validate-topology" \
+    "tidydots --dir $REPO_WITH_SPACES install -n" \
+    "tidydots --dir $REPO_WITH_SPACES install" \
     'sudo -n -- test -d /' \
     "sudo -n -- mktemp /var/lib/configurations/snapper-bootstrap/.manifest.XXXXXX"
-  assert_not_contains "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore snapper" 'custom Snapper lifecycle has no tidydots Snapper restore'
+  assert_not_contains "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore snapper" 'custom Snapper lifecycle has no tidydots Snapper restore'
 }
 
 test_antoinews_topology_failure_stops_before_prerequisites() {
@@ -910,7 +1047,7 @@ test_all_known_hosts_select_only_declared_snapper_lifecycle() {
 
   for hostname in antoinews-linux DESKTOP-E07VTRN omarchbook server; do
     prepare_tidydots_fixture
-    run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" "$hostname" --dry-run --repo "$ROOT"
+    run_bootstrap "$PREREQUISITE_BIN" "$ARCH_RELEASE" "$hostname" --dry-run --repo "$REPO_WITH_SPACES"
 
     assert_status 0 "$LAST_STATUS" "host profile dry-run: $hostname"
     assert_not_contains "$(<"$STUB_LOG")" 'restore snapper' "host profile Snapper restore: $hostname"
@@ -926,6 +1063,59 @@ test_all_known_hosts_select_only_declared_snapper_lifecycle() {
   done
 }
 
+test_runner_rejects_missing_fixture_marker() {
+  : >"$STUB_LOG"
+  run_runner_with_contract "$STUB_BIN" "$STUB_BIN" "$REPO_WITH_SPACES" \
+    "$TEST_ROOT/missing-marker" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+
+  assert_runner_rejected 'missing fixture marker' 'fixture marker'
+}
+
+test_runner_rejects_real_path_entries() {
+  : >"$STUB_LOG"
+  run_runner_with_contract "$STUB_BIN:/usr/bin" "$STUB_BIN" "$REPO_WITH_SPACES" \
+    "$FIXTURE_MARKER" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+
+  assert_runner_rejected 'real PATH entry' 'PATH must contain only the fixture bin'
+}
+
+test_runner_rejects_non_fixture_repository() {
+  : >"$STUB_LOG"
+  run_runner_with_contract "$STUB_BIN" "$STUB_BIN" "$ROOT" \
+    "$FIXTURE_MARKER" "$ARCH_RELEASE" server --dry-run --repo "$ROOT"
+
+  assert_runner_rejected 'non-fixture repository' 'repository is outside the fixture root'
+}
+
+test_runner_rejects_missing_stub() {
+  local -r backup="$TEST_ROOT/sudo.stub"
+
+  mv -- "$STUB_BIN/sudo" "$backup"
+  run_runner_with_contract "$STUB_BIN" "$STUB_BIN" "$REPO_WITH_SPACES" \
+    "$FIXTURE_MARKER" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  mv -- "$backup" "$STUB_BIN/sudo"
+
+  assert_runner_rejected 'missing command stub' 'missing executable stub: sudo'
+}
+
+test_runner_rejects_non_executable_stub() {
+  chmod 0644 -- "$STUB_BIN/sudo"
+  run_runner_with_contract "$STUB_BIN" "$STUB_BIN" "$REPO_WITH_SPACES" \
+    "$FIXTURE_MARKER" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  chmod 0755 -- "$STUB_BIN/sudo"
+
+  assert_runner_rejected 'non-executable command stub' 'missing executable stub: sudo'
+}
+
+test_runner_rejects_invalid_root_helper() {
+  chmod 0644 -- "$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
+  run_runner_with_contract "$STUB_BIN" "$STUB_BIN" "$REPO_WITH_SPACES" \
+    "$FIXTURE_MARKER" "$ARCH_RELEASE" server --dry-run --repo "$REPO_WITH_SPACES"
+  chmod 0755 -- "$REPO_WITH_SPACES/Linux/Snapper/snapper-initialize"
+
+  assert_runner_rejected 'invalid root helper' 'Snapper helper must be executable'
+}
+
 test_inherited_hostname_cannot_split_brain_writer_selection() {
   prepare_tidydots_fixture
   : >"$STUB_LOG"
@@ -934,10 +1124,15 @@ test_inherited_hostname_cannot_split_brain_writer_selection() {
     BOOTSTRAP_HOSTNAME=antoinews-linux \
     BOOTSTRAP_TEST_OS_RELEASE="$ARCH_RELEASE" \
     BOOTSTRAP_TEST_HOSTNAME=server \
+    BOOTSTRAP_TEST_ROOT="$TEST_ROOT" \
+    BOOTSTRAP_TEST_MARKER="$FIXTURE_MARKER" \
+    BOOTSTRAP_TEST_BIN="$PREREQUISITE_BIN" \
+    BOOTSTRAP_TEST_REPO="$REPO_WITH_SPACES" \
+    BOOTSTRAP_TEST_MISSING_COMMANDS="$MISSING_COMMANDS" \
     BOOTSTRAP_STUB_LOG="$STUB_LOG" \
     BOOTSTRAP_CURL_FAIL=false \
     BOOTSTRAP_STUB_BIN="$PREREQUISITE_BIN" \
-    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --dry-run --repo "$ROOT" 2>&1); then
+    "$BASH_PATH" "$BOOTSTRAP_TEST_RUNNER" "$LIFECYCLE_LOCK" --dry-run --repo "$REPO_WITH_SPACES" 2>&1); then
     LAST_STATUS=0
   else
     LAST_STATUS=$?
@@ -947,7 +1142,7 @@ test_inherited_hostname_cannot_split_brain_writer_selection() {
   assert_not_contains "$LAST_OUTPUT" 'Snapper deployment plan:' 'inherited hostname cannot select custom writer'
   assert_not_contains "$LAST_OUTPUT" 'snapper-initialize --apply' 'inherited hostname cannot select initializer'
   assert_not_contains "$(<"$STUB_LOG")" 'validate-topology' 'inherited hostname cannot trigger custom topology validation'
-  assert_contains "$(<"$STUB_LOG")" "tidydots --dir $ROOT restore -n" 'explicit test host keeps broad restore'
+  assert_contains "$(<"$STUB_LOG")" "tidydots --dir $REPO_WITH_SPACES restore -n" 'explicit test host keeps broad restore'
 }
 
 test_production_bootstrap_does_not_read_fixture_override_names() {
@@ -966,6 +1161,10 @@ run_preflight_tests() {
   test_missing_repository_is_environment_failure
   test_root_execution_rejected
   test_non_arch_rejected
+  test_hostname_sources_must_match
+  test_hostname_mismatch_is_rejected
+  test_hostname_static_failure_is_rejected
+  test_hostname_kernel_failure_is_rejected
   test_hostname_command_failure_is_not_masked
   test_unknown_hostname_rejected_before_commands
   test_missing_command_names_command
@@ -1003,6 +1202,12 @@ run_tidydots_tests() {
   test_antoinews_topology_validation_precedes_tidydots_install
   test_antoinews_topology_failure_stops_before_prerequisites
   test_all_known_hosts_select_only_declared_snapper_lifecycle
+  test_runner_rejects_missing_fixture_marker
+  test_runner_rejects_real_path_entries
+  test_runner_rejects_non_fixture_repository
+  test_runner_rejects_missing_stub
+  test_runner_rejects_non_executable_stub
+  test_runner_rejects_invalid_root_helper
   test_inherited_hostname_cannot_split_brain_writer_selection
   test_production_bootstrap_does_not_read_fixture_override_names
   printf 'bootstrap tidydots tests passed\n'

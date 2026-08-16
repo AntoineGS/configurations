@@ -82,6 +82,10 @@ usage_error() {
   exit "$EXIT_USAGE"
 }
 
+command_available() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -129,8 +133,19 @@ check_arch() {
 }
 
 resolve_hostname() {
-  command -v hostnamectl >/dev/null 2>&1 || die 'missing required command: hostnamectl'
-  hostnamectl --static || die 'could not resolve the static hostname'
+  local static_hostname
+  local kernel_hostname
+
+  command_available hostnamectl || die 'missing required command: hostnamectl'
+  command_available hostname || die 'missing required command: hostname'
+  static_hostname="$(hostnamectl --static)" || die 'could not resolve the static hostname'
+  kernel_hostname="$(hostname)" || die 'could not resolve the kernel hostname'
+  [[ -n "$static_hostname" ]] || die 'could not resolve the static hostname'
+  [[ -n "$kernel_hostname" ]] || die 'could not resolve the kernel hostname'
+  [[ "$static_hostname" == "$kernel_hostname" ]] ||
+    die "hostname mismatch: hostnamectl --static='$static_hostname', hostname='$kernel_hostname'"
+
+  printf '%s\n' "$static_hostname"
 }
 
 check_hostname() {
@@ -155,8 +170,8 @@ check_hostname() {
 check_commands() {
   local command_name
 
-  for command_name in bash curl env find flock git pacman sudo systemctl; do
-    if ! command -v "$command_name" >/dev/null 2>&1; then
+  for command_name in bash curl env find flock git hostname hostnamectl pacman sudo systemctl; do
+    if ! command_available "$command_name"; then
       die "missing required command: $command_name"
     fi
   done
@@ -227,8 +242,8 @@ install_prerequisites() {
   local need_yay=false
   local need_tidydots=false
 
-  command -v yay >/dev/null 2>&1 || need_yay=true
-  command -v tidydots >/dev/null 2>&1 || need_tidydots=true
+  command_available yay || need_yay=true
+  command_available tidydots || need_tidydots=true
 
   if [[ "$need_yay" == false && "$need_tidydots" == false ]]; then
     printf 'bootstrap prerequisites already installed\n'
@@ -1176,7 +1191,7 @@ bootstrap_main() {
   preflight
   validate_snapper_topology
   install_prerequisites
-  if command -v tidydots >/dev/null 2>&1; then
+  if command_available tidydots; then
     apply_tidydots
   elif [[ "$DRY_RUN" == true ]]; then
     report_incomplete_dry_run
