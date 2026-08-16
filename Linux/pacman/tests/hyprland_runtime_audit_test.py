@@ -85,6 +85,10 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
             'api = (hl.dsp); api[member]("signal-desktop")\n',
             'local api, other = hl, nil; api[member]("signal-desktop")\n',
             'local api, other = nil, hl.dsp; api[member]("signal-desktop")\n',
+            'local api = (hl).dsp; api[member]("signal-desktop")\n',
+            'local api = ((hl)).dsp; api[member]("signal-desktop")\n',
+            'local api = ( hl ) . dsp; api[member]("signal-desktop")\n',
+            'local api = ( (hl) . dsp ); api[member]("signal-desktop")\n',
         )
 
         for source in cases:
