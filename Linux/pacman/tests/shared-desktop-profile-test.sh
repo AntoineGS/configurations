@@ -177,6 +177,7 @@ assert_source_requires_package() {
 GRAPHICAL_SHARED_APPLICATIONS=(
   1password
   brave
+  desktop-shell
   hyprland
   bluetui
   brightnessctl

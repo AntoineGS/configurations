@@ -5,9 +5,14 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 MENU="$ROOT/Linux/os/helpers/menu"
 LOCK_SCREEN="$ROOT/Linux/os/helpers/lock-screen"
 SYSTEM_RULES="$ROOT/Linux/hypr/apps/system.lua"
+VICINAE_SCRIPTS="$ROOT/Linux/vicinae/scripts"
 
 for file in "$MENU" "$LOCK_SCREEN"; do
   bash -n "$file"
+done
+
+for script in "$VICINAE_SCRIPTS"/*.sh; do
+  bash -n "$script"
 done
 
 deleted_helpers=(
@@ -41,6 +46,18 @@ for helper in "${deleted_helpers[@]}"; do
     exit 1
   fi
 done
+
+for script in toggle-screensaver.sh background.sh theme.sh; do
+  if [[ -e "$VICINAE_SCRIPTS/$script" || -L "$VICINAE_SCRIPTS/$script" ]]; then
+    printf 'obsolete Vicinae script still exists: %s\n' "$VICINAE_SCRIPTS/$script" >&2
+    exit 1
+  fi
+done
+
+if grep -Eiq 'install-terminal|toggle-screensaver|menu (background|theme)' "$MENU" "$VICINAE_SCRIPTS"/*.sh; then
+  printf '%s\n' 'Vicinae or menu sources still reference removed actions' >&2
+  exit 1
+fi
 
 for helper in font-current font-list font-set; do
   test -x "$ROOT/Linux/os/helpers/$helper"

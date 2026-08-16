@@ -64,10 +64,6 @@ install_font() {
   present_terminal "echo 'Installing $1...'; pkg-add $2 && sleep 2 && font-set '$3'"
 }
 
-install_terminal() {
-  present_terminal "install-terminal $1"
-}
-
 aur_install() {
   present_terminal "echo 'Installing $1 from AUR...'; pkg-aur-add $2"
 }

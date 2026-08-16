@@ -764,7 +764,7 @@ applications:
       managers:
         pacman: quickshell
     name: desktop-shell
-    when: '{{ and .HasDisplay (eq .OS "linux") (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
       - targets:
           linux: ~/.config/quickshell/desktop-shell
@@ -1793,7 +1793,7 @@ applications:
           - limine
         sudo: true
       - check:
-          linux: "test -r /boot/EFI/Linux/omarchy_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
+          linux: "test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
         run:
           linux: limine-update
         name: rebuild-boot-config

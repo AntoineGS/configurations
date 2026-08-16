@@ -127,8 +127,20 @@ _WORKSPACE_EVAL = (
     'hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); '
     'hl.dispatch(hl.dsp.focus({workspace=2}))'
 )
+_ANTOINEWS_WORKSPACE_EVAL = (
+    'hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-2"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-1"})); '
+    'hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-1"})); '
+    'hl.dispatch(hl.dsp.focus({workspace=2}))'
+)
 _MONITOR_EVAL_1 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3601x0", scale = 1 })'
 _MONITOR_EVAL_2 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })'
+_ANTOINEWS_MONITOR_EVAL_1 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1x0", scale = 1 })'
+_ANTOINEWS_MONITOR_EVAL_2 = 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })'
 
 # Shell-bearing commands are allowlisted as complete strings. This prevents a recognized
 # outer executable from authorizing arbitrary payloads, substitutions, or command chains.
@@ -137,7 +149,9 @@ APPROVED_FULL_COMMANDS = frozenset(
         "systemctl --user import-environment $(env | cut -d'=' -f 1)",
         "dbus-update-activation-environment --systemd --all",
         f"sleep 1 && hyprctl eval '{_WORKSPACE_EVAL}'",
+        f"sleep 1 && hyprctl eval '{_ANTOINEWS_WORKSPACE_EVAL}'",
         f"sleep 2 && hyprctl eval '{_MONITOR_EVAL_1}' && hyprctl eval '{_MONITOR_EVAL_2}'",
+        f"sleep 2 && hyprctl eval '{_ANTOINEWS_MONITOR_EVAL_1}' && hyprctl eval '{_ANTOINEWS_MONITOR_EVAL_2}'",
     }
 )
 
