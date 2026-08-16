@@ -831,22 +831,36 @@ applications:
           linux: systemctl daemon-reload && systemctl enable --now tzupdate.timer
         name: enable-tzupdate-timer
         sudo: true
-  - name: logind-config
-    description: Hibernate on lid close (workaround for ballistic fan in S3)
+  - name: lid-and-sleep-config
+    description: Keep running and turn off the internal display on lid close
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
       - targets:
           linux: /etc/systemd/logind.conf.d
-        name: drop-ins
+        name: logind-drop-ins
         backup: ./Linux/systemd/logind.conf.d
         files:
-          - hibernate-on-lid.conf
+          - screen-only-on-lid.conf
+        sudo: true
+      - targets:
+          linux: /etc/systemd/sleep.conf.d
+        name: sleep-drop-ins
+        backup: ./Linux/systemd/sleep.conf.d
+        files:
+          - no-hibernate.conf
+        sudo: true
+      - targets:
+          linux: /etc/mkinitcpio.conf.d
+        name: mkinitcpio-hooks
+        backup: ./Linux/mkinitcpio
+        files:
+          - omarchy_hooks.conf
         sudo: true
       - check:
-          linux: busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager HandleLidSwitch | grep -q hibernate
+          linux: test ! -e /etc/systemd/logind.conf.d/hibernate-on-lid.conf && test ! -L /etc/systemd/logind.conf.d/hibernate-on-lid.conf
         run:
-          linux: systemctl reload systemd-logind
-        name: reload-logind
+          linux: rm -f /etc/systemd/logind.conf.d/hibernate-on-lid.conf
+        name: remove-obsolete-lid-drop-in
         sudo: true
   - name: yay
     description: AUR helper config (7-day minimum release-age hook)
@@ -1359,6 +1373,12 @@ applications:
         backup: ./Linux/limine/
         files:
           - limine
+        sudo: true
+      - check:
+          linux: "test -r /boot/EFI/Linux/omarchy_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/omarchy_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
+        run:
+          linux: limine-update
+        name: rebuild-boot-config
         sudo: true
   - package:
       managers:

@@ -39,3 +39,13 @@ hl.config({
         mouse_move_enables_dpms = true, -- mouse move will trigger wake
     },
 })
+
+-- Keep the laptop running while the closed lid turns off only its panel.
+hl.bind("switch:on:Lid Switch", function()
+    hl.config({ misc = { key_press_enables_dpms = false, mouse_move_enables_dpms = false } })
+    hl.dispatch(hl.dsp.dpms({ action = "off", monitor = "eDP-1" }))
+end, { locked = true })
+hl.bind("switch:off:Lid Switch", function()
+    hl.config({ misc = { key_press_enables_dpms = true, mouse_move_enables_dpms = true } })
+    hl.dispatch(hl.dsp.dpms({ action = "on", monitor = "eDP-1" }))
+end, { locked = true })
