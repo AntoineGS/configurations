@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s <power|monitor|tailscale> <action> [args...]\n' "${0##*/}" >&2
+  exit 2
+}
+
+run_command() {
+  "$@" >/dev/null 2>&1 || exit 1
+}
+
+resolve_helper() {
+  local name=$1
+  local helper_dir=${DESKTOP_HARDWARE_HELPER_DIR:-}
+  local candidate
+
+  if [[ -n $helper_dir ]]; then
+    candidate="$helper_dir/$name"
+    [[ -x $candidate ]] || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  command -v "$name" 2>/dev/null
+}
+
+resolve_command() {
+  command -v "$1" 2>/dev/null
+}
+
+valid_profile() {
+  [[ $1 =~ ^[[:alnum:]][[:alnum:]_.+-]*$ ]]
+}
+
+valid_percent() {
+  [[ $1 =~ ^([1-9]|[1-9][0-9]|100)$ ]]
+}
+
+valid_target() {
+  [[ $1 =~ ^[[:alnum:]_.:@+-]+$ ]]
+}
+
+set_monitor_state() {
+  local action=$1
+  local hyprctl_command
+  local raw_monitors
+  local internal
+  local external
+  local enabled
+
+  hyprctl_command=$(resolve_command hyprctl) || exit 1
+  raw_monitors=$("$hyprctl_command" -j monitors 2>/dev/null) || exit 1
+  internal=$(jq -r '[.[] | select(type == "object") | select(.name | type == "string") | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
+  [[ -n $internal && $internal != *[!A-Za-z0-9_.:-]* ]] || exit 1
+
+  case $action in
+    toggle-internal)
+      enabled=$(jq -r --arg name "$internal" 'any(.[]; .name == $name and .disabled != true)' <<<"$raw_monitors" 2>/dev/null) || exit 1
+      if [[ $enabled == true ]]; then
+        run_command "$hyprctl_command" keyword monitor "${internal},disable"
+      else
+        run_command "$hyprctl_command" keyword monitor "${internal},preferred,auto,auto"
+      fi
+      ;;
+    toggle-mirror)
+      external=$(jq -r --arg internal "$internal" '[.[] | select(type == "object") | select(.name | type == "string") | select(.name != $internal) | select(.disabled != true) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
+      [[ -n $external && $external != *[!A-Za-z0-9_.:-]* ]] || exit 1
+      run_command "$hyprctl_command" keyword monitor "${external},preferred,auto,1,mirror,${internal}"
+      ;;
+    *)
+      usage
+      ;;
+  esac
+}
+
+(( $# >= 2 )) || usage
+
+domain=$1
+action=$2
+
+case $domain in
+  power)
+    case $action in
+      set-profile)
+        (($# == 3)) || usage
+        valid_profile "$3" || usage
+        powerprofilesctl_command=$(resolve_command powerprofilesctl) || exit 1
+        run_command "$powerprofilesctl_command" set "$3"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    ;;
+  monitor)
+    case $action in
+      set-display-brightness)
+        (($# == 3)) || usage
+        valid_percent "$3" || usage
+        display_helper=$(resolve_helper brightness-display) || exit 1
+        run_command "$display_helper" "${3}%"
+        ;;
+      set-keyboard-brightness)
+        (($# == 3)) || usage
+        case $3 in
+          up|down|cycle) ;;
+          *) usage ;;
+        esac
+        keyboard_helper=$(resolve_helper brightness-keyboard) || exit 1
+        run_command "$keyboard_helper" "$3"
+        ;;
+      toggle-internal|toggle-mirror)
+        (($# == 2)) || usage
+        command -v jq >/dev/null 2>&1 || exit 1
+        set_monitor_state "$action"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    ;;
+  tailscale)
+    case $action in
+      up|down|clear-exit-node|logout)
+        (($# == 2)) || usage
+        tailscale_command=$(resolve_command tailscale) || exit 1
+        case $action in
+          up) run_command "$tailscale_command" up ;;
+          down) run_command "$tailscale_command" down ;;
+          clear-exit-node) run_command "$tailscale_command" set --exit-node= ;;
+          logout) run_command "$tailscale_command" logout ;;
+        esac
+        ;;
+      set-exit-node)
+        (($# == 3)) || usage
+        valid_target "$3" || usage
+        tailscale_command=$(resolve_command tailscale) || exit 1
+        run_command "$tailscale_command" set "--exit-node=$3"
+        ;;
+      switch-account)
+        (($# == 3)) || usage
+        valid_target "$3" || usage
+        tailscale_command=$(resolve_command tailscale) || exit 1
+        run_command "$tailscale_command" switch "$3"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    ;;
+  *)
+    usage
+    ;;
+esac
