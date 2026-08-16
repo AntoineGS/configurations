@@ -87,17 +87,6 @@ Panel {
     if (selectedIndex >= 0 && selectedIndex < displays.length) toggleInternal()
   }
 
-  IpcHandler {
-    target: root.ipcTarget
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function brightness(percent: string): string { root.setBrightness(percent); return "ok" }
-    function refresh(): string { root.refresh(); return "ok" }
-  }
-
   visible: capabilityAvailable
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0
