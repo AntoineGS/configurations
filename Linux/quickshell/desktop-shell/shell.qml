@@ -26,6 +26,7 @@ ShellRoot {
   readonly property string configPath: shellPath + "/config/shell.json"
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
+  property bool barVisible: true
 
   // Bundled fallback so the shell can start even when the default shell.json is
   // missing or unreadable. The bar config here mirrors the on-disk defaults
@@ -863,6 +864,11 @@ ShellRoot {
 
   IpcHandler {
     target: "desktop-shell"
+
+    function toggleBar(): string {
+      shell.barVisible = !shell.barVisible
+      return shell.barVisible ? "visible" : "hidden"
+    }
 
     function ping(): string {
       return "pong"

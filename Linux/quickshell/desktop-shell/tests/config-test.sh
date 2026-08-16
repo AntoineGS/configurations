@@ -7,6 +7,8 @@ TEMPLATE="$SHELL_ROOT/config/shell.json.tmpl"
 THEME="$SHELL_ROOT/config/shell.toml"
 COLOR="$SHELL_ROOT/Commons/Color.qml"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell"
+BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
+TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
 
 command -v node >/dev/null 2>&1 || {
   printf 'config-test: node is required\n' >&2
@@ -14,16 +16,18 @@ command -v node >/dev/null 2>&1 || {
 }
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
-  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" <<'NODE'
+  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
-const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath] = process.argv.slice(2)
+const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
+  toggleHelperPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
 const registry = fs.readFileSync(registryPath, "utf8")
 const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
+const bar = fs.readFileSync(barPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -203,6 +207,13 @@ assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKT
 assert.match(shell, /previewMode: shell\.previewMode/)
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
+assert.match(shell, /property bool barVisible: true/)
+assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
+const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
+const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
+assert.notEqual(barPanelStart, -1, "bar panel component exists")
+assert.notEqual(barPanelEnd, -1, "bar module components follow bar panel")
+assert.match(bar.slice(barPanelStart, barPanelEnd), /visible: root\.shell\.barVisible/)
 const panelEntriesStart = shell.indexOf("function computePanelEntries")
 const panelEntriesEnd = shell.indexOf("Connections {", panelEntriesStart)
 assert.notEqual(panelEntriesStart, -1, "panel entry computation exists")
@@ -254,7 +265,13 @@ assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
 assert.match(helper, /quickshell ipc -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /toggle-bar\)\s+\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}\s+method="toggleBar"/)
 assert.doesNotMatch(helper, /\beval\b/)
+assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")
+const toggleHelper = fs.readFileSync(toggleHelperPath, "utf8")
+assert.match(toggleHelper, /^set -Eeuo pipefail$/m)
+assert.match(toggleHelper, /\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}/)
+assert.match(toggleHelper, /exec desktop-shell toggle-bar/)
 console.log("config-test: rendered layout, fallback, preview, registry, and helper contracts verified")
 NODE
 
