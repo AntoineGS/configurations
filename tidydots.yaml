@@ -1745,6 +1745,9 @@ applications:
         pacman: snapper
     name: snapper
     when: '{{ eq .OS "linux" }}'
+    entries: []
+  - name: snapper-current-desktop-config
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
       - targets:
           linux: /etc/snapper/configs
@@ -1762,14 +1765,6 @@ applications:
         backup: ./Linux/Snapper/conf.d
         files:
           - snapper
-        sudo: true
-      - targets:
-          linux: /usr/local/libexec/antoinews-linux
-        name: snapper-initialize
-        method: copy
-        backup: ./Linux/Snapper
-        files:
-          - snapper-initialize
         sudo: true
   - name: snapshots-enabled
     description: Enable btrfs snapshots + limine boot-menu sync on every Linux host except the laptop (omarchbook keeps them off for disk space)

@@ -29,6 +29,8 @@ SNAPPER_LEGACY_CONFIG_LINK=false
 SNAPPER_LEGACY_REGISTRATION_LINK=false
 SNAPPER_LIFECYCLE_LOCK_FD=""
 SNAPPER_LIFECYCLE_LOCK_HELD=false
+HOSTNAME_PROFILE=""
+SNAPPER_CAPABILITY=""
 
 bootstrap_exit() {
   local -r exit_status="$?"
@@ -137,15 +139,21 @@ resolve_hostname() {
 }
 
 check_hostname() {
-  local hostname
-  hostname="$(resolve_hostname)"
+  HOSTNAME_PROFILE="$(resolve_hostname)"
 
-  case "$hostname" in
+  case "$HOSTNAME_PROFILE" in
     DESKTOP-E07VTRN|omarchbook|server|antoinews-linux)
       ;;
     *)
-      die "unknown hostname: $hostname"
+      die "unknown hostname: $HOSTNAME_PROFILE"
       ;;
+  esac
+
+  case "$HOSTNAME_PROFILE" in
+    antoinews-linux) SNAPPER_CAPABILITY=custom-archinstall-layout ;;
+    DESKTOP-E07VTRN) SNAPPER_CAPABILITY=tidydots-config ;;
+    omarchbook) SNAPPER_CAPABILITY=snapshots-disabled ;;
+    server) SNAPPER_CAPABILITY=unmanaged-layout ;;
   esac
 }
 
@@ -285,13 +293,27 @@ confirm_tidydots() {
 
 print_snapper_deployment_plan() {
   printf 'Snapper deployment plan:\n'
-  printf '  rollback-assisted per-file deployment with persistent recovery state:\n'
+  printf '  custom rollback-assisted per-file deployment with persistent recovery state:\n'
   printf '    /etc/snapper/configs/root\n'
   printf '    /etc/snapper/configs/home\n'
   printf '    /etc/conf.d/snapper\n'
   printf '    %s\n' "$SNAPPER_INITIALIZER"
   printf '  preserve managed legacy Snapper directory links in root-owned recovery state\n'
   printf '  recovery state survives reboot after sync; filesystem power-loss durability still depends on the filesystem\n'
+}
+
+confirm_snapper_deployment() {
+  local response=""
+
+  printf 'Apply custom Snapper deployment? Type yes to continue: '
+  if ! IFS= read -r response; then
+    response=""
+  fi
+
+  if [[ "$response" != yes ]]; then
+    printf 'bootstrap: custom Snapper deployment declined\n' >&2
+    exit "$EXIT_DECLINED"
+  fi
 }
 
 run_tidydots_phase() {
@@ -327,6 +349,19 @@ root_capture() {
 
 root_test() {
   root_exec test "$@"
+}
+
+validate_snapper_topology() {
+  local -r initializer_source="$REPO_ROOT/Linux/Snapper/snapper-initialize"
+
+  [[ "$SNAPPER_CAPABILITY" == custom-archinstall-layout ]] || return 0
+  [[ "$DRY_RUN" == true ]] && return 0
+  [[ -f "$initializer_source" && ! -L "$initializer_source" && -x "$initializer_source" ]] ||
+    die "Snapper topology validator is not a regular executable: $initializer_source"
+
+  if ! root_exec env -i "PATH=$SNAPPER_FIXED_PATH" "$initializer_source" --validate-topology; then
+    die 'Snapper topology validation failed; require Btrfs /@ and /@home on the same filesystem'
+  fi
 }
 
 root_stat() {
@@ -1101,20 +1136,22 @@ print_post_install_boundaries() {
 }
 
 apply_tidydots() {
-  if [[ "$DRY_RUN" == false ]]; then
+  if [[ "$SNAPPER_CAPABILITY" == custom-archinstall-layout && "$DRY_RUN" == false ]]; then
     acquire_snapper_lifecycle_lock
     recover_snapper_deployment
   fi
   list_tidydots
   run_tidydots_phase install
-  print_snapper_deployment_plan
-  run_tidydots_phase restore snapper
-  if [[ "$DRY_RUN" == true ]]; then
-    printf '  rollback-assisted per-file root-owned Snapper deployment after confirmation\n'
-  else
-    deploy_snapper_files
+  if [[ "$SNAPPER_CAPABILITY" == custom-archinstall-layout ]]; then
+    print_snapper_deployment_plan
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '  Btrfs topology validation is required before apply\n'
+    else
+      confirm_snapper_deployment
+      deploy_snapper_files
+    fi
+    run_snapper_initializer
   fi
-  run_snapper_initializer
   run_tidydots_phase restore
 
   [[ "$DRY_RUN" == true ]] || print_post_install_boundaries
@@ -1142,6 +1179,7 @@ bootstrap_main() {
   clear_initializer_overrides
   parse_args "$@"
   preflight
+  validate_snapper_topology
   install_prerequisites
   if command -v tidydots >/dev/null 2>&1; then
     apply_tidydots

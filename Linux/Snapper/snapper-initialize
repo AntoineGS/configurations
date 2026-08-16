@@ -45,7 +45,7 @@ initializer_exit() {
 trap initializer_exit EXIT
 
 usage() {
-  printf 'Usage: %s --check|--apply|--create-initial-snapshots\n' "$SCRIPT_NAME"
+  printf 'Usage: %s --validate-topology|--check|--apply|--create-initial-snapshots\n' "$SCRIPT_NAME"
   printf '\n'
   printf 'Validate or initialize the root and home Snapper layout for Archinstall Btrfs subvolumes.\n'
 }
@@ -65,7 +65,7 @@ parse_args() {
   [[ $# -eq 1 ]] || usage_error 'exactly one mode is required'
 
   case "$1" in
-    --check|--apply|--create-initial-snapshots)
+    --validate-topology|--check|--apply|--create-initial-snapshots)
       MODE="${1#--}"
       ;;
     --help)
@@ -84,6 +84,13 @@ require_root() {
 
 require_commands() {
   local command_name
+
+  if [[ "$MODE" == validate-topology ]]; then
+    for command_name in awk btrfs findmnt; do
+      command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
+    done
+    return 0
+  fi
 
   for command_name in awk btrfs cat chmod chown findmnt flock grep mkdir mktemp mv rm snapper stat touch; do
     command -v "$command_name" >/dev/null 2>&1 || die "missing required command: $command_name"
@@ -735,6 +742,10 @@ main() {
   require_commands
 
   case "$MODE" in
+    validate-topology)
+      validate_mount_layout
+      printf 'Btrfs topology is compatible with Snapper for /@ and /@home\n'
+      ;;
     check)
       validate_mount_layout
       check_layout
