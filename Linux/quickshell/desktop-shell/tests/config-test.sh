@@ -264,14 +264,14 @@ assert.match(registry, /entry point.*escapes|unsafe entryPoint/)
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
-assert.match(helper, /quickshell ipc -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /quickshell ipc --any-display -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
 assert.match(helper, /toggle-bar\)\s+\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}\s+method="toggleBar"/)
 assert.doesNotMatch(helper, /\beval\b/)
 assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")
 const toggleHelper = fs.readFileSync(toggleHelperPath, "utf8")
 assert.match(toggleHelper, /^set -Eeuo pipefail$/m)
 assert.match(toggleHelper, /\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}/)
-assert.match(toggleHelper, /exec quickshell ipc -p "\$HOME\/\.config\/quickshell\/desktop-shell" call desktop-shell toggleBar/)
+assert.match(toggleHelper, /exec quickshell ipc --any-display -p "\$HOME\/\.config\/quickshell\/desktop-shell" call desktop-shell toggleBar/)
 assert.doesNotMatch(toggleHelper, /desktop-shell toggle-bar/)
 assert.doesNotMatch(toggleHelper, /\beval\b/)
 assert.doesNotMatch(toggleHelper, /\$[@{]/)
@@ -310,7 +310,7 @@ run_toggle() {
 assert_trace() {
   local -a actual expected
   mapfile -d '' actual <"$trace" || true
-  expected=("ipc" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
+  expected=("ipc" "--any-display" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
   if (( ${#actual[@]} != ${#expected[@]} )); then
     printf 'config-test: IPC argument count mismatch\n' >&2
     exit 1
