@@ -34,6 +34,45 @@ fail() {
   exit 1
 }
 
+assert_launcher_mapping() {
+  awk '
+    /^  - / {
+      if (in_app && target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+        found = 1
+      }
+      in_app = 0
+    }
+    /^    name: desktop-shell$/ {
+      in_app = 1
+      next
+    }
+    !in_app { next }
+    /^      - / {
+      if (target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+        found = 1
+      }
+      target = 0
+      entry_name = 0
+      backup = 0
+      file = ""
+      file_count = 0
+    }
+    $0 == "          linux: ~/.local/share/helpers" { target = 1 }
+    $0 == "        name: desktop-shell-launcher" { entry_name = 1 }
+    $0 == "        backup: ./Linux/os/helpers" { backup = 1 }
+    /^          - / {
+      file = $0
+      file_count++
+    }
+    END {
+      if (in_app && target && entry_name && backup && file_count == 1 && file == "          - desktop-shell-launch") {
+        found = 1
+      }
+      exit !found
+    }
+  ' "$CONFIG" || fail 'desktop-shell launcher mapping is missing or too broad'
+}
+
 assert_binding() {
   local key=$1
   local command=$2
@@ -104,6 +143,7 @@ grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedD
   fail 'tidydots check does not require NeedDaemonReload=no'
 grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' "$CONFIG" || \
   fail 'tidydots repair command changed'
+assert_launcher_mapping
 
 for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
   [[ -f $active_route ]] || fail "active route is absent: $active_route"
