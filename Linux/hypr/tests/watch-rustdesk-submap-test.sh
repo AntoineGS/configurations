@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC1091,SC2034,SC2329 # The test intentionally replaces functions and state dynamically.
+# shellcheck disable=SC1091,SC2034,SC2317,SC2329 # The test intentionally replaces functions and state dynamically.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)

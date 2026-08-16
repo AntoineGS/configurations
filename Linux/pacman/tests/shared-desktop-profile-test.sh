@@ -199,7 +199,6 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   nautilus
   playerctl
   polkit-gnome
-  power-profiles-daemon
   satty
   sddm
   slurp
@@ -376,6 +375,7 @@ assert_focused_dry_run pipewire-audio pacman pipewire
 assert_focused_dry_run linux-services-packages pacman ufw
 
 GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
+POWER_PROFILE_WHEN="'{{ and (eq .OS \"linux\") .HasDisplay (not .IsWSL) (ne .Hostname \"antoinews-linux\") }}'"
 REAL_LINUX_WHEN="'{{ and (eq .OS \"linux\") (not .IsWSL) }}'"
 LINUX_WHEN="'{{ eq .OS \"linux\" }}'"
 
@@ -394,6 +394,8 @@ done
 for application in "${OPTIONAL_GRAPHICAL_APPLICATIONS[@]}"; do
   assert_when "$application" "$GRAPHICAL_WHEN"
 done
+
+assert_when power-profiles-daemon "$POWER_PROFILE_WHEN"
 
 shared_packages=""
 shared_packages="$(extract_direct_arch_declarations | awk -F'|' '$1 == "pacman" { print $2 }')"

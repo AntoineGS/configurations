@@ -165,6 +165,7 @@ create_stubs() {
   # shellcheck disable=SC2016
   write_executable "$STUB_BIN/sudo" \
     'printf "sudo %s\n" "$*" >>"$SNAPPER_BOOTSTRAP_TEST_LOG"' \
+    '[[ "${1:-}" == -v ]] && exit 0' \
     '[[ "${1:-}" == -n ]] || exit 2' \
     'shift' \
     '[[ "${1:-}" == -- ]] && shift' \
@@ -406,8 +407,11 @@ reset_fixture() {
 }
 
 run_bootstrap() {
-  local -r input="$1"
+  local input="$1"
   shift
+
+  # The bootstrap's privileged-operation prompt is covered by bootstrap-test.sh; approve it here for Snapper scenarios.
+  input=$'yes\n'"$input"
 
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
     PATH="$STUB_BIN" \

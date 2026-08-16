@@ -157,7 +157,7 @@
     "tooltip-format-discharging": "{power:>1.0f}W\u2193 {capacity}%",
     "tooltip-format-charging": "{power:>1.0f}W\u2191 {capacity}%",
     "interval": 5,
-    "on-click": "cur=$(powerprofilesctl get); powerprofilesctl list | grep -oP '\\S+(?=:$)' | sed \"s/^$cur$/✓ $cur/\" | vicinae dmenu --placeholder 'Power Profile' | sed 's/^✓ //' | xargs -r powerprofilesctl set",
+    "on-click": "command -v powerprofilesctl >/dev/null 2>&1 && cur=$(powerprofilesctl get) && powerprofilesctl list | grep -oP '\\S+(?=:$)' | sed \"s/^$cur$/✓ $cur/\" | vicinae dmenu --placeholder 'Power Profile' | sed 's/^✓ //' | xargs -r powerprofilesctl set",
     "states": {
       "warning": 20,
       "critical": 10

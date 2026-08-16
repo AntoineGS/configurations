@@ -16,6 +16,7 @@ readonly SNAPPER_FIXED_PATH=/usr/bin:/bin
 readonly SNAPPER_PRODUCTION_LIFECYCLE_LOCK=/run/lock/antoinews-linux-snapper.lock
 SNAPPER_LIFECYCLE_LOCK="$SNAPPER_PRODUCTION_LIFECYCLE_LOCK"
 DRY_RUN=false
+PRIVILEGED_OPERATIONS_CONFIRMED=false
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PREREQUISITE_TEMP_DIR=""
 SNAPPER_ROLLBACK_DIR=""
@@ -218,6 +219,27 @@ confirm() {
   fi
 }
 
+confirm_privileged_operations() {
+  local response=""
+
+  [[ "$DRY_RUN" == true || "$PRIVILEGED_OPERATIONS_CONFIRMED" == true ]] && return 0
+
+  printf 'Apply privileged bootstrap operations? Type yes to continue: '
+  if ! IFS= read -r response; then
+    response=""
+  fi
+
+  if [[ "$response" != yes ]]; then
+    printf 'bootstrap: privileged bootstrap operations declined\n' >&2
+    exit "$EXIT_DECLINED"
+  fi
+
+  if ! sudo -v; then
+    die 'could not validate sudo credentials'
+  fi
+  PRIVILEGED_OPERATIONS_CONFIRMED=true
+}
+
 cleanup_prerequisite_temp() {
   if [[ -n "$PREREQUISITE_TEMP_DIR" ]]; then
     rm -rf -- "$PREREQUISITE_TEMP_DIR"
@@ -265,6 +287,7 @@ install_prerequisites() {
   fi
 
   confirm
+  confirm_privileged_operations
 
   if [[ "$need_yay" == true ]]; then
     install_yay_bin
@@ -1146,6 +1169,9 @@ print_post_install_boundaries() {
 }
 
 apply_tidydots() {
+  if [[ "$DRY_RUN" == false ]]; then
+    confirm_privileged_operations
+  fi
   if [[ "$SNAPPER_CAPABILITY" == custom-archinstall-layout && "$DRY_RUN" == false ]]; then
     acquire_snapper_lifecycle_lock
     recover_snapper_deployment
@@ -1189,6 +1215,9 @@ bootstrap_main() {
   clear_initializer_overrides
   parse_args "$@"
   preflight
+  if [[ "$SNAPPER_CAPABILITY" == custom-archinstall-layout && "$DRY_RUN" == false ]]; then
+    confirm_privileged_operations
+  fi
   validate_snapper_topology
   install_prerequisites
   if command_available tidydots; then

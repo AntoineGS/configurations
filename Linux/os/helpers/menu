@@ -191,7 +191,9 @@ show_font_menu() {
 }
 
 show_setup_menu() {
-  local options="  Audio\n  Wifi\n󰂯  Bluetooth\n󱐋  Power Profile\n  System Sleep\n󰍹  Monitors"
+  local options="  Audio\n  Wifi\n󰂯  Bluetooth"
+  command -v powerprofilesctl >/dev/null 2>&1 && options="$options\n󱐋  Power Profile"
+  options="$options\n  System Sleep\n󰍹  Monitors"
   [[ -f ~/.config/hypr/bindings.lua ]] && options="$options\n  Keybindings"
   [[ -f ~/.config/hypr/input.lua ]] && options="$options\n  Input"
   options="$options\n󰱔  DNS\n  Security\n  Config"
@@ -213,6 +215,9 @@ show_setup_menu() {
 }
 
 show_setup_power_menu() {
+  command -v powerprofilesctl >/dev/null 2>&1 || return 0
+
+  local profile
   profile=$(menu "Power Profile" "$(powerprofiles-list)" "" "$(powerprofilesctl get)")
 
   if [[ $profile == "CNCLD" || -z $profile ]]; then
