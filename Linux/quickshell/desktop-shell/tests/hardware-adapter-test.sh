@@ -118,7 +118,8 @@ if [[ ${1:-} == -j && ${2:-} == monitors && ${3:-} == all ]]; then
     mirrored)
       printf '%s\n' '[
         {"id":0,"name":"eDP-1","description":"Internal Panel","width":1920,"height":1080,"scale":1.25,"focused":true,"disabled":false,"mirrorOf":"none"},
-        {"id":1,"name":"DP-1","description":"External Panel","width":1920,"height":1080,"scale":1.0,"focused":false,"disabled":false,"mirrorOf":"eDP-1"}
+        {"id":1,"name":"DP-1","description":"External Panel","width":2560,"height":1440,"scale":1.5,"focused":false,"disabled":false,"mirrorOf":"none"},
+        {"id":2,"name":"HDMI-A-1","description":"Mirrored Panel","width":1920,"height":1080,"scale":1.0,"focused":false,"disabled":false,"mirrorOf":"eDP-1"}
       ]'
       ;;
     malformed) printf '%s\n' '{malformed' ;;
@@ -262,7 +263,7 @@ grep -Fxq 'brightness-display 42%' "$CALL_LOG" || fail 'display brightness was n
 grep -Fxq 'brightness-keyboard cycle' "$CALL_LOG" || fail 'keyboard brightness was not passed as direct argv'
 grep -Fxq 'hyprctl keyword monitor eDP-1\,disable' "$CALL_LOG" || fail 'internal display was not toggled from the full monitor list'
 grep -Fxq 'hyprctl keyword monitor DP-1\,preferred\,auto\,1\,mirror\,eDP-1' "$CALL_LOG" || fail 'display mirroring was not enabled'
-grep -Fxq 'hyprctl keyword monitor DP-1\,preferred\,auto\,auto' "$CALL_LOG" || fail 'display mirroring was not disabled'
+grep -Fxq 'hyprctl keyword monitor HDMI-A-1\,preferred\,auto\,auto' "$CALL_LOG" || fail 'display mirroring was not disabled'
 grep -Fxq 'tailscale down' "$CALL_LOG" || fail 'Tailscale action was not passed as direct argv'
 
 printf 'PASS: hardware adapters\n'
