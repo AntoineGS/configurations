@@ -108,6 +108,12 @@ missing-tooltip)
 non-string-tooltip)
   printf '%s\n' '{"text":"1%/4d 7h","tooltip":42,"class":"source"}'
   ;;
+two-valid)
+  printf '%s\n' '{"text":"first","tooltip":"First tooltip","class":"source"}'
+  printf '%s\n' '{"text":"second","tooltip":"Second tooltip","class":"source"}'
+  ;;
+empty)
+  ;;
 esac
 FAKE_CODEXBAR
 
@@ -301,6 +307,16 @@ temporary_cache_files=("$status_cache"/*.tmp "$status_cache"/.*.??????)
 shopt -u nullglob
 assert_equal 0 "${#temporary_cache_files[@]}" 'atomic cache leaves no temporary files'
 
+CODEX_PAYLOAD=two-valid
+invoke codex-multiple-live codex "$fixture/no-cache-multiple-live"
+assert_status 1 codex-multiple-live
+assert_no_output 'multiple valid live payloads'
+
+CODEX_PAYLOAD=empty
+invoke codex-empty-live codex "$fixture/no-cache-empty-live"
+assert_status 1 codex-empty-live
+assert_no_output 'empty live payload'
+
 CODEX_PAYLOAD=missing-tooltip
 invoke codex-missing-field codex "$fixture/no-cache-missing-field"
 assert_status 1 codex-missing-field
@@ -331,6 +347,12 @@ stale_tooltip=$(jq -er '.tooltip' <<<"$last_output")
   exit 1
 }
 assert_equal 'muted' "$(jq -er '.class' "$status_cache/codex.json")" 'good Codex cache remains fresh'
+
+printf '%s\n' '{"text":"cached-first","tooltip":"Cached first tooltip","class":"muted"}' \
+  '{"text":"cached-second","tooltip":"Cached second tooltip","class":"muted"}' >"$status_cache/codex.json"
+invoke codex-multiple-cache codex
+assert_status 1 codex-multiple-cache
+assert_no_output 'multiple valid cached payloads'
 
 printf '%s\n' '{"text":"cached","class":"muted"}' >"$status_cache/codex.json"
 invoke codex-cache-missing-field codex

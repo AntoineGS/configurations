@@ -39,15 +39,17 @@ error_message() {
 }
 
 validate_status() {
-  jq -ce '
-    if type != "object" then
+  jq -cse '
+    if length != 1 then
+      error("status payload requires exactly one JSON value")
+    elif (.[0] | type) != "object" then
       error("status payload is not an object")
-    elif (.text | type) != "string" or
-      (.tooltip | type) != "string" or
-      (.class | type) != "string" then
+    elif (.[0].text | type) != "string" or
+      (.[0].tooltip | type) != "string" or
+      (.[0].class | type) != "string" then
       error("status payload requires string text, tooltip, and class")
     else
-      .
+      .[0]
     end
   '
 }
