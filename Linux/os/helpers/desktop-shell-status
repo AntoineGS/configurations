@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+if (($# != 1)); then
+  printf 'usage: %s <recording|voxtype|codex|disk|memory|cpu>\n' "${0##*/}" >&2
+  exit 2
+fi
+
+case $1 in
+  recording|voxtype|codex|disk|memory|cpu) ;;
+  *)
+    printf 'unknown status adapter: %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+
 readonly PROC_ROOT="${DESKTOP_SHELL_PROC_ROOT:-/proc}"
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/desktop-shell/status"
 ERROR_FILE=$(mktemp)
@@ -25,18 +38,39 @@ error_message() {
   fi
 }
 
+validate_status() {
+  jq -ce '
+    if type != "object" then
+      error("status payload is not an object")
+    elif (.text | type) != "string" or
+      (.tooltip | type) != "string" or
+      (.class | type) != "string" then
+      error("status payload requires string text, tooltip, and class")
+    else
+      .
+    end
+  '
+}
+
 adapter_error() {
   local kind=$1
   local message=$2
   local cache_file="$CACHE_DIR/$kind.json"
   local cached
+  local transformed
+  local jq_status
 
-  if [[ -s $cache_file ]] && cached=$(jq -ce 'if type == "object" then . else error("cache is not an object") end' "$cache_file" 2>/dev/null); then
-    jq -c --arg error "$message" '
-      .class = "stale"
-      | .tooltip = ((.tooltip // "") + (if (.tooltip // "") == "" then "error: " else " · error: " end) + $error)
-    ' <<<"$cached"
-    return 0
+  if [[ -s $cache_file ]] && cached=$(validate_status <"$cache_file" 2>/dev/null); then
+    if transformed=$(jq -ce --arg error "$message" '
+        .class = "stale"
+        | .tooltip = ((.tooltip // "") + (if (.tooltip // "") == "" then "error: " else " · error: " end) + $error)
+      ' <<<"$cached"); then
+      printf '%s\n' "$transformed"
+      return 0
+    else
+      jq_status=$?
+      return "$jq_status"
+    fi
   fi
 
   printf '%s\n' "$message" >&2
@@ -50,7 +84,7 @@ write_result() {
   local temp_file=""
 
   : >"$ERROR_FILE"
-  if ! normalized=$(jq -ce 'if type == "object" then . else error("status result is not an object") end' <<<"$result" 2>"$ERROR_FILE"); then
+  if ! normalized=$(validate_status <<<"$result" 2>"$ERROR_FILE"); then
     adapter_error "$kind" "$(error_message "invalid $kind result")"
     return $?
   fi
@@ -288,11 +322,6 @@ cpu_status() {
   result=$(json_output $''"$usage%" "CPU usage: $usage%" '')
   write_result cpu "$result"
 }
-
-if (($# != 1)); then
-  printf 'usage: %s <recording|voxtype|codex|disk|memory|cpu>\n' "${0##*/}" >&2
-  exit 2
-fi
 
 case $1 in
   recording) recording_status ;;
