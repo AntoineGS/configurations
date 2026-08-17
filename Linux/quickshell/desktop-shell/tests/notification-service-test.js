@@ -35,9 +35,12 @@ assert.match(service, /property string routeError/)
 assert.doesNotMatch(service + card, /omarchy|OMARCHY|omarchy-glyph|omarchy-exec/)
 
 assert.match(service, /property string routeRaw/)
+assert.match(service, /readonly property bool routeVisible/)
 assert.match(service, /function refreshRoute\(\)/)
 assert.match(service, /normalizeRoute\(service\.routeRaw,\s*Date\.now\(\)\)/)
 assert.match(service, /routeExpiryTimer/)
+assert.match(service, /return service\.routeVisible[\s\S]*service\.route\.output !== null/)
+assert.match(service, /routeVisible:\s*service\.routeVisible/)
 
 const restoreLastStart = service.indexOf("function restoreLast()")
 const invokeLastStart = service.indexOf("function invokeLast()")
@@ -52,11 +55,21 @@ assert.match(service, /property int persistenceRetryLimit/)
 assert.match(service, /done\(success/)
 assert.match(service, /onExited:\s*function\(exitCode/)
 assert.doesNotMatch(service, /mkdir -p[^\n]*\|\| exit 0/)
+assert.match(service, /umask 077/, "notification persistence uses a restrictive umask")
+assert.match(service, /chmod 700/, "notification state directories repair their mode")
+assert.match(service, /chmod 600/, "notification state files repair their mode")
+assert.match(service, /settingsWriteProc/, "settings persistence has an explicit mode-controlled writer")
 const writeSilencedStart = service.indexOf("function writeSilenced(")
 const releaseSilencedStart = service.indexOf("function releaseSilenced(")
 assert.ok(writeSilencedStart >= 0 && releaseSilencedStart > writeSilencedStart, "writeSilenced root method exists")
 const writeSilencedBody = service.slice(writeSilencedStart, releaseSilencedStart)
-assert.match(writeSilencedBody, /function\(success\)[\s\S]*if\s*\(!success\)[\s\S]*return[\s\S]*releaseSilenced/)
+assert.match(writeSilencedBody,
+  /function\(success,\s*exitCode\)[\s\S]*if\s*\(!success\)\s*\{[\s\S]*releaseSilenced\(notification,\s*written\.originalId\)[\s\S]*return/,
+  "failed DND persistence releases the live notification")
+assert.match(service, /persistenceError:\s*service\.persistenceError/,
+  "persistence failures are exposed through status")
+assert.match(service, /liveCount:\s*service\.liveReferenceCount\(\)/,
+  "status reports live notification references")
 
 assert.match(card, /^BorderSurface\s*\{/m)
 assert.match(card, /Color\.notifications\.[A-Za-z]+/)
