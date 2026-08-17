@@ -2,21 +2,14 @@
 # Event-driven Hyprland workspace -> submap watcher using socat for automatic reconnects
 # Also moves 2nd+ RustDesk Remote Desktop windows to the rightmost monitor
 # Requirements: hyprctl, socat, jq
-set -euo pipefail
+set -Eeuo pipefail
 
 readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
-readonly NOTIFICATION_CUE_MODE=rustdesk-cue
-readonly -a NOTIFICATION_ROUTE_MODES=(
-  rustdesk-route-DVI-D-1
-  rustdesk-route-HDMI-A-1
-  rustdesk-route-DP-2
-  rustdesk-route-hidden
-)
+readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
 NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-30}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
-RUSTDESK_NOTIFICATION_CUE_STATE=${RUSTDESK_NOTIFICATION_CUE_STATE:-"$XDG_RUNTIME_DIR/rustdesk-notification-cue"}
 
 is_rustdesk_remote() {
   printf '%s\n' "$1" | grep -qi "rustdesk" &&
@@ -96,140 +89,159 @@ notification_route_state() {
     '
 }
 
-mode_is_active() {
-  local modes=$1
-  local expected=$2
-  local mode
-
-  while IFS= read -r mode; do
-    [[ $mode == "$expected" ]] && return 0
-  done <<<"$modes"
-
-  return 1
-}
-
-apply_notification_route_state() {
+parse_notification_route_state() {
   local state=$1
-  local route_mode cue_output direction
-  local modes cue_state="" mode route_count=0
-  local expected_cue=false modes_match=true cue_state_match=false
-  local state_dir state_name temporary_state
-  local -a mako_args=(mode)
+  local route_mode_name=$2
+  local cue_output_name=$3
+  local direction_name=$4
+  local -n route_mode_ref=$route_mode_name
+  local -n cue_output_ref=$cue_output_name
+  local -n direction_ref=$direction_name
 
-  IFS='|' read -r route_mode cue_output direction <<<"$state"
-  if [[ $state != "$route_mode|$cue_output|$direction" ]]; then
+  IFS='|' read -r route_mode_ref cue_output_ref direction_ref <<<"$state"
+  if [[ $state != "$route_mode_ref|$cue_output_ref|$direction_ref" ]]; then
     printf 'invalid notification route state: %s\n' "$state" >&2
     return 1
   fi
 
-  case $route_mode in
+  case $route_mode_ref in
     rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-hidden) ;;
     *)
-      printf 'invalid notification route mode: %s\n' "$route_mode" >&2
+      printf 'invalid notification route mode: %s\n' "$route_mode_ref" >&2
       return 1
       ;;
   esac
-  case $cue_output in
-    DVI-D-1|HDMI-A-1|DP-2) expected_cue=true ;;
-    none) ;;
+
+  case $cue_output_ref in
+    DVI-D-1|HDMI-A-1|DP-2|none) ;;
     *)
-      printf 'invalid notification cue output: %s\n' "$cue_output" >&2
+      printf 'invalid notification cue output: %s\n' "$cue_output_ref" >&2
       return 1
       ;;
   esac
-  case $direction in
+  case $direction_ref in
     left|right|up|down|none) ;;
     *)
-      printf 'invalid notification cue direction: %s\n' "$direction" >&2
+      printf 'invalid notification cue direction: %s\n' "$direction_ref" >&2
       return 1
       ;;
   esac
-  if [[ $cue_output == none && $direction != none ]]; then
+  if [[ $cue_output_ref == none && $direction_ref != none ]]; then
     printf 'notification route without cue has a direction: %s\n' "$state" >&2
     return 1
   fi
 
-  if ! modes=$(makoctl mode); then
-    printf 'failed to read Mako modes\n' >&2
+  return 0
+}
+
+build_notification_route_json() {
+  local visible=$1
+  local output=$2
+  local cue_output=$3
+  local direction=$4
+  local updated_at=$5
+
+  jq -cn \
+    --argjson visible "$visible" \
+    --arg output "$output" \
+    --arg cue_output "$cue_output" \
+    --arg direction "$direction" \
+    --argjson updated_at "$updated_at" \
+    '{version: 1, visible: $visible,
+      output: (if $visible then $output else null end),
+      cueOutput: (if $cue_output == "none" then null else $cue_output end),
+      direction: (if $direction == "none" then null else $direction end),
+      updatedAt: $updated_at}'
+}
+
+write_notification_route_state() {
+  local state=$1
+  local route_mode cue_output direction visible output
+  local route_dir route_file current_core current_updated_at now updated_at
+  local route_json route_core temporary_file
+
+  parse_notification_route_state "$state" route_mode cue_output direction || return 1
+
+  case $route_mode in
+    rustdesk-route-DVI-D-1) visible=true; output=DVI-D-1 ;;
+    rustdesk-route-HDMI-A-1) visible=true; output=HDMI-A-1 ;;
+    rustdesk-route-DP-2) visible=true; output=DP-2 ;;
+    rustdesk-route-hidden) visible=false; output="" ;;
+  esac
+
+  route_dir="$XDG_RUNTIME_DIR/desktop-shell"
+  route_file="$route_dir/notification-route.json"
+  if ! (umask 077 && mkdir -p -- "$route_dir"); then
+    printf 'failed to create notification route directory: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! chmod 0700 -- "$route_dir"; then
+    printf 'failed to secure notification route directory: %s\n' "$route_dir" >&2
     return 1
   fi
 
-  if [[ -e $RUSTDESK_NOTIFICATION_CUE_STATE ]]; then
-    if ! cue_state=$(<"$RUSTDESK_NOTIFICATION_CUE_STATE"); then
-      printf 'failed to read notification cue state: %s\n' "$RUSTDESK_NOTIFICATION_CUE_STATE" >&2
-      return 1
-    fi
-  fi
-
-  while IFS= read -r mode; do
-    case $mode in
-      rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-hidden)
-        ((route_count += 1))
-        [[ $mode == "$route_mode" ]] || modes_match=false
-        ;;
-      rustdesk-cue)
-        [[ $expected_cue == true ]] || modes_match=false
-        ;;
-    esac
-  done <<<"$modes"
-  [[ $route_count == 1 ]] || modes_match=false
-  mode_is_active "$modes" "$route_mode" || modes_match=false
-  if [[ $expected_cue == true ]]; then
-    mode_is_active "$modes" "$NOTIFICATION_CUE_MODE" || modes_match=false
-    [[ $cue_state == "$cue_output|$direction" ]] && cue_state_match=true
+  printf -v now '%(%s)T' -1
+  updated_at=$now
+  current_core=""
+  current_updated_at=""
+  if [[ -f $route_file ]] &&
+    current_core=$(jq -c 'del(.updatedAt)' "$route_file" 2>/dev/null) &&
+    current_updated_at=$(jq -er \
+      '.updatedAt | select(type == "number" and (floor == .) and (. >= 0))' \
+      "$route_file" 2>/dev/null) &&
+    [[ $current_updated_at =~ ^[0-9]+$ ]]; then
+    :
   else
-    mode_is_active "$modes" "$NOTIFICATION_CUE_MODE" && modes_match=false
-    [[ ! -e $RUSTDESK_NOTIFICATION_CUE_STATE ]] && cue_state_match=true
+    current_core=""
+    current_updated_at=""
   fi
 
-  if [[ $expected_cue == true && $cue_state_match == false ]]; then
-    state_dir=${RUSTDESK_NOTIFICATION_CUE_STATE%/*}
-    state_name=${RUSTDESK_NOTIFICATION_CUE_STATE##*/}
-    [[ $state_dir != "$RUSTDESK_NOTIFICATION_CUE_STATE" ]] || state_dir=.
-    if ! temporary_state=$(umask 077 && mktemp "$state_dir/.${state_name}.XXXXXX"); then
-      printf 'failed to create notification cue state file\n' >&2
-      return 1
-    fi
-    if ! printf '%s\n' "$cue_output|$direction" >"$temporary_state" ||
-      ! mv -f -- "$temporary_state" "$RUSTDESK_NOTIFICATION_CUE_STATE"; then
-      rm -f -- "$temporary_state"
-      printf 'failed to write notification cue state\n' >&2
-      return 1
-    fi
+  if [[ $current_updated_at =~ ^[0-9]+$ ]] && ((updated_at < current_updated_at)); then
+    updated_at=$current_updated_at
   fi
 
-  if [[ $modes_match == false ]]; then
-    for mode in "${NOTIFICATION_ROUTE_MODES[@]}" "$NOTIFICATION_CUE_MODE"; do
-      mako_args+=(-r "$mode")
-    done
-    mako_args+=(-a "$route_mode")
-    [[ $expected_cue == true ]] && mako_args+=(-a "$NOTIFICATION_CUE_MODE")
-    if ! makoctl "${mako_args[@]}"; then
-      printf 'failed to apply notification route state: %s\n' "$state" >&2
-      return 1
-    fi
+  if ! route_json=$(build_notification_route_json \
+    "$visible" "$output" "$cue_output" "$direction" "$updated_at"); then
+    printf 'failed to build notification route JSON\n' >&2
+    return 1
+  fi
+  if ! route_core=$(jq -c 'del(.updatedAt)' <<<"$route_json"); then
+    printf 'failed to normalize notification route JSON\n' >&2
+    return 1
+  fi
+  if [[ $route_core == "$current_core" && $current_updated_at =~ ^[0-9]+$ ]] &&
+    ((now - current_updated_at < NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
+    return 0
   fi
 
-  if [[ $expected_cue == false && -e $RUSTDESK_NOTIFICATION_CUE_STATE ]]; then
-    if ! rm -f -- "$RUSTDESK_NOTIFICATION_CUE_STATE"; then
-      printf 'failed to remove notification cue state\n' >&2
-      return 1
-    fi
+  temporary_file=""
+  if ! temporary_file=$(umask 077 && mktemp "$route_dir/.notification-route.json.XXXXXX"); then
+    printf 'failed to create temporary notification route file\n' >&2
+    return 1
   fi
+  if ! printf '%s\n' "$route_json" >"$temporary_file" ||
+    ! chmod 0600 -- "$temporary_file" ||
+    ! mv -f -- "$temporary_file" "$route_file"; then
+    rm -f -- "$temporary_file" || true
+    printf 'failed to publish notification route: %s\n' "$route_file" >&2
+    return 1
+  fi
+
+  return 0
 }
 
 reconcile_notification_routing() {
   local monitors_json clients_json state
 
   if ! monitors_json=$(hyprctl monitors -j) || ! clients_json=$(hyprctl clients -j); then
-    apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    write_notification_route_state 'rustdesk-route-hidden|none|none' || true
     return 1
   fi
   if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
-    apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    write_notification_route_state 'rustdesk-route-hidden|none|none' || true
     return 1
   fi
-  apply_notification_route_state "$state"
+  write_notification_route_state "$state"
 }
 
 is_notification_routing_event() {
