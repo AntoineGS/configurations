@@ -69,6 +69,8 @@ if [[ ${1-} != --private-bus ]]; then
   mapfile -t selected_wayland <<<"$selected_wayland_output"
   export DESKTOP_SHELL_TEST_WAYLAND_DISPLAY=${selected_wayland[0]}
   export DESKTOP_SHELL_TEST_WAYLAND_RUNTIME_DIR=${selected_wayland[1]}
+  export DESKTOP_SHELL_TEST_LIVE_XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-}
+  export DESKTOP_SHELL_TEST_LIVE_DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-}
 
   bus_log=$(mktemp)
   if dbus-run-session -- bash "$0" --private-bus 2>"$bus_log"; then
@@ -84,7 +86,7 @@ if [[ ${1-} != --private-bus ]]; then
   exit "$status"
 fi
 
-for required_command in quickshell jq timeout ps; do
+for required_command in quickshell jq timeout ps awk readlink sort cut diff; do
   command -v "$required_command" >/dev/null 2>&1 || {
     printf 'FAIL: %s is required\n' "$required_command" >&2
     exit 1
@@ -117,27 +119,145 @@ if [[ $fixture_wayland_display == /* ]]; then
   fixture_wayland_display=wayland-test
 fi
 protected_pids="$fixture/protected-pids"
+protected_before="$fixture/protected.before"
+protected_after="$fixture/protected.after"
+unit_before="$fixture/desktop-shell.service.before"
+unit_after="$fixture/desktop-shell.service.after"
+unit_present_file="$fixture/desktop-shell.service.present"
 live_shell_marker="$HOME/.config/quickshell/desktop-shell"
+unit_properties='LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload'
+live_xdg_runtime_dir=${DESKTOP_SHELL_TEST_LIVE_XDG_RUNTIME_DIR:-}
+live_dbus_address=${DESKTOP_SHELL_TEST_LIVE_DBUS_SESSION_BUS_ADDRESS:-}
+
+process_identity() {
+  local pid=$1
+  local stat_line stat_tail start_time executable comm
+
+  [[ $pid =~ ^[0-9]+$ && -r /proc/$pid/stat && -r /proc/$pid/comm ]] || return 1
+  stat_line=$(<"/proc/$pid/stat")
+  stat_tail=${stat_line##*) }
+  start_time=$(awk '{ print $20 }' <<<"$stat_tail")
+  [[ -n $start_time ]] || return 1
+  executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null || printf '<unavailable>')
+  comm=$(<"/proc/$pid/comm")
+  printf '%s\t%s\t%s\t%s\n' "$pid" "$start_time" "$executable" "$comm"
+}
 
 snapshot_protected_processes() {
   local pid command_line
   ps -eo pid=,args= | while read -r pid command_line; do
     [[ -n $pid ]] || continue
     if [[ $command_line == *polkit-gnome* || $command_line == *"$live_shell_marker"* ]]; then
-      printf '%s\n' "$pid"
+      process_identity "$pid" || true
     fi
-  done | sort -n -u
+  done | sort -t $'\t' -k1,1n -u
 }
 
-assert_protected_processes() {
-  local pid
-  while IFS= read -r pid; do
-    [[ -n $pid ]] || continue
-    if ! kill -0 "$pid" 2>/dev/null; then
-      printf 'FAIL: protected live process disappeared: %s\n' "$pid" >&2
-      return 1
-    fi
-  done <"$protected_pids"
+unit_property() {
+  local name=$1
+  local path=$2
+  awk -F= -v property="$name" '$1 == property { print substr($0, index($0, "=") + 1); exit }' "$path"
+}
+
+systemctl_user_show() {
+  [[ -n $live_xdg_runtime_dir ]] || return 1
+  if [[ -n $live_dbus_address ]]; then
+    env XDG_RUNTIME_DIR="$live_xdg_runtime_dir" \
+      DBUS_SESSION_BUS_ADDRESS="$live_dbus_address" systemctl --user show "$@"
+  else
+    env XDG_RUNTIME_DIR="$live_xdg_runtime_dir" systemctl --user show "$@"
+  fi
+}
+
+snapshot_unit() {
+  local output=$1
+  local load_state
+
+  command -v systemctl >/dev/null 2>&1 || return 1
+  load_state=$(systemctl_user_show desktop-shell.service --property=LoadState --value 2>/dev/null) || return 1
+  [[ $load_state == loaded ]] || return 1
+  systemctl_user_show desktop-shell.service --property="$unit_properties" >"$output" 2>/dev/null || {
+    rm -f -- "$output"
+    return 1
+  }
+}
+
+append_unit_main_process() {
+  local unit_snapshot=$1
+  local output=$2
+  local main_pid
+
+  main_pid=$(unit_property MainPID "$unit_snapshot")
+  [[ $main_pid =~ ^[1-9][0-9]*$ ]] || return 0
+  process_identity "$main_pid" >>"$output" || {
+    printf 'FAIL: unable to snapshot desktop-shell.service MainPID %s\n' "$main_pid" >&2
+    return 1
+  }
+}
+
+snapshot_live_state() {
+  local unit_present=0
+  local normalized="$fixture/protected.normalized"
+
+  if snapshot_unit "$unit_before"; then
+    unit_present=1
+  else
+    rm -f -- "$unit_before"
+  fi
+  printf '%s\n' "$unit_present" >"$unit_present_file"
+
+  snapshot_protected_processes >"$protected_before"
+  if ((unit_present)) && ! append_unit_main_process "$unit_before" "$protected_before"; then
+    return 1
+  fi
+  sort -t $'\t' -k1,1n -u "$protected_before" >"$normalized"
+  mv -- "$normalized" "$protected_before"
+  cut -f1 "$protected_before" | sort -n -u >"$protected_pids"
+}
+
+assert_live_state_unchanged() {
+  local unit_present_after=0
+  local unit_present_before
+  local normalized="$fixture/protected.normalized"
+
+  unit_present_before=$(<"$unit_present_file")
+  if snapshot_unit "$unit_after"; then
+    unit_present_after=1
+  else
+    rm -f -- "$unit_after"
+  fi
+
+  if [[ $unit_present_before != "$unit_present_after" ]]; then
+    printf 'FAIL: desktop-shell.service presence changed: %s -> %s\n' \
+      "$unit_present_before" "$unit_present_after" >&2
+    return 1
+  fi
+  if ((unit_present_before)) && ! cmp -s "$unit_before" "$unit_after"; then
+    printf '%s\n' 'FAIL: desktop-shell.service state changed during the test' >&2
+    diff -u "$unit_before" "$unit_after" >&2 || true
+    return 1
+  fi
+
+  snapshot_protected_processes >"$protected_after"
+  if ((unit_present_after)) && ! append_unit_main_process "$unit_after" "$protected_after"; then
+    return 1
+  fi
+  sort -t $'\t' -k1,1n -u "$protected_after" >"$normalized"
+  mv -- "$normalized" "$protected_after"
+  if ! cmp -s "$protected_before" "$protected_after"; then
+    printf '%s\n' 'FAIL: protected live process identity/start state changed' >&2
+    diff -u "$protected_before" "$protected_after" >&2 || true
+    return 1
+  fi
+}
+
+assert_surface_suppression_source() {
+  local path=$1
+  local needle=$2
+  grep -Fq -- "$needle" "$path" || {
+    printf 'FAIL: surface suppression source contract is missing: %s: %s\n' "$path" "$needle" >&2
+    return 1
+  }
 }
 
 cleanup_process() {
@@ -163,7 +283,7 @@ cleanup() {
   else
     cleanup_process "$shell_pid"
   fi
-  if ! assert_protected_processes; then
+  if [[ -e $unit_present_file ]] && ! assert_live_state_unchanged; then
     status=1
   fi
   if ((status != 0)) && [[ -s $shell_log ]]; then
@@ -179,7 +299,22 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-snapshot_protected_processes >"$protected_pids"
+assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
+  'readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"'
+assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
+  'active: !shell.testSurfaceSuppressed && shell.activeBarId === shell.defaultBarId'
+assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
+  'if (shell.testSurfaceSuppressed) return []'
+assert_surface_suppression_source "$SHELL_ROOT/plugins/bar/Bar.qml" \
+  'visible: !root.testSurfaceSuppressed && root.shell.barVisible'
+assert_surface_suppression_source "$SHELL_ROOT/plugins/notifications/Service.qml" \
+  'visible: !service.testSurfaceSuppressed && (service.cardsVisibleOn(modelData)'
+assert_surface_suppression_source "$SHELL_ROOT/plugins/polkit/PolkitAgent.qml" \
+  'visible: !root.testSurfaceSuppressed && root.dialogVisible'
+assert_surface_suppression_source "$SHELL_ROOT/plugins/osd/Osd.qml" \
+  'visible: !root.testSurfaceSuppressed && root.opened'
+
+snapshot_live_state
 
 umask 022
 mkdir -p -- "$runtime_dir" "$home/.config" "$home/.cache" "$home/.local/share"
@@ -189,6 +324,7 @@ export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
 start_shell() {
   DESKTOP_SHELL_PREVIEW=0 \
+  DESKTOP_SHELL_TEST_NO_SURFACES=1 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0 \
   HOME="$home" \
@@ -260,6 +396,7 @@ start_shell
 wait_for_ipc pong desktop-shell ping
 
 for expected_environment in \
+  'DESKTOP_SHELL_TEST_NO_SURFACES=1' \
   'DESKTOP_SHELL_POLKIT_REGISTER=0' \
   'DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0'; do
   tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fxq "$expected_environment" || {
@@ -288,6 +425,9 @@ jq -e '
   and ((.osdAvailable | type) == "boolean")
   and ((.notificationsOwned | type) == "boolean")
   and ((.notificationOwnershipError | type) == "string")
+  and ((.notificationRouteValid | type) == "boolean")
+  and ((.notificationRouteVisible | type) == "boolean")
+  and ((.notificationRouteError | type) == "string")
 ' <<<"$health" >/dev/null || {
   printf 'FAIL: shell health lost existing fields: %s\n' "$health" >&2
   exit 1

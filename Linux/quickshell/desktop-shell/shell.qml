@@ -27,6 +27,7 @@ ShellRoot {
   readonly property string configPath: shellPath + "/config/shell.json"
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   property bool barVisible: true
 
   // Bundled fallback so the shell can start even when the default shell.json is
@@ -227,7 +228,7 @@ ShellRoot {
   Loader {
     id: defaultBarLoader
 
-    active: shell.activeBarId === shell.defaultBarId
+    active: !shell.testSurfaceSuppressed && shell.activeBarId === shell.defaultBarId
     sourceComponent: defaultBarComponent
     onLoaded: shell.configureBar(item, shell.barManifestFor(shell.defaultBarId))
     onActiveChanged: if (!active && shell.activeBarId !== shell.defaultBarId) shell.bar = null
@@ -236,7 +237,8 @@ ShellRoot {
   Loader {
     id: pluginBarLoader
 
-    active: !shell.pluginReloading && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
+    active: !shell.testSurfaceSuppressed && !shell.pluginReloading
+      && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
     onLoaded: shell.configureBar(item, shell.activeBarManifest)
@@ -595,6 +597,7 @@ ShellRoot {
   property var panelEntries: []
 
   function computePanelEntries() {
+    if (shell.testSurfaceSuppressed) return []
     var out = []
     var plugins = shell.pluginRegistry.installedPlugins
     var panelKinds = ["panel", "overlay", "menu"]
@@ -680,6 +683,10 @@ ShellRoot {
   property var pluginWidgetComponents: ({})
 
   function syncPluginWidgets() {
+    if (shell.testSurfaceSuppressed) {
+      shell.unloadPluginWidgets()
+      return
+    }
     var plugins = shell.pluginRegistry.installedPlugins
     var seen = ({})
 

@@ -13,6 +13,9 @@ NOTIFICATION_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-notification-silencing
 UTILITIES="$ROOT/Linux/hypr/bindings/utilities.lua"
 MEDIA="$ROOT/Linux/hypr/bindings/media.lua"
 NOTIFICATION_RUNTIME_TEST="$SHELL_ROOT/tests/notification-runtime-test.sh"
+POLKIT="$SHELL_ROOT/plugins/polkit/PolkitAgent.qml"
+NOTIFICATIONS="$SHELL_ROOT/plugins/notifications/Service.qml"
+OSD="$SHELL_ROOT/plugins/osd/Osd.qml"
 CONFIG="$ROOT/tidydots.yaml"
 BASH_PATH="$(type -P bash)"
 
@@ -23,12 +26,13 @@ command -v node >/dev/null 2>&1 || {
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
-  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$CONFIG" <<'NODE'
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$POLKIT" "$NOTIFICATIONS" "$OSD" "$CONFIG" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
-  toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath, tidydotsPath] = process.argv.slice(2)
+  toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath, polkitPath, notificationsPath,
+  osdPath, tidydotsPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
@@ -38,6 +42,9 @@ const bar = fs.readFileSync(barPath, "utf8")
 const notificationToggleHelper = fs.readFileSync(notificationToggleHelperPath, "utf8")
 const utilities = fs.readFileSync(utilitiesPath, "utf8")
 const media = fs.readFileSync(mediaPath, "utf8")
+const polkit = fs.readFileSync(polkitPath, "utf8")
+const notifications = fs.readFileSync(notificationsPath, "utf8")
+const osd = fs.readFileSync(osdPath, "utf8")
 const tidydots = fs.readFileSync(tidydotsPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
@@ -217,6 +224,8 @@ assertConfig("antoinews-linux", false, {
 assertConfig("omarchbook", true, {})
 
 assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKTOP_SHELL_PREVIEW"\) === "1"/)
+assert.match(shell, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
+  "shell has a test-only no-surfaces gate")
 assert.match(shell, /previewMode: shell\.previewMode/)
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
@@ -246,6 +255,28 @@ assert.match(shell, /OsdModel\.healthAvailable\(\s*shell\.previewMode,\s*shell\.
   "shell health delegates all OSD availability cases")
 assert.match(shell, /panelLoaders\["desktop\.osd"\]/,
   "OSD health reads the desktop.osd loader")
+assert.match(shell, /active: !shell\.testSurfaceSuppressed && shell\.activeBarId === shell\.defaultBarId/,
+  "test runtime suppresses the default bar surface")
+assert.match(shell, /active: !shell\.testSurfaceSuppressed && !shell\.pluginReloading[\s\S]*?shell\.activeBarId !== shell\.defaultBarId/,
+  "test runtime suppresses optional bar surfaces")
+assert.match(shell, /if \(shell\.testSurfaceSuppressed\) return \[\]/,
+  "test runtime suppresses panel loaders")
+assert.match(bar, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
+  "bar has a test-only no-surfaces gate")
+assert.match(bar, /visible: !root\.testSurfaceSuppressed && root\.shell\.barVisible/,
+  "bar surface is hidden by the test gate")
+assert.match(polkit, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
+  "polkit has a test-only no-surfaces gate")
+assert.match(polkit, /visible: !root\.testSurfaceSuppressed && root\.dialogVisible/,
+  "polkit surface is hidden by the test gate")
+assert.match(notifications, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
+  "notifications have a test-only no-surfaces gate")
+assert.match(notifications, /visible: !service\.testSurfaceSuppressed[\s\S]*?service\.cardsVisibleOn/,
+  "notification surfaces are hidden by the test gate")
+assert.match(osd, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
+  "OSD has a test-only no-surfaces gate")
+assert.match(osd, /visible: !root\.testSurfaceSuppressed && root\.opened/,
+  "OSD surface is hidden by the test gate")
 assert.match(shell, /readonly property var polkitService:\s*shell\.serviceFor\("desktop\.polkit"\)/,
   "shell health reads the shared polkit service")
 for (const [field, expected] of [
@@ -328,7 +359,7 @@ const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
 const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
 assert.notEqual(barPanelStart, -1, "bar panel component exists")
 assert.notEqual(barPanelEnd, -1, "bar module components follow bar panel")
-assert.match(bar.slice(barPanelStart, barPanelEnd), /visible: root\.shell\.barVisible/)
+assert.match(bar.slice(barPanelStart, barPanelEnd), /visible: !root\.testSurfaceSuppressed && root\.shell\.barVisible/)
 const panelEntriesStart = shell.indexOf("function computePanelEntries")
 const panelEntriesEnd = shell.indexOf("Connections {", panelEntriesStart)
 assert.notEqual(panelEntriesStart, -1, "panel entry computation exists")
