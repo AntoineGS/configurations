@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.agents",
+  "name": "Agents",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "license": "MIT",
+  "description": "Codex and Claude usage, limits, and local model history",
+  "kinds": [
+    "panel"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "panel": "Panel.qml"
+  },
+  "panel": {
+    "displayName": "Agents",
+    "description": "Usage limits and local daily/model history for Codex and Claude",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaults": {
+      "refreshIntervalSec": 900
+    }
+  }
+}

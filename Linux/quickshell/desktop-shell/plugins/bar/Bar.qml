@@ -384,7 +384,7 @@ Item {
   component BarPanel: PanelWindow {
     id: barWindow
 
-    visible: true
+    visible: root.shell.barVisible
     exclusionMode: ExclusionMode.Auto
     implicitWidth: 0
     implicitHeight: root.barSize

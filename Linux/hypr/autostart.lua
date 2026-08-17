@@ -9,7 +9,6 @@ end
 hl.on("hyprland.start", function()
 	hl.exec_cmd("uwsm-app -- hypridle")
 	hl.exec_cmd("uwsm-app -- mako")
-	hl.exec_cmd("uwsm-app -- waybar")
 	hl.exec_cmd("uwsm-app -- fcitx5 --disable notificationitem")
 	hl.exec_cmd("uwsm-app -- swaybg -c '#1e1e2e'")
 	hl.exec_cmd("uwsm-app -- swayosd-server")

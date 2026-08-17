@@ -18,6 +18,15 @@ applications:
     entries: []
   - package:
       managers:
+        apt: shellcheck
+        brew: shellcheck
+        pacman: shellcheck
+    name: shellcheck
+    description: Static analysis for shell scripts
+    when: '{{ eq .OS "linux" }}'
+    entries: []
+  - package:
+      managers:
         installer:
           command:
             linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -763,6 +772,9 @@ applications:
   - package:
       managers:
         pacman: quickshell
+        yay:
+          deps:
+            - codexbar
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -770,6 +782,36 @@ applications:
           linux: ~/.config/quickshell/desktop-shell
         name: config
         backup: ./Linux/quickshell/desktop-shell
+      - targets:
+          linux: ~/.local/share/helpers
+        name: desktop-shell-service-helpers
+        backup: ./Linux/os/helpers
+        files:
+          - desktop-shell-launch
+          - toggle-desktop-shell-bar
+          - desktop-shell-action
+          - desktop-connectivity-action
+          - desktop-hardware-state
+          - desktop-hardware-action
+          - desktop-agent-usage-update
+          - desktop-agent-usage-codex
+          - desktop-agent-usage-claude
+          - desktop-shell
+          - desktop-shell-status
+      - targets:
+          linux: ~/.config/systemd/user
+        name: systemd-service
+        backup: ./Linux/quickshell/desktop-shell/systemd
+        files:
+          - desktop-shell.service
+      - check:
+          linux: >-
+            systemctl --user is-enabled --quiet desktop-shell.service &&
+            systemctl --user is-active --quiet desktop-shell.service &&
+            test "$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service
+        name: enable-service
   - package:
       managers:
         yay: claudebar
