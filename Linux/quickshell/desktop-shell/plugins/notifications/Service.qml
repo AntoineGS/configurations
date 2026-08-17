@@ -32,6 +32,7 @@ Item {
   property string ownershipError: "notification owner probe pending"
   property bool routeValid: false
   property string routeError: "notification route unavailable"
+  property string routeRaw: ""
   property var route: ({
     valid: false,
     visible: false,
@@ -54,6 +55,8 @@ Item {
   property alias popupModel: popupModel
   ListModel { id: popupModel }
 
+  property int persistenceRetryLimit: 2
+  property string persistenceError: ""
   readonly property int historyLimit: 10
   property int historyCount: 0
   property bool historyCountQueued: false
@@ -141,7 +144,8 @@ Item {
   }
 
   function writeSilenced(notification, written) {
-    writeHistoryFile(written, function() {
+    writeHistoryFile(written, function(success) {
+      if (!success) return
       var updated = null
       try {
         updated = NotificationLogic.replacementSnapshot(notification, written.originalId, written.timestamp)
@@ -300,13 +304,21 @@ Item {
     id: ensureDirsProc
     command: ["mkdir", "-p", service.stateDir, service.popupStateDir, service.historyDir, service.imagesDir]
     running: false
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0)
+        service.persistenceError = "notification state directory creation failed (exit " + String(exitCode) + ")"
+    }
   }
 
   property var popupFileQueue: []
-  property var runningPopupFileJobDone: null
+  property var runningPopupFileJob: null
 
-  function enqueuePopupFileJob(command, done) {
-    popupFileQueue = popupFileQueue.concat([{ command: command, done: done || null }])
+  function enqueuePopupFileJob(command, done, attempt) {
+    popupFileQueue = popupFileQueue.concat([{
+      command: command,
+      done: done || null,
+      attempt: Number(attempt || 0)
+    }])
     runNextPopupFileJob()
   }
 
@@ -327,18 +339,33 @@ Item {
     }
 
     popupFileProc.command = job.command
-    service.runningPopupFileJobDone = job.done || null
+    service.runningPopupFileJob = job
     popupFileProc.running = true
   }
 
   Process {
     id: popupFileProc
     running: false
-    onExited: {
-      var done = service.runningPopupFileJobDone
-      service.runningPopupFileJobDone = null
-      if (done) {
-        try { done() } catch (error) { console.warn("notifications: file callback failed", error) }
+    onExited: function(exitCode) {
+      var job = service.runningPopupFileJob
+      service.runningPopupFileJob = null
+      var success = Number(exitCode) === 0
+      if (!success) {
+        service.persistenceError = "notification persistence job failed (exit " + String(exitCode) + ")"
+        if (job && job.attempt < service.persistenceRetryLimit) {
+          service.popupFileQueue = [{
+            command: job.command,
+            done: job.done,
+            attempt: job.attempt + 1
+          }].concat(service.popupFileQueue)
+          service.runNextPopupFileJob()
+          return
+        }
+      }
+      if (job && job.done) {
+        try { job.done(success, exitCode) } catch (error) {
+          console.warn("notifications: file callback failed", error)
+        }
       }
       service.runNextPopupFileJob()
     }
@@ -354,7 +381,7 @@ Item {
   function persistPopupFile(snapshot) {
     var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
     var command = ["bash", "-c",
-      "mkdir -p \"$1\" \"$2\" || exit 0\n" +
+      "mkdir -p \"$1\" \"$2\" || exit 1\n" +
       "dir=\"$1\" json=\"$3\" name=\"$4\"\n" +
       copyImagesScript +
       "printf '%s\\n' \"$json\" > \"$dir/$name\"", "--",
@@ -380,9 +407,9 @@ Item {
   function archivePopupFileFor(row) {
     if (!row) return
     enqueuePopupFileJob(["bash", "-c",
-      "mkdir -p \"$1\" || exit 0\n" +
+      "mkdir -p \"$1\" || exit 1\n" +
       "hist=\"$1\" limit=\"$2\" imgs=\"$5\"\n" +
-      "mv -f \"$4/$3\" \"$1/$3\" 2>/dev/null || exit 0\n" +
+      "mv -f \"$4/$3\" \"$1/$3\" 2>/dev/null || exit 1\n" +
       trimHistoryScript, "--",
       historyDir,
       String(historyLimit),
@@ -393,16 +420,16 @@ Item {
 
   function writeHistoryFile(entry, done) {
     if (!entry) {
-      if (done) done()
+      if (done) done(true, 0)
       return
     }
     var persistable = NotificationLogic.persistablePopup(entry, imagesDir)
     var command = ["bash", "-c",
-      "mkdir -p \"$1\" \"$5\" || exit 0\n" +
+      "mkdir -p \"$1\" \"$5\" || exit 1\n" +
       "hist=\"$1\" limit=\"$2\" name=\"$3\" json=\"$4\" imgs=\"$5\"\n" +
       "shift 5\n" +
       copyImagesScript +
-      "printf '%s\\n' \"$json\" > \"$hist/$name\" || exit 0\n" +
+      "printf '%s\\n' \"$json\" > \"$hist/$name\" || exit 1\n" +
       trimHistoryScript, "--",
       historyDir,
       String(historyLimit),
@@ -411,9 +438,13 @@ Item {
       imagesDir]
     for (var i = 0; i < persistable.copies.length; i++)
       command.push(persistable.copies[i].from, persistable.copies[i].to)
-    enqueuePopupFileJob(command, function() {
+    enqueuePopupFileJob(command, function(success, exitCode) {
+      if (!success) {
+        if (done) done(false, exitCode)
+        return
+      }
       service.updateHistoryCount()
-      if (done) done()
+      if (done) done(true, exitCode)
     })
   }
 
@@ -496,6 +527,28 @@ Item {
       service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = true
       popupModel.append(rows[i])
     }
+  }
+
+  Process {
+    id: restoreLastProc
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: service.restoreLastFromRaw(text)
+    }
+  }
+
+  function restoreLastFromRaw(raw) {
+    var row = NotificationLogic.latestHistoryRow(raw, NotificationUrgency.Normal)
+    if (!row) return
+    var fileName = NotificationLogic.popupFileName(row)
+    if (service.restoredPopups[fileName]) return
+    for (var i = 0; i < popupModel.count; i++) {
+      var current = popupModel.get(i)
+      if (current && NotificationLogic.popupFileName(current) === fileName) return
+    }
+    service.restoredPopups[fileName] = true
+    popupModel.append(row)
   }
 
   Process {
@@ -597,8 +650,17 @@ Item {
     onFileChanged: reload()
   }
 
+  Timer {
+    id: routeExpiryTimer
+    interval: 1000
+    repeat: true
+    running: service.routeRaw.length > 0
+    onTriggered: service.refreshRoute()
+  }
+
   function invalidateRoute(error) {
     var message = String(error || "invalid route")
+    service.routeRaw = ""
     service.route = {
       valid: false,
       visible: false,
@@ -612,7 +674,12 @@ Item {
   }
 
   function applyRoute(raw) {
-    var next = NotificationLogic.normalizeRoute(raw, Date.now())
+    service.routeRaw = String(raw || "")
+    service.refreshRoute()
+  }
+
+  function refreshRoute() {
+    var next = NotificationLogic.normalizeRoute(service.routeRaw, Date.now())
     service.route = next
     service.routeValid = next.valid === true
     service.routeError = next.error || ""
@@ -776,7 +843,12 @@ Item {
   }
 
   function restoreLast() {
-    return service.showRecentHistory()
+    if (restoreLastProc.running) return "ok"
+    restoreLastProc.command = ["bash", "-c",
+      "latest=$(ls -1 \"$1\"/*.json 2>/dev/null | sort -n | tail -n 1); " +
+      "if [[ -n $latest ]]; then awk 1 \"$latest\"; fi", "--", historyDir]
+    restoreLastProc.running = true
+    return "ok"
   }
 
   function invokeLast() {

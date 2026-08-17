@@ -136,6 +136,19 @@ const popupLines = [
 assert.deepEqual(logic.parsePopupFiles(popupLines, 1).map(entry => entry.id), [9, 8])
 assert.deepEqual(logic.historyRows(popupLines, [snapshot], 1, 3).map(entry => entry.id), [9, 42, 8])
 assert.deepEqual(logic.historyRows(popupLines, [snapshot], 1, 1).map(entry => entry.id), [9])
+assert.deepEqual(logic.latestHistoryRow(popupLines, 1), {
+  id: 9,
+  originalId: 9,
+  app: "newer",
+  appIcon: "",
+  summary: "Newer",
+  body: "",
+  image: "",
+  urgency: 2,
+  expireTimeout: 0,
+  timestamp: 1786930003000,
+}, "restore selects only the newest archived entry")
+assert.equal(logic.latestHistoryRow("", 1), null)
 assert.equal(logic.popupFileName(snapshot), "1786930001000-42.json")
 
 const imageEntry = {
