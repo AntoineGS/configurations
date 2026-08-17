@@ -12,6 +12,7 @@ Item {
   id: root
 
   property bool registrationEnabled: Quickshell.env("DESKTOP_SHELL_POLKIT_REGISTER") !== "0"
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   property string objectPath: "/org/desktop_shell/PolkitAgent"
   property bool polkitRegistered: false
   property string polkitError: ""
@@ -288,7 +289,7 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.dialogVisible && root.activeScreen !== null
+    visible: !root.testSurfaceSuppressed && root.dialogVisible && root.activeScreen !== null
     screen: root.activeScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"

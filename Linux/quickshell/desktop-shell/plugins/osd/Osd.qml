@@ -18,6 +18,7 @@ Item {
   property real maxValue: 100
   property bool hasProgress: false
   property int duration: 1200
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   property var screenList: Quickshell.screens
   readonly property var targetScreen: OsdModel.screenForMonitor(root.screenList, root.focusedMonitorName)
   property var displayedState: ({
@@ -150,7 +151,7 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened
+    visible: !root.testSurfaceSuppressed && root.opened
     screen: root.targetScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"

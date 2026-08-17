@@ -26,6 +26,7 @@ Item {
   readonly property string imagesDir: popupStateDir + "images/"
   readonly property string runtimeDir: String(Quickshell.env("XDG_RUNTIME_DIR") || "")
   readonly property string routePath: runtimeDir + "/desktop-shell/notification-route.json"
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   readonly property int cornerRadius: Style.cornerRadius
 
   property bool ownershipEnabled: Quickshell.env("DESKTOP_SHELL_NOTIFICATIONS_REGISTER") !== "0"
@@ -969,7 +970,8 @@ Item {
       id: popupWindow
       required property var modelData
       screen: modelData
-      visible: service.cardsVisibleOn(modelData) || service.cueVisibleOn(modelData)
+      visible: !service.testSurfaceSuppressed && (service.cardsVisibleOn(modelData)
+        || service.cueVisibleOn(modelData))
 
       WlrLayershell.namespace: "desktop-shell-notifications"
       WlrLayershell.layer: WlrLayer.Overlay
