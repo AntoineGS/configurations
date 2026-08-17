@@ -1,0 +1,200 @@
+var KIB_PER_GIB = 1048576
+var MINIMUM_MEMORY_GIB = 1
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function finiteNumber(value) {
+  if (typeof value !== "number" || !isFinite(value)) return null
+  return value
+}
+
+function nonNegativeNumber(value) {
+  var number = finiteNumber(value)
+  return number === null || number < 0 ? null : number
+}
+
+function errorValue(value) {
+  if (value === null || value === undefined) return null
+  return typeof value === "string" ? value : null
+}
+
+function availablePercent(available, value) {
+  if (!available) return undefined
+  var number = finiteNumber(value)
+  return number === null ? undefined : number
+}
+
+/**
+ * Return a safe model value for an unavailable or malformed VM payload.
+ *
+ * @param {string|null|undefined} error optional diagnostic to expose
+ * @returns {Object} normalized state
+ */
+function emptyState(error) {
+  return {
+    available: false,
+    stale: false,
+    error: errorValue(error),
+    visible: false,
+    name: "",
+    vcpus: 0,
+    cpuAvailable: false,
+    cpuPercent: undefined,
+    memoryAllocationAvailable: false,
+    memoryUsageAvailable: false,
+    memoryPercent: undefined,
+    currentKiB: null,
+    maximumKiB: null,
+    usedKiB: null,
+    showMemoryUsage: false,
+    canResize: false
+  }
+}
+
+/**
+ * Normalize a VM state envelope received as JSON or as an already parsed object.
+ * Only scalar fields needed by the widget are copied out of the payload.
+ *
+ * @param {string|Object} raw state envelope
+ * @returns {Object} normalized widget state
+ */
+function normalizeState(raw) {
+  try {
+    var envelope = typeof raw === "string" ? JSON.parse(raw) : raw
+    if (!isPlainObject(envelope)) throw new Error("VM state must be an object")
+    if (!isPlainObject(envelope.data)) throw new Error("VM state data must be an object")
+
+    var data = envelope.data
+    var cpu = isPlainObject(data.cpu) ? data.cpu : {}
+    var memory = isPlainObject(data.memory) ? data.memory : {}
+    var available = envelope.available === true
+    var stale = envelope.stale === true
+    var cpuAvailable = cpu.available === true
+    var memoryAllocationAvailable = memory.allocationAvailable === true
+    var memoryUsageAvailable = memory.usageAvailable === true
+    var vcpus = finiteNumber(data.vcpus)
+    var currentKiB = nonNegativeNumber(memory.currentKiB)
+    var maximumKiB = nonNegativeNumber(memory.maximumKiB)
+    var usedKiB = nonNegativeNumber(memory.usedKiB)
+    var cpuPercent = availablePercent(cpuAvailable, cpu.percent)
+    var memoryPercent = availablePercent(memoryUsageAvailable, memory.percent)
+
+    if (vcpus === null || vcpus < 0 || vcpus % 1 !== 0) vcpus = 0
+
+    return {
+      available: available,
+      stale: stale,
+      error: errorValue(envelope.error),
+      visible: available,
+      name: typeof data.name === "string" ? data.name : "",
+      vcpus: vcpus,
+      cpuAvailable: cpuAvailable,
+      cpuPercent: cpuPercent,
+      memoryAllocationAvailable: memoryAllocationAvailable,
+      memoryUsageAvailable: memoryUsageAvailable,
+      memoryPercent: memoryPercent,
+      currentKiB: currentKiB,
+      maximumKiB: maximumKiB,
+      usedKiB: usedKiB,
+      showMemoryUsage: available && memoryUsageAvailable && memoryPercent !== undefined && memoryPercent !== null
+        && usedKiB !== null,
+      canResize: available && !stale && memoryAllocationAvailable && currentKiB !== null && maximumKiB !== null
+        && maximumKiB > 0
+    }
+  } catch (error) {
+    return emptyState(error && error.message ? error.message : String(error))
+  }
+}
+
+function clampPercent(value) {
+  var number = Number(value)
+  if (!isFinite(number)) return null
+  return Math.max(0, Math.min(100, Math.round(number)))
+}
+
+/**
+ * Format a percentage without allowing invalid numeric output.
+ *
+ * @param {*} value percentage value
+ * @returns {string} display percentage
+ */
+function formatPercent(value) {
+  var percent = clampPercent(value)
+  return percent === null ? "--%" : percent + "%"
+}
+
+/**
+ * Format a KiB value as a floored GiB label.
+ *
+ * @param {*} kib memory in KiB
+ * @returns {string} display memory value
+ */
+function formatGiB(kib) {
+  var value = nonNegativeNumber(kib)
+  if (value === null) return "-- GiB"
+  return Math.floor(value / KIB_PER_GIB) + " GiB"
+}
+
+/**
+ * Return the smallest memory size accepted by the VM action.
+ *
+ * @returns {number} minimum memory in GiB
+ */
+function minimumGiB() {
+  return MINIMUM_MEMORY_GIB
+}
+
+function memoryGiB(state, key) {
+  var value = state && typeof state === "object" ? nonNegativeNumber(state[key]) : null
+  if (value === null || value === undefined) return minimumGiB()
+  return Math.max(minimumGiB(), Math.floor(value / KIB_PER_GIB))
+}
+
+/**
+ * Return the maximum whole GiB supported by a normalized VM state.
+ *
+ * @param {Object} state normalized VM state
+ * @returns {number} maximum memory in GiB
+ */
+function maximumGiB(state) {
+  return memoryGiB(state, "maximumKiB")
+}
+
+/**
+ * Return the current whole GiB value from a normalized VM state.
+ *
+ * @param {Object} state normalized VM state
+ * @returns {number} current memory in GiB
+ */
+function currentGiB(state) {
+  return memoryGiB(state, "currentKiB")
+}
+
+/**
+ * Build the compact bar label for a visible VM state.
+ *
+ * @param {Object} state normalized VM state
+ * @returns {string} bar label
+ */
+function barText(state) {
+  if (!state || !state.visible) return ""
+  var parts = []
+  if (state.showMemoryUsage) parts.push(" " + formatPercent(state.memoryPercent))
+  parts.push(" " + formatPercent(state.cpuPercent))
+  return parts.join("  ")
+}
+
+if (typeof module !== "undefined") {
+  module.exports = {
+    emptyState: emptyState,
+    normalizeState: normalizeState,
+    formatPercent: formatPercent,
+    formatGiB: formatGiB,
+    minimumGiB: minimumGiB,
+    maximumGiB: maximumGiB,
+    currentGiB: currentGiB,
+    barText: barText
+  }
+}
