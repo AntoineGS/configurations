@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s\n' "${0##*/}" >&2
+}
+
+if (($# != 0)); then
+  usage
+  exit 2
+fi
+
+: "${XDG_RUNTIME_DIR:=/run/user/$UID}"
+readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
+readonly POLKIT_AGENT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
+polkit_comm="${POLKIT_AGENT##*/}"
+polkit_comm="${polkit_comm:0:15}"
+readonly POLKIT_COMM="$polkit_comm"
+readonly MAX_WAIT_ATTEMPTS=50
+readonly WAIT_INTERVAL=0.1
+
+die() {
+  printf 'desktop-shell activation failed: %s\n' "$1" >&2
+  exit 1
+}
+
+query_named_pids() {
+  local name=$1
+  local result
+  local status
+
+  if result=$(pgrep -x -- "$name" 2>/dev/null); then
+    printf '%s\n' "$result"
+    return 0
+  fi
+  status=$?
+  ((status == 1)) && return 0
+  return "$status"
+}
+
+query_polkit_pids() {
+  local candidates
+  local status
+  local pid
+  local executable
+
+  if candidates=$(pgrep -x -- "$POLKIT_COMM" 2>/dev/null); then
+    :
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
+  fi
+
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || continue
+    if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
+      return 2
+    fi
+    [[ $executable == "$POLKIT_AGENT" ]] || continue
+    printf '%s\n' "$pid"
+  done <<<"$candidates"
+}
+
+query_process_pids() {
+  case $1 in
+    mako|swayosd-server) query_named_pids "$1" ;;
+    polkit) query_polkit_pids ;;
+    *) return 2 ;;
+  esac
+}
+
+wait_for_processes_absent() {
+  local process=$1
+  local attempt
+  local pids
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if ! pids=$(query_process_pids "$process"); then
+      return 1
+    fi
+    [[ -z $pids ]] && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'process did not terminate: %s\n' "$process" >&2
+  return 1
+}
+
+terminate_named_process() {
+  local name=$1
+  local pids
+  local -a command=(pkill -TERM -x -- "$name")
+
+  if ! pids=$(query_process_pids "$name"); then
+    return 1
+  fi
+  [[ -n $pids ]] || return 0
+
+  if "${command[@]}"; then
+    :
+  else
+    local status=$?
+    ((status == 1)) || return "$status"
+  fi
+  wait_for_processes_absent "$name"
+}
+
+terminate_polkit_process() {
+  local pids
+  local pattern="^${POLKIT_AGENT}( |$)"
+  local -a command=(pkill -TERM -f -- "$pattern")
+
+  if ! pids=$(query_process_pids polkit); then
+    return 1
+  fi
+  [[ -n $pids ]] || return 0
+
+  if "${command[@]}"; then
+    :
+  else
+    local status=$?
+    ((status == 1)) || return "$status"
+  fi
+  wait_for_processes_absent polkit
+}
+
+wait_for_unit_active() {
+  local unit=$1
+  local attempt
+  local -a command=(systemctl --user is-active --quiet "$unit")
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    "${command[@]}" && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'systemd user unit did not become active: %s\n' "$unit" >&2
+  return 1
+}
+
+verify_notification_owner() {
+  local shell_pid=$1
+  local owner_status
+  local -a command=(busctl --user status org.freedesktop.Notifications)
+
+  if ! owner_status=$("${command[@]}" 2>/dev/null); then
+    return 1
+  fi
+  [[ $owner_status == *"PID=$shell_pid"* && $owner_status == *desktop-shell* ]]
+}
+
+read_shell_pid() {
+  local shell_pid
+  local -a command=(systemctl --user show desktop-shell.service --property=MainPID --value)
+
+  if ! shell_pid=$("${command[@]}" 2>/dev/null); then
+    return 1
+  fi
+  [[ $shell_pid =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$shell_pid"
+}
+
+verify_shell_health() {
+  local raw_health
+  local health
+  local route_error
+  local polkit_registered
+  local -a command=(desktop-shell health)
+
+  if ! raw_health=$("${command[@]}" 2>/dev/null); then
+    return 1
+  fi
+  if ! health=$(jq -e -s '
+    if length != 1 then error("expected one health response")
+    elif (.[0] | type) == "string" then .[0] | fromjson
+    else .[0]
+    end
+  ' <<<"$raw_health" 2>/dev/null); then
+    return 1
+  fi
+  jq -e '
+    type == "object"
+    and .notificationsOwned == true
+    and .polkitRegistered == true
+    and .osdAvailable == true
+    and (.notificationRouteError | type) == "string"
+  ' <<<"$health" >/dev/null || return 1
+
+  route_error=$(jq -r '.notificationRouteError' <<<"$health")
+  if [[ -n $route_error ]]; then
+    printf 'warning: notification route is fail-closed: %s\n' "$route_error" >&2
+  fi
+  polkit_registered=$(jq -r '.polkitRegistered' <<<"$health")
+  printf '%s\n' "$polkit_registered"
+}
+
+stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)
+"${stop_units[@]}" || die 'could not stop desktop-shell services'
+
+terminate_named_process mako || die 'could not terminate exact Mako process'
+terminate_named_process swayosd-server || die 'could not terminate exact SwayOSD process'
+terminate_polkit_process || die 'could not terminate exact polkit-gnome process'
+
+rm -f -- "$CUE_FILE"
+
+start_shell=(systemctl --user start desktop-shell.service)
+"${start_shell[@]}" || die 'could not start desktop-shell.service'
+wait_for_unit_active desktop-shell.service || die 'desktop-shell.service is not active'
+
+shell_pid=$(read_shell_pid) || die 'could not read desktop-shell.service MainPID'
+verify_notification_owner "$shell_pid" || die 'Quickshell does not own notifications'
+
+ping_command=(desktop-shell ping)
+ping_result=$("${ping_command[@]}" 2>/dev/null) || die 'desktop-shell ping failed'
+[[ $ping_result == pong ]] || die "desktop-shell ping returned: $ping_result"
+
+polkit_registered=$(verify_shell_health) || die 'desktop-shell health rejected activation'
+
+printf '%s\n' \
+  'desktop-shell activation status' \
+  'desktop-shell.service: active' \
+  'desktop-shell-mako-route.service: inactive' \
+  "desktop-shell.pid: $shell_pid" \
+  'mako.pid: absent' \
+  'swayosd-server.pid: absent' \
+  'polkit.pid: absent' \
+  'notification-owner: desktop-shell' \
+  "polkit-registered: $polkit_registered"
