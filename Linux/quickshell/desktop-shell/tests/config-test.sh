@@ -168,7 +168,7 @@ function expectedRight(includeHardware) {
   if (includeHardware) {
     right.push({ id: "desktop.monitor" }, { id: "desktop.power" })
   }
-  right.push(commandModules.disk, commandModules.memory, commandModules.cpu)
+  right.push(commandModules.disk, { id: "desktop.vm" }, commandModules.memory, commandModules.cpu)
   return right
 }
 
@@ -212,6 +212,8 @@ assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\
 assert.match(shell, /property bool barVisible: true/)
 assert.match(shell, /disabledPlugins: \["desktop\.battery"\]/,
   "builtin config disables the duplicate battery scheduler")
+assert.match(shell, /right:\s*\[\{ id: "desktop\.audio" \}, \{ id: "desktop\.vm" \}\]/,
+  "fallback bar includes the VM widget after audio")
 assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
 const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
 const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
