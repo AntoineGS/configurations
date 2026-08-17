@@ -136,12 +136,16 @@ assert_mako_sentinel_empty
 NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
 NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
 ROUTE_RENAME_FAIL=false
+ROUTE_INTERRUPT=false
 HYPR_LOG="$TEST_RUNTIME_DIR/hyprctl.log"
 HYPR_FAIL=false
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
 
 mv() {
+  if [[ $ROUTE_INTERRUPT == true ]]; then
+    kill -TERM "$BASHPID"
+  fi
   [[ $ROUTE_RENAME_FAIL != true ]] || return 1
   command mv "$@"
 }
@@ -374,6 +378,24 @@ ROUTE_RENAME_FAIL=false
 assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
   'failed route write preserves the prior valid file'
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
+
+# An interruption after mktemp must clean only the publisher's temporary file.
+prior_interrupted_route=$(<"$NOTIFICATION_ROUTE_FILE")
+set +e
+(
+  ROUTE_INTERRUPT=true
+  write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null
+)
+interrupt_status=$?
+set -e
+((interrupt_status == 143)) || fail "interrupted route publisher exited unexpectedly: $interrupt_status"
+assert_equal "$prior_interrupted_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'interrupted route publication preserves the prior valid file'
+if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+  fail 'interrupted route publication left a temporary file'
+fi
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
 assert_route_contract
 
 for routing_event in \

@@ -155,6 +155,37 @@ build_notification_route_json() {
       updatedAt: $updated_at}'
 }
 
+publish_notification_route_json() (
+  local route_dir=$1
+  local route_file=$2
+  local route_json=$3
+  local temporary_file=""
+
+  # shellcheck disable=SC2329 # The EXIT trap invokes this function indirectly.
+  cleanup_temporary_route_file() {
+    [[ -z $temporary_file ]] || rm -f -- "$temporary_file"
+  }
+
+  trap cleanup_temporary_route_file EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  if ! temporary_file=$(umask 077 && mktemp "$route_dir/.notification-route.json.XXXXXX"); then
+    return 1
+  fi
+  if ! printf '%s\n' "$route_json" >"$temporary_file"; then
+    return 1
+  fi
+  if ! chmod 0600 -- "$temporary_file"; then
+    return 1
+  fi
+  if ! mv -f -- "$temporary_file" "$route_file"; then
+    return 1
+  fi
+  temporary_file=""
+)
+
 notification_route_file_is_secure() {
   local route_file=$1
   local file_mode
@@ -170,7 +201,7 @@ write_notification_route_state() {
   local state=$1
   local route_mode cue_output direction visible output
   local route_dir route_file current_core current_updated_at now updated_at
-  local route_json route_core temporary_file
+  local route_json route_core
   local monotonic_now route_write_age
 
   parse_notification_route_state "$state" route_mode cue_output direction || return 1
@@ -235,17 +266,13 @@ write_notification_route_state() {
     return 0
   fi
 
-  temporary_file=""
-  if ! temporary_file=$(umask 077 && mktemp "$route_dir/.notification-route.json.XXXXXX"); then
-    printf 'failed to create temporary notification route file\n' >&2
-    return 1
-  fi
-  if ! printf '%s\n' "$route_json" >"$temporary_file" ||
-    ! chmod 0600 -- "$temporary_file" ||
-    ! mv -f -- "$temporary_file" "$route_file"; then
-    rm -f -- "$temporary_file" || true
+  local publish_status
+  if publish_notification_route_json "$route_dir" "$route_file" "$route_json"; then
+    :
+  else
+    publish_status=$?
     printf 'failed to publish notification route: %s\n' "$route_file" >&2
-    return 1
+    return "$publish_status"
   fi
 
   NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
