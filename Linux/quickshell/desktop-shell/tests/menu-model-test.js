@@ -106,6 +106,21 @@ assert(menu.isDisabled({}, visibilityItems.disabled), "menu disables a boolean-d
 assert(menu.matchesQuery(visibilityItems.visible, "vis", true), "menu searches labels")
 assert(!menu.matchesQuery(visibilityItems.hidden, "hidden", false), "menu excludes invisible search rows")
 
+const hardwareRoutes = {
+  "setup.power-profile": "desktop.power",
+  "setup.monitors": "desktop.monitor",
+}
+assert.deepEqual(
+  menu.routeVisibility({ right: [{ id: "desktop.audio" }] }, hardwareRoutes),
+  { "setup.power-profile": false, "setup.monitors": false },
+  "menu hides hardware routes when compact bars omit their widgets"
+)
+assert.deepEqual(
+  menu.routeVisibility({ right: [{ id: "desktop.monitor" }, { id: "desktop.power" }] }, hardwareRoutes),
+  { "setup.power-profile": true, "setup.monitors": true },
+  "menu keeps hardware routes on the Omarbook bar"
+)
+
 const displayed = menu.displayRow(
   merged.items,
   merged.itemOrder,
@@ -138,6 +153,24 @@ assert.equal(invalid.valid, false, "malformed JSONC is reported as invalid")
 assert.deepEqual(menu.preserveLastValid(validItems, invalid), validItems,
   "malformed JSONC keeps the last valid menu")
 
+const configuredMenu = menu.mergeMenuSources(validItems, [])
+const compactVisibility = menu.routeVisibility(
+  { right: [{ id: "desktop.audio" }] },
+  hardwareRoutes
+)
+assert(!menu.isVisible(
+  configuredMenu.items,
+  configuredMenu.itemOrder,
+  compactVisibility,
+  configuredMenu.items["setup.power-profile"]
+), "compact menu does not present Power profile")
+assert(!menu.isVisible(
+  configuredMenu.items,
+  configuredMenu.itemOrder,
+  compactVisibility,
+  configuredMenu.items["setup.monitors"]
+), "compact menu does not present Monitors")
+
 const topLevel = validItems.filter(item => item.parent === "root").map(item => item.id)
 assert.deepEqual(topLevel, ["trigger", "setup", "install", "remove", "update", "system"],
   "menu root groups keep the exact required order")
@@ -164,6 +197,12 @@ assert.match(menuQml, /Quickshell\.shellDir \+ "\/config\/menu\.jsonc"/,
   "menu watches the repository-owned JSONC path")
 assert.match(menuQml, /actionProcess\.command\s*=\s*\["desktop-shell-action",\s*String\(action\)\]/,
   "menu passes action IDs to the strict action helper")
+assert.match(menuQml, /MenuModel\.routeVisibility\(/,
+  "menu derives route availability from the live bar layout")
+assert.match(menuQml, /MenuModel\.isVisible\(root\.items, root\.itemOrder, root\.whenResults, entry\)/,
+  "menu applies runtime route availability before presenting rows")
+assert.match(menuQml, /if \(entry && entry\.kind === "action"\)[\s\S]*?if \(!root\.isVisible\(entry\)\) return "unknown"/,
+  "menu rejects direct activation of unavailable routes")
 assert.doesNotMatch(menuQml, /Util\.execDetached|\["bash",\s*"-(?:c|lc)"|\beval\b/,
   "menu QML contains no arbitrary command execution")
 assert.match(menuQml, /function resolveRoute\(input\)[\s\S]*MenuModel\.resolveRoute/,

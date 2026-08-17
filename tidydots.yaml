@@ -551,6 +551,8 @@ applications:
           - desktop-agent-usage-update
           - desktop-agent-usage-codex
           - desktop-agent-usage-claude
+          - desktop-shell
+          - desktop-shell-status
       - targets:
           linux: ~/.config/systemd/user
         name: systemd-service
