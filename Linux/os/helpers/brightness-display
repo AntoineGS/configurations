@@ -98,7 +98,7 @@ if response=$(desktop-shell call desktop.osd show "$payload"); then
 else
   deliver_status=$?
 fi
-if (( deliver_status != 0 && deliver_status != 3 )); then
+if (( deliver_status != 0 )); then
   printf 'brightness-display: OSD delivery failed\n' >&2
   exit "$deliver_status"
 fi

@@ -238,14 +238,12 @@ assert.match(shell, /readonly property bool osdAvailable\s*:/,
   "shell exposes reactive OSD availability")
 assert.match(shell, /osdAvailable: shell\.osdAvailable/,
   "healthState exposes osdAvailable")
-assert.match(shell, /if \(shell\.previewMode\) return false/,
-  "preview mode reports OSD unavailable")
+assert.match(shell, /import "plugins\/osd\/OsdModel\.js" as OsdModel/,
+  "shell uses the OSD health controller")
+assert.match(shell, /OsdModel\.healthAvailable\(\s*shell\.previewMode,\s*shell\.panelLoaders\["desktop\.osd"\],\s*Loader\.Error\)/,
+  "shell health delegates all OSD availability cases")
 assert.match(shell, /panelLoaders\["desktop\.osd"\]/,
   "OSD health reads the desktop.osd loader")
-assert.match(shell, /typeof loader\.item\.ping === "function"/,
-  "OSD health checks the loaded item ping method")
-assert.match(shell, /loader\.item\.ping\(\) === "pong"/,
-  "OSD health requires the exact pong response")
 const callStart = shell.indexOf("function callIfLoaded")
 const callEnd = shell.indexOf("// One Loader per", callStart)
 assert.notEqual(callStart, -1, "generic call dispatcher exists")

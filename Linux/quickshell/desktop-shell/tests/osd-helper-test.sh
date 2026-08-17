@@ -20,6 +20,8 @@ STATE_DIR="$TMP_DIR/state"
 ASD_VALUE_FILE="$STATE_DIR/asd-value"
 AUDIO_DEFAULT_FILE="$STATE_DIR/audio-default"
 AUDIO_SINKS_FILE="$STATE_DIR/audio-sinks.json"
+AUDIO_SINKS_AFTER_FILE="$STATE_DIR/audio-sinks-after.json"
+AUDIO_LIST_COUNT_FILE="$STATE_DIR/audio-list-count"
 
 active_route_files=(
   "$ROOT/Linux/hypr/bindings/media.lua"
@@ -57,7 +59,7 @@ KEYBOARD_MAX_FILE="$STATE_DIR/keyboard-max"
 export CALL_LOG IPC_LOG PAYLOAD_FILE LOCALE_LOG
 export SINK_VOLUME_FILE SINK_MUTED_FILE SOURCE_VOLUME_FILE SOURCE_MUTED_FILE
 export DISPLAY_CURRENT_FILE DISPLAY_MAX_FILE KEYBOARD_CURRENT_FILE KEYBOARD_MAX_FILE
-export ASD_VALUE_FILE AUDIO_DEFAULT_FILE AUDIO_SINKS_FILE
+export ASD_VALUE_FILE AUDIO_DEFAULT_FILE AUDIO_SINKS_FILE AUDIO_SINKS_AFTER_FILE AUDIO_LIST_COUNT_FILE
 export BRIGHTNESS_DISPLAY_SYSFS_ROOT="$BACKLIGHT_ROOT"
 
 cat >"$TMP_DIR/bin/wpctl" <<'EOF'
@@ -346,7 +348,14 @@ set -Eeuo pipefail
 case "${1:-}" in
   -f)
     [[ ${2:-} == json && ${3:-} == list && ${4:-} == sinks ]] || exit 2
-    cat "$AUDIO_SINKS_FILE"
+    list_count=$(<"$AUDIO_LIST_COUNT_FILE")
+    list_count=$((list_count + 1))
+    printf '%s\n' "$list_count" >"$AUDIO_LIST_COUNT_FILE"
+    if (( list_count > 1 )) && [[ -s $AUDIO_SINKS_AFTER_FILE ]]; then
+      cat "$AUDIO_SINKS_AFTER_FILE"
+    else
+      cat "$AUDIO_SINKS_FILE"
+    fi
     ;;
   get-default-sink)
     cat "$AUDIO_DEFAULT_FILE"
@@ -410,6 +419,8 @@ reset_fixture() {
   printf '30000\n' >"$ASD_VALUE_FILE"
   printf 'sink-a\n' >"$AUDIO_DEFAULT_FILE"
   printf '%s\n' '[]' >"$AUDIO_SINKS_FILE"
+  : >"$AUDIO_SINKS_AFTER_FILE"
+  printf '0\n' >"$AUDIO_LIST_COUNT_FILE"
   : >"$CALL_LOG"
   : >"$IPC_LOG"
   : >"$PAYLOAD_FILE"
@@ -506,6 +517,17 @@ assert_pinned_locale() {
   while IFS= read -r locale; do
     [[ $locale == C ]] || fail "external command locale was not pinned: $locale"
   done <"$LOCALE_LOG"
+}
+
+write_audio_transition_fixture() {
+  printf '%s\n' '[
+  {"name":"sink-a","description":"Built-in Audio","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"50%"}},"mute":false},
+  {"name":"sink-b","description":"Before default","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"20%"}},"mute":false}
+]' >"$AUDIO_SINKS_FILE"
+  printf '%s\n' '[
+  {"name":"sink-a","description":"Built-in Audio","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"50%"}},"mute":false},
+  {"name":"sink-b","description":"After default","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"5%"}},"mute":true}
+]' >"$AUDIO_SINKS_AFTER_FILE"
 }
 
 reset_fixture
@@ -740,6 +762,12 @@ assert_status 1
 assert_mutation 'brightnessctl -d intel_backlight set +5%'
 
 reset_fixture
+export STUB_IPC_EXIT=3
+run_specialized "$DISPLAY_HELPER" +5%
+assert_status 3
+assert_mutation 'brightnessctl -d intel_backlight set +5%'
+
+reset_fixture
 printf '%s\n' '[]' >"$AUDIO_SINKS_FILE"
 run_specialized "$AUDIO_SWITCH_HELPER"
 assert_status 1
@@ -766,5 +794,53 @@ run_specialized "$AUDIO_SWITCH_HELPER"
 assert_status 0
 assert_mutation 'pactl set-default-sink sink-b'
 [[ -s "$IPC_LOG" ]] || fail 'audio switch feedback was not attempted'
+
+reset_fixture
+write_audio_transition_fixture
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 0
+assert_mutation 'pactl set-default-sink sink-b'
+assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_IPC_RESPONSE=not-ok
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_mutation 'pactl set-default-sink sink-b'
+assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_IPC_EXIT=1
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_mutation 'pactl set-default-sink sink-b'
+assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_IPC_EXIT=3
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 0
+assert_mutation 'pactl set-default-sink sink-b'
+assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
+
+for missing_description in null '"null"' '"(null)"'; do
+  reset_fixture
+  printf '%s\n' "[\
+  {\"name\":\"sink-a\",\"description\":\"Built-in Audio\",\"ports\":[],\"properties\":{},\"volume\":{\"front-left\":{\"value_percent\":\"50%\"}},\"mute\":false},\
+  {\"name\":\"sink-b\",\"description\":$missing_description,\"ports\":[],\"properties\":{\"device.id\":\"2\",\"object.id\":\"202\"},\"volume\":{\"front-left\":{\"value_percent\":\"20%\"}},\"mute\":false}\
+]" >"$AUDIO_SINKS_FILE"
+  printf '%s\n' "[\
+  {\"name\":\"sink-a\",\"description\":\"Built-in Audio\",\"ports\":[],\"properties\":{},\"volume\":{\"front-left\":{\"value_percent\":\"50%\"}},\"mute\":false},\
+  {\"name\":\"sink-b\",\"description\":$missing_description,\"ports\":[],\"properties\":{\"device.id\":\"2\",\"object.id\":\"202\"},\"volume\":{\"front-left\":{\"value_percent\":\"20%\"}},\"mute\":false}\
+]" >"$AUDIO_SINKS_AFTER_FILE"
+  export STUB_WPCTL_STATUS=$'  12. Wrong Device [alsa]\n  2. Correct Device [alsa]'
+  run_specialized "$AUDIO_SWITCH_HELPER"
+  assert_status 0
+  assert_mutation 'pactl set-default-sink sink-b'
+  assert_payload '.icon == "volume-low" and .message == "Correct Device" and (keys | sort) == ["icon", "message"]'
+done
 
 printf 'PASS: desktop OSD helper behavior\n'

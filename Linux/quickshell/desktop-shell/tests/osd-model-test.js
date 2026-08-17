@@ -85,6 +85,19 @@ assert.equal(model.screenForMonitor(screens, "HDMI-A-1"), screens[1])
 assert.equal(model.screenForMonitor(screens, "missing-monitor"), screens[0])
 assert.equal(model.screenForMonitor([], "HDMI-A-1"), null)
 
+const loaderError = "error"
+const healthyLoader = { status: "ready", item: { ping: () => "pong" } }
+assert.equal(model.healthAvailable(false, healthyLoader, loaderError), true)
+assert.equal(model.healthAvailable(false, null, loaderError), false)
+assert.equal(model.healthAvailable(false, { status: "loading", item: null }, loaderError), false)
+assert.equal(model.healthAvailable(false, { status: loaderError, item: healthyLoader.item }, loaderError), false)
+assert.equal(model.healthAvailable(true, healthyLoader, loaderError), false)
+assert.equal(model.healthAvailable(false, { status: "ready", item: { ping: () => "ok" } }, loaderError), false)
+assert.equal(model.healthAvailable(false, {
+  status: "ready",
+  item: { ping: () => { throw new Error("probe failed") } },
+}, loaderError), false)
+
 const qml = fs.readFileSync(path.join(__dirname, "../plugins/osd/Osd.qml"), "utf8")
 assert.match(qml, /target:\s*"desktop\.osd"/)
 assert.match(qml, /namespace:\s*"desktop-shell-osd"/)

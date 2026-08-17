@@ -80,6 +80,24 @@ function screenForMonitor(screens, focusedMonitorName) {
 }
 
 /**
+ * Check the shell-level availability contract for the keep-loaded OSD loader.
+ *
+ * @param {boolean} previewMode whether preview suppresses keep-loaded overlays
+ * @param {{status: *, item: {ping: function}|null}|null} loader OSD loader
+ * @param {*} errorStatus Loader.Error from QML
+ * @returns {boolean}
+ */
+function healthAvailable(previewMode, loader, errorStatus) {
+  if (previewMode || !loader || !loader.item) return false
+  if (errorStatus !== undefined && loader.status === errorStatus) return false
+  try {
+    return typeof loader.item.ping === "function" && loader.item.ping() === "pong"
+  } catch (error) {
+    return false
+  }
+}
+
+/**
  * Return the stable shape used for rejected payloads.
  *
  * @param {string} error
@@ -220,6 +238,7 @@ if (typeof module !== "undefined") {
     iconFor,
     normalizePayload,
     screenForMonitor,
+    healthAvailable,
     stateForShow,
   }
 }
