@@ -136,6 +136,30 @@ assert_trace 'successful memory resize' \
 assert_invocation_count 1 'successful memory resize'
 assert_no_injection
 
+run_action vm set-memory 1
+assert_status 0 'minimum memory resize'
+assert_trace 'minimum memory resize' \
+  setmem \
+  --domain \
+  'vm; touch injected' \
+  --size \
+  1GiB \
+  --live \
+  --config
+assert_invocation_count 1 'minimum memory resize'
+
+run_action vm set-memory 24
+assert_status 0 'maximum memory resize'
+assert_trace 'maximum memory resize' \
+  setmem \
+  --domain \
+  'vm; touch injected' \
+  --size \
+  24GiB \
+  --live \
+  --config
+assert_invocation_count 1 'maximum memory resize'
+
 run_action vm set-memory
 assert_status 2 'missing memory argument'
 assert_stderr_contains 'missing memory argument' 'usage:'

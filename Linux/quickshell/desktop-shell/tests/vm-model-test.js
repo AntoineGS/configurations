@@ -43,6 +43,8 @@ assert.equal(Model.barText(fullFromJson), " 42%   18%")
 const malformed = Model.normalizeState("{not-json")
 assert.equal(malformed.visible, false)
 assert.equal(malformed.available, false)
+assert.equal(malformed.stale, true)
+assert.equal(malformed.malformed, true)
 assert.match(malformed.error, /JSON/)
 
 const unavailable = Model.normalizeState({
@@ -150,6 +152,38 @@ assert.equal(unavailableMetrics.showMemoryUsage, false)
 assert.equal(Model.barText(unavailableMetrics), " --%")
 assert.equal(Model.currentGiB(), 1)
 assert.equal(Model.maximumGiB(), 1)
+
+const retained = Model.stateFromRaw(full, "")
+assert.equal(retained.visible, true)
+assert.equal(retained.available, true)
+assert.equal(retained.stale, true)
+assert.equal(retained.malformed, true)
+assert.equal(retained.canResize, false)
+assert.equal(retained.name, full.name)
+assert.equal(retained.currentKiB, full.currentKiB)
+assert.match(retained.error, /JSON/)
+
+const retainedWithProcessError = Model.stateFromRaw(full, "", "state helper exited with code 7")
+assert.equal(retainedWithProcessError.visible, true)
+assert.equal(retainedWithProcessError.canResize, false)
+assert.match(retainedWithProcessError.error, /state helper exited with code 7/)
+
+const coldMalformed = Model.stateFromRaw(Model.emptyState(), "")
+assert.equal(coldMalformed.visible, false)
+assert.equal(coldMalformed.stale, true)
+assert.equal(coldMalformed.malformed, true)
+assert.match(coldMalformed.error, /JSON/)
+
+const validUnavailable = Model.stateFromRaw(full, {
+  available: false,
+  stale: false,
+  error: null,
+  data: {},
+})
+assert.equal(validUnavailable.visible, false)
+assert.equal(validUnavailable.stale, false)
+assert.equal(validUnavailable.malformed, false)
+assert.equal(validUnavailable.error, null)
 
 assert.equal(Model.formatPercent(18.4), "18%")
 assert.equal(Model.formatPercent(-5), "0%")
