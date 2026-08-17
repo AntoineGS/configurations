@@ -288,6 +288,11 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
   return out.slice(0, max)
 }
 
+function latestHistoryRow(raw, normalUrgency) {
+  var entries = parsePopupFiles(raw, normalUrgency)
+  return entries.length > 0 ? historyEntry(entries[0], normalUrgency) : null
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     isChromiumDerived: isChromiumDerived,
@@ -309,6 +314,7 @@ if (typeof module !== "undefined") {
     persistablePopup: persistablePopup,
     serializePopup: serializePopup,
     parsePopupFiles: parsePopupFiles,
+    latestHistoryRow: latestHistoryRow,
     popupExpired: popupExpired,
     popupPlacement: popupPlacement
   }
