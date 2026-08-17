@@ -8,7 +8,7 @@ AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 SHELL_UNIT="$SHELL_ROOT/systemd/desktop-shell.service"
 ROLLBACK_UNIT="$SHELL_ROOT/systemd/desktop-shell-mako-route.service"
-PROFILE_HARNESS="$ROOT/Linux/pacman/tests/package-preview-test.sh"
+PROFILE_FIXTURE="$ROOT/Linux/pacman/tests/graphical-profile-fixtures.tsv"
 TIDYDOTS_BIN="$(command -v tidydots || true)"
 DOCKER_BIN="$(command -v docker || true)"
 TEST_ROOT="$(mktemp -d)"
@@ -147,9 +147,69 @@ assert_rejects_fixture() {
     fail "$label mutation failed for an unexpected reason: $output"
 }
 
+assert_route_mutation_detected() {
+  local label="$1"
+  local relative_path="$2"
+  local content="$3"
+  local fixture="$TEST_ROOT/round2-route-$label"
+  local hits
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" "$relative_path" "$content"
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+  hits="$(collect_forbidden_hits "$fixture")"
+  grep -Fq -- "$relative_path:" <<< "$hits" ||
+    fail "round-2 route mutation was not rejected: $label"
+}
+
+assert_round2_route_mutations() {
+  assert_route_mutation_detected post--wrapper Linux/hypr/route-variants.lua \
+    'uwsm-app -- env -- /usr/bin/mako'
+  assert_route_mutation_detected continuation Linux/hypr/route-continuation.lua \
+    $'uwsm-app -- \\\n+  /usr/bin/mako'
+  assert_route_mutation_detected quoted-hash Linux/hypr/route-quoted-hash.lua \
+    "printf '# payload' && uwsm-app -- /usr/bin/mako"
+  assert_route_mutation_detected dynamic-helper Linux/os/helpers/dynamic-route \
+    'makoctl dismiss'
+  assert_route_mutation_detected test-like-file Linux/os/helpers/route-test.sh \
+    'swayosd-client --monitor DP-1'
+}
+
+assert_adapter_reference_mutation_detected() {
+  local label="$1"
+  local relative_path="$2"
+  local content="$3"
+  local fixture="$TEST_ROOT/round2-adapter-$label"
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" "$relative_path" "$content"
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+  assert_rejects_fixture "adapter $label" 'adapter activation or dependency reference' \
+    assert_no_adapter_enrollment "$fixture"
+}
+
+assert_round2_adapter_mutations() {
+  assert_adapter_reference_mutation_detected yaml-setup tidydots.yaml \
+    '        linux: systemctl --user enable --now desktop-shell-mako-route.service'
+  assert_adapter_reference_mutation_detected graphical-target Linux/systemd/graphical-session.target \
+    'Wants=desktop-shell-mako-route.service'
+  assert_adapter_reference_mutation_detected lua-startup Linux/hypr/autostart.lua \
+    'hl.exec_cmd("systemctl --user start desktop-shell-mako-route.service")'
+  assert_adapter_reference_mutation_detected shell-startup Linux/os/helpers/active-runtime \
+    'systemctl --user start desktop-shell-mako-route.service'
+  assert_adapter_reference_mutation_detected desktop-startup Linux/os/applications/route.desktop \
+    'Exec=systemctl --user start desktop-shell-mako-route.service'
+}
+
 assert_mutation_fixtures() {
   local fixture="$TEST_ROOT/mutation-repository"
   local hits expected_path allowed_path
+
+  assert_round2_route_mutations
+  assert_round2_adapter_mutations
+  assert_graphical_profile_fixture_consumption
 
   mkdir -p -- "$fixture"
   write_fixture_file "$fixture" Linux/hypr/autostart.lua \
@@ -175,6 +235,8 @@ assert_mutation_fixtures() {
     $'makoctl\nuwsm-app -- mako\n/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
   write_fixture_file "$fixture" Linux/os/helpers/desktop-shell-mako-route \
     'makoctl mode'
+  write_fixture_file "$fixture" Linux/os/helpers/desktop-shell-activate \
+    $'makoctl\n/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
   write_fixture_file "$fixture" tidydots.yaml \
     $'        pacman: makoctl\n        pacman: swayosd-client\n        pacman: swayosd-brightness'
   git -C "$fixture" init -q
@@ -199,6 +261,7 @@ assert_mutation_fixtures() {
     Linux/example/tests/route-test.sh \
     Linux/os/helpers/desktop-shell-rollback \
     Linux/os/helpers/desktop-shell-mako-route \
+    Linux/os/helpers/desktop-shell-activate \
     tidydots.yaml; do
     if grep -Fq -- "$allowed_path:" <<< "$hits"; then
       fail "allowed mutation fixture was incorrectly detected: $allowed_path"
@@ -230,7 +293,7 @@ assert_mutation_fixtures() {
 
 is_allowed_zone() {
   case "$1" in
-    Linux/mako/*|Linux/swayosd/*|*/tests/*|*-test.sh|*_test.sh|test-*.sh|Linux/os/helpers/desktop-shell-rollback|Linux/os/helpers/desktop-shell-mako-route)
+    Linux/mako/*|Linux/swayosd/*|*/tests/*|Linux/os/helpers/desktop-shell-activate|Linux/os/helpers/desktop-shell-rollback|Linux/os/helpers/desktop-shell-mako-route|Linux/os/helpers/notification-dismiss|Linux/os/helpers/restart-mako|Linux/os/helpers/swayosd-brightness|Linux/os/helpers/swayosd-kbd-brightness)
       return 0
       ;;
     *)
@@ -241,7 +304,7 @@ is_allowed_zone() {
 
 is_non_runtime_file() {
   case "$1" in
-    *.md|*.markdown|*.rst|*.diff|*.patch)
+    *.md|*.markdown|*.rst|*.diff|*.patch|*.gif|*.ico|*.jpeg|*.jpg|*.png|*.ttf|*.otf|*.wasm)
       return 0
       ;;
     *)
@@ -250,104 +313,154 @@ is_non_runtime_file() {
   esac
 }
 
-is_helper_path() {
-  [[ "$1" == Linux/os/helpers/* ]]
-}
-
-is_package_declaration_line() {
-  local path="$1"
-  local line="$2"
-
-  case "$path" in
-    tidydots.yaml)
-      [[ "$line" =~ ^[[:space:]]+(apt|brew|pacman|yay|winget):[[:space:]]+[[:alnum:]_.+:-]+$ ]]
-      ;;
-    Linux/pacman/pkglist-*)
-      [[ "$line" =~ ^[[:alnum:]_.+:-]+$ ]]
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--[[:space:]]+[\"']?([^[:space:];|&()\"']+/)?(mako|swayosd-server)[\"']?([^[:alnum:]_.-]|$)"
+readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--([^;&|]*[[:space:]/\"'])(mako|swayosd-server)([^[:alnum:]_.-]|$)"
 readonly DIRECT_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?(polkit-gnome-authentication-agent-1|makoctl|swayosd-client|swayosd-brightness|swayosd-kbd-brightness)([^[:alnum:]_.-]|$)"
-
-route_line_matches() {
-  local line="$1"
-
-  [[ "$line" =~ $UWSM_ROUTE_RE || "$line" =~ $DIRECT_ROUTE_RE ]]
-}
 
 collect_active_route_paths() {
   local root="$1"
-  local path helper_name helper_reference_re changed already_active active_content
+  local path
   local -a tracked_paths=()
-  local -a active_paths=()
-  local -a active_file_paths=()
+  ACTIVE_ROUTE_PATHS=()
 
-  mapfile -d '' tracked_paths < <(git -C "$root" ls-files -z)
+  mapfile -d '' tracked_paths < <(git -C "$root" grep -zIl -e . -- . 2>/dev/null || true)
   for path in "${tracked_paths[@]}"; do
     [[ -f "$root/$path" ]] || continue
     is_allowed_zone "$path" && continue
     is_non_runtime_file "$path" && continue
-    is_helper_path "$path" && continue
-    active_paths+=("$path")
+    ACTIVE_ROUTE_PATHS+=("$path")
   done
-
-  for path in "${active_paths[@]}"; do
-    active_file_paths+=("$root/$path")
-  done
-  active_content="$(grep -hI -F -e '' -- "${active_file_paths[@]}" 2>/dev/null || true)"
-  changed=1
-  while ((changed)); do
-    changed=0
-    for path in "${tracked_paths[@]}"; do
-      [[ -f "$root/$path" ]] || continue
-      is_allowed_zone "$path" && continue
-      is_helper_path "$path" || continue
-
-      already_active=0
-      for active_path in "${active_paths[@]}"; do
-        if [[ "$active_path" == "$path" ]]; then
-          already_active=1
-          break
-        fi
-      done
-      ((already_active)) && continue
-
-      helper_name="${path##*/}"
-      helper_reference_re="(^|[^[:alnum:]_.-])${helper_name}([^[:alnum:]_.-]|$)"
-      if [[ "$active_content" =~ $helper_reference_re ]]; then
-        active_paths+=("$path")
-        active_content+=$'\n'
-        active_content+="$(<"$root/$path")"
-        changed=1
-      fi
-    done
-  done
-
-  ACTIVE_ROUTE_PATHS=("${active_paths[@]}")
 }
 
-collect_forbidden_hits() {
+collect_inventory_hits() {
   local root="$1"
-  local path line line_number
+  local mode="$2"
+  local -a files=()
 
   collect_active_route_paths "$root"
   for path in "${ACTIVE_ROUTE_PATHS[@]}"; do
-    line_number=0
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      line_number=$((line_number + 1))
-      line="${line%%#*}"
-      [[ -n "${line//[[:space:]]/}" ]] || continue
-      is_package_declaration_line "$path" "$line" && continue
-      if route_line_matches "$line"; then
-        printf '%s:%d:%s\n' "$path" "$line_number" "$line"
-      fi
-    done <"$root/$path"
+    files+=("$root/$path")
   done
+
+  awk -v root="$root" -v mode="$mode" -v uwsm="$UWSM_ROUTE_RE" -v direct="$DIRECT_ROUTE_RE" '
+    function strip_comment(value, output, quote, escaped, position, character, single_quote) {
+      output = ""
+      quote = ""
+      escaped = 0
+      single_quote = sprintf("%c", 39)
+      for (position = 1; position <= length(value); position++) {
+        character = substr(value, position, 1)
+        if (escaped) {
+          output = output character
+          escaped = 0
+          continue
+        }
+        if (character == "\\") {
+          output = output character
+          escaped = 1
+          continue
+        }
+        if (quote != "") {
+          output = output character
+          if (character == quote) {
+            quote = ""
+          }
+          continue
+        }
+        if (character == "\"" || character == single_quote) {
+          quote = character
+          output = output character
+        } else if (character == "#") {
+          break
+        } else {
+          output = output character
+        }
+      }
+      return output
+    }
+
+    function relative_path(value, prefix) {
+      prefix = root "/"
+      if (index(value, prefix) == 1) {
+        return substr(value, length(prefix) + 1)
+      }
+      return value
+    }
+
+    function package_declaration(path, value) {
+      if (path == "tidydots.yaml" && value ~ /^[[:space:]]+(apt|brew|pacman|yay|winget):[[:space:]]+[[:alnum:]_.+:-]+$/) {
+        return 1
+      }
+      if (path ~ /^Linux\/pacman\/pkglist-/ && value ~ /^[[:alnum:]_.+:-]+$/) {
+        return 1
+      }
+      return 0
+    }
+
+    function adapter_reference_allowed(path, value) {
+      if (path == "tidydots.yaml" && value == "          - desktop-shell-mako-route.service") {
+        return 1
+      }
+      if (path == "Linux/quickshell/desktop-shell/systemd/desktop-shell.service" &&
+          value == "Conflicts=desktop-shell-mako-route.service") {
+        return 1
+      }
+      if (path == "Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service" &&
+          value ~ /^ExecStart=.*desktop-shell-mako-route/) {
+        return 1
+      }
+      return 0
+    }
+
+    function scan_logical(value, start, path) {
+      value = strip_comment(value)
+      if (value ~ /^[[:space:]]*$/ || package_declaration(path, value)) {
+        return
+      }
+      if (mode == "route" && (value ~ uwsm || value ~ direct)) {
+        print path ":" start ":" value
+      }
+      if (mode == "adapter" && index(value, "desktop-shell-mako-route") &&
+          !adapter_reference_allowed(path, value)) {
+        print path ":" start ":" value
+      }
+    }
+
+    FNR == 1 {
+      if (seen_file && logical != "") {
+        scan_logical(logical, logical_start, previous_path)
+      }
+      logical = ""
+      logical_start = 0
+      previous_path = relative_path(FILENAME)
+      seen_file = 1
+    }
+
+    {
+      if (logical == "") {
+        logical_start = FNR
+      }
+      line = $0
+      if (line ~ /\\[[:space:]]*$/) {
+        sub(/\\[[:space:]]*$/, " ", line)
+        logical = logical line
+        next
+      }
+      logical = logical line
+      scan_logical(logical, logical_start, relative_path(FILENAME))
+      logical = ""
+      logical_start = 0
+    }
+
+    END {
+      if (logical != "") {
+        scan_logical(logical, logical_start, previous_path)
+      }
+    }
+  ' "${files[@]}"
+}
+
+collect_forbidden_hits() {
+  collect_inventory_hits "$1" route
 }
 
 audit_active_routes() {
@@ -433,50 +546,16 @@ assert_systemd_mapping() {
     fail 'rollback adapter is not in the desktop-shell systemd mapping'
 }
 
-is_allowed_adapter_reference() {
-  local path="$1"
-  local line="$2"
-
-  case "$path" in
-    tidydots.yaml)
-      [[ "$line" == '          - desktop-shell-mako-route.service' ]]
-      ;;
-    Linux/quickshell/desktop-shell/systemd/desktop-shell.service)
-      [[ "$line" == 'Conflicts=desktop-shell-mako-route.service' ]]
-      ;;
-    Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service)
-      [[ "$line" == ExecStart=*desktop-shell-mako-route* ]]
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+collect_adapter_hits() {
+  collect_inventory_hits "$1" adapter
 }
 
 assert_no_adapter_enrollment() {
   local root="$1"
-  local path line line_number
-  local -a tracked_paths=()
+  local hits
 
-  mapfile -d '' tracked_paths < <(git -C "$root" ls-files -z)
-  for path in "${tracked_paths[@]}"; do
-    [[ -f "$root/$path" ]] || continue
-    is_allowed_zone "$path" && continue
-    case "$path" in
-      *.yaml|*.yml|*.service|*.target|*.socket|*.timer|*.path|*.mount)
-        ;;
-      *)
-        continue
-        ;;
-    esac
-    line_number=0
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      line_number=$((line_number + 1))
-      [[ "$line" == *desktop-shell-mako-route* ]] || continue
-      is_allowed_adapter_reference "$path" "$line" && continue
-      fail "adapter activation or dependency reference at $path:$line_number"
-    done <"$root/$path"
-  done
+  hits="$(collect_adapter_hits "$root")"
+  [[ -z "$hits" ]] || fail "adapter activation or dependency reference:\n$hits"
 }
 
 assert_autostart_order() {
@@ -598,18 +677,106 @@ assert_rendered_graphical_profile() {
   done
 }
 
+assert_graphical_profile_fixture_consumption() {
+  local fixture="$TEST_ROOT/round2-graphical-profile-mutation.tsv"
+  local fake_docker="$TEST_ROOT/round2-profile-docker"
+  local docker_log="$TEST_ROOT/round2-profile-docker.log"
+  local original_fixture="$PROFILE_FIXTURE"
+  local original_docker="$DOCKER_BIN"
+
+  cp -- "$PROFILE_FIXTURE" "$fixture"
+  printf '%s\tgraphical\n' round2-fixture-host >>"$fixture"
+  cat >"$fake_docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+hostname=''
+while (($# > 0)); do
+  if [[ "$1" == --hostname ]]; then
+    hostname="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+
+printf '%s\n' "$hostname" >>"${PROFILE_DOCKER_LOG:?}"
+printf '%s\n' \
+  'Application: desktop-shell' \
+  'Application: hyprland' \
+  'Application: mako' \
+  'Application: swayosd' \
+  'Application: polkit-gnome'
+EOF
+  chmod +x -- "$fake_docker"
+
+  PROFILE_FIXTURE="$fixture"
+  DOCKER_BIN="$fake_docker"
+  PROFILE_DOCKER_LOG="$docker_log" assert_rendered_graphical_profiles
+  grep -Fqx -- round2-fixture-host "$docker_log" ||
+    fail 'graphical profile fixture mutation was not consumed'
+
+  PROFILE_FIXTURE="$original_fixture"
+  DOCKER_BIN="$original_docker"
+}
+
+load_profile_matrix() {
+  local rows row hostname display_mode key
+  declare -A seen_rows=()
+
+  if ! rows="$(awk -F '\t' '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+      next
+    }
+
+    NF != 2 {
+      printf "invalid profile fixture row %d\n", NR > "/dev/stderr"
+      invalid = 1
+      next
+    }
+
+    $2 != "graphical" && $2 != "headless" {
+      printf "unsupported display mode on profile fixture row %d\n", NR > "/dev/stderr"
+      invalid = 1
+      next
+    }
+
+    { print $1 "\t" $2 }
+
+    END {
+      exit invalid
+    }
+  ' "$PROFILE_FIXTURE")"; then
+    fail 'graphical profile fixture is malformed'
+  fi
+
+  [[ -n "$rows" ]] || fail 'graphical profile fixture has no profiles'
+  mapfile -t PROFILE_ROWS <<< "$rows"
+  for row in "${PROFILE_ROWS[@]}"; do
+    IFS=$'\t' read -r hostname display_mode <<< "$row"
+    [[ -n "$hostname" && -n "$display_mode" ]] || fail 'graphical profile fixture contains an empty field'
+    key="$hostname|$display_mode"
+    [[ -z "${seen_rows[$key]+set}" ]] || fail "graphical profile fixture repeats $key"
+    seen_rows["$key"]=1
+  done
+}
+
 assert_rendered_graphical_profiles() {
-  local hostname
+  local row hostname display_mode
   local -a graphical_hosts=()
   declare -A seen_hosts=()
 
-  assert_file "$PROFILE_HARNESS" 'package-preview harness'
-  mapfile -t graphical_hosts < <(awk '$1 == "run_container_profile" && $NF == "graphical" { print $(NF - 1) }' "$PROFILE_HARNESS")
-  ((${#graphical_hosts[@]} > 0)) || fail 'package-preview harness has no graphical profile calls'
+  load_profile_matrix
+  for row in "${PROFILE_ROWS[@]}"; do
+    IFS=$'\t' read -r hostname display_mode <<< "$row"
+    [[ "$display_mode" == graphical ]] || continue
+    graphical_hosts+=("$hostname")
+  done
+  ((${#graphical_hosts[@]} > 0)) || fail 'graphical profile fixture has no graphical profiles'
 
   for hostname in "${graphical_hosts[@]}"; do
-    [[ -n "$hostname" ]] || fail 'package-preview harness contains an empty graphical hostname'
-    [[ -z "${seen_hosts[$hostname]+set}" ]] || fail "package-preview harness repeats graphical profile: $hostname"
+    [[ -n "$hostname" ]] || fail 'graphical profile fixture contains an empty graphical hostname'
+    [[ -z "${seen_hosts[$hostname]+set}" ]] || fail "graphical profile fixture repeats graphical profile: $hostname"
     seen_hosts["$hostname"]=1
     assert_rendered_graphical_profile "$hostname graphical" "$hostname"
   done
