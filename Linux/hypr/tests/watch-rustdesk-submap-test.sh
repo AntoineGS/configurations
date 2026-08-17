@@ -608,6 +608,55 @@ assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:1\nreconcile:4:3
   "$(<"$STREAM_LOG")" \
   'interval-29 deadline rechecks at route age 30 seconds'
 
+# A persistent overdue reconciliation failure must wait for a bounded retry
+# instead of reusing the expired route deadline without reading from the stream.
+reset_route_state
+: >"$STREAM_LOG"
+set +e
+(
+  SECONDS=0
+  reconcile_count=0
+  read_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$SECONDS
+    ((reconcile_count += 1))
+    if ((reconcile_count == 1)); then
+      NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=0
+      printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+        "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+      return 0
+    fi
+    printf 'reconcile:%s:%s:%s:failed\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+    if ((reconcile_count >= 3 && read_count == 1)); then
+      printf 'spin-detected\n' >>"$STREAM_LOG"
+      exit 99
+    fi
+    return 1
+  }
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    ((read_count += 1))
+    if ((read_count <= 2)); then
+      printf 'read-timeout:%s:%s\n' "$3" "$SECONDS" >>"$STREAM_LOG"
+      SECONDS=$((SECONDS + $3))
+      return 142
+    fi
+    return 1
+  }
+  failed_retry_clean_state=false
+  consume_hyprland_event_stream failed_retry_clean_state </dev/null
+)
+failed_retry_status=$?
+set -e
+((failed_retry_status == 0)) || fail 'overdue reconciliation failure retried without advancing the read/time'
+assert_equal $'reconcile:1:0:0\nread-timeout:30:0\nreconcile:2:30:0:failed\nread-timeout:1:30\nreconcile:3:31:0:failed' \
+  "$(<"$STREAM_LOG")" \
+  'overdue reconciliation failure uses bounded retries'
+
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"
 (
