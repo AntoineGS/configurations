@@ -784,20 +784,8 @@ applications:
         backup: ./Linux/quickshell/desktop-shell
       - targets:
           linux: ~/.local/share/helpers
-        name: desktop-shell-service-helpers
+        name: desktop-shell-helpers
         backup: ./Linux/os/helpers
-        files:
-          - desktop-shell-launch
-          - toggle-desktop-shell-bar
-          - desktop-shell-action
-          - desktop-connectivity-action
-          - desktop-hardware-state
-          - desktop-hardware-action
-          - desktop-agent-usage-update
-          - desktop-agent-usage-codex
-          - desktop-agent-usage-claude
-          - desktop-shell
-          - desktop-shell-status
       - targets:
           linux: ~/.config/systemd/user
         name: systemd-service

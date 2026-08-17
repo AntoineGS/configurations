@@ -38,9 +38,7 @@ fail() {
 assert_launcher_mapping() {
   awk '
     function check_entry() {
-      if (target && entry_name && backup && file_count == 11 && has_launcher && has_toggle &&
-          has_shell_action && has_connectivity_action && has_hardware_state && has_hardware_action &&
-          has_usage_update && has_usage_codex && has_usage_claude && has_cli && has_status) {
+      if (target && entry_name && backup && !files) {
         found = 1
       }
     }
@@ -59,37 +57,13 @@ assert_launcher_mapping() {
       target = 0
       entry_name = 0
       backup = 0
-      has_launcher = 0
-      has_toggle = 0
-      has_shell_action = 0
-      has_connectivity_action = 0
-      has_hardware_state = 0
-      has_hardware_action = 0
-      has_usage_update = 0
-      has_usage_codex = 0
-      has_usage_claude = 0
-      has_cli = 0
-      has_status = 0
-      file_count = 0
+      files = 0
       next
     }
     $0 == "          linux: ~/.local/share/helpers" { target = 1 }
-    $0 == "        name: desktop-shell-service-helpers" { entry_name = 1 }
+    $0 == "        name: desktop-shell-helpers" { entry_name = 1 }
     $0 == "        backup: ./Linux/os/helpers" { backup = 1 }
-    /^          - / {
-      file_count++
-    }
-    $0 == "          - desktop-shell-launch" { has_launcher = 1 }
-    $0 == "          - toggle-desktop-shell-bar" { has_toggle = 1 }
-    $0 == "          - desktop-shell-action" { has_shell_action = 1 }
-    $0 == "          - desktop-connectivity-action" { has_connectivity_action = 1 }
-    $0 == "          - desktop-hardware-state" { has_hardware_state = 1 }
-    $0 == "          - desktop-hardware-action" { has_hardware_action = 1 }
-    $0 == "          - desktop-agent-usage-update" { has_usage_update = 1 }
-    $0 == "          - desktop-agent-usage-codex" { has_usage_codex = 1 }
-    $0 == "          - desktop-agent-usage-claude" { has_usage_claude = 1 }
-    $0 == "          - desktop-shell" { has_cli = 1 }
-    $0 == "          - desktop-shell-status" { has_status = 1 }
+    $0 == "        files:" { files = 1 }
     END {
       if (in_app) check_entry()
       exit !found
