@@ -1,0 +1,32 @@
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+
+const pluginRoot = path.resolve(__dirname, "../plugins/polkit")
+const manifestPath = path.join(pluginRoot, "manifest.json")
+const qmlPath = path.join(pluginRoot, "PolkitAgent.qml")
+
+assert.ok(fs.existsSync(qmlPath), "PolkitAgent.qml must exist")
+assert.ok(fs.existsSync(manifestPath), "polkit manifest must exist")
+
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
+const qml = fs.readFileSync(qmlPath, "utf8")
+
+assert.equal(manifest.id, "desktop.polkit")
+assert.deepEqual(manifest.kinds, ["service"])
+assert.equal(manifest.entryPoints.service, "PolkitAgent.qml")
+assert.match(qml, /import Quickshell\.Services\.Polkit/)
+assert.match(qml, /objectPath:\s*"\/org\/desktop_shell\/PolkitAgent"/)
+assert.match(qml, /namespace:\s*"desktop-shell-polkit"/)
+assert.match(qml, /property bool polkitRegistered/)
+assert.match(qml, /property string polkitError/)
+assert.match(qml, /property string pamError/)
+assert.match(qml, /flow\.submit\(/)
+assert.match(qml, /flow\.cancelAuthenticationRequest\(\)/)
+assert.match(qml, /KeyboardFocus\.Exclusive/)
+assert.match(qml, /Color\.polkit/)
+assert.match(qml, /BorderSurface/)
+assert.doesNotMatch(qml, /omarchy|OMARCHY|laptop-closed/)
+
+assert.match(qml, /property bool registrationEnabled\s*:\s*Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) !== "0"/)
+assert.match(qml, /Loader\s*\{[\s\S]*active:\s*root\.registrationEnabled[\s\S]*sourceComponent:[\s\S]*PolkitAgent\s*\{/)

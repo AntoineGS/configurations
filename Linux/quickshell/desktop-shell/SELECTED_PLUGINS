@@ -8,3 +8,4 @@ desktop.tailscale|omarchy.tailscale|shell/plugins/panels/tailscale/manifest.json
 desktop.battery|omarchy.battery|shell/plugins/services/battery/manifest.json shell/plugins/services/battery/Service.qml shell/plugins/services/battery/BatteryModel.js
 desktop.notifications|omarchy.notifications|shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml
 desktop.osd|omarchy.osd|shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js
+desktop.polkit|omarchy.polkit|shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js
