@@ -1233,6 +1233,12 @@ applications:
           linux: ~/.local/share/helpers
         name: helper scripts
         backup: ./Linux/os/helpers
+      - check:
+          linux: ~/.local/share/helpers/setup-remmina-hostkey --check
+        run:
+          linux: ~/.local/share/helpers/setup-remmina-hostkey --apply
+        name: disable-remmina-hostkey
+        when: '{{ and (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
       - targets:
           linux: ~/.local/share/applications
         name: .desktop files
