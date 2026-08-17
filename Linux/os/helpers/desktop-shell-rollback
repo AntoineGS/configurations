@@ -280,9 +280,9 @@ if "${adapter_active[@]}"; then
     adapter_was_active=true
   else
     probe_status=$?
-    ((probe_status == 1)) || die 'could not probe Mako readiness'
     stop_adapter=(systemctl --user stop desktop-shell-mako-route.service)
     "${stop_adapter[@]}" || die 'could not isolate desktop-shell-mako-route.service'
+    ((probe_status == 1)) || die 'could not probe Mako readiness'
   fi
 fi
 
