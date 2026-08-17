@@ -90,9 +90,11 @@ BUS_OWNER_STATE="$TEST_ROOT/bus-owner"
 BUS_OWNER_RESPONSE=''
 MAKO_MODE_ATTEMPTS_FILE="$TEST_ROOT/mako-mode-attempts"
 MAKO_MODE_RESPONDS_FILE="$TEST_ROOT/mako-mode-responds"
+MAKO_MODE_ERROR_STATUS=0
 PGREP_ERROR_NAME="$TEST_ROOT/pgrep-error-name"
 PGREP_ERROR_STATUS="$TEST_ROOT/pgrep-error-status"
 SIGNAL_READD_DECOY=false
+INJECT_UNEXPECTED_LIFECYCLE=false
 READLINK_CALLS_FILE="$TEST_ROOT/readlink-calls"
 READLINK_FLIP_PID="$TEST_ROOT/readlink-flip-pid"
 READLINK_FLIP_AFTER="$TEST_ROOT/readlink-flip-after"
@@ -193,6 +195,10 @@ unit_state() {
 
 action=${1:-}
 shift || true
+if [[ ${INJECT_UNEXPECTED_LIFECYCLE:-false} == true && $action == stop ]]; then
+  printf '%s\n' 'systemctl|--user|start|unexpected.service' >>"${MOCK_LOG:?}"
+  printf '%s\n' 'kill|-TERM|9999' >>"${MOCK_LOG:?}"
+fi
 case $action in
   stop)
     (($# > 0)) || exit 125
@@ -322,6 +328,9 @@ printf 'makoctl|mode|adapter=%s\n' "$adapter_state" >>"${MOCK_LOG:?}"
 attempts=$(<"${MAKO_MODE_ATTEMPTS_FILE:?}")
 attempts=$((attempts + 1))
 printf '%s\n' "$attempts" >"$MAKO_MODE_ATTEMPTS_FILE"
+if ((MAKO_MODE_ERROR_STATUS != 0)); then
+  exit "$MAKO_MODE_ERROR_STATUS"
+fi
 [[ $(<"${MAKO_MODE_RESPONDS_FILE:?}") == true ]] || exit 1
 [[ $attempts -gt ${MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS:?} ]] || exit 1
 printf '%s\n' default
@@ -430,9 +439,10 @@ EOF
 chmod 0700 "$BIN"/*
 
 export MOCK_LOG FALLTHROUGH_LOG SIGNAL_LOG PROCESS_STATE SERVICE_STATE SERVICE_PID_STATE BUS_OWNER_STATE
-export BUS_OWNER_RESPONSE PGREP_ERROR_NAME PGREP_ERROR_STATUS SIGNAL_READD_DECOY READLINK_CALLS_FILE
+export BUS_OWNER_RESPONSE PGREP_ERROR_NAME PGREP_ERROR_STATUS SIGNAL_READD_DECOY INJECT_UNEXPECTED_LIFECYCLE
+export READLINK_CALLS_FILE
 export READLINK_FLIP_PID READLINK_FLIP_AFTER SIGNAL_COMMAND
-export MAKO_MODE_ATTEMPTS_FILE MAKO_MODE_RESPONDS_FILE MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0
+export MAKO_MODE_ATTEMPTS_FILE MAKO_MODE_RESPONDS_FILE MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0 MAKO_MODE_ERROR_STATUS
 export HEALTH_FILE CUE_FILE POLKIT_COMM DESKTOP_SHELL_POLKIT_AGENT="$POLKIT_AGENT"
 export XDG_RUNTIME_DIR="$RUNTIME_DIR" XDG_STATE_HOME="$STATE_HOME"
 
@@ -466,11 +476,13 @@ reset_log() {
   : >"$PGREP_ERROR_NAME"
   printf '%s\n' 2 >"$PGREP_ERROR_STATUS"
   SIGNAL_READD_DECOY=false
+  INJECT_UNEXPECTED_LIFECYCLE=false
   : >"$READLINK_CALLS_FILE"
   : >"$READLINK_FLIP_PID"
   printf '%s\n' 2 >"$READLINK_FLIP_AFTER"
   printf '%s\n' 0 >"$MAKO_MODE_ATTEMPTS_FILE"
   printf '%s\n' true >"$MAKO_MODE_RESPONDS_FILE"
+  MAKO_MODE_ERROR_STATUS=0
 }
 
 run_helper() {
@@ -493,9 +505,11 @@ run_helper() {
     MAKO_MODE_ATTEMPTS_FILE="$MAKO_MODE_ATTEMPTS_FILE" \
     MAKO_MODE_RESPONDS_FILE="$MAKO_MODE_RESPONDS_FILE" \
     MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS="$MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS" \
+    MAKO_MODE_ERROR_STATUS="$MAKO_MODE_ERROR_STATUS" \
     PGREP_ERROR_NAME="$PGREP_ERROR_NAME" \
     PGREP_ERROR_STATUS="$PGREP_ERROR_STATUS" \
     SIGNAL_READD_DECOY="$SIGNAL_READD_DECOY" \
+    INJECT_UNEXPECTED_LIFECYCLE="$INJECT_UNEXPECTED_LIFECYCLE" \
     READLINK_CALLS_FILE="$READLINK_CALLS_FILE" \
     READLINK_FLIP_PID="$READLINK_FLIP_PID" \
     READLINK_FLIP_AFTER="$READLINK_FLIP_AFTER" \
@@ -534,46 +548,32 @@ assert_process_absent() {
   fail "process is present: $expected"
 }
 
-normalize_activation_trace() {
+normalize_lifecycle_trace() {
   awk -F'|' '
-    $0 == "systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service" { print "stop-both" }
-    $1 == "kill" && $2 == "-TERM" && $3 == "1001" { print "kill-mako" }
-    $1 == "kill" && $2 == "-TERM" && $3 == "1002" { print "kill-swaysod" }
-    $1 == "kill" && $2 == "-TERM" && $3 == "1003" { print "kill-polkit" }
-    $1 == "rm" { print "remove-cue" }
-    $0 == "systemctl|--user|start|desktop-shell.service" { print "start-shell" }
-    $0 == "systemctl|--user|is-active|--quiet|desktop-shell.service" { print "verify-shell-active" }
-    $1 == "busctl" && $7 == "GetConnectionUnixProcessID" { print "verify-owner" }
-    $0 == "desktop-shell|ping" { print "ping" }
-    $0 == "desktop-shell|health" { print "health" }
-  ' "$MOCK_LOG"
-}
-
-normalize_rollback_trace() {
-  awk -F'|' '
-    $0 == "systemctl|--user|stop|desktop-shell.service" { print "stop-shell" }
-    $0 == "uwsm-app|--|mako" { print "start-mako" }
-    $0 == "uwsm-app|--|swayosd-server" { print "start-swaysod" }
-    $1 == "polkit-agent" { print "start-polkit" }
-    $1 == "makoctl" && $3 ~ /^adapter=/ { print "mako-mode-" $3 }
-    $0 == "systemctl|--user|is-active|--quiet|desktop-shell-mako-route.service" { print "adapter-state" }
-    $0 == "systemctl|--user|start|desktop-shell-mako-route.service" { print "start-adapter" }
-    $1 == "busctl" && $7 == "GetConnectionUnixProcessID" { print "verify-owner" }
+    $1 == "path" || index($1, "systemctl-shell-start-cue=") == 1 { next }
+    $1 == "pgrep" && $2 == "-x" && $3 == "--" { next }
+    $1 == "readlink" && $2 == "--" { next }
+    $1 == "busctl" && $2 == "--user" && $3 == "call" && $4 == "org.freedesktop.DBus" &&
+      $5 == "/org/freedesktop/DBus" && $6 == "org.freedesktop.DBus" &&
+      $7 == "GetConnectionUnixProcessID" && $8 == "s" && $9 == "org.freedesktop.Notifications" { next }
+    $1 == "makoctl" && $2 == "mode" { next }
+    $1 == "desktop-shell" && ($2 == "ping" || $2 == "health") { next }
+    $1 == "systemctl" && $2 == "--user" && ($3 == "is-active" || $3 == "show") { next }
+    $1 == "systemctl" || $1 == "kill" || $1 == "uwsm-app" || $1 == "polkit-agent" || $1 == "rm" {
+      print
+      next
+    }
+    { print "unexpected|" $0 }
   ' "$MOCK_LOG"
 }
 
 assert_exact_trace() {
   local trace_name=$1
-  local normalizer=$2
-  shift 2
+  shift
   local -a expected=("$@")
   local -a actual=()
 
-  if [[ $normalizer == activation ]]; then
-    mapfile -t actual < <(normalize_activation_trace)
-  else
-    mapfile -t actual < <(normalize_rollback_trace)
-  fi
+  mapfile -t actual < <(normalize_lifecycle_trace)
   (( ${#actual[@]} == ${#expected[@]} )) || {
     printf '%s trace mismatch\nexpected: %s\nactual: %s\n' \
       "$trace_name" "${expected[*]}" "${actual[*]}" >&2
@@ -689,9 +689,10 @@ assert_log_order \
   'busctl|--user|call|org.freedesktop.DBus' \
   'desktop-shell|ping' \
   'desktop-shell|health'
-assert_exact_trace activation activation \
-  stop-both kill-mako kill-swaysod kill-polkit remove-cue start-shell \
-  verify-shell-active verify-owner ping health
+assert_exact_trace activation \
+  'systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service' \
+  'kill|-TERM|1001' 'kill|-TERM|1002' 'kill|-TERM|1003' \
+  "rm|-f|--|$CUE_FILE" 'systemctl|--user|start|desktop-shell.service'
 assert_log_contains "pgrep|-x|--|$POLKIT_COMM" 'polkit comm lookup is truncated to Linux comm length'
 assert_log_contains 'readlink|' 'polkit executable was verified'
 assert_process_absent mako
@@ -716,6 +717,22 @@ assert_contains "$(<"$activation_output")" 'desktop-shell.service: active' 'acti
 assert_contains "$(<"$activation_output")" 'desktop-shell.pid: 5001' 'activation process status'
 assert_contains "$(<"$activation_output")" 'notification-owner: desktop-shell' 'activation notification owner'
 assert_contains "$(<"$activation_output")" 'polkit-registered: true' 'activation polkit status'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
+INJECT_UNEXPECTED_LIFECYCLE=true
+if ! run_helper "$ACTIVATE" >"$activation_output" 2>"$activation_error"; then
+  fail "activation unexpectedly failed during generic lifecycle trace coverage: $(<"$activation_error")"
+fi
+if assert_exact_trace activation \
+  'systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service' \
+  'kill|-TERM|1001' 'kill|-TERM|1002' 'kill|-TERM|1003' \
+  "rm|-f|--|$CUE_FILE" 'systemctl|--user|start|desktop-shell.service' 2>/dev/null; then
+  fail 'lifecycle trace normalizer filtered an unexpected mutation'
+fi
 assert_no_fallthrough
 
 expect_activation_owner_failure ppid
@@ -797,9 +814,10 @@ assert_log_order \
   'makoctl|mode' \
   'systemctl|--user|start|desktop-shell-mako-route.service' \
   'busctl|--user|call|org.freedesktop.DBus'
-assert_exact_trace rollback rollback \
-  stop-shell adapter-state start-mako start-swaysod start-polkit \
-  mako-mode-adapter=inactive mako-mode-adapter=inactive start-adapter adapter-state verify-owner
+assert_exact_trace rollback \
+  'systemctl|--user|stop|desktop-shell.service' \
+  'uwsm-app|--|mako' 'uwsm-app|--|swayosd-server' 'polkit-agent|' \
+  'systemctl|--user|start|desktop-shell-mako-route.service'
 assert_log_contains "pgrep|-x|--|$POLKIT_COMM" 'rollback polkit comm lookup is truncated to Linux comm length'
 assert_log_contains 'readlink|' 'rollback polkit executable was verified'
 assert_process_present mako
@@ -875,6 +893,44 @@ assert_log_contains 'makoctl|mode|adapter=active' 'rollback did not record the i
 assert_log_contains 'makoctl|mode|adapter=inactive' 'rollback probed Mako while the active adapter was isolated'
 assert_log_not_contains 'systemctl|--user|start|desktop-shell-mako-route.service' \
   'rollback restarted the adapter after unresponsive Mako'
+assert_no_fallthrough
+
+reset_log
+write_services active
+write_processes
+printf '%s\n' mako >"$BUS_OWNER_STATE"
+printf '%s\n' mako >"$PGREP_ERROR_NAME"
+printf '%s\n' 2 >"$PGREP_ERROR_STATUS"
+status=0
+run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
+((status != 0)) || fail 'rollback accepted an active-adapter pgrep error'
+assert_log_order \
+  'systemctl|--user|stop|desktop-shell.service' \
+  'systemctl|--user|is-active|--quiet|desktop-shell-mako-route.service' \
+  'systemctl|--user|stop|desktop-shell-mako-route.service'
+assert_log_not_contains 'uwsm-app|' 'rollback recovered after an active-adapter pgrep error'
+assert_log_not_contains 'polkit-agent|' 'rollback restarted polkit after an active-adapter pgrep error'
+assert_log_not_contains 'systemctl|--user|start|desktop-shell-mako-route.service' \
+  'rollback restarted the adapter after a pgrep error'
+assert_no_fallthrough
+
+reset_log
+write_services active
+write_processes
+printf '%s\n' mako >"$BUS_OWNER_STATE"
+MAKO_MODE_ERROR_STATUS=7
+status=0
+run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
+((status != 0)) || fail 'rollback accepted a non-1 Mako readiness error'
+assert_log_order \
+  'systemctl|--user|stop|desktop-shell.service' \
+  'systemctl|--user|is-active|--quiet|desktop-shell-mako-route.service' \
+  'makoctl|mode|adapter=active' \
+  'systemctl|--user|stop|desktop-shell-mako-route.service'
+assert_log_not_contains 'uwsm-app|' 'rollback recovered after a non-1 Mako readiness error'
+assert_log_not_contains 'polkit-agent|' 'rollback restarted polkit after a non-1 Mako readiness error'
+assert_log_not_contains 'systemctl|--user|start|desktop-shell-mako-route.service' \
+  'rollback restarted the adapter after a Mako readiness error'
 assert_no_fallthrough
 
 reset_log
