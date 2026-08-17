@@ -17,51 +17,43 @@ assert_equal() {
   [[ $actual == "$expected" ]] || fail "$message: expected '$expected', got '$actual'"
 }
 
-assert_log_contains() {
+assert_route_payload() {
   local expected=$1
-  local log
-  log=$(<"$MAKO_LOG")
-  [[ $log == *"$expected"* ]] || fail "makoctl log does not contain '$expected': $log"
-}
+  local actual
 
-assert_log_empty() {
-  [[ ! -s $MAKO_LOG ]] || fail "expected no makoctl mutation, got: $(<"$MAKO_LOG")"
-}
-
-reset_mako() {
-  MAKO_MODE_OUTPUT=${1:-$'default\ndo-not-disturb'}
-  MAKO_FAIL=false
-  MAKO_EXPECTED_CUE_STATE=""
-  MAKO_CUE_ORDER_CHECKED=false
-  : >"$MAKO_LOG"
-}
-
-makoctl() {
-  local index
-  local -a arguments=("$@")
-
-  if [[ $1 == mode && $# == 1 ]]; then
-    if [[ $MAKO_FAIL == read ]]; then
-      return 1
-    fi
-    printf '%s\n' "$MAKO_MODE_OUTPUT"
-    return 0
+  [[ -f $NOTIFICATION_ROUTE_FILE ]] || fail "notification route file is missing: $NOTIFICATION_ROUTE_FILE"
+  if ! actual=$(jq -c 'del(.updatedAt)' "$NOTIFICATION_ROUTE_FILE"); then
+    fail "notification route file is not valid JSON: $NOTIFICATION_ROUTE_FILE"
   fi
+  assert_equal "$expected" "$actual" 'notification route payload'
+}
 
-  printf '%s\n' "$*" >>"$MAKO_LOG"
-  for ((index = 1; index < $#; index += 2)); do
-    if [[ ${arguments[index]} == -a && ${arguments[index + 1]} == rustdesk-cue ]]; then
-      [[ -f $RUSTDESK_NOTIFICATION_CUE_STATE ]] || return 1
-      assert_equal "$MAKO_EXPECTED_CUE_STATE" "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-        'cue state exists before cue mode activation'
-      MAKO_CUE_ORDER_CHECKED=true
-    fi
-    if [[ $MAKO_FAIL == remove-cue && ${arguments[index]} == -r && \
-      ${arguments[index + 1]} == rustdesk-cue ]]; then
-      return 1
-    fi
-  done
-  [[ $MAKO_FAIL != apply ]]
+assert_file_mode() {
+  local expected=$1
+  local path=$2
+  local actual
+
+  if ! actual=$(stat -c '%a' -- "$path"); then
+    fail "could not inspect mode for $path"
+  fi
+  assert_equal "${expected#0}" "${actual#0}" "mode for $path"
+}
+
+route_updated_at() {
+  jq -er '.updatedAt | select(type == "number" and (floor == .) and (. >= 0))' \
+    "$NOTIFICATION_ROUTE_FILE"
+}
+
+assert_route_contract() {
+  assert_file_mode 0700 "$NOTIFICATION_ROUTE_DIR"
+  assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
+  if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+    fail 'temporary notification route file was not removed after rename'
+  fi
+}
+
+reset_route_state() {
+  rm -rf -- "$NOTIFICATION_ROUTE_DIR"
 }
 
 monitor() {
@@ -116,12 +108,18 @@ source "$WATCHER"
 TEST_RUNTIME_DIR=$(mktemp -d)
 trap 'rm -rf -- "$TEST_RUNTIME_DIR"' EXIT
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
-export RUSTDESK_NOTIFICATION_CUE_STATE="$TEST_RUNTIME_DIR/rustdesk-notification-cue"
-MAKO_LOG="$TEST_RUNTIME_DIR/makoctl.log"
+NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
+NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
+ROUTE_RENAME_FAIL=false
 HYPR_LOG="$TEST_RUNTIME_DIR/hyprctl.log"
 HYPR_FAIL=false
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
+
+mv() {
+  [[ $ROUTE_RENAME_FAIL != true ]] || return 1
+  command mv "$@"
+}
 
 hyprctl() {
   case "$1 ${2:-}" in
@@ -137,8 +135,6 @@ hyprctl() {
     *) fail "unexpected hyprctl invocation: $*" ;;
   esac
 }
-
-reset_mako
 
 MONITORS_HDMI_FOCUSED=$(printf '%s\n' \
   "$(monitor 1 DVI-D-1 0 0 false)" \
@@ -266,87 +262,62 @@ assert_equal 'rustdesk-route-hidden|none|none' \
   "$(notification_route_state "$MONITORS_ANTOINEWS" "$RUSTDESK_ON_ARBITRARY")" \
   'unknown connector notification route is hidden'
 
-# Removing or adding a watcher-owned route must never remove unrelated Mako modes.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'cue state'
-assert_equal true "$MAKO_CUE_ORDER_CHECKED" 'cue state is written before cue activation'
-assert_log_contains '-r rustdesk-route-DVI-D-1'
-assert_log_contains '-r rustdesk-route-HDMI-A-1'
-assert_log_contains '-r rustdesk-route-DP-2'
-assert_log_contains '-r rustdesk-route-hidden'
-assert_log_contains '-r rustdesk-cue'
-assert_log_contains '-a rustdesk-route-DVI-D-1'
-assert_log_contains '-a rustdesk-cue'
-if [[ $(<"$MAKO_LOG") == *'-r default'* || $(<"$MAKO_LOG") == *'-r do-not-disturb'* ]]; then
-  fail 'unrelated Mako modes were removed'
+# A visible route with a directional cue publishes the exact route payload.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left"}'
+assert_route_contract
+
+# An unchanged route is a no-op between reconciliation intervals.
+first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+first_updated_at=$(route_updated_at)
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+second_updated_at=$(route_updated_at)
+assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
+assert_equal "$first_updated_at" "$second_updated_at" 'unchanged route keeps its timestamp'
+(( second_updated_at >= first_updated_at )) || fail 'route timestamp moved backwards'
+
+# A visible route without a cue uses null cue fields.
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+assert_route_contract
+changed_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $changed_route_inode != "$second_route_inode" ]] || fail 'changed route did not atomically replace the file'
+changed_updated_at=$(route_updated_at)
+(( changed_updated_at >= second_updated_at )) || fail 'changed route timestamp moved backwards'
+
+# Hidden routing keeps the cue output while hiding notification cards.
+reset_route_state
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
+
+# A stale unchanged route is rewritten so the service staleness gate stays healthy.
+stale_route=$(jq -c --argjson updated_at 1 '.updatedAt = $updated_at' "$NOTIFICATION_ROUTE_FILE")
+printf '%s\n' "$stale_route" >"$TEST_RUNTIME_DIR/stale-route"
+chmod 0600 "$TEST_RUNTIME_DIR/stale-route"
+mv "$TEST_RUNTIME_DIR/stale-route" "$NOTIFICATION_ROUTE_FILE"
+stale_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+fresh_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $fresh_route_inode != "$stale_route_inode" ]] || fail 'stale route was not rewritten'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
+fresh_updated_at=$(route_updated_at)
+(( fresh_updated_at >= 1 )) || fail 'rewritten route timestamp is invalid'
+
+# A failed atomic rename preserves the prior valid route file.
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+ROUTE_RENAME_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed route rename returned success'
 fi
-
-# Hidden routing retains a cue but must not activate an output route.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|none'
-apply_notification_route_state 'rustdesk-route-hidden|DP-2|none'
-assert_equal 'DP-2|none' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'hidden cue state'
-assert_log_contains '-a rustdesk-route-hidden'
-assert_log_contains '-a rustdesk-cue'
-if [[ $(<"$MAKO_LOG") == *'-a rustdesk-route-DVI-D-1'* || \
-  $(<"$MAKO_LOG") == *'-a rustdesk-route-HDMI-A-1'* || \
-  $(<"$MAKO_LOG") == *'-a rustdesk-route-DP-2'* ]]; then
-  fail 'hidden routing activated a safe route'
-fi
-
-# Cue removal follows a successful Mako update, so a failed update remains retryable.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
-[[ ! -e $RUSTDESK_NOTIFICATION_CUE_STATE ]] || fail 'cue state survived successful removal'
-assert_log_contains '-r rustdesk-cue'
-
-# A failed cue disable must retain the last usable cue state for retry.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-MAKO_FAIL=remove-cue
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'; then
-  fail 'failed cue disable returned success'
-fi
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-  'cue state survives failed cue disable'
-MAKO_FAIL=false
-
-# No Mako mutation is needed when live Mako modes and the cue file already agree.
-reset_mako $'default\ndo-not-disturb\nrustdesk-route-DVI-D-1\nrustdesk-cue'
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_log_empty
-
-# A Mako failure must return an error and leave the persisted cue state for retry.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-MAKO_FAIL=apply
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'; then
-  fail 'Mako application failure returned success'
-fi
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'cue state survives failed apply'
-MAKO_FAIL=false
-
-# A Mako mode-read failure cannot mutate either Mako modes or the cue state.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-MAKO_FAIL='read'
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'; then
-  fail 'Mako mode-read failure returned success'
-fi
-assert_log_empty
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-  'cue state survives Mako mode-read failure'
-MAKO_FAIL=false
-
-# Live Mako state, rather than an in-memory cache, drives restart recovery.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_log_contains '-a rustdesk-route-DVI-D-1'
+ROUTE_RENAME_FAIL=false
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'failed route write preserves the prior valid file'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
 
 for routing_event in \
   'openwindow>>abc' \
@@ -384,25 +355,25 @@ if is_notification_routing_event 'activelayout>>keyboard,us'; then
 fi
 
 # Unavailable or malformed Hyprland state must fail closed to the hidden route.
-reset_mako
+reset_route_state
 HYPR_FAIL=monitors
-if reconcile_notification_routing; then
+if reconcile_notification_routing 2>/dev/null; then
   fail 'failed Hyprland state reconciliation returned success'
 fi
-assert_log_contains '-a rustdesk-route-hidden'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
 HYPR_FAIL=false
 
-reset_mako
+reset_route_state
 HYPR_MONITORS_JSON='{malformed'
 HYPR_CLIENTS_JSON='[]'
-if reconcile_notification_routing; then
+if reconcile_notification_routing 2>/dev/null; then
   fail 'malformed Hyprland state reconciliation returned success'
 fi
-assert_log_contains '-a rustdesk-route-hidden'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
 HYPR_MONITORS_JSON='[]'
 
 # Handler state is explicit, persists across events, and does not affect movement.
-reset_mako
+reset_route_state
 : >"$HYPR_LOG"
 handler_clean_state=false
 handle_hyprland_event 'activewindow>>RustDesk,Remote Desktop' handler_clean_state
@@ -505,13 +476,13 @@ mapfile -t busy_stream_reconciliations <"$STREAM_LOG"
   fail 'busy event stream postponed periodic reconciliation indefinitely'
 
 # A failed startup/event reconciliation cannot stop the existing RustDesk handler.
-reset_mako
+reset_route_state
 : >"$HYPR_LOG"
-MAKO_FAIL=apply
+ROUTE_RENAME_FAIL=true
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
 handler_clean_state=false
-consume_hyprland_event_stream handler_clean_state <<'EOF'
+consume_hyprland_event_stream handler_clean_state 2>/dev/null <<'EOF'
 workspace>>1
 activewindow>>RustDesk,Remote Desktop
 EOF
@@ -519,6 +490,6 @@ assert_equal $'eval hl.dispatch(hl.dsp.submap("clean"))' "$(<"$HYPR_LOG")" \
   'RustDesk active-window handler continues after reconciliation failure'
 assert_equal true "$handler_clean_state" \
   'handler state survives reconciliation failures and event iterations'
-MAKO_FAIL=false
+ROUTE_RENAME_FAIL=false
 
 printf 'PASS: watch-rustdesk-submap route and reconciliation tests\n'
