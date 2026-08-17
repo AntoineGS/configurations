@@ -57,11 +57,33 @@ function registrationState(enabled, registered, error) {
   return { registered: false, error: String(error || "polkit registration failed") }
 }
 
+/**
+ * Resolve a focused Hyprland monitor to a Quickshell screen.
+ *
+ * @param {ArrayLike<{name?: string}>|null} screens Available screens.
+ * @param {*} focusedMonitorName Focused monitor name.
+ * @returns {object|null} Matching screen, first-screen fallback, or null.
+ */
+function screenForMonitor(screens, focusedMonitorName) {
+  const count = screens && typeof screens.length === "number" ? screens.length : 0
+  const monitorName = String(focusedMonitorName || "")
+
+  if (monitorName.length > 0) {
+    for (let index = 0; index < count; index++) {
+      const screen = screens[index]
+      if (screen && String(screen.name || "") === monitorName) return screen
+    }
+  }
+
+  return count > 0 ? screens[0] : null
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     promptLooksFingerprint,
     fingerprintConfiguredFromPamConfig,
     authorizationLabel,
     registrationState,
+    screenForMonitor,
   }
 }

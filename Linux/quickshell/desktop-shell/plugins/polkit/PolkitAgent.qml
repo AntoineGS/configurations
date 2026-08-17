@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Services.Polkit
 import Quickshell.Wayland
 import qs.Commons
@@ -35,7 +36,9 @@ Item {
   property int fieldHeight: Math.max(Style.space(42), Style.spacing.controlHeight)
 
   property var screenList: Quickshell.screens
-  readonly property var activeScreen: root.screenList.length > 0 ? root.screenList[0] : null
+  readonly property string focusedMonitorName: Hyprland.focusedMonitor
+    ? String(Hyprland.focusedMonitor.name || "") : ""
+  readonly property var activeScreen: PolkitModel.screenForMonitor(root.screenList, root.focusedMonitorName)
   readonly property var polkitBackend: polkitLoader.item
   readonly property var flow: root.polkitBackend ? root.polkitBackend.flow : null
 
@@ -76,9 +79,7 @@ Item {
   }
 
   function loaderError() {
-    if (polkitLoader.status !== Loader.Error) return ""
-    var detail = polkitLoader.errorString()
-    return detail ? String(detail) : "polkit backend failed to load"
+    return polkitLoader.status === Loader.Error ? "polkit backend failed to load" : ""
   }
 
   function syncRegistrationState() {
@@ -92,6 +93,21 @@ Item {
     root.polkitError = state.error
   }
 
+  function clearPassword() {
+    if (passwordInput) passwordInput.text = ""
+  }
+
+  function finishRequest() {
+    root.clearPassword()
+    root.closing = true
+    closeTimer.restart()
+  }
+
+  function handleBackendInactive() {
+    root.clearPassword()
+    if (!root.closing) root.resetSnapshot()
+  }
+
   function resetSnapshot() {
     root.currentMessage = ""
     root.currentPrompt = ""
@@ -101,7 +117,6 @@ Item {
     root.failed = false
     root.errorFlash = false
     root.submitted = false
-    passwordInput.text = ""
   }
 
   function syncFromFlow() {
@@ -122,7 +137,7 @@ Item {
     closeTimer.stop()
     root.closing = false
     root.submitted = false
-    passwordInput.text = ""
+    root.clearPassword()
     root.syncFromFlow()
     Qt.callLater(root.refocus)
   }
@@ -142,23 +157,21 @@ Item {
     root.submitted = true
     root.errorFlash = false
     flow.submit(password)
-    passwordInput.text = ""
+    root.clearPassword()
     keyCatcher.forceActiveFocus()
   }
 
   function cancelRequest() {
     var flow = root.flow
-    passwordInput.text = ""
     root.submitted = false
-    root.closing = true
-    closeTimer.restart()
+    root.finishRequest()
     if (flow) flow.cancelAuthenticationRequest()
   }
 
   function triggerFailureFeedback() {
     root.submitted = false
     root.errorFlash = true
-    passwordInput.text = ""
+    root.clearPassword()
     errorTimer.restart()
     shakeAnimation.restart()
     Qt.callLater(root.refocus)
@@ -170,6 +183,7 @@ Item {
     repeat: false
     onTriggered: {
       root.closing = false
+      root.clearPassword()
       root.resetSnapshot()
     }
   }
@@ -217,7 +231,7 @@ Item {
 
           function onIsResponseRequiredChanged() {
             root.syncFromFlow()
-            if (!root.flow || !root.flow.isResponseRequired) passwordInput.text = ""
+            if (!root.flow || !root.flow.isResponseRequired) root.clearPassword()
             Qt.callLater(root.refocus)
           }
 
@@ -232,29 +246,31 @@ Item {
           }
 
           function onAuthenticationSucceeded() {
-            root.closing = true
-            closeTimer.restart()
+            root.finishRequest()
           }
 
           function onAuthenticationRequestCancelled() {
-            root.closing = true
-            closeTimer.restart()
+            root.finishRequest()
           }
         }
 
         onAuthenticationRequestStarted: root.beginFlow()
         onIsActiveChanged: {
           if (isActive) root.syncFromFlow()
-          else if (!root.closing) root.resetSnapshot()
+          else root.handleBackendInactive()
         }
+        onFlowChanged: if (!flow) root.handleBackendInactive()
         onIsRegisteredChanged: root.syncRegistrationState()
       }
     }
     onStatusChanged: {
       root.syncRegistrationState()
-      if (status === Loader.Error)
+      if (status === Loader.Error) {
+        root.handleBackendInactive()
         console.warn("desktop-shell polkit agent load failed:", root.loaderError())
+      }
     }
+    onItemChanged: if (!item) root.handleBackendInactive()
   }
 
   onRegistrationEnabledChanged: root.syncRegistrationState()

@@ -29,3 +29,14 @@ assert.deepEqual(model.registrationState(false, false, ""), { registered: false,
 assert.deepEqual(model.registrationState(true, true, "ignored"), { registered: true, error: "" })
 assert.deepEqual(model.registrationState(true, false, "name already owned"), { registered: false, error: "name already owned" })
 assert.deepEqual(model.registrationState(true, false, ""), { registered: false, error: "polkit registration failed" })
+
+const firstScreen = { name: "DP-1" }
+const focusedScreen = { name: "HDMI-A-1" }
+assert.equal(model.screenForMonitor([firstScreen, focusedScreen], "HDMI-A-1"), focusedScreen,
+  "focused monitor selects the matching screen")
+assert.equal(model.screenForMonitor([firstScreen, focusedScreen], "missing"), firstScreen,
+  "missing focused monitor falls back to the first screen")
+assert.equal(model.screenForMonitor([firstScreen, focusedScreen], ""), firstScreen,
+  "no focused monitor falls back to the first screen")
+assert.equal(model.screenForMonitor([], "DP-1"), null,
+  "an empty screen list leaves the dialog unmapped")
