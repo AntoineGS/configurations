@@ -15,6 +15,7 @@ Panel {
   property int previewGiB: 1
   property bool resizePending: false
   property string actionError: ""
+  property bool refreshQueued: false
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool canResize: vmState.canResize && !resizePending
@@ -74,6 +75,11 @@ Panel {
       waitForEnd: true
       onStreamFinished: root.applyState(text)
     }
+    onExited: {
+      if (!root.refreshQueued) return
+      root.refreshQueued = false
+      root.refresh()
+    }
   }
 
   Process {
@@ -88,7 +94,8 @@ Panel {
       root.resizePending = false
       if (exitCode === 0) {
         root.actionError = ""
-        root.refresh()
+        if (stateProcess.running) root.refreshQueued = true
+        else root.refresh()
       } else {
         root.previewGiB = Model.currentGiB(root.vmState)
         root.actionError = String(actionStderr.text || "").trim()
@@ -144,204 +151,212 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
-      Column {
-        id: contentColumn
-        width: parent.width
-        spacing: Style.space(12)
+      Flickable {
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: contentColumn.implicitHeight
+        clip: true
+        interactive: contentHeight > height
 
-        PanelHero {
+        Column {
+          id: contentColumn
           width: parent.width
-          title: root.vmState.name
-          meta: root.vmState.vcpus + " VCPUS · KVM"
-          detail: "RUNNING"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          iconComponent: Component {
+          spacing: Style.space(12)
+
+          PanelHero {
+            width: parent.width
+            title: root.vmState.name
+            meta: root.vmState.vcpus + " VCPUS · KVM"
+            detail: "RUNNING"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            iconComponent: Component {
+              Text {
+                text: ""
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.display
+              }
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: root.vmState.stale
+            text: root.vmState.error || ""
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          PanelSeparator { foreground: root.foreground }
+
+          Row {
+            id: metricCards
+            width: parent.width
+            spacing: Style.space(8)
+
+            BorderSurface {
+              id: memoryCard
+              visible: root.vmState.showMemoryUsage
+              width: visible ? (metricCards.width - metricCards.spacing) / 2 : 0
+              implicitHeight: Style.space(72)
+              radius: Style.cornerRadius
+              color: Style.normalFillFor(root.foreground, Color.accent)
+              borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+
+              Column {
+                anchors.fill: parent
+                anchors.margins: Style.space(10)
+                spacing: Style.space(2)
+
+                Text {
+                  text: "MEMORY"
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  font.letterSpacing: 1
+                }
+                Text {
+                  text: Model.formatPercent(root.vmState.memoryPercent)
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                }
+                Text {
+                  text: Model.formatGiB(root.vmState.usedKiB) + " / " + Model.formatGiB(root.vmState.currentKiB)
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                }
+              }
+            }
+
+            BorderSurface {
+              id: cpuCard
+              width: root.vmState.showMemoryUsage
+                ? (metricCards.width - metricCards.spacing) / 2 : metricCards.width
+              implicitHeight: Style.space(72)
+              radius: Style.cornerRadius
+              color: Style.normalFillFor(root.foreground, Color.accent)
+              borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+
+              Column {
+                anchors.fill: parent
+                anchors.margins: Style.space(10)
+                spacing: Style.space(2)
+
+                Text {
+                  text: "CPU"
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  font.letterSpacing: 1
+                }
+                Text {
+                  text: Model.formatPercent(root.vmState.cpuPercent)
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  font.bold: true
+                }
+                Text {
+                  text: root.vmState.vcpus + " VCPUS"
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.foreground }
+
+          PanelSectionHeader {
+            text: "ALLOCATED MEMORY"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Text {
+            width: parent.width
+            text: Model.currentGiB(root.vmState) + " GiB"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            font.bold: true
+          }
+
+          CursorSurface {
+            width: parent.width
+            implicitHeight: memorySlider.implicitHeight + Style.spacing.controlGap
+            foreground: root.foreground
+            bordered: true
+
+            PanelSlider {
+              id: memorySlider
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(6)
+              anchors.rightMargin: Style.space(6)
+              bar: root.bar
+              minimum: Model.minimumGiB()
+              maximum: Model.maximumGiB(root.vmState)
+              step: 1
+              integer: true
+              value: root.previewGiB
+              enabled: root.canResize
+              tickCount: Math.min(13, Math.max(2, maximum - minimum + 1))
+              onMoved: function(value) { root.previewGiB = Math.round(value) }
+              onReleased: function(value) { root.requestMemory(Math.round(value)) }
+            }
+          }
+
+          Item {
+            width: parent.width
+            implicitHeight: Math.max(minimumLabel.implicitHeight, maximumLabel.implicitHeight)
+
             Text {
-              text: ""
-              color: root.foreground
+              id: minimumLabel
+              anchors.left: parent.left
+              text: Model.minimumGiB() + " GiB"
+              color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
-              font.pixelSize: Style.font.display
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              id: maximumLabel
+              anchors.right: parent.right
+              text: Model.maximumGiB(root.vmState) + " GiB"
+              color: Qt.darker(root.foreground, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
             }
           }
-        }
-
-        Text {
-          width: parent.width
-          visible: root.vmState.stale
-          text: root.vmState.error || ""
-          color: Color.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
-        }
-
-        PanelSeparator { foreground: root.foreground }
-
-        Row {
-          id: metricCards
-          width: parent.width
-          spacing: Style.space(8)
-
-          BorderSurface {
-            id: memoryCard
-            visible: root.vmState.showMemoryUsage
-            width: visible ? (metricCards.width - metricCards.spacing) / 2 : 0
-            implicitHeight: Style.space(72)
-            radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-
-            Column {
-              anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(2)
-
-              Text {
-                text: "MEMORY"
-                color: Qt.darker(root.foreground, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1
-              }
-              Text {
-                text: Model.formatPercent(root.vmState.memoryPercent)
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-              }
-              Text {
-                text: Model.formatGiB(root.vmState.usedKiB) + " / " + Model.formatGiB(root.vmState.currentKiB)
-                color: Qt.darker(root.foreground, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                elide: Text.ElideRight
-              }
-            }
-          }
-
-          BorderSurface {
-            id: cpuCard
-            width: root.vmState.showMemoryUsage
-              ? (metricCards.width - metricCards.spacing) / 2 : metricCards.width
-            implicitHeight: Style.space(72)
-            radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-
-            Column {
-              anchors.fill: parent
-              anchors.margins: Style.space(10)
-              spacing: Style.space(2)
-
-              Text {
-                text: "CPU"
-                color: Qt.darker(root.foreground, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                font.letterSpacing: 1
-              }
-              Text {
-                text: Model.formatPercent(root.vmState.cpuPercent)
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-              }
-              Text {
-                text: root.vmState.vcpus + " VCPUS"
-                color: Qt.darker(root.foreground, 1.4)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-            }
-          }
-        }
-
-        PanelSeparator { foreground: root.foreground }
-
-        PanelSectionHeader {
-          text: "ALLOCATED MEMORY"
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-        }
-
-        Text {
-          width: parent.width
-          text: Model.currentGiB(root.vmState) + " GiB"
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.title
-          font.bold: true
-        }
-
-        CursorSurface {
-          width: parent.width
-          implicitHeight: memorySlider.implicitHeight + Style.spacing.controlGap
-          foreground: root.foreground
-          bordered: true
-
-          PanelSlider {
-            id: memorySlider
-            anchors.fill: parent
-            anchors.leftMargin: Style.space(6)
-            anchors.rightMargin: Style.space(6)
-            bar: root.bar
-            minimum: Model.minimumGiB()
-            maximum: Model.maximumGiB(root.vmState)
-            step: 1
-            integer: true
-            value: root.previewGiB
-            enabled: root.canResize
-            tickCount: Math.min(13, Math.max(2, maximum - minimum + 1))
-            onMoved: function(value) { root.previewGiB = Math.round(value) }
-            onReleased: function(value) { root.requestMemory(Math.round(value)) }
-          }
-        }
-
-        Item {
-          width: parent.width
-          implicitHeight: Math.max(minimumLabel.implicitHeight, maximumLabel.implicitHeight)
 
           Text {
-            id: minimumLabel
-            anchors.left: parent.left
-            text: Model.minimumGiB() + " GiB"
+            width: parent.width
+            text: "LIVE + NEXT BOOT"
             color: Qt.darker(root.foreground, 1.4)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+            font.bold: true
+            font.letterSpacing: 1
           }
+
           Text {
-            id: maximumLabel
-            anchors.right: parent.right
-            text: Model.maximumGiB(root.vmState) + " GiB"
-            color: Qt.darker(root.foreground, 1.4)
+            width: parent.width
+            visible: root.resizePending || root.actionError !== ""
+            text: root.resizePending ? "Updating memory..." : root.actionError
+            color: root.actionError !== "" ? Color.urgent : Qt.darker(root.foreground, 1.4)
             font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
           }
-        }
-
-        Text {
-          width: parent.width
-          text: "LIVE + NEXT BOOT"
-          color: Qt.darker(root.foreground, 1.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.bold: true
-          font.letterSpacing: 1
-        }
-
-        Text {
-          width: parent.width
-          visible: root.resizePending || root.actionError !== ""
-          text: root.resizePending ? "Updating memory..." : root.actionError
-          color: root.actionError !== "" ? Color.urgent : Qt.darker(root.foreground, 1.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
         }
       }
     }
