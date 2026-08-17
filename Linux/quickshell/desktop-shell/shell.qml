@@ -57,6 +57,7 @@ ShellRoot {
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
   readonly property var notificationService: shell.serviceFor("desktop.notifications")
+  readonly property var polkitService: shell.serviceFor("desktop.polkit")
   readonly property var healthState: ({
     configValid: shell.configValid,
     pluginErrors: shell.pluginErrors,
@@ -67,7 +68,10 @@ ShellRoot {
     notificationOwnershipError: notificationService ? notificationService.ownershipError : "notification service unavailable",
     notificationRouteValid: notificationService ? notificationService.routeValid : false,
     notificationRouteVisible: notificationService ? notificationService.routeVisible : false,
-    notificationRouteError: notificationService ? notificationService.routeError : "notification service unavailable"
+    notificationRouteError: notificationService ? notificationService.routeError : "notification service unavailable",
+    polkitRegistered: polkitService ? polkitService.polkitRegistered : false,
+    polkitError: polkitService ? polkitService.polkitError : "polkit service unavailable",
+    polkitPamError: polkitService ? polkitService.pamError : "polkit service unavailable"
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false

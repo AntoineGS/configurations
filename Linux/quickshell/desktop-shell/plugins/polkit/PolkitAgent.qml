@@ -222,9 +222,25 @@ Item {
     id: polkitLoader
     active: root.registrationEnabled
     sourceComponent: Component {
-      PolkitAgent {
-        id: nativeAgent
-        path: root.objectPath
+      Item {
+        id: backendContainer
+
+        readonly property var flow: nativeAgent.flow
+        readonly property bool isActive: nativeAgent.isActive
+        readonly property bool isRegistered: nativeAgent.isRegistered
+
+        PolkitAgent {
+          id: nativeAgent
+          path: root.objectPath
+
+          onAuthenticationRequestStarted: root.beginFlow()
+          onIsActiveChanged: {
+            if (isActive) root.syncFromFlow()
+            else root.handleBackendInactive()
+          }
+          onFlowChanged: if (!flow) root.handleBackendInactive()
+          onIsRegisteredChanged: root.syncRegistrationState()
+        }
 
         Connections {
           target: nativeAgent.flow
@@ -253,14 +269,6 @@ Item {
             root.finishRequest()
           }
         }
-
-        onAuthenticationRequestStarted: root.beginFlow()
-        onIsActiveChanged: {
-          if (isActive) root.syncFromFlow()
-          else root.handleBackendInactive()
-        }
-        onFlowChanged: if (!flow) root.handleBackendInactive()
-        onIsRegisteredChanged: root.syncRegistrationState()
       }
     }
     onStatusChanged: {
