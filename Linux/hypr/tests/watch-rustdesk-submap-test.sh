@@ -558,6 +558,54 @@ assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:31:31' \
   "$(<"$STREAM_LOG")" \
   'off-cadence event write receives a refresh at age 30 seconds'
 
+# A deadline-driven interval-29 no-op must retry at write age 30, not age 58.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  SECONDS=0
+  reconcile_count=0
+  reconcile_notification_routing() {
+    ((reconcile_count += 1))
+    case $reconcile_count in
+      1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
+      *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
+    esac
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$SECONDS" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      SECONDS=1
+      return 0
+    fi
+    if ((read_count == 1)); then
+      ((read_count += 1))
+      printf -v "$4" '%s' 'activelayout>>keyboard,us'
+      SECONDS=30
+      return 0
+    fi
+    if ((read_count == 2)); then
+      ((read_count += 1))
+      SECONDS=$((SECONDS + $3))
+      return 142
+    fi
+    return 1
+  }
+  event_clean_state=false
+  NOTIFICATION_RECONCILE_INTERVAL=29
+  consume_hyprland_event_stream event_clean_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:1\nreconcile:4:31:31' \
+  "$(<"$STREAM_LOG")" \
+  'interval-29 deadline rechecks at route age 30 seconds'
+
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"
 (

@@ -350,6 +350,12 @@ consume_hyprland_event_stream() {
     if ((remaining <= 0)); then
       reconcile_notification_routing || true
       next_reconciliation=$((SECONDS + reconcile_interval))
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+        if ((route_deadline < next_reconciliation)); then
+          next_reconciliation=$route_deadline
+        fi
+      fi
       continue
     fi
 
