@@ -168,10 +168,11 @@ assert_json "$VM_OUTPUT" \
   'multiple running VMs did not return the cached payload as stale'
 
 export VM_LIST_OUTPUT=$'replacement\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 14000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=invalid
 run_vm 1
 assert_json "$VM_OUTPUT" \
-  '.available == true and .stale == true and (.error | length > 0) and
+  '.available == true and .stale == true and .error == "invalid VM sample timestamp" and
    .data.name == "replacement"' \
   'an invalid VM timestamp did not return a stale cached payload'
 
