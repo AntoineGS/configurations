@@ -183,6 +183,11 @@ assert_round3_route_mutations() {
     'if #items > 0 then uwsm-app -- mako end'
 }
 
+assert_round4_route_mutations() {
+  assert_route_mutation_detected lua-comment-continuation Linux/hypr/route-comment-continuation.lua \
+    $'-- note \\\nuwsm-app -- mako'
+}
+
 assert_adapter_reference_mutation_detected() {
   local label="$1"
   local relative_path="$2"
@@ -237,14 +242,25 @@ assert_round3_adapter_mutations() {
     'ExecStart=systemctl --user start desktop-shell-mako-route.service'
 }
 
+assert_round4_adapter_mutations() {
+  assert_adapter_reference_mutation_detected yaml-comment-continuation Linux/systemd/adapter-comment.yaml \
+    $'# note \\\nWants=desktop-shell-mako-route.service'
+  assert_adapter_file_mutation_detected activation-status-suffix Linux/os/helpers/desktop-shell-activate \
+    "printf '%s\\n' 'desktop-shell activation status' 'desktop-shell.service: active' 'desktop-shell-mako-route.service: inactive' ; systemctl --user enable --now desktop-shell-mako-route.service"
+  assert_adapter_file_mutation_detected rollback-status-suffix Linux/os/helpers/desktop-shell-rollback \
+    "printf '%s\\n' 'desktop-shell rollback status' 'desktop-shell.service: inactive' 'desktop-shell-mako-route.service: active' ; systemctl --user enable --now desktop-shell-mako-route.service"
+}
+
 assert_mutation_fixtures() {
   local fixture="$TEST_ROOT/mutation-repository"
   local hits expected_path allowed_path
 
   assert_round2_route_mutations
   assert_round3_route_mutations
+  assert_round4_route_mutations
   assert_round2_adapter_mutations
   assert_round3_adapter_mutations
+  assert_round4_adapter_mutations
   assert_graphical_profile_fixture_consumption
 
   mkdir -p -- "$fixture"
@@ -442,14 +458,46 @@ collect_inventory_hits() {
       return 0
     }
 
-    function trim(value) {
-      sub(/^[[:space:]]+/, "", value)
-      sub(/[[:space:]]+$/, "", value)
+    function normalize_logical(value) {
+      gsub(/[[:space:]]+/, " ", value)
+      sub(/^ /, "", value)
+      sub(/ $/, "", value)
+      return value
+    }
+
+    function activation_status_line(quote, double_quote, value) {
+      quote = sprintf("%c", 39)
+      double_quote = sprintf("%c", 34)
+      value = "printf " quote "%s\\n" quote
+      value = value " " quote "desktop-shell activation status" quote
+      value = value " " quote "desktop-shell.service: active" quote
+      value = value " " quote "desktop-shell-mako-route.service: inactive" quote
+      value = value " " double_quote "desktop-shell.pid: $shell_pid" double_quote
+      value = value " " quote "mako.pid: absent" quote
+      value = value " " quote "swayosd-server.pid: absent" quote
+      value = value " " quote "polkit.pid: absent" quote
+      value = value " " quote "notification-owner: desktop-shell" quote
+      value = value " " double_quote "polkit-registered: $polkit_registered" double_quote
+      return value
+    }
+
+    function rollback_status_line(quote, double_quote, value) {
+      quote = sprintf("%c", 39)
+      double_quote = sprintf("%c", 34)
+      value = "printf " quote "%s\\n" quote
+      value = value " " quote "desktop-shell rollback status" quote
+      value = value " " quote "desktop-shell.service: inactive" quote
+      value = value " " quote "desktop-shell-mako-route.service: active" quote
+      value = value " " double_quote "mako.pid: $mako_pid" double_quote
+      value = value " " double_quote "swayosd-server.pid: $swaysod_pid" double_quote
+      value = value " " double_quote "polkit.pid: $polkit_pid" double_quote
+      value = value " " quote "notification-owner: mako" quote
+      value = value " " quote "polkit-process: present" quote
       return value
     }
 
     function adapter_reference_allowed(path, value) {
-      value = trim(value)
+      value = normalize_logical(value)
       quote = sprintf("%c", 39)
       if (path == "tidydots.yaml" && value == "- desktop-shell-mako-route.service") {
         return 1
@@ -477,11 +525,11 @@ collect_inventory_hits() {
         return 1
       }
       if (path == "Linux/os/helpers/desktop-shell-activate" &&
-          value ~ ("^printf.*" quote "desktop-shell activation status" quote "[[:space:]]+" quote "desktop-shell.service: active" quote "[[:space:]]+" quote "desktop-shell-mako-route.service: inactive" quote)) {
+          value == activation_status_line()) {
         return 1
       }
       if (path == "Linux/os/helpers/desktop-shell-rollback" &&
-          value ~ ("^printf.*" quote "desktop-shell rollback status" quote "[[:space:]]+" quote "desktop-shell.service: inactive" quote "[[:space:]]+" quote "desktop-shell-mako-route.service: active" quote)) {
+          value == rollback_status_line()) {
         return 1
       }
       return 0
@@ -515,6 +563,14 @@ collect_inventory_hits() {
         logical_start = FNR
       }
       line = $0
+      if (is_whole_line_comment(relative_path(FILENAME), line)) {
+        if (logical != "") {
+          scan_logical(logical, logical_start, relative_path(FILENAME))
+        }
+        logical = ""
+        logical_start = 0
+        next
+      }
       if (line ~ /\\[[:space:]]*$/) {
         sub(/\\[[:space:]]*$/, " ", line)
         logical = logical line
