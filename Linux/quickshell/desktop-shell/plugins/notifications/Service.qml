@@ -5,6 +5,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Services.Notifications
 import qs.Commons
+import qs.Ui
 
 import "components"
 import "NotificationLogic.js" as NotificationLogic
@@ -777,7 +778,6 @@ Item {
     onExited: function(exitCode) {
       service.updateNotificationOwner(exitCode, ownershipStdout.text)
     }
-    onErrorOccurred: service.setOwnershipState(false, "busctl status command failed")
   }
 
   Timer {
