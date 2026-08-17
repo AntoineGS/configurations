@@ -1,12 +1,72 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s nullglob
 
-# Adjust the brightness on Apple Studio Displays and Apple XDR Displays using asdcontrol.
+export LC_ALL=C
 
 if (( $# == 0 )); then
-  echo "Adjust Apple Display Brightness by passing +5000 or -5000 (or any range from 0-60000)"
+  printf 'Adjust Apple Display Brightness by passing +5000 or -5000 (or any range from 0-60000)\n'
+  exit 0
+fi
+(( $# == 1 )) || {
+  printf 'usage: brightness-display-apple <adjustment>\n' >&2
+  exit 2
+}
+command -v jq >/dev/null 2>&1 || {
+  printf 'brightness-display-apple: jq is required\n' >&2
+  exit 1
+}
+
+devices=(/dev/usb/hiddev*)
+if (( ${#devices[@]} == 0 )); then
+  devices=('/dev/usb/hiddev*')
+fi
+if ! device=$(sudo asdcontrol --detect "${devices[@]}" 2>/dev/null | awk -F: '/^\/dev\/usb\/hiddev/ { print $1; exit }'); then
+  printf 'brightness-display-apple: no Apple display found\n' >&2
+  exit 1
+fi
+if [[ -z $device ]]; then
+  printf 'brightness-display-apple: no Apple display found\n' >&2
+  exit 1
+fi
+
+mutation=(sudo asdcontrol "$device" -- "$1")
+if ! "${mutation[@]}" >/dev/null; then
+  printf 'brightness-display-apple: brightness mutation failed\n' >&2
+  exit 1
+fi
+
+if ! raw=$(sudo asdcontrol "$device" 2>/dev/null); then
+  printf 'brightness-display-apple: failed to read brightness state\n' >&2
+  exit 1
+fi
+value=$(awk -F= '/^BRIGHTNESS=/ { print $2; exit }' <<<"$raw")
+[[ $value =~ ^[0-9]+$ ]] || {
+  printf 'brightness-display-apple: malformed brightness state\n' >&2
+  exit 1
+}
+if ! jq -n -e --argjson value "$value" '($value >= 0 and $value <= 60000)' >/dev/null 2>&1; then
+  printf 'brightness-display-apple: brightness value is out of range\n' >&2
+  exit 1
+fi
+percent=$(jq -nr --argjson value "$value" '($value * 100 / 60000) | floor')
+payload=$(jq -cn \
+  --arg icon brightness \
+  --arg message '' \
+  --argjson value "$percent" \
+  --argjson max 100 \
+  --arg progressText "${percent}%" \
+  '{icon: $icon, message: $message, value: $value, max: $max, progressText: $progressText}')
+
+deliver_status=0
+if response=$(desktop-shell call desktop.osd show "$payload"); then
+  if [[ $response != ok ]]; then
+    deliver_status=1
+  fi
 else
-  device="$(sudo asdcontrol --detect /dev/usb/hiddev* | grep ^/dev/usb/hiddev | cut -d: -f1)"
-  sudo asdcontrol "$device" -- "$1" >/dev/null
-  value="$(sudo asdcontrol "$device" | awk -F= '/BRIGHTNESS=/{print $2+0}')"
-  swayosd-brightness "$(( value * 100 / 60000 ))"
+  deliver_status=$?
+fi
+if (( deliver_status != 0 && deliver_status != 3 )); then
+  printf 'brightness-display-apple: OSD delivery failed\n' >&2
+  exit "$deliver_status"
 fi
