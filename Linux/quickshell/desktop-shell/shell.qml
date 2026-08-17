@@ -7,6 +7,7 @@ import Quickshell.Io
 import qs.Commons
 
 import "plugins/bar"
+import "plugins/osd/OsdModel.js" as OsdModel
 import "services"
 
 ShellRoot {
@@ -508,19 +509,8 @@ ShellRoot {
   // Map of pluginId -> Loader, populated by the Instantiator delegate below.
   property var panelLoaders: ({})
 
-  // OSD health is intentionally read-only: a keep-loaded overlay is available
-  // only when its loader has produced an item whose ping contract is healthy.
-  readonly property bool osdAvailable: {
-    if (shell.previewMode) return false
-    var loader = shell.panelLoaders["desktop.osd"]
-    if (!loader || !loader.item || loader.status === Loader.Error) return false
-    try {
-      return typeof loader.item.ping === "function" && loader.item.ping() === "pong"
-    } catch (error) {
-      console.warn("desktop.osd health probe failed:", error)
-      return false
-    }
-  }
+  readonly property bool osdAvailable: OsdModel.healthAvailable(
+    shell.previewMode, shell.panelLoaders["desktop.osd"], Loader.Error)
 
   function registerPanelLoader(pluginId, loader) {
     var next = ({})

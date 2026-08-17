@@ -29,15 +29,88 @@ deliver_osd() {
   fi
 }
 
-if ! sinks_json=$(pactl -f json list sinks 2>/dev/null); then
-  printf 'cmd-audio-switch: failed to list audio devices\n' >&2
-  exit 1
-fi
-if ! sinks=$(jq -c '[.[] | select((.ports | length == 0) or ([.ports[]? | .availability != "not available"] | any))]' <<<"$sinks_json"); then
-  printf 'cmd-audio-switch: malformed audio device list\n' >&2
-  exit 1
-fi
-sinks_count=$(jq -er 'length' <<<"$sinks")
+read_sinks() {
+  local sinks_json
+
+  if ! sinks_json=$(pactl -f json list sinks 2>/dev/null); then
+    printf 'cmd-audio-switch: failed to list audio devices\n' >&2
+    return 1
+  fi
+  if ! sinks=$(jq -c '[.[] | select((.ports | length == 0) or ([.ports[]? | .availability != "not available"] | any))]' <<<"$sinks_json"); then
+    printf 'cmd-audio-switch: malformed audio device list\n' >&2
+    return 1
+  fi
+  sinks_count=$(jq -er 'length' <<<"$sinks")
+}
+
+description_missing() {
+  case "$1" in
+    ''|null|'(null)') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+lookup_wpctl_description() {
+  local id=$1
+  local status_text
+
+  [[ $id =~ ^[0-9]+$ ]] || return 0
+  if ! status_text=$(wpctl status 2>/dev/null); then
+    return 0
+  fi
+  awk -v id="$id" \
+    '$0 ~ ("(^|[[:space:]])" id "\\.") {
+       line = $0
+       sub(/^.*[0-9]+\.[[:space:]]+/, "", line)
+       sub(/[[:space:]]+\[.*$/, "", line)
+       print line
+       exit
+     }' <<<"$status_text"
+}
+
+read_sink_description() {
+  local sink=$1
+  local description
+  local device_id
+  local sink_id
+
+  description=$(jq -r '.description // ""' <<<"$sink")
+  if ! description_missing "$description"; then
+    printf '%s\n' "$description"
+    return 0
+  fi
+
+  device_id=$(jq -r '.properties["device.id"] // ""' <<<"$sink")
+  description=$(lookup_wpctl_description "$device_id")
+  if [[ -z $description ]]; then
+    sink_id=$(jq -r '.properties["object.id"] // ""' <<<"$sink")
+    description=$(lookup_wpctl_description "$sink_id")
+  fi
+  printf '%s\n' "$description"
+}
+
+read_sink_details() {
+  local sink=$1
+
+  next_sink_name=$(jq -er '.name | strings' <<<"$sink")
+  next_sink_description=$(read_sink_description "$sink")
+  next_sink_volume=$(jq -er '.volume | to_entries[0].value.value_percent | tostring | sub("%$"; "") | tonumber' <<<"$sink")
+  next_sink_is_muted=$(jq -r '.mute == true' <<<"$sink")
+}
+
+select_icon_state() {
+  if [[ $next_sink_is_muted == true ]] || (( next_sink_volume == 0 )); then
+    icon_state=muted
+  elif (( next_sink_volume <= 33 )); then
+    icon_state=low
+  elif (( next_sink_volume <= 66 )); then
+    icon_state=medium
+  else
+    icon_state=high
+  fi
+}
+
+read_sinks
 
 if (( sinks_count == 0 )); then
   payload=$(jq -cn \
@@ -57,43 +130,25 @@ else
 fi
 
 next_sink=$(jq -c --argjson index "$next_sink_index" '.[$index]' <<<"$sinks")
-next_sink_name=$(jq -er '.name | strings' <<<"$next_sink")
-next_sink_description=$(jq -r '.description // ""' <<<"$next_sink")
-if [[ -z $next_sink_description ]]; then
-  device_id=$(jq -r '.properties["device.id"] // ""' <<<"$next_sink")
-  if [[ -n $device_id ]]; then
-    if status_text=$(wpctl status 2>/dev/null); then
-      next_sink_description=$(awk -v id="$device_id" \
-        'index($0, id ".") { sub(/^.*[0-9]+\.[[:space:]]+/, ""); sub(/[[:space:]]+\[.*$/, ""); print; exit }' \
-        <<<"$status_text")
-    fi
-  fi
-  if [[ -z $next_sink_description ]]; then
-    sink_id=$(jq -r '.properties["object.id"] // ""' <<<"$next_sink")
-    if [[ -n $sink_id ]]; then
-      if status_text=$(wpctl status 2>/dev/null); then
-        next_sink_description=$(awk -v id="$sink_id" \
-          'index($0, id ".") { sub(/^.*[0-9]+\.[[:space:]]+/, ""); sub(/[[:space:]]+\[.*$/, ""); print; exit }' \
-          <<<"$status_text")
-      fi
-    fi
-  fi
-fi
-
-next_sink_volume=$(jq -er '.volume | to_entries[0].value.value_percent | tostring | sub("%$"; "") | tonumber' <<<"$next_sink")
-next_sink_is_muted=$(jq -r '.mute == true' <<<"$next_sink")
-if [[ $next_sink_is_muted == true ]] || (( next_sink_volume == 0 )); then
-  icon_state=muted
-elif (( next_sink_volume <= 33 )); then
-  icon_state=low
-elif (( next_sink_volume <= 66 )); then
-  icon_state=medium
-else
-  icon_state=high
-fi
+read_sink_details "$next_sink"
+select_icon_state
 
 if [[ $next_sink_name != "$current_sink_name" ]]; then
   pactl set-default-sink "$next_sink_name"
+  current_sink_name=$(pactl get-default-sink)
+  if [[ $current_sink_name != "$next_sink_name" ]]; then
+    printf 'cmd-audio-switch: default sink readback did not match requested sink\n' >&2
+    exit 1
+  fi
+  read_sinks
+  if ! next_sink=$(jq -c --arg name "$current_sink_name" \
+    '[.[] | select(.name == $name)] | if length == 1 then .[0] else error("selected sink is unavailable") end' \
+    <<<"$sinks"); then
+    printf 'cmd-audio-switch: selected sink disappeared after mutation\n' >&2
+    exit 1
+  fi
+  read_sink_details "$next_sink"
+  select_icon_state
 fi
 
 payload=$(jq -cn \
