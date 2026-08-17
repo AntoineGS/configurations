@@ -7,3 +7,4 @@ desktop.monitor|omarchy.monitor|shell/plugins/panels/monitor/manifest.json shell
 desktop.tailscale|omarchy.tailscale|shell/plugins/panels/tailscale/manifest.json shell/plugins/panels/tailscale/Panel.qml shell/plugins/panels/tailscale/Model.js shell/plugins/panels/tailscale/Service.qml shell/plugins/panels/tailscale/TailscaleIcon.qml
 desktop.battery|omarchy.battery|shell/plugins/services/battery/manifest.json shell/plugins/services/battery/Service.qml shell/plugins/services/battery/BatteryModel.js
 desktop.notifications|omarchy.notifications|shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml
+desktop.osd|omarchy.osd|shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js
