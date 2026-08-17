@@ -30,9 +30,27 @@ current_time() {
 
 current_time_ns() {
   local value=${DESKTOP_HARDWARE_NOW_NS:-}
+  local uptime_seconds
+  local uptime_fraction
+  local fraction
+  local seconds
 
   if [[ -z $value ]]; then
-    value=$(date +%s%N)
+    if ! read -r uptime_seconds _ < /proc/uptime; then
+      return 1
+    fi
+    [[ $uptime_seconds =~ ^([0-9]+)(\.([0-9]+))?$ ]] || return 1
+    seconds=$((10#${BASH_REMATCH[1]}))
+    uptime_fraction=${BASH_REMATCH[3]:-}
+    uptime_fraction="${uptime_fraction}000000000"
+    uptime_fraction=${uptime_fraction:0:9}
+    fraction=$((10#$uptime_fraction))
+
+    # Keep the conversion inside signed 64-bit nanosecond arithmetic.
+    if (( seconds > 9223372036 )) || (( seconds == 9223372036 && fraction > 854775807 )); then
+      return 1
+    fi
+    value=$((seconds * 1000000000 + fraction))
   fi
   [[ $value =~ ^[0-9]+$ ]] || return 1
   printf '%s\n' "$value"

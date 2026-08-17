@@ -36,6 +36,7 @@ function emptyState(error) {
   return {
     available: false,
     stale: false,
+    malformed: false,
     error: errorValue(error),
     visible: false,
     name: "",
@@ -53,6 +54,13 @@ function emptyState(error) {
   }
 }
 
+function malformedState(error) {
+  var state = emptyState(error)
+  state.stale = true
+  state.malformed = true
+  return state
+}
+
 /**
  * Normalize a VM state envelope received as JSON or as an already parsed object.
  * Only scalar fields needed by the widget are copied out of the payload.
@@ -64,6 +72,11 @@ function normalizeState(raw) {
   try {
     var envelope = typeof raw === "string" ? JSON.parse(raw) : raw
     if (!isPlainObject(envelope)) throw new Error("VM state must be an object")
+    if (typeof envelope.available !== "boolean") throw new Error("VM state available flag must be boolean")
+    if (typeof envelope.stale !== "boolean") throw new Error("VM state stale flag must be boolean")
+    if (!Object.prototype.hasOwnProperty.call(envelope, "error")) throw new Error("VM state error field is missing")
+    if (envelope.error !== null && typeof envelope.error !== "string")
+      throw new Error("VM state error field must be a string or null")
     if (!isPlainObject(envelope.data)) throw new Error("VM state data must be an object")
 
     var data = envelope.data
@@ -86,6 +99,7 @@ function normalizeState(raw) {
     return {
       available: available,
       stale: stale,
+      malformed: false,
       error: errorValue(envelope.error),
       visible: available,
       name: typeof data.name === "string" ? data.name : "",
@@ -104,8 +118,44 @@ function normalizeState(raw) {
         && maximumKiB > 0
     }
   } catch (error) {
-    return emptyState(error && error.message ? error.message : String(error))
+    return malformedState(error && error.message ? error.message : String(error))
   }
+}
+
+function staleState(previous, error) {
+  var retained = {}
+  var source = isPlainObject(previous) ? previous : emptyState()
+
+  for (var key in source) retained[key] = source[key]
+  retained.stale = true
+  retained.malformed = true
+  retained.error = errorValue(error) || "VM state helper output was malformed"
+  retained.canResize = false
+  return retained
+}
+
+function diagnostic(parseError, processError) {
+  var parseMessage = errorValue(parseError)
+  var processMessage = errorValue(processError)
+  if (parseMessage && processMessage) return parseMessage + "; " + processMessage
+  return parseMessage || processMessage || "VM state helper output was malformed"
+}
+
+/**
+ * Apply helper output without allowing malformed data to erase a visible VM.
+ *
+ * @param {Object} previous previously displayed normalized state
+ * @param {string|Object} raw state helper output
+ * @param {string|null|undefined} processError process-level diagnostic
+ * @returns {Object} normalized or retained stale state
+ */
+function stateFromRaw(previous, raw, processError) {
+  var parsed = normalizeState(raw)
+  if (!parsed.malformed) return parsed
+
+  var error = diagnostic(parsed.error, processError)
+  if (previous && previous.visible === true) return staleState(previous, error)
+  return malformedState(error)
 }
 
 function clampPercent(value) {
@@ -190,6 +240,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     emptyState: emptyState,
     normalizeState: normalizeState,
+    stateFromRaw: stateFromRaw,
     formatPercent: formatPercent,
     formatGiB: formatGiB,
     minimumGiB: minimumGiB,

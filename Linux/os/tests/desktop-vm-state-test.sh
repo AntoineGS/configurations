@@ -7,6 +7,7 @@ TMP_DIR="$(mktemp -d)"
 FAKE_BIN="$TMP_DIR/bin"
 STATE_DIR="$TMP_DIR/state"
 VM_VIRSH_TRACE="$TMP_DIR/virsh.trace"
+NO_VIRSH_PATH="$TMP_DIR/no-virsh"
 
 trap 'rm -rf -- "$TMP_DIR"' EXIT
 
@@ -37,6 +38,10 @@ run_vm() {
 
 [[ -x "$STATE_HELPER" ]] || fail "$STATE_HELPER must exist and be executable"
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
+grep -Fq '/proc/uptime' "$STATE_HELPER" || fail 'VM sampling does not use a monotonic uptime source'
+if grep -Fq 'date +%s%N' "$STATE_HELPER"; then
+  fail 'VM sampling still uses wall-clock nanoseconds'
+fi
 
 mkdir -p -- "$FAKE_BIN" "$STATE_DIR"
 
@@ -45,7 +50,10 @@ cat >"$FAKE_BIN/virsh" <<'FAKE_VIRSH'
 set -Eeuo pipefail
 printf '%s\0' "$@" >>"$VM_VIRSH_TRACE"
 case ${1:-} in
-  list) printf '%s' "${VM_LIST_OUTPUT:-}" ;;
+  list)
+    (( ${VM_LIST_FAIL:-0} == 0 )) || { printf 'mock list failed\n' >&2; exit 1; }
+    printf '%s' "${VM_LIST_OUTPUT:-}"
+    ;;
   domstats)
     (( ${VM_STATS_FAIL:-0} == 0 )) || { printf 'mock domstats failed\n' >&2; exit 1; }
     printf '%s' "${VM_STATS_OUTPUT:-}"
@@ -59,6 +67,20 @@ export PATH="$FAKE_BIN:$PATH"
 export DESKTOP_HARDWARE_STATE_DIR="$STATE_DIR"
 export VM_VIRSH_TRACE
 export VM_STATS_FAIL=0
+export VM_LIST_FAIL=0
+
+mkdir -p -- "$NO_VIRSH_PATH"
+for command_name in bash chmod date env jq mkdir mktemp mv rm; do
+  ln -s -- "$(command -v "$command_name")" "$NO_VIRSH_PATH/$command_name"
+done
+
+saved_path=$PATH
+PATH=$NO_VIRSH_PATH
+run_vm 0
+PATH=$saved_path
+assert_json "$VM_OUTPUT" \
+  '.available == false and .stale == false and .error == null and .data.name == ""' \
+  'missing virsh was not reported as a clean unavailable state'
 
 export VM_LIST_OUTPUT=$'win11 gaming\n'
 export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 1000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
@@ -89,6 +111,20 @@ trace=$(tr '\0' '\n' <"$VM_VIRSH_TRACE")
 expected_trace=$'list\n--state-running\n--name\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\nlist\n--state-running\n--name\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\n'
 expected_trace=${expected_trace%$'\n'}
 [[ $trace == "$expected_trace" ]] || fail "virsh argv trace was unexpected: $(printf '%q' "$trace")"
+
+export VM_LIST_FAIL=1
+run_vm 1
+assert_json "$VM_OUTPUT" \
+  '.available == true and .stale == true and .data.name == "win11 gaming" and (.error | length > 0)' \
+  'virsh list failure did not preserve the last successful VM state'
+export VM_LIST_FAIL=0
+
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = malformed\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+run_vm 1
+assert_json "$VM_OUTPUT" \
+  '.available == true and .stale == true and .data.name == "win11 gaming" and .data.cpuTimeNs == 6000000000' \
+  'malformed numeric telemetry did not preserve the last successful VM state'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 6000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 
 export VM_STATS_FAIL=1
 run_vm 1
@@ -164,8 +200,30 @@ export VM_LIST_OUTPUT=$'one\ntwo\n'
 run_vm 1
 assert_json "$VM_OUTPUT" \
   '.available == true and .stale == true and (.error | length > 0) and
-   .data.name == "replacement"' \
+    .data.name == "replacement"' \
   'multiple running VMs did not return the cached payload as stale'
+
+export VM_LIST_OUTPUT=$'replacement\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 14000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export DESKTOP_HARDWARE_NOW_NS=16000000000
+run_vm 0
+assert_json "$VM_OUTPUT" \
+  '.data.cpu.available == false and .data.sampledAtNs == 16000000000' \
+  'an equal sample timestamp was treated as a valid CPU delta'
+
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 14000000001\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export DESKTOP_HARDWARE_NOW_NS=16000000001
+run_vm 0
+assert_json "$VM_OUTPUT" \
+  '.data.cpu.available == true and .data.cpu.percent == 25' \
+  'a short positive monotonic delta was not accepted'
+
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 15000000001\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export DESKTOP_HARDWARE_NOW_NS=16000000000
+run_vm 0
+assert_json "$VM_OUTPUT" \
+  '.data.cpu.available == false and .data.sampledAtNs == 16000000000' \
+  'a backward sample timestamp was treated as a valid CPU delta'
 
 export VM_LIST_OUTPUT=$'replacement\n'
 export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 14000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'

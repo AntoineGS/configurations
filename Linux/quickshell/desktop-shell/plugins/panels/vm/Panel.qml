@@ -41,8 +41,10 @@ Panel {
     else registry.clearPluginError(moduleName)
   }
 
-  function applyState(raw) {
-    vmState = Model.normalizeState(raw)
+  function applyState(raw, processError) {
+    var nextState = Model.stateFromRaw(vmState, raw, processError)
+    if (!nextState.malformed && !nextState.visible && root.opened) root.close()
+    vmState = nextState
     reportStateError()
     if (!memorySlider.dragging && !resizePending) previewGiB = Model.currentGiB(vmState)
   }
@@ -72,10 +74,20 @@ Panel {
     id: stateProcess
     command: ["desktop-hardware-state", "vm"]
     stdout: StdioCollector {
+      id: stateStdout
       waitForEnd: true
-      onStreamFinished: root.applyState(text)
+    }
+    stderr: StdioCollector {
+      id: stateStderr
+      waitForEnd: true
     }
     onExited: {
+      var processError = ""
+      if (Number(exitCode) !== 0) {
+        processError = String(stateStderr.text || "").trim()
+        if (!processError) processError = "desktop-hardware-state exited with code " + String(exitCode)
+      }
+      root.applyState(stateStdout.text || "", processError)
       if (!root.refreshQueued) return
       root.refreshQueued = false
       root.refresh()
@@ -134,7 +146,7 @@ Panel {
     anchorItem: button
     owner: root
     bar: root.bar
-    open: root.opened
+    open: root.opened && root.vmState.visible
     focusTarget: keyCatcher
     contentWidth: popup.fittedContentWidth(Style.space(360))
     contentHeight: popup.fittedContentHeight(contentColumn.implicitHeight, Style.space(560))
@@ -285,7 +297,9 @@ Panel {
 
           Text {
             width: parent.width
-            text: Model.currentGiB(root.vmState) + " GiB"
+            text: (memorySlider.dragging || root.resizePending
+              || root.previewGiB !== Model.currentGiB(root.vmState)
+              ? root.previewGiB : Model.currentGiB(root.vmState)) + " GiB"
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
