@@ -17,6 +17,11 @@ cat >"$fake_bin/systemctl" <<'FAKE_SYSTEMCTL'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+if [[ $* != *--value* && $* != *--all* ]]; then
+  printf '%s\n' 'detail query omitted --all' >&2
+  exit 1
+fi
+
 print_snapshot() {
   local load_state=$1
   local active_state=$2
@@ -145,6 +150,8 @@ run_snapshot() {
 run_snapshot absent "$POLKIT_UNIT_ABSENT_STATUS" absent
 run_snapshot loaded 0 present
 grep -Fqx 'LoadState=loaded' "$output"
+grep -Fqx 'ExecMainStartTimestamp=' "$output"
+grep -Fqx 'Result=' "$output"
 run_snapshot masked 0 present
 grep -Fqx 'LoadState=masked' "$output"
 run_snapshot partial "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent

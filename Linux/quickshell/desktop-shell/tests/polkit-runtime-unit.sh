@@ -60,7 +60,7 @@ polkit_snapshot_unit() {
     return "$POLKIT_UNIT_ABSENT_STATUS"
   fi
 
-  if ! polkit_systemctl_user_show desktop-shell.service --property="$properties" >"$output" 2>/dev/null; then
+  if ! polkit_systemctl_user_show desktop-shell.service --all --property="$properties" >"$output" 2>/dev/null; then
     rm -f -- "$output"
     return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   fi
