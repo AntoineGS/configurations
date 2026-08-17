@@ -44,6 +44,10 @@ route_updated_at() {
     "$NOTIFICATION_ROUTE_FILE"
 }
 
+epoch_seconds() {
+  printf '%(%s)T\n' -1
+}
+
 assert_route_contract() {
   assert_file_mode 0700 "$NOTIFICATION_ROUTE_DIR"
   assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
@@ -54,6 +58,12 @@ assert_route_contract() {
 
 reset_route_state() {
   rm -rf -- "$NOTIFICATION_ROUTE_DIR"
+  NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
+}
+
+assert_mako_sentinel_empty() {
+  [[ ! -s $MAKO_SENTINEL_LOG ]] || \
+    fail "forbidden makoctl invocation: $(<"$MAKO_SENTINEL_LOG")"
 }
 
 monitor() {
@@ -108,6 +118,19 @@ source "$WATCHER"
 TEST_RUNTIME_DIR=$(mktemp -d)
 trap 'rm -rf -- "$TEST_RUNTIME_DIR"' EXIT
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
+TEST_BIN="$TEST_RUNTIME_DIR/bin"
+mkdir -p -- "$TEST_BIN"
+MAKO_SENTINEL_LOG="$TEST_RUNTIME_DIR/makoctl.log"
+export MAKO_SENTINEL_LOG
+cat >"$TEST_BIN/makoctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${MAKO_SENTINEL_LOG:?}"
+printf 'FAIL: forbidden makoctl invocation: %s\n' "$*" >&2
+exit 125
+EOF
+chmod 0700 -- "$TEST_BIN/makoctl"
+unset -f makoctl 2>/dev/null || true
+export PATH="$TEST_BIN:/usr/bin:/bin"
 NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
 NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
 ROUTE_RENAME_FAIL=false
@@ -278,6 +301,15 @@ assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps t
 assert_equal "$first_updated_at" "$second_updated_at" 'unchanged route keeps its timestamp'
 (( second_updated_at >= first_updated_at )) || fail 'route timestamp moved backwards'
 
+# A fresh same-state route with insecure permissions is not eligible for a no-op.
+chmod 0644 -- "$NOTIFICATION_ROUTE_FILE"
+insecure_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+secure_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $secure_route_inode != "$insecure_route_inode" ]] || \
+  fail 'insecure same-state route was not atomically replaced'
+assert_route_contract
+
 # A visible route without a cue uses null cue fields.
 write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
@@ -299,13 +331,36 @@ printf '%s\n' "$stale_route" >"$TEST_RUNTIME_DIR/stale-route"
 chmod 0600 "$TEST_RUNTIME_DIR/stale-route"
 mv "$TEST_RUNTIME_DIR/stale-route" "$NOTIFICATION_ROUTE_FILE"
 stale_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$((SECONDS - NOTIFICATION_ROUTE_REWRITE_INTERVAL - 1))
+stale_publish_before=$(epoch_seconds)
 write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+stale_publish_after=$(epoch_seconds)
 fresh_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
 [[ $fresh_route_inode != "$stale_route_inode" ]] || fail 'stale route was not rewritten'
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
 assert_route_contract
 fresh_updated_at=$(route_updated_at)
-(( fresh_updated_at >= 1 )) || fail 'rewritten route timestamp is invalid'
+(( fresh_updated_at > 1 )) || fail 'rewritten route timestamp did not advance'
+(( fresh_updated_at >= stale_publish_before && fresh_updated_at <= stale_publish_after )) || \
+  fail "rewritten route timestamp is not current: $fresh_updated_at"
+
+# A future timestamp must not suppress an overdue rewrite or move backwards.
+future_timestamp=$((fresh_updated_at + 3600))
+future_route=$(jq -c --argjson updated_at "$future_timestamp" '.updatedAt = $updated_at' \
+  "$NOTIFICATION_ROUTE_FILE")
+printf '%s\n' "$future_route" >"$TEST_RUNTIME_DIR/future-route"
+chmod 0600 -- "$TEST_RUNTIME_DIR/future-route"
+mv "$TEST_RUNTIME_DIR/future-route" "$NOTIFICATION_ROUTE_FILE"
+future_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$((SECONDS - NOTIFICATION_ROUTE_REWRITE_INTERVAL - 1))
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+future_refreshed_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+future_refreshed=$(route_updated_at)
+[[ $future_refreshed_inode != "$future_route_inode" ]] || \
+  fail 'future timestamp suppressed an overdue route rewrite'
+(( future_refreshed >= future_timestamp )) || \
+  fail 'future route timestamp moved backwards'
+assert_route_contract
 
 # A failed atomic rename preserves the prior valid route file.
 prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
@@ -442,6 +497,23 @@ set -e
 assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
   'terminated event stream uses the bounded reconnect delay'
 
+# Configured reconciliation intervals cannot exceed the route freshness budget.
+: >"$STREAM_LOG"
+(
+  reconcile_notification_routing() {
+    printf 'reconcile\n' >>"$STREAM_LOG"
+  }
+  read() {
+    printf 'read-timeout:%s\n' "$3" >>"$STREAM_LOG"
+    return 1
+  }
+  bounded_clean_state=false
+  NOTIFICATION_RECONCILE_INTERVAL=120
+  consume_hyprland_event_stream bounded_clean_state </dev/null
+)
+assert_equal $'reconcile\nread-timeout:30' "$(<"$STREAM_LOG")" \
+  'long reconciliation interval is bounded to 30 seconds'
+
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"
 (
@@ -491,5 +563,6 @@ assert_equal $'eval hl.dispatch(hl.dsp.submap("clean"))' "$(<"$HYPR_LOG")" \
 assert_equal true "$handler_clean_state" \
   'handler state survives reconciliation failures and event iterations'
 ROUTE_RENAME_FAIL=false
+assert_mako_sentinel_empty
 
 printf 'PASS: watch-rustdesk-submap route and reconciliation tests\n'

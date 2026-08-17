@@ -8,6 +8,7 @@ readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
 NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-30}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 
@@ -154,11 +155,23 @@ build_notification_route_json() {
       updatedAt: $updated_at}'
 }
 
+notification_route_file_is_secure() {
+  local route_file=$1
+  local file_mode
+
+  [[ -f $route_file && ! -L $route_file ]] || return 1
+  if ! file_mode=$(stat -c '%a' -- "$route_file"); then
+    return 1
+  fi
+  [[ $file_mode == 600 ]]
+}
+
 write_notification_route_state() {
   local state=$1
   local route_mode cue_output direction visible output
   local route_dir route_file current_core current_updated_at now updated_at
   local route_json route_core temporary_file
+  local monotonic_now route_write_age
 
   parse_notification_route_state "$state" route_mode cue_output direction || return 1
 
@@ -178,6 +191,13 @@ write_notification_route_state() {
   if ! chmod 0700 -- "$route_dir"; then
     printf 'failed to secure notification route directory: %s\n' "$route_dir" >&2
     return 1
+  fi
+
+  monotonic_now=$SECONDS
+  route_write_age=$NOTIFICATION_ROUTE_REWRITE_INTERVAL
+  if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]] &&
+    ((monotonic_now >= NOTIFICATION_ROUTE_LAST_WRITE_SECONDS)); then
+    route_write_age=$((monotonic_now - NOTIFICATION_ROUTE_LAST_WRITE_SECONDS))
   fi
 
   printf -v now '%(%s)T' -1
@@ -209,8 +229,9 @@ write_notification_route_state() {
     printf 'failed to normalize notification route JSON\n' >&2
     return 1
   fi
-  if [[ $route_core == "$current_core" && $current_updated_at =~ ^[0-9]+$ ]] &&
-    ((now - current_updated_at < NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
+  if notification_route_file_is_secure "$route_file" &&
+    [[ $route_core == "$current_core" && $current_updated_at =~ ^[0-9]+$ ]] &&
+    ((route_write_age < NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
     return 0
   fi
 
@@ -227,6 +248,7 @@ write_notification_route_state() {
     return 1
   fi
 
+  NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
   return 0
 }
 
@@ -310,6 +332,8 @@ consume_hyprland_event_stream() {
 
   if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
     reconcile_interval=30
+  elif ((reconcile_interval > NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
+    reconcile_interval=$NOTIFICATION_ROUTE_REWRITE_INTERVAL
   fi
 
   reconcile_notification_routing || true
