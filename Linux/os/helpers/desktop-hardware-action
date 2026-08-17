@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: %s <power|monitor|tailscale> <action> [args...]\n' "${0##*/}" >&2
+  printf 'usage: %s <power|monitor|tailscale|vm> <action> [args...]\n' "${0##*/}" >&2
   exit 2
 }
 
@@ -39,6 +39,43 @@ valid_percent() {
 
 valid_target() {
   [[ $1 =~ ^[[:alnum:]_.:@+-]+$ ]]
+}
+
+set_vm_memory() {
+  local gib=$1 state name maximum_kib maximum_gib virsh_command detail
+
+  [[ $gib =~ ^[1-9][0-9]*$ ]] || usage
+
+  state=$("$(resolve_helper desktop-hardware-state)" vm) || {
+    printf '%s\n' 'desktop-hardware-action: VM state is unavailable' >&2
+    exit 1
+  }
+  jq -e '.available == true and .stale == false and .data.memory.allocationAvailable == true' \
+    <<<"$state" >/dev/null || {
+    printf '%s\n' 'desktop-hardware-action: no fresh running VM allocation is available' >&2
+    exit 1
+  }
+  name=$(jq -er '.data.name | select(type == "string" and length > 0)' <<<"$state") || {
+    printf '%s\n' 'desktop-hardware-action: VM state is missing a domain name' >&2
+    exit 1
+  }
+  maximum_kib=$(jq -er '.data.memory.maximumKiB | select(type == "number" and . > 0)' <<<"$state") || {
+    printf '%s\n' 'desktop-hardware-action: VM maximum memory is unavailable' >&2
+    exit 1
+  }
+  maximum_gib=$((maximum_kib / 1048576))
+  ((gib <= maximum_gib)) || {
+    printf 'desktop-hardware-action: requested %s GiB exceeds maximum %s GiB\n' "$gib" "$maximum_gib" >&2
+    exit 1
+  }
+  virsh_command=$(resolve_command virsh) || {
+    printf '%s\n' 'desktop-hardware-action: virsh is required' >&2
+    exit 1
+  }
+  if ! detail=$("$virsh_command" setmem --domain "$name" --size "${gib}GiB" --live --config 2>&1); then
+    printf 'desktop-hardware-action: memory resize failed: %s\n' "${detail//$'\n'/ }" >&2
+    exit 1
+  fi
 }
 
 set_monitor_state() {
@@ -155,6 +192,17 @@ case $domain in
         valid_target "$3" || usage
         tailscale_command=$(resolve_command tailscale) || exit 1
         run_command "$tailscale_command" switch "$3"
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    ;;
+  vm)
+    case $action in
+      set-memory)
+        (($# == 3)) || usage
+        set_vm_memory "$3"
         ;;
       *)
         usage
