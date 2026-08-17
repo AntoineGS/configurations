@@ -24,12 +24,12 @@ if [[ ${1-} != --private-bus ]]; then
 fi
 
 if ! command -v quickshell >/dev/null 2>&1; then
-  printf 'SKIP: quickshell is unavailable\n'
-  exit 0
+  printf 'FAIL: quickshell is required\n' >&2
+  exit 1
 fi
 if ! command -v notify-send >/dev/null 2>&1; then
-  printf 'SKIP: notify-send is unavailable\n'
-  exit 0
+  printf 'FAIL: notify-send is required\n' >&2
+  exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
   printf 'FAIL: jq is required\n' >&2
@@ -62,6 +62,7 @@ popup_dir="$state_home/desktop-shell/notifications"
 history_dir="$popup_dir/history"
 shell_generation=0
 shell_log=''
+runtime_shell_root="$SHELL_ROOT"
 
 cleanup_process() {
   local pid=${1-}
@@ -223,6 +224,14 @@ count_json_files() {
 start_shell() {
   shell_generation=$((shell_generation + 1))
   shell_log="$fixture/shell-$shell_generation.log"
+  local shell_path="$PATH"
+  if [[ -n ${DESKTOP_SHELL_TEST_BUSCTL_BIN:-} ]]; then
+    if [[ ${DESKTOP_SHELL_TEST_BUSCTL_ISOLATE:-0} == 1 ]]; then
+      shell_path="$DESKTOP_SHELL_TEST_BUSCTL_BIN"
+    else
+      shell_path="$DESKTOP_SHELL_TEST_BUSCTL_BIN:$shell_path"
+    fi
+  fi
   DESKTOP_SHELL_PREVIEW=0 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1 \
@@ -233,7 +242,9 @@ start_shell() {
   XDG_STATE_HOME="$state_home" \
   XDG_RUNTIME_DIR="$runtime_dir" \
   WAYLAND_DISPLAY="$wayland_display" \
-  quickshell --no-color -p "$SHELL_ROOT" >"$shell_log" 2>&1 &
+  PATH="$shell_path" \
+  DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
+  quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
   shell_pid=$!
   wait_for_ipc pong desktop-shell ping
 }
@@ -280,6 +291,44 @@ PY
   return 1
 }
 
+mixed_shell_root="$fixture/mixed-shell"
+mkdir -p "$mixed_shell_root"
+cp -a "$SHELL_ROOT/." "$mixed_shell_root/"
+mkdir -p "$mixed_shell_root/plugins/mixed"
+cat >"$mixed_shell_root/plugins/mixed/manifest.json" <<'JSON'
+{
+  "schemaVersion": 1,
+  "id": "desktop.mixed",
+  "name": "Mixed Test Plugin",
+  "version": "1.0.0",
+  "author": "Task 4 test",
+  "kinds": ["service", "panel"],
+  "entryPoints": { "service": "Service.qml", "panel": "Panel.qml" }
+}
+JSON
+cat >"$mixed_shell_root/plugins/mixed/Service.qml" <<'QML'
+import QtQuick
+
+Item {
+  function serviceOnly(argument) { return "service-ok" }
+}
+QML
+cat >"$mixed_shell_root/plugins/mixed/Panel.qml" <<'QML'
+import QtQuick
+
+Item {
+  function overlayOnly(argument) { return "overlay-ok" }
+}
+QML
+
+runtime_shell_root="$mixed_shell_root"
+start_shell
+[[ $(call_ipc desktop-shell summon desktop.mixed '{}') == ok ]]
+wait_for_ipc service-ok desktop-shell call desktop.mixed serviceOnly ''
+wait_for_ipc overlay-ok desktop-shell call desktop.mixed overlayOnly ''
+stop_shell
+runtime_shell_root="$SHELL_ROOT"
+
 start_shell
 wait_for_ipc pong desktop.notifications ping
 wait_for_ipc pong desktop-shell call desktop.notifications ping ''
@@ -311,6 +360,40 @@ wait_for_status '.notificationsOwned == true and .routeValid == true and .dnd ==
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationOwnershipError == ""'
 
 stop_shell
+probe_bin="$fixture/probe-bin"
+probe_count="$fixture/probe-count"
+mkdir -p "$probe_bin"
+for command_name in bash sh quickshell mkdir find cat sort awk ls head stat rm mv cp date sleep; do
+  command_path="$(type -P "$command_name")"
+  [[ -n $command_path ]] && ln -s "$command_path" "$probe_bin/$command_name"
+done
+cat >"$probe_bin/busctl" <<'FAKE_BUSCTL'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+count=0
+if [[ -f ${DESKTOP_SHELL_TEST_BUSCTL_COUNT:?} ]]; then
+  count=$(<"$DESKTOP_SHELL_TEST_BUSCTL_COUNT")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" >"$DESKTOP_SHELL_TEST_BUSCTL_COUNT"
+if ((count == 1)); then
+  printf 'PID=%s\n' "$PPID"
+  rm -f -- "$0"
+  exit 0
+fi
+exit 127
+FAKE_BUSCTL
+chmod +x "$probe_bin/busctl"
+
+DESKTOP_SHELL_TEST_BUSCTL_BIN="$probe_bin" \
+DESKTOP_SHELL_TEST_BUSCTL_COUNT="$probe_count" \
+DESKTOP_SHELL_TEST_BUSCTL_ISOLATE=1 \
+start_shell
+wait_for_health '.notificationsOwned == true and .notificationOwnershipError == ""'
+wait_for_health '.notificationsOwned == false and .notificationOwnershipError == "busctl status failed (exit 127)"'
+stop_shell
+
 start_competing_owner
 start_shell
 wait_for_status '.notificationsOwned == false and (.ownershipError | test("PID [0-9]+")) and .routeValid == true'
