@@ -22,6 +22,14 @@ Item {
   property int selectedIndex: 0
   property bool cursorActive: false
 
+  readonly property var routeWidgets: ({
+    "setup.power-profile": "desktop.power",
+    "setup.monitors": "desktop.monitor"
+  })
+  readonly property var whenResults: MenuModel.routeVisibility(
+    root.shell && root.shell.barConfig ? root.shell.barConfig.layout : null,
+    root.routeWidgets)
+
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
   readonly property color border: Color.menu.border
@@ -75,7 +83,7 @@ Item {
   }
 
   function isVisible(entry) {
-    return MenuModel.isVisible(root.items, root.itemOrder, {}, entry)
+    return MenuModel.isVisible(root.items, root.itemOrder, root.whenResults, entry)
   }
 
   function isDisabled(entry) {
@@ -231,6 +239,7 @@ Item {
     var id = root.resolveRoute(initialMenu)
     var entry = root.item(id)
     if (entry && entry.kind === "action") {
+      if (!root.isVisible(entry)) return "unknown"
       root.runAction(entry.action)
       return "ok"
     }
@@ -249,6 +258,8 @@ Item {
     root.opened = false
     root.filterText = ""
   }
+
+  onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
 
   // The menu is loaded on demand in preview, so keep its health probe with the
   // single menu instance instead of adding a handler to each bar screen.

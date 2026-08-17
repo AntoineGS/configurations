@@ -48,7 +48,8 @@ ShellRoot {
         right: [{ id: "desktop.audio" }]
       }
     },
-    plugins: []
+    plugins: [],
+    disabledPlugins: ["desktop.battery"]
   })
 
   property var shellConfig: builtinShellConfig

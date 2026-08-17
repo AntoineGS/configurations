@@ -189,6 +189,35 @@ function childCount(items, itemOrder, id) {
   return count
 }
 
+function layoutEntryId(entry) {
+  if (typeof entry === "string") return entry
+  if (isPlainObject(entry) && entry.id !== undefined && entry.id !== null) return String(entry.id)
+  return ""
+}
+
+function hasConfiguredBarWidget(layout, widgetId) {
+  if (!isPlainObject(layout)) return false
+  var wanted = String(widgetId || "")
+  if (!wanted) return false
+  var sections = ["left", "center", "right"]
+  for (var sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    var entries = layout[sections[sectionIndex]]
+    if (!Array.isArray(entries)) continue
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      if (layoutEntryId(entries[entryIndex]) === wanted) return true
+    }
+  }
+  return false
+}
+
+function routeVisibility(layout, routeWidgets) {
+  var result = {}
+  if (!isPlainObject(routeWidgets)) return result
+  for (var route in routeWidgets)
+    result[route] = hasConfiguredBarWidget(layout, routeWidgets[route])
+  return result
+}
+
 function hasResult(results, id) {
   return !!results && Object.prototype.hasOwnProperty.call(results, id)
 }
@@ -317,6 +346,7 @@ if (typeof module !== "undefined") {
     parentPathFor: parentPathFor,
     isDescendantOf: isDescendantOf,
     childCount: childCount,
+    routeVisibility: routeVisibility,
     isVisible: isVisible,
     isDisabled: isDisabled,
     labelFor: labelFor,

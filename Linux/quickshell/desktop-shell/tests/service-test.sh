@@ -38,9 +38,9 @@ fail() {
 assert_launcher_mapping() {
   awk '
     function check_entry() {
-      if (target && entry_name && backup && file_count == 9 && has_launcher && has_toggle &&
+      if (target && entry_name && backup && file_count == 11 && has_launcher && has_toggle &&
           has_shell_action && has_connectivity_action && has_hardware_state && has_hardware_action &&
-          has_usage_update && has_usage_codex && has_usage_claude && !has_cli && !has_status) {
+          has_usage_update && has_usage_codex && has_usage_claude && has_cli && has_status) {
         found = 1
       }
     }

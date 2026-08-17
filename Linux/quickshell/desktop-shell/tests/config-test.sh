@@ -191,6 +191,8 @@ function assertConfig(hostname, includeHardware, workspaceLabels) {
     }
   }, `${hostname}: bar contract`)
   assert.deepEqual(config.plugins, [], `${hostname}: empty plugin selection`)
+  assert.deepEqual(config.disabledPlugins, ["desktop.battery"],
+    `${hostname}: legacy battery service remains disabled during the bar-only phase`)
 }
 
 assertConfig("DESKTOP-E07VTRN", false, {
@@ -208,6 +210,8 @@ assert.match(shell, /previewMode: shell\.previewMode/)
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
 assert.match(shell, /property bool barVisible: true/)
+assert.match(shell, /disabledPlugins: \["desktop\.battery"\]/,
+  "builtin config disables the duplicate battery scheduler")
 assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
 const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
 const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
@@ -261,6 +265,8 @@ assert.match(registry, /manifest\.schemaVersion !== 1/)
 assert.ok(registry.includes("if (!/^desktop\\.[a-z0-9-]+$/.test(id))"))
 assert.match(registry, /recordPluginError\(/)
 assert.match(registry, /entry point.*escapes|unsafe entryPoint/)
+assert.match(registry, /if \(isDisabled\(config, key\)\) return false/,
+  "disabled plugin config prevents the legacy battery service from loading")
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
