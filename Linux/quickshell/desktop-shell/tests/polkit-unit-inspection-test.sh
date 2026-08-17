@@ -10,9 +10,35 @@ fake_bin="$fixture/bin"
 output="$fixture/unit.snapshot"
 mkdir -p -- "$fake_bin" "$fixture/empty-bin"
 
+unit_properties='LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload'
+export unit_properties
+
 cat >"$fake_bin/systemctl" <<'FAKE_SYSTEMCTL'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
+print_snapshot() {
+  local load_state=$1
+  local active_state=$2
+  local main_pid=$3
+  local include_reload=${4:-1}
+
+  printf '%s\n' \
+    "LoadState=$load_state" \
+    "ActiveState=$active_state" \
+    'SubState=running' \
+    'UnitFileState=enabled' \
+    "MainPID=$main_pid" \
+    'ExecMainStartTimestamp=' \
+    'ExecMainStartTimestampMonotonic=' \
+    'ActiveEnterTimestamp=' \
+    'ActiveEnterTimestampMonotonic=' \
+    'FragmentPath=/home/test/.config/systemd/user/desktop-shell.service' \
+    'Result='
+  if ((include_reload)); then
+    printf '%s\n' 'NeedDaemonReload=no'
+  fi
+}
 
 case ${POLKIT_FAKE_SYSTEMCTL_MODE:?} in
   absent)
@@ -26,14 +52,36 @@ case ${POLKIT_FAKE_SYSTEMCTL_MODE:?} in
     if [[ $* == *--value* ]]; then
       printf '%s\n' loaded
     else
-      printf '%s\n' LoadState=loaded ActiveState=active MainPID=123
+      print_snapshot loaded active 123
     fi
     ;;
   masked)
     if [[ $* == *--value* ]]; then
       printf '%s\n' masked
     else
-      printf '%s\n' LoadState=masked ActiveState=inactive MainPID=0
+      print_snapshot masked inactive 0
+    fi
+    ;;
+  partial)
+    if [[ $* == *--value* ]]; then
+      printf '%s\n' loaded
+    else
+      print_snapshot loaded active 123 0
+    fi
+    ;;
+  duplicate)
+    if [[ $* == *--value* ]]; then
+      printf '%s\n' loaded
+    else
+      print_snapshot loaded active 123
+      printf '%s\n' 'ActiveState=active'
+    fi
+    ;;
+  mismatched)
+    if [[ $* == *--value* ]]; then
+      printf '%s\n' loaded
+    else
+      print_snapshot masked inactive 0
     fi
     ;;
   malformed)
@@ -99,6 +147,9 @@ run_snapshot loaded 0 present
 grep -Fqx 'LoadState=loaded' "$output"
 run_snapshot masked 0 present
 grep -Fqx 'LoadState=masked' "$output"
+run_snapshot partial "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
+run_snapshot duplicate "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
+run_snapshot mismatched "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
 run_snapshot malformed "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
 run_snapshot error "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
 run_snapshot full-error "$POLKIT_UNIT_INSPECTION_FAILED_STATUS" absent
