@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.notifications",
+  "name": "Notifications",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Notification daemon, privacy routing, DND, and history",
+  "kinds": ["service"],
+  "entryPoints": { "service": "Service.qml" }
+}
