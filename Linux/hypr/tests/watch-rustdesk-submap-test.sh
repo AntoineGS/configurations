@@ -524,12 +524,13 @@ reset_route_state
   SECONDS=0
   reconcile_count=0
   reconcile_notification_routing() {
+    local reconcile_seconds=$SECONDS
     ((reconcile_count += 1))
     case $reconcile_count in
       1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
       *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
     esac
-    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$SECONDS" \
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
       "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
   }
   read_count=0
@@ -565,12 +566,13 @@ reset_route_state
   SECONDS=0
   reconcile_count=0
   reconcile_notification_routing() {
+    local reconcile_seconds=$SECONDS
     ((reconcile_count += 1))
     case $reconcile_count in
       1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
       *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
     esac
-    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$SECONDS" \
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
       "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
   }
   read_count=0
