@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Keep user input below the signed 64-bit arithmetic range used for the limit check.
+readonly MAX_VM_MEMORY_GIB_DIGITS=18
+
 usage() {
   printf 'usage: %s <power|monitor|tailscale|vm> <action> [args...]\n' "${0##*/}" >&2
   exit 2
@@ -41,10 +44,17 @@ valid_target() {
   [[ $1 =~ ^[[:alnum:]_.:@+-]+$ ]]
 }
 
+valid_positive_integer() {
+  local value=$1
+
+  [[ $value =~ ^[1-9][0-9]*$ ]] || return 1
+  ((${#value} <= MAX_VM_MEMORY_GIB_DIGITS))
+}
+
 set_vm_memory() {
   local gib=$1 state name maximum_kib maximum_gib virsh_command detail
 
-  [[ $gib =~ ^[1-9][0-9]*$ ]] || usage
+  valid_positive_integer "$gib" || usage
 
   state=$("$(resolve_helper desktop-hardware-state)" vm) || {
     printf '%s\n' 'desktop-hardware-action: VM state is unavailable' >&2
