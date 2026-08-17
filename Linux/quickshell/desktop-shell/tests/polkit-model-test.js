@@ -34,9 +34,16 @@ const firstScreen = { name: "DP-1" }
 const focusedScreen = { name: "HDMI-A-1" }
 assert.equal(model.screenForMonitor([firstScreen, focusedScreen], "HDMI-A-1"), focusedScreen,
   "focused monitor selects the matching screen")
-assert.equal(model.screenForMonitor([firstScreen, focusedScreen], "missing"), firstScreen,
-  "missing focused monitor falls back to the first screen")
-assert.equal(model.screenForMonitor([firstScreen, focusedScreen], ""), firstScreen,
-  "no focused monitor falls back to the first screen")
+assert.equal(model.screenForMonitor([firstScreen, focusedScreen], "missing"), null,
+  "missing focused monitor leaves authentication pending")
+assert.equal(model.screenForMonitor([firstScreen, focusedScreen], ""), null,
+  "no focused monitor leaves authentication pending")
 assert.equal(model.screenForMonitor([], "DP-1"), null,
   "an empty screen list leaves the dialog unmapped")
+
+const screensBeforeResolution = [firstScreen]
+assert.equal(model.screenForMonitor(screensBeforeResolution, "HDMI-A-1"), null,
+  "an unresolved focused monitor starts unmapped")
+screensBeforeResolution.push(focusedScreen)
+assert.equal(model.screenForMonitor(screensBeforeResolution, "HDMI-A-1"), focusedScreen,
+  "the matching screen maps when it later appears")

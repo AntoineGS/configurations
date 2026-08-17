@@ -62,7 +62,7 @@ function registrationState(enabled, registered, error) {
  *
  * @param {ArrayLike<{name?: string}>|null} screens Available screens.
  * @param {*} focusedMonitorName Focused monitor name.
- * @returns {object|null} Matching screen, first-screen fallback, or null.
+ * @returns {object|null} Matching screen or null while the focused screen is unresolved.
  */
 function screenForMonitor(screens, focusedMonitorName) {
   const count = screens && typeof screens.length === "number" ? screens.length : 0
@@ -75,7 +75,7 @@ function screenForMonitor(screens, focusedMonitorName) {
     }
   }
 
-  return count > 0 ? screens[0] : null
+  return null
 }
 
 if (typeof module !== "undefined") {
