@@ -1,0 +1,378 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2250,SC2310
+# SC2250 is stylistic; SC2310 is intentional because controlled failures map
+# to the adapter's explicit status contract instead of relying on set -e.
+set -Eeuo pipefail
+shopt -s inherit_errexit nullglob
+
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+  printf 'desktop-osd: Bash 4.4 or newer is required\n' >&2
+  exit 1
+fi
+
+IFS=$'\n\t'
+
+readonly MAX_STEP=20
+readonly MAX_PERCENT=100
+readonly SYSFS_ROOT_DEFAULT=/sys
+declare -ar JQ=(jq)
+
+payload=''
+volume_percent=''
+volume_muted=false
+brightness_value=''
+brightness_max=''
+brightness_progress=''
+
+handle_unexpected_error() {
+  local status=$?
+  local line=$1
+
+  if (( status != 1 && status != 2 && status != 3 )); then
+    printf 'desktop-osd: unexpected failure at line %s\n' "$line" >&2
+  fi
+  exit "$status"
+}
+
+trap 'handle_unexpected_error "$LINENO"' ERR
+
+usage() {
+  printf 'usage: %s <operation> [step 1-%s]\n' "${0##*/}" "$MAX_STEP" >&2
+  printf 'operations: volume-up volume-down volume-toggle mic-toggle\n' >&2
+  printf '            brightness-up brightness-down keyboard-up keyboard-down\n' >&2
+  printf '            keyboard-cycle media-next media-previous media-play-pause\n' >&2
+  exit 2
+}
+
+require_jq() {
+  command -v "${JQ[0]}" >/dev/null 2>&1 || {
+    printf 'desktop-osd: jq is required\n' >&2
+    return 1
+  }
+}
+
+validate_step() {
+  local step=$1
+
+  [[ $step =~ ^[0-9]+$ ]] || return 1
+  (( step >= 1 && step <= MAX_STEP )) || return 1
+}
+
+run_mutation() {
+  local -a command=("$@")
+
+  if ! "${command[@]}" >/dev/null; then
+    printf 'desktop-osd: mutation failed\n' >&2
+    return 1
+  fi
+}
+
+deliver_osd() {
+  local payload_json=$1
+  local response
+  local -a command=(desktop-shell call desktop.osd show "$payload_json")
+
+  if ! response=$("${command[@]}") || [[ $response != ok ]]; then
+    printf 'desktop-osd: mutation succeeded but OSD delivery failed\n' >&2
+    return 3
+  fi
+}
+
+build_progress_payload() {
+  local icon=$1
+  local value=$2
+  local maximum=$3
+  local progress_text=$4
+  local -a command=(
+    "${JQ[@]}" -cn
+    --arg icon "$icon"
+    --arg message ''
+    --argjson value "$value"
+    --argjson max "$maximum"
+    --arg progressText "$progress_text"
+    "{icon: \$icon, message: \$message, value: \$value, max: \$max, progressText: \$progressText}"
+  )
+
+  if ! payload=$("${command[@]}" 2>/dev/null); then
+    printf 'desktop-osd: failed to build OSD payload\n' >&2
+    return 1
+  fi
+}
+
+build_message_payload() {
+  local icon=$1
+  local message=$2
+  local -a command=(
+    "${JQ[@]}" -cn
+    --arg icon "$icon"
+    --arg message "$message"
+    "{icon: \$icon, message: \$message}"
+  )
+
+  if ! payload=$("${command[@]}" 2>/dev/null); then
+    printf 'desktop-osd: failed to build OSD payload\n' >&2
+    return 1
+  fi
+}
+
+read_volume_state() {
+  local target=$1
+  local raw
+  local line
+  local scalar
+  local muted=false
+  local -a command=(wpctl get-volume "$target")
+  local -a jq_command
+
+  if ! raw=$("${command[@]}" 2>/dev/null); then
+    printf 'desktop-osd: failed to read volume state\n' >&2
+    return 1
+  fi
+  [[ $raw != *$'\n'* ]] || return 1
+  line=${raw//$'\r'/}
+  if [[ ! $line =~ ^[[:space:]]*Volume:[[:space:]]+([0-9]+([.][0-9]+)?)([[:space:]]+\[MUTED\])?[[:space:]]*$ ]]; then
+    printf 'desktop-osd: malformed volume state\n' >&2
+    return 1
+  fi
+
+  scalar=${BASH_REMATCH[1]}
+  if [[ $line == *'[MUTED]'* ]]; then
+    muted=true
+  fi
+  jq_command=("${JQ[@]}" -nr --arg scalar "$scalar" "\$scalar | tonumber * 100")
+  if ! volume_percent=$("${jq_command[@]}" 2>/dev/null); then
+    printf 'desktop-osd: malformed volume scalar\n' >&2
+    return 1
+  fi
+  [[ $volume_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  volume_muted=$muted
+}
+
+volume_icon() {
+  local -a command=(
+    "${JQ[@]}" -nr
+    --argjson percent "$volume_percent"
+    --arg muted "$volume_muted"
+    "if \$muted == \"true\" then \"volume-muted\" elif \$percent <= 33 then \"volume-low\" elif \$percent <= 66 then \"volume-medium\" else \"volume-high\" end"
+  )
+
+  if ! "${command[@]}" 2>/dev/null; then
+    printf 'desktop-osd: failed to select volume icon\n' >&2
+    return 1
+  fi
+}
+
+read_brightness_state() {
+  local device=${1:-}
+  local raw
+  local line
+  local reported_device=''
+  local device_class=''
+  local value=''
+  local maximum=''
+  local reported_percent=''
+  local extra=''
+  local -a command=(brightnessctl)
+
+  if [[ -n $device ]]; then
+    command+=(-d "$device")
+  fi
+  command+=(-m)
+  if ! raw=$("${command[@]}" 2>/dev/null); then
+    printf 'desktop-osd: failed to read brightness state\n' >&2
+    return 1
+  fi
+  [[ $raw != *$'\n'* ]] || return 1
+  line=${raw//$'\r'/}
+  IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$line"
+  [[ -n $reported_device && -n $device_class && -z $extra ]] || return 1
+  [[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ && $maximum -gt 0 ]] || return 1
+  [[ $reported_percent == *% ]] || return 1
+  reported_percent=${reported_percent%\%}
+  [[ $reported_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+
+  brightness_value=$value
+  brightness_max=$maximum
+  brightness_progress=${reported_percent}%
+}
+
+discover_keyboard_device() {
+  local sysfs_root=${DESKTOP_OSD_SYSFS_ROOT:-$SYSFS_ROOT_DEFAULT}
+  local candidate
+  local -a candidates=("$sysfs_root"/class/leds/*kbd_backlight*)
+
+  for candidate in "${candidates[@]}"; do
+    [[ -d $candidate ]] || continue
+    [[ -r $candidate/brightness && -r $candidate/max_brightness ]] || continue
+    printf '%s\n' "${candidate##*/}"
+    return 0
+  done
+
+  printf 'desktop-osd: no keyboard backlight device found\n' >&2
+  return 1
+}
+
+show_volume() {
+  local target=$1
+  local icon
+
+  if ! read_volume_state "$target"; then
+    return 1
+  fi
+  icon=$(volume_icon) || return 1
+  build_progress_payload "$icon" "$volume_percent" "$MAX_PERCENT" "${volume_percent}%"
+  deliver_osd "$payload"
+}
+
+show_microphone() {
+  local icon=microphone
+
+  if ! read_volume_state @DEFAULT_AUDIO_SOURCE@; then
+    return 1
+  fi
+  if [[ $volume_muted == true ]]; then
+    icon=microphone-muted
+  fi
+  build_progress_payload "$icon" "$volume_percent" "$MAX_PERCENT" "${volume_percent}%"
+  deliver_osd "$payload"
+}
+
+volume_operation() {
+  local operation=$1
+  local step=$2
+  local -a command
+
+  case "$operation" in
+    volume-up) command=(wpctl set-volume @DEFAULT_AUDIO_SINK@ "${step}%+" --limit 1) ;;
+    volume-down) command=(wpctl set-volume @DEFAULT_AUDIO_SINK@ "${step}%-") ;;
+    *) return 1 ;;
+  esac
+  if ! run_mutation "${command[@]}"; then
+    return 1
+  fi
+  show_volume @DEFAULT_AUDIO_SINK@
+}
+
+brightness_operation() {
+  local operation=$1
+  local step=$2
+  local sign
+  local -a command
+
+  if [[ $operation == brightness-up ]]; then
+    sign=+
+  else
+    sign=-
+  fi
+  command=(brightnessctl set "${step}%${sign}")
+  if ! run_mutation "${command[@]}"; then
+    return 1
+  fi
+  if ! read_brightness_state; then
+    return 1
+  fi
+  build_progress_payload brightness "$brightness_value" "$brightness_max" "$brightness_progress"
+  deliver_osd "$payload"
+}
+
+keyboard_operation() {
+  local operation=$1
+  local device
+  local next_value
+  local -a command
+
+  device=$(discover_keyboard_device) || return 1
+  if ! read_brightness_state "$device"; then
+    return 1
+  fi
+  case "$operation" in
+    keyboard-up)
+      next_value=$((brightness_value + 1))
+      if (( next_value > brightness_max )); then next_value=$brightness_max; fi
+      ;;
+    keyboard-down)
+      next_value=$((brightness_value - 1))
+      if (( next_value < 0 )); then next_value=0; fi
+      ;;
+    keyboard-cycle) next_value=$(((brightness_value + 1) % (brightness_max + 1))) ;;
+    *) return 1 ;;
+  esac
+  command=(brightnessctl -d "$device" set "$next_value")
+  if ! run_mutation "${command[@]}"; then
+    return 1
+  fi
+  if ! read_brightness_state "$device"; then
+    return 1
+  fi
+  build_progress_payload keyboard "$brightness_value" "$brightness_max" "$brightness_progress"
+  deliver_osd "$payload"
+}
+
+media_operation() {
+  local operation=$1
+  local icon
+  local message
+  local -a command
+
+  case "$operation" in
+    media-next)
+      command=(playerctl next)
+      icon=media-next
+      message='Next track'
+      ;;
+    media-previous)
+      command=(playerctl previous)
+      icon=media-previous
+      message='Previous track'
+      ;;
+    media-play-pause)
+      command=(playerctl play-pause)
+      icon=media
+      message='Play/Pause'
+      ;;
+    *) return 1 ;;
+  esac
+  if ! run_mutation "${command[@]}"; then
+    return 1
+  fi
+  build_message_payload "$icon" "$message"
+  deliver_osd "$payload"
+}
+
+main() {
+  local operation
+  local step=''
+
+  (( $# >= 1 && $# <= 2 )) || usage
+  operation=$1
+  case "$operation" in
+    volume-up|volume-down|brightness-up|brightness-down)
+      (( $# == 2 )) || usage
+      step=$2
+      validate_step "$step" || usage
+      ;;
+    volume-toggle|mic-toggle|keyboard-up|keyboard-down|keyboard-cycle|media-next|media-previous|media-play-pause)
+      (( $# == 1 )) || usage
+      ;;
+    *) usage ;;
+  esac
+
+  require_jq || return 1
+  case "$operation" in
+    volume-up|volume-down) volume_operation "$operation" "$step" ;;
+    volume-toggle)
+      if ! run_mutation wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle; then return 1; fi
+      show_volume @DEFAULT_AUDIO_SINK@
+      ;;
+    mic-toggle)
+      if ! run_mutation wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle; then return 1; fi
+      show_microphone
+      ;;
+    brightness-up|brightness-down) brightness_operation "$operation" "$step" ;;
+    keyboard-up|keyboard-down|keyboard-cycle) keyboard_operation "$operation" ;;
+    media-next|media-previous|media-play-pause) media_operation "$operation" ;;
+    *) return 2 ;;
+  esac
+}
+
+main "$@"
