@@ -1,5 +1,6 @@
 const DEFAULT_MAX = 100
 const DEFAULT_DURATION = 1200
+const MAX_DURATION = 2147483647
 const PAYLOAD_KEYS = ["icon", "message", "value", "max", "progressText", "duration"]
 
 /**
@@ -54,6 +55,31 @@ function iconFor(name, percent) {
 }
 
 /**
+ * Resolve a focused compositor monitor to a Quickshell screen.
+ *
+ * If the focused monitor is unavailable or has not appeared in the screen
+ * list yet, use the first available screen as the documented fallback. With
+ * no screens, return null so the caller can leave the window unmapped.
+ *
+ * @param {ArrayLike<{name?: string}>|null} screens
+ * @param {string} focusedMonitorName
+ * @returns {object|null}
+ */
+function screenForMonitor(screens, focusedMonitorName) {
+  const count = screens && typeof screens.length === "number" ? screens.length : 0
+  const monitorName = String(focusedMonitorName || "")
+
+  if (monitorName.length > 0) {
+    for (let index = 0; index < count; index++) {
+      const screen = screens[index]
+      if (screen && String(screen.name || "") === monitorName) return screen
+    }
+  }
+
+  return count > 0 ? screens[0] : null
+}
+
+/**
  * Return the stable shape used for rejected payloads.
  *
  * @param {string} error
@@ -81,6 +107,18 @@ function invalidState(error) {
  */
 function isFiniteNumber(value) {
   return typeof value === "number" && isFinite(value)
+}
+
+/**
+ * Normalize a non-negative duration to the QML/Timer signed-int range.
+ * Positive fractions round up so they cannot become an accidental zero timer.
+ *
+ * @param {number} value
+ * @returns {number}
+ */
+function normalizeDuration(value) {
+  if (value === 0) return 0
+  return Math.min(MAX_DURATION, Math.max(1, Math.ceil(value)))
 }
 
 /**
@@ -121,14 +159,15 @@ function normalizePayload(payloadJson) {
   const maxValue = payload.max === undefined ? DEFAULT_MAX : payload.max
   if (maxValue <= 0) return invalidState("max must be greater than 0")
 
-  const duration = payload.duration === undefined ? DEFAULT_DURATION : payload.duration
-  if (duration < 0) return invalidState("duration must be non-negative")
+  const rawDuration = payload.duration === undefined ? DEFAULT_DURATION : payload.duration
+  if (rawDuration < 0) return invalidState("duration must be non-negative")
+  const duration = normalizeDuration(rawDuration)
 
   const iconKey = String(payload.icon || "").toLowerCase()
   const rawMessage = payload.message || ""
   const hasProgress = payload.value !== undefined && rawMessage === ""
   const value = hasProgress ? clamp(payload.value, 0, maxValue) : 0
-  const percent = hasProgress ? Math.round(value * 100 / maxValue) : -1
+  const percent = hasProgress ? Math.round(value / maxValue * 100) : -1
   const message = rawMessage || (hasProgress ? (payload.progressText || `${percent}%`) : "")
 
   return {
@@ -180,6 +219,7 @@ if (typeof module !== "undefined") {
     widestIcon,
     iconFor,
     normalizePayload,
+    screenForMonitor,
     stateForShow,
   }
 }

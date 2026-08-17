@@ -15,7 +15,7 @@ fail() {
 [[ -f $INVENTORY ]] || fail 'SELECTED_PLUGINS is absent'
 git -C "$UPSTREAM_REPO" cat-file -e "$COMMIT^{commit}" 2>/dev/null || fail 'pinned Omarchy commit is unavailable'
 
-expected_ids=(desktop.audio desktop.network desktop.bluetooth desktop.power desktop.monitor desktop.tailscale desktop.battery desktop.notifications)
+expected_ids=(desktop.audio desktop.network desktop.bluetooth desktop.power desktop.monitor desktop.tailscale desktop.battery desktop.notifications desktop.osd)
 declare -A upstream_ids=(
   [desktop.audio]=omarchy.audio
   [desktop.network]=omarchy.network
@@ -25,6 +25,7 @@ declare -A upstream_ids=(
   [desktop.tailscale]=omarchy.tailscale
   [desktop.battery]=omarchy.battery
   [desktop.notifications]=omarchy.notifications
+  [desktop.osd]=omarchy.osd
 )
 declare -A source_sets=(
   [desktop.audio]='shell/plugins/panels/audio/manifest.json shell/plugins/panels/audio/Panel.qml shell/plugins/panels/audio/Model.js'
@@ -35,6 +36,7 @@ declare -A source_sets=(
   [desktop.tailscale]='shell/plugins/panels/tailscale/manifest.json shell/plugins/panels/tailscale/Panel.qml shell/plugins/panels/tailscale/Model.js shell/plugins/panels/tailscale/Service.qml shell/plugins/panels/tailscale/TailscaleIcon.qml'
   [desktop.battery]='shell/plugins/services/battery/manifest.json shell/plugins/services/battery/Service.qml shell/plugins/services/battery/BatteryModel.js'
   [desktop.notifications]='shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml'
+  [desktop.osd]='shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js'
 )
 
 actual_ids=()
