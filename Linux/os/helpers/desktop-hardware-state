@@ -3,14 +3,14 @@ set -Eeuo pipefail
 shopt -s nullglob
 
 usage() {
-  printf 'usage: %s <power|monitor|tailscale>\n' "${0##*/}" >&2
+  printf 'usage: %s <power|monitor|tailscale|vm>\n' "${0##*/}" >&2
   exit 2
 }
 
 (( $# == 1 )) || usage
 domain=$1
 case $domain in
-  power|monitor|tailscale) ;;
+  power|monitor|tailscale|vm) ;;
   *) usage ;;
 esac
 
@@ -26,6 +26,16 @@ cache_file="$state_dir/$domain.json"
 
 current_time() {
   date +%s
+}
+
+current_time_ns() {
+  local value=${DESKTOP_HARDWARE_NOW_NS:-}
+
+  if [[ -z $value ]]; then
+    value=$(date +%s%N)
+  fi
+  [[ $value =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$value"
 }
 
 resolve_helper() {
@@ -129,14 +139,70 @@ emit_available() {
 
 emit_stale() {
   local message=$1
+  local fallback_data=${2:-'{}'}
   local cached
 
   if cached=$(read_cache); then
     jq -c --arg error "$message" '.stale = true | .error = $error' <<<"$cached"
   else
-    emit_payload false true "$(current_time)" "$message" '{}'
+    emit_payload false true "$(current_time)" "$message" "$fallback_data"
   fi
   exit 1
+}
+
+vm_empty_data() {
+  jq -cn '
+    {
+      name: "",
+      vcpus: 0,
+      cpuTimeNs: 0,
+      sampledAtNs: 0,
+      cpu: {available: false, percent: null},
+      memory: {
+        allocationAvailable: false,
+        usageAvailable: false,
+        currentKiB: null,
+        maximumKiB: null,
+        usableKiB: null,
+        usedKiB: null,
+        percent: null
+      }
+    }
+  '
+}
+
+parse_vm_stats() {
+  local raw=$1
+  local key
+  local value
+  local state=''
+  local cpu_time=''
+  local vcpus=''
+  local current=''
+  local maximum=''
+  local usable=''
+
+  while IFS='=' read -r key value; do
+    key=${key//[[:space:]]/}
+    value=${value//[[:space:]]/}
+    case $key in
+      state.state) state=$value ;;
+      cpu.time) cpu_time=$value ;;
+      vcpu.current) vcpus=$value ;;
+      balloon.current) current=$value ;;
+      balloon.maximum) maximum=$value ;;
+      balloon.usable) usable=$value ;;
+    esac
+  done <<<"$raw"
+
+  jq -cn \
+    --arg state "$state" \
+    --arg cpu "$cpu_time" \
+    --arg vcpus "$vcpus" \
+    --arg current "$current" \
+    --arg maximum "$maximum" \
+    --arg usable "$usable" \
+    '{state:$state,cpuTimeNs:$cpu,vcpus:$vcpus,currentKiB:$current,maximumKiB:$maximum,usableKiB:$usable}'
 }
 
 read_backlight() {
@@ -329,6 +395,190 @@ state_monitor() {
   emit_unavailable "$data"
 }
 
+state_vm() {
+  local virsh_command
+  local raw_domains=''
+  local raw_stats=''
+  local parsed_stats=''
+  local domain_name=''
+  local state=''
+  local cpu_time_ns=''
+  local vcpus=''
+  local current_kib=''
+  local maximum_kib=''
+  local usable_kib=''
+  local sampled_at_ns=''
+  local previous_cache=''
+  local previous_name=''
+  local previous_cpu_time_ns=''
+  local previous_sampled_at_ns=''
+  local previous_vcpus=''
+  local cpu_delta=''
+  local wall_delta=''
+  local cpu_available=false
+  local cpu_percent=null
+  local allocation_available=false
+  local usage_available=false
+  local current_json=null
+  local maximum_json=null
+  local usable_json=null
+  local used_json=null
+  local memory_percent_json=null
+  local used_kib=''
+  local data
+  local empty_data
+  local domain_names=()
+
+  empty_data=$(vm_empty_data)
+  if ! virsh_command=$(resolve_command virsh); then
+    emit_unavailable "$empty_data"
+  fi
+  if ! raw_domains=$(
+    "$virsh_command" list --state-running --name 2>&1
+  ); then
+    emit_stale "virsh list failed: ${raw_domains//$'\n'/ }" "$empty_data"
+  fi
+
+  mapfile -t domain_names < <(
+    while IFS= read -r domain_name; do
+      domain_name=${domain_name%$'\r'}
+      if [[ -n ${domain_name//[[:space:]]/} ]]; then
+        printf '%s\n' "$domain_name"
+      fi
+    done <<<"$raw_domains"
+  )
+
+  case ${#domain_names[@]} in
+    0)
+      emit_unavailable "$empty_data"
+      ;;
+    1)
+      domain_name=${domain_names[0]}
+      ;;
+    *)
+      emit_stale 'more than one running VM was found' "$empty_data"
+      ;;
+  esac
+
+  if ! raw_stats=$(
+    "$virsh_command" domstats --domain "$domain_name" \
+      --state --cpu-total --balloon --vcpu --nowait 2>&1
+  ); then
+    emit_stale "virsh domstats failed: ${raw_stats//$'\n'/ }" "$empty_data"
+  fi
+  if ! parsed_stats=$(parse_vm_stats "$raw_stats"); then
+    emit_stale 'virsh domstats response could not be parsed' "$empty_data"
+  fi
+
+  state=$(jq -r '.state' <<<"$parsed_stats")
+  cpu_time_ns=$(jq -r '.cpuTimeNs' <<<"$parsed_stats")
+  vcpus=$(jq -r '.vcpus' <<<"$parsed_stats")
+  current_kib=$(jq -r '.currentKiB' <<<"$parsed_stats")
+  maximum_kib=$(jq -r '.maximumKiB' <<<"$parsed_stats")
+  usable_kib=$(jq -r '.usableKiB' <<<"$parsed_stats")
+
+  if [[ -z $state ]]; then
+    emit_stale 'virsh domstats did not include state.state' "$empty_data"
+  fi
+  if [[ ! $cpu_time_ns =~ ^[0-9]+$ ]]; then
+    emit_stale 'virsh domstats did not include a valid cpu.time' "$empty_data"
+  fi
+  if [[ ! $vcpus =~ ^[0-9]+$ ]] || (( vcpus <= 0 )); then
+    emit_stale 'virsh domstats did not include a valid vcpu.current' "$empty_data"
+  fi
+  if [[ -n $current_kib && ! $current_kib =~ ^[0-9]+$ ]]; then
+    emit_stale 'virsh domstats included an invalid balloon.current' "$empty_data"
+  fi
+  if [[ -n $maximum_kib && ! $maximum_kib =~ ^[0-9]+$ ]]; then
+    emit_stale 'virsh domstats included an invalid balloon.maximum' "$empty_data"
+  fi
+  if [[ -n $usable_kib && ! $usable_kib =~ ^[0-9]+$ ]]; then
+    emit_stale 'virsh domstats included an invalid balloon.usable' "$empty_data"
+  fi
+
+  if ! sampled_at_ns=$(current_time_ns); then
+    emit_stale 'invalid VM sample timestamp' "$empty_data"
+  fi
+
+  if [[ -n $current_kib ]]; then
+    current_json=$current_kib
+  fi
+  if [[ -n $maximum_kib ]]; then
+    maximum_json=$maximum_kib
+  fi
+  if [[ -n $usable_kib ]]; then
+    usable_json=$usable_kib
+  fi
+
+  if [[ -n $current_kib && -n $maximum_kib ]]; then
+    allocation_available=true
+  fi
+  if [[ -n $current_kib && -n $usable_kib ]] && (( current_kib > 0 )); then
+    usage_available=true
+    used_kib=$(jq -cn --argjson current "$current_kib" --argjson usable "$usable_kib" \
+      'if ($current - $usable) < 0 then 0 else ($current - $usable) end')
+    memory_percent_json=$(jq -cn --argjson current "$current_kib" --argjson usable "$usable_kib" \
+      '((($current - $usable) / $current) * 100) | ([0, (if . > 100 then 100 else . end)] | max) | round')
+    used_json=$used_kib
+  fi
+
+  if previous_cache=$(read_cache); then
+    previous_name=$(jq -r '.data.name // empty' <<<"$previous_cache")
+    previous_cpu_time_ns=$(jq -r '.data.cpuTimeNs // empty' <<<"$previous_cache")
+    previous_sampled_at_ns=$(jq -r '.data.sampledAtNs // empty' <<<"$previous_cache")
+    previous_vcpus=$(jq -r '.data.vcpus // empty' <<<"$previous_cache")
+
+    if [[ $previous_name == "$domain_name" ]] \
+      && [[ $previous_cpu_time_ns =~ ^[0-9]+$ ]] \
+      && [[ $previous_sampled_at_ns =~ ^[0-9]+$ ]] \
+      && [[ $previous_vcpus =~ ^[0-9]+$ ]] \
+      && (( previous_vcpus > 0 )) \
+      && (( cpu_time_ns >= previous_cpu_time_ns )) \
+      && (( sampled_at_ns > previous_sampled_at_ns )); then
+      cpu_delta=$((cpu_time_ns - previous_cpu_time_ns))
+      wall_delta=$((sampled_at_ns - previous_sampled_at_ns))
+      cpu_percent=$(jq -cn \
+        --argjson cpuDelta "$cpu_delta" \
+        --argjson wallDelta "$wall_delta" \
+        --argjson vcpus "$vcpus" \
+        '($cpuDelta / $wallDelta / $vcpus * 100) | ([0, (if . > 100 then 100 else . end)] | max) | round')
+      cpu_available=true
+    fi
+  fi
+
+  data=$(jq -cn \
+    --arg name "$domain_name" \
+    --argjson vcpus "$vcpus" \
+    --argjson cpuTimeNs "$cpu_time_ns" \
+    --argjson sampledAtNs "$sampled_at_ns" \
+    --argjson cpuAvailable "$cpu_available" \
+    --argjson cpuPercent "$cpu_percent" \
+    --argjson allocationAvailable "$allocation_available" \
+    --argjson usageAvailable "$usage_available" \
+    --argjson currentKiB "$current_json" \
+    --argjson maximumKiB "$maximum_json" \
+    --argjson usableKiB "$usable_json" \
+    --argjson usedKiB "$used_json" \
+    --argjson memoryPercent "$memory_percent_json" \
+    '{
+      name: $name,
+      vcpus: $vcpus,
+      cpuTimeNs: $cpuTimeNs,
+      sampledAtNs: $sampledAtNs,
+      cpu: {available: $cpuAvailable, percent: $cpuPercent},
+      memory: {
+        allocationAvailable: $allocationAvailable,
+        usageAvailable: $usageAvailable,
+        currentKiB: $currentKiB,
+        maximumKiB: $maximumKiB,
+        usableKiB: $usableKiB,
+        usedKiB: $usedKiB,
+        percent: $memoryPercent
+      }
+    }')
+  emit_available "$data"
+}
+
 state_tailscale() {
   local tailscale_command
   local raw_status=''
@@ -397,4 +647,5 @@ case $domain in
   power) state_power ;;
   monitor) state_monitor ;;
   tailscale) state_tailscale ;;
+  vm) state_vm ;;
 esac
