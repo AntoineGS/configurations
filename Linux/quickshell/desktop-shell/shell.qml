@@ -55,11 +55,16 @@ ShellRoot {
   property var shellConfig: builtinShellConfig
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
+  readonly property var notificationService: shell.serviceFor("desktop.notifications")
   readonly property var healthState: ({
     configValid: shell.configValid,
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
-    previewMode: shell.previewMode
+    previewMode: shell.previewMode,
+    notificationsOwned: notificationService ? notificationService.notificationsOwned : false,
+    notificationOwnershipError: notificationService ? notificationService.ownershipError : "notification service unavailable",
+    notificationRouteValid: notificationService ? notificationService.routeValid : false,
+    notificationRouteError: notificationService ? notificationService.routeError : "notification service unavailable"
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false
@@ -552,6 +557,17 @@ ShellRoot {
 
   function callIfLoaded(pluginId, method, arg) {
     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
+    var service = shell.serviceFor(pluginId)
+    if (service) {
+      if (typeof service[method] !== "function") return "unknown"
+      try {
+        var serviceResult = service[method](arg)
+        return serviceResult === undefined || serviceResult === null ? "ok" : String(serviceResult)
+      } catch (e) {
+        console.warn("service " + id + " " + method + "() threw:", e)
+        return "error"
+      }
+    }
     var loader = panelLoaders[id]
     if (!loader || !loader.item) return "unknown"
     if (typeof loader.item[method] !== "function") return "unknown"

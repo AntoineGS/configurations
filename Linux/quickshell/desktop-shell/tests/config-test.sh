@@ -9,6 +9,8 @@ COLOR="$SHELL_ROOT/Commons/Color.qml"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell"
 BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
 TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
+NOTIFICATION_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-notification-silencing"
+UTILITIES="$ROOT/Linux/hypr/bindings/utilities.lua"
 
 command -v node >/dev/null 2>&1 || {
   printf 'config-test: node is required\n' >&2
@@ -16,18 +18,21 @@ command -v node >/dev/null 2>&1 || {
 }
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
-  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" <<'NODE'
+  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
-  toggleHelperPath] = process.argv.slice(2)
+  toggleHelperPath, notificationToggleHelperPath, utilitiesPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
 const registry = fs.readFileSync(registryPath, "utf8")
 const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
 const bar = fs.readFileSync(barPath, "utf8")
+const notificationToggleHelper = fs.readFileSync(notificationToggleHelperPath, "utf8")
+const utilities = fs.readFileSync(utilitiesPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -213,6 +218,38 @@ assert.match(shell, /property bool barVisible: true/)
 assert.match(shell, /disabledPlugins: \["desktop\.battery"\]/,
   "builtin config disables the duplicate battery scheduler")
 assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
+assert.match(shell, /readonly property var notificationService:\s*shell\.serviceFor\("desktop\.notifications"\)/,
+  "shell health reads the shared notification service")
+for (const [field, expected] of [
+  ["notificationsOwned", "notificationService ? notificationService.notificationsOwned : false"],
+  ["notificationOwnershipError", 'notificationService ? notificationService.ownershipError : "notification service unavailable"'],
+  ["notificationRouteValid", "notificationService ? notificationService.routeValid : false"],
+  ["notificationRouteError", 'notificationService ? notificationService.routeError : "notification service unavailable"']
+]) {
+  assert.ok(shell.includes(`${field}: ${expected}`),
+    `healthState exposes ${field} with an unavailable fallback`)
+}
+const callStart = shell.indexOf("function callIfLoaded")
+const callEnd = shell.indexOf("// One Loader per", callStart)
+assert.notEqual(callStart, -1, "generic call dispatcher exists")
+assert.notEqual(callEnd, -1, "generic call dispatcher ends before panel loading")
+const callFunction = shell.slice(callStart, callEnd)
+assert.ok(callFunction.indexOf("serviceFor(pluginId)") < callFunction.indexOf("panelLoaders[id]"),
+  "service-root dispatch precedes overlay dispatch")
+assert.match(callFunction, /typeof service\[method\] !== "function"/)
+assert.match(callFunction, /service\[method\]\(arg\)/)
+
+const notificationBindingsStart = utilities.indexOf("-- Notifications")
+const notificationBindings = utilities.slice(notificationBindingsStart)
+assert.match(notificationBindings, /exec_cmd\("desktop-shell call desktop\.notifications dismissAll"\)/)
+assert.match(notificationBindings, /exec_cmd\("toggle-notification-silencing"\)/)
+assert.match(notificationBindings, /exec_cmd\("desktop-shell call desktop\.notifications invokeLast"\)/)
+assert.match(notificationBindings, /exec_cmd\("desktop-shell call desktop\.notifications restoreLast"\)/)
+assert.doesNotMatch(notificationBindings, /\bmakoctl\b|\bnotify-send\b/)
+assert.match(notificationToggleHelper, /^set -Eeuo pipefail$/m)
+assert.match(notificationToggleHelper, /desktop-shell call desktop\.notifications toggleDnd/)
+assert.match(notificationToggleHelper, /enabled\|disabled/)
+assert.doesNotMatch(notificationToggleHelper, /\bmakoctl\b|\bwaybar\b|\bnotify-send\b|\b(?:pkill|kill|killall|signal)\b/)
 const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
 const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
 assert.notEqual(barPanelStart, -1, "bar panel component exists")
@@ -295,14 +332,27 @@ cat >"$fake_bin/quickshell" <<'FAKE_QUICKSHELL'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\0' "$@" >"$DESKTOP_SHELL_IPC_TRACE"
+if [[ ${8-} == desktop.notifications && ${9-} == toggleDnd ]]; then
+  printf '%s\n' "${DESKTOP_SHELL_FAKE_RESULT:-disabled}"
+fi
 FAKE_QUICKSHELL
 chmod +x "$fake_bin/quickshell"
+
+for command_name in makoctl notify-send pkill; do
+  cat >"$fake_bin/$command_name" <<'FAKE_LEGACY_COMMAND'
+#!/usr/bin/env bash
+exit 0
+FAKE_LEGACY_COMMAND
+  chmod +x "$fake_bin/$command_name"
+done
 
 run_helper() {
   local helper=$1
   shift
   : >"$trace"
-  PATH="$fake_bin:$PATH" HOME="$test_home" DESKTOP_SHELL_IPC_TRACE="$trace" "$helper" "$@"
+  PATH="$fake_bin:$ROOT/Linux/os/helpers:$PATH" HOME="$test_home" \
+    DESKTOP_SHELL_IPC_TRACE="$trace" DESKTOP_SHELL_FAKE_RESULT="${DESKTOP_SHELL_FAKE_RESULT:-disabled}" \
+    "$helper" "$@"
 }
 
 run_ipc() {
@@ -311,6 +361,10 @@ run_ipc() {
 
 run_toggle() {
   run_helper "$TOGGLE_HELPER" "$@"
+}
+
+run_notification_toggle() {
+  run_helper "$NOTIFICATION_TOGGLE_HELPER"
 }
 
 assert_trace() {
@@ -364,6 +418,16 @@ test ! -s "$trace"
 
 run_toggle
 assert_trace desktop-shell toggleBar
+
+notification_state=$(run_notification_toggle)
+test "$notification_state" = disabled
+assert_trace desktop-shell call desktop.notifications toggleDnd ""
+
+set +e
+DESKTOP_SHELL_FAKE_RESULT=unexpected run_notification_toggle >/dev/null 2>"$fixture/invalid-notification-state.err"
+notification_state_exit=$?
+set -e
+test "$notification_state_exit" -ne 0
 
 set +e
 run_toggle unexpected 2>"$fixture/toggle-argument.err"

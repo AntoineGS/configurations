@@ -42,7 +42,7 @@ hl.bind(
 -- Notifications
 hl.bind(
 	"SUPER + SHIFT + COMMA",
-	hl.dsp.exec_cmd("makoctl dismiss --all"),
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications dismissAll"),
 	{ description = "Dismiss all notifications" }
 )
 hl.bind(
@@ -50,10 +50,14 @@ hl.bind(
 	hl.dsp.exec_cmd("toggle-notification-silencing"),
 	{ description = "Toggle silencing notifications" }
 )
-hl.bind("SUPER + ALT + COMMA", hl.dsp.exec_cmd("makoctl invoke"), { description = "Invoke last notification" })
+hl.bind(
+	"SUPER + ALT + COMMA",
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications invokeLast"),
+	{ description = "Invoke last notification" }
+)
 hl.bind(
 	"SUPER + SHIFT + ALT + COMMA",
-	hl.dsp.exec_cmd("makoctl restore"),
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications restoreLast"),
 	{ description = "Restore last notification" }
 )
 
