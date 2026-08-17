@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s nullglob
+
+usage() {
+  printf 'usage: %s <power|monitor|tailscale>\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 1 )) || usage
+domain=$1
+case $domain in
+  power|monitor|tailscale) ;;
+  *) usage ;;
+esac
+
+command -v jq >/dev/null 2>&1 || {
+  printf '%s: jq is required\n' "${0##*/}" >&2
+  exit 1
+}
+
+sysfs_root=${DESKTOP_HARDWARE_SYSFS_ROOT:-/sys}
+helper_dir=${DESKTOP_HARDWARE_HELPER_DIR:-}
+state_dir=${DESKTOP_HARDWARE_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/desktop-shell/hardware}
+cache_file="$state_dir/$domain.json"
+
+current_time() {
+  date +%s
+}
+
+resolve_helper() {
+  local name=$1
+  local candidate
+
+  if [[ -n $helper_dir ]]; then
+    candidate="$helper_dir/$name"
+    [[ -x $candidate ]] || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  command -v "$name" 2>/dev/null
+}
+
+resolve_command() {
+  command -v "$1" 2>/dev/null
+}
+
+emit_payload() {
+  local available=$1
+  local stale=$2
+  local updated_at=$3
+  local error=$4
+  local data=$5
+
+  if [[ -n $error ]]; then
+    jq -cn \
+      --argjson available "$available" \
+      --argjson stale "$stale" \
+      --argjson updatedAt "$updated_at" \
+      --arg error "$error" \
+      --argjson data "$data" \
+      '{available: $available, stale: $stale, updatedAt: $updatedAt, error: $error, data: $data}'
+  else
+    jq -cn \
+      --argjson available "$available" \
+      --argjson stale "$stale" \
+      --argjson updatedAt "$updated_at" \
+      --argjson data "$data" \
+      '{available: $available, stale: $stale, updatedAt: $updatedAt, error: null, data: $data}'
+  fi
+}
+
+write_cache() {
+  local payload=$1
+  local temporary=''
+
+  if ! mkdir -p -- "$state_dir"; then
+    return 0
+  fi
+  if ! temporary=$(mktemp "$state_dir/.${domain}.XXXXXX"); then
+    return 0
+  fi
+  if ! printf '%s\n' "$payload" >"$temporary"; then
+    rm -f -- "$temporary"
+    return 0
+  fi
+  chmod 600 "$temporary" 2>/dev/null || true
+  if ! mv -f -- "$temporary" "$cache_file"; then
+    rm -f -- "$temporary"
+  fi
+}
+
+read_cache() {
+  local cached
+
+  [[ -r $cache_file ]] || return 1
+  cached=$(<"$cache_file") || return 1
+  jq -e '
+    type == "object" and
+    (.available | type == "boolean") and
+    (.stale == false) and
+    (.updatedAt | type == "number") and
+    (.error == null) and
+    (.data | type == "object")
+  ' <<<"$cached" >/dev/null 2>&1 || return 1
+  printf '%s\n' "$cached"
+}
+
+emit_unavailable() {
+  local data=$1
+  local payload
+
+  payload=$(emit_payload false false "$(current_time)" '' "$data")
+  write_cache "$payload"
+  printf '%s\n' "$payload"
+  exit 0
+}
+
+emit_available() {
+  local data=$1
+  local payload
+
+  payload=$(emit_payload true false "$(current_time)" '' "$data")
+  write_cache "$payload"
+  printf '%s\n' "$payload"
+  exit 0
+}
+
+emit_stale() {
+  local message=$1
+  local cached
+
+  if cached=$(read_cache); then
+    jq -c --arg error "$message" '.stale = true | .error = $error' <<<"$cached"
+  else
+    emit_payload false true "$(current_time)" "$message" '{}'
+  fi
+  exit 1
+}
+
+read_backlight() {
+  local candidate
+  local device=''
+  local current
+  local maximum
+  local percent
+
+  for candidate in \
+    "$sysfs_root"/class/backlight/amdgpu_bl* \
+    "$sysfs_root"/class/backlight/intel_backlight \
+    "$sysfs_root"/class/backlight/acpi_video* \
+    "$sysfs_root"/class/backlight/*; do
+    [[ -d $candidate && -r $candidate/brightness && -r $candidate/max_brightness ]] || continue
+    current=$(<"$candidate/brightness")
+    maximum=$(<"$candidate/max_brightness")
+    [[ $current =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ && $maximum -gt 0 ]] || continue
+    device=${candidate##*/}
+    percent=$((current * 100 / maximum))
+    if (( percent > 100 )); then percent=100; fi
+    jq -cn --arg device "$device" --argjson percent "$percent" \
+      '{available: true, device: $device, percent: $percent}'
+    return 0
+  done
+
+  printf '%s\n' '{"available":false,"device":"","percent":0}'
+}
+
+read_keyboard_backlight() {
+  local candidate
+  local device=''
+  local current
+  local maximum
+  local percent
+
+  for candidate in "$sysfs_root"/class/leds/*kbd_backlight*; do
+    [[ -d $candidate && -r $candidate/brightness && -r $candidate/max_brightness ]] || continue
+    current=$(<"$candidate/brightness")
+    maximum=$(<"$candidate/max_brightness")
+    [[ $current =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ && $maximum -gt 0 ]] || continue
+    device=${candidate##*/}
+    percent=$((current * 100 / maximum))
+    if (( percent > 100 )); then percent=100; fi
+    jq -cn --arg device "$device" --argjson percent "$percent" \
+      '{available: true, device: $device, percent: $percent}'
+    return 0
+  done
+
+  printf '%s\n' '{"available":false,"device":"","percent":0}'
+}
+
+state_power() {
+  local battery_present=''
+  local battery_available=false
+  local status=0
+  local battery_status=''
+  local battery_capacity=''
+  local battery_remaining=''
+  local profiles_available=false
+  local active_profile=''
+  local profiles='[]'
+  local profile_command
+  local active_raw
+  local profiles_raw
+  local profile_data
+  local data
+
+  if battery_present=$(resolve_helper battery-present); then
+    "$battery_present" >/dev/null 2>&1 || status=$?
+    if (( status == 0 )); then
+      battery_available=true
+    elif (( status != 1 )); then
+      emit_stale 'battery presence check failed'
+    fi
+  fi
+
+  if [[ $battery_available == true ]]; then
+    if ! battery_status=$("$(resolve_helper battery-status)" 2>/dev/null); then
+      emit_stale 'battery status helper failed'
+    fi
+    if ! battery_capacity=$("$(resolve_helper battery-capacity)" 2>/dev/null); then
+      emit_stale 'battery capacity helper failed'
+    fi
+    if ! battery_remaining=$("$(resolve_helper battery-remaining-time)" 2>/dev/null); then
+      emit_stale 'battery remaining-time helper failed'
+    fi
+  fi
+
+  if profile_command=$(resolve_command powerprofilesctl); then
+    if ! active_raw=$("$profile_command" get 2>/dev/null); then
+      emit_stale 'power profile query failed'
+    fi
+    if ! profiles_raw=$("$profile_command" list 2>/dev/null); then
+      emit_stale 'power profile list failed'
+    fi
+
+    active_profile=${active_raw%%$'\n'*}
+    active_profile=${active_profile//$'\r'/}
+    active_profile="${active_profile#"${active_profile%%[![:space:]]*}"}"
+    active_profile="${active_profile%"${active_profile##*[![:space:]]}"}"
+    if [[ ! $active_profile =~ ^[[:alnum:]][[:alnum:]_.+-]*$ ]]; then
+      active_profile=''
+    fi
+
+    if ! profiles=$(printf '%s\n' "$profiles_raw" | jq -Rsc '
+      split("\n")
+      | map(sub("^\\s*\\*?\\s*"; "") | sub(":$"; "") | select(test("^[A-Za-z0-9][A-Za-z0-9_.+-]*$")))
+      | unique
+    '); then
+      emit_stale 'power profile list was malformed'
+    fi
+    profiles_available=true
+  fi
+
+  profile_data=$(jq -cn \
+    --arg available "$profiles_available" \
+    --arg active "$active_profile" \
+    --argjson profiles "$profiles" \
+    '{available: ($available == "true"), active: $active, profiles: $profiles}')
+  data=$(jq -cn \
+    --arg status "$battery_status" \
+    --arg capacity "$battery_capacity" \
+    --arg remaining "$battery_remaining" \
+    --argjson profile "$profile_data" \
+    '{battery: {status: $status, capacity: $capacity, remainingTime: $remaining}, profile: $profile}')
+  if [[ $battery_available == true || $profiles_available == true ]]; then
+    emit_available "$data"
+  fi
+  emit_unavailable "$data"
+}
+
+state_monitor() {
+  local hyprctl_command
+  local raw_monitors
+  local monitors
+  local brightness
+  local keyboard_brightness
+  local focused_monitor
+  local internal_monitor
+  local internal_enabled
+  local mirror_enabled
+  local data
+  local available
+
+  if ! hyprctl_command=$(resolve_command hyprctl); then
+    emit_unavailable '{"monitors":[],"brightness":{"available":false,"device":"","percent":0},"keyboardBrightness":{"available":false,"device":"","percent":0}}'
+  fi
+  if ! raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null); then
+    emit_stale 'hyprctl monitor query failed'
+  fi
+  if ! monitors=$(jq -ce '
+    if type != "array" then error("monitor response is not an array") else
+      map(select(type == "object") | {
+        name: (if (.name | type) == "string" then .name else "" end),
+        description: (if (.description | type) == "string" then .description else "" end),
+        width: (if (.width | type) == "number" then .width else 0 end),
+        height: (if (.height | type) == "number" then .height else 0 end),
+        scale: (if (.scale | type) == "number" then .scale else 1 end),
+        focused: (.focused == true),
+        enabled: (.disabled != true),
+        mirrorOf: (if (.mirrorOf | type) == "string" then .mirrorOf else "none" end)
+      })
+      | map(select(.name != ""))
+    end
+  ' <<<"$raw_monitors" 2>/dev/null); then
+    emit_stale 'hyprctl monitor response was malformed'
+  fi
+
+  brightness=$(read_backlight)
+  keyboard_brightness=$(read_keyboard_backlight)
+  focused_monitor=$(jq -r '[.[] | select(.focused == true) | .name][0] // ""' <<<"$monitors")
+  internal_monitor=$(jq -r '[.[] | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$monitors")
+  internal_enabled=$(jq -r --arg name "$internal_monitor" 'any(.[]; .name == $name and .enabled)' <<<"$monitors")
+  mirror_enabled=$(jq -r --arg internal "$internal_monitor" '$internal != "" and any(.[]; .enabled and .mirrorOf == $internal)' <<<"$monitors")
+  available=$(jq -r 'length > 0' <<<"$monitors")
+  data=$(jq -cn \
+    --argjson monitors "$monitors" \
+    --argjson brightness "$brightness" \
+    --argjson keyboardBrightness "$keyboard_brightness" \
+    --arg focusedMonitor "$focused_monitor" \
+    --arg internalMonitor "$internal_monitor" \
+    --argjson internalEnabled "$internal_enabled" \
+    --argjson mirrorEnabled "$mirror_enabled" \
+    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness}')
+
+  if [[ $available == true ]]; then
+    emit_available "$data"
+  fi
+  emit_unavailable "$data"
+}
+
+state_tailscale() {
+  local tailscale_command
+  local raw_status=''
+  local status=0
+  local data
+  local available
+
+  if ! tailscale_command=$(resolve_command tailscale); then
+    emit_unavailable '{}'
+  fi
+
+  raw_status=$("$tailscale_command" status --json 2>/dev/null) || status=$?
+  if [[ -z ${raw_status//[[:space:]]/} ]]; then
+    emit_unavailable '{}'
+  fi
+  if ! data=$(jq -ce '
+    if type != "object" then error("tailscale response is not an object") else
+      . as $root
+      | (if ($root.Self | type) == "object" then $root.Self else {} end) as $self
+      | (if ($root.BackendState | type) == "string" then $root.BackendState else "Unknown" end) as $backend
+      | {
+          backendState: $backend,
+          running: ($backend == "Running"),
+          needsLogin: ($backend == "NeedsLogin"),
+          self: {
+            name: (if ($self.HostName | type) == "string" and ($self.HostName | length) > 0 then $self.HostName elif ($self.DNSName | type) == "string" then $self.DNSName else "" end),
+            dnsName: (if ($self.DNSName | type) == "string" then ($self.DNSName | sub("\\.$"; "")) else "" end),
+            addresses: (if ($self.TailscaleIPs | type) == "array" then [$self.TailscaleIPs[] | strings | select(test("^100\\."))] else [] end),
+            exitNode: ($self.ExitNode == true)
+          },
+          peers: (if ($root.Peer | type) == "object" then [
+            $root.Peer
+            | to_entries[]
+            | select(.value | type == "object")
+            | . as $entry
+            | $entry.value as $peer
+            | {
+                id: ($entry.key | tostring),
+                name: (if ($peer.HostName | type) == "string" then $peer.HostName elif ($peer.DNSName | type) == "string" then $peer.DNSName else "" end),
+                dnsName: (if ($peer.DNSName | type) == "string" then ($peer.DNSName | sub("\\.$"; "")) else "" end),
+                addresses: (if ($peer.TailscaleIPs | type) == "array" then [$peer.TailscaleIPs[] | strings | select(test("^100\\."))] else [] end),
+                online: ($peer.Online == true),
+                exitNodeOption: ($peer.ExitNodeOption == true),
+                exitNode: ($peer.ExitNode == true),
+                os: (if ($peer.OS | type) == "string" then $peer.OS else "" end)
+              }
+            | select(.name != "")
+            ] | sort_by(.name) else [] end)
+        }
+    end
+  ' <<<"$raw_status" 2>/dev/null); then
+    emit_stale 'tailscale status response was malformed'
+  fi
+
+  available=$(jq -r '.running' <<<"$data")
+  if (( status != 0 )) && [[ $available == true ]]; then
+    emit_stale 'tailscale status command failed'
+  fi
+  if [[ $available == true ]]; then
+    emit_available "$data"
+  fi
+  emit_unavailable "$data"
+}
+
+case $domain in
+  power) state_power ;;
+  monitor) state_monitor ;;
+  tailscale) state_tailscale ;;
+esac

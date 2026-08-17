@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+invalid_arguments() {
+  printf 'usage: %s <audio|network|bluetooth> <action> [args...]\n' "${0##*/}" >&2
+  exit 2
+}
+
+run_command() {
+  "$@" >/dev/null 2>&1 || exit 1
+}
+
+if (($# < 2)); then
+  invalid_arguments
+fi
+
+domain=$1
+action=$2
+
+case $domain in
+  audio)
+    case $action in
+      set-default-output|set-default-input)
+        (($# == 4)) || invalid_arguments
+        [[ -n ${3:-} && -n ${4:-} ]] || invalid_arguments
+        run_command wpctl set-default "$3"
+        ;;
+      set-volume)
+        (($# == 4)) || invalid_arguments
+        [[ -n ${3:-} && ${4:-} =~ ^[0-9]+([.][0-9]+)?%?$ ]] || invalid_arguments
+        run_command wpctl set-volume "$3" "$4"
+        ;;
+      toggle-output-mute|toggle-input-mute)
+        (($# == 3)) || invalid_arguments
+        [[ -n ${3:-} ]] || invalid_arguments
+        run_command wpctl set-mute "$3" toggle
+        ;;
+      *)
+        invalid_arguments
+        ;;
+    esac
+    ;;
+  network)
+    case $action in
+      connect)
+        (($# == 3)) || invalid_arguments
+        [[ -n ${3:-} ]] || invalid_arguments
+
+        password=''
+        if [[ ! -t 0 ]]; then
+          IFS= read -r password || true
+        fi
+
+        if [[ -n $password ]]; then
+          if ! printf '%s\n' "$password" | nmcli --ask device wifi connect "$3" >/dev/null 2>&1; then
+            exit 1
+          fi
+        else
+          run_command nmcli device wifi connect "$3"
+        fi
+        ;;
+      disconnect)
+        (($# == 3)) || invalid_arguments
+        [[ -n ${3:-} ]] || invalid_arguments
+        run_command nmcli connection down id "$3"
+        ;;
+      forget)
+        (($# == 3)) || invalid_arguments
+        [[ -n ${3:-} ]] || invalid_arguments
+        run_command nmcli connection delete id "$3"
+        ;;
+      set-dns)
+        (($# == 4)) || invalid_arguments
+        [[ -n ${3:-} ]] || invalid_arguments
+
+        case $4 in
+          DHCP)
+            run_command nmcli connection modify "$3" \
+              ipv4.ignore-auto-dns no ipv4.dns "" \
+              ipv6.ignore-auto-dns no ipv6.dns ""
+            ;;
+          Cloudflare)
+            run_command nmcli connection modify "$3" \
+              ipv4.ignore-auto-dns yes ipv4.dns 1.1.1.1,1.0.0.1 \
+              ipv6.ignore-auto-dns yes ipv6.dns 2606:4700:4700::1111,2606:4700:4700::1001
+            ;;
+          Google)
+            run_command nmcli connection modify "$3" \
+              ipv4.ignore-auto-dns yes ipv4.dns 8.8.8.8,8.8.4.4 \
+              ipv6.ignore-auto-dns yes ipv6.dns 2001:4860:4860::8888,2001:4860:4860::8844
+            ;;
+          *)
+            invalid_arguments
+            ;;
+        esac
+        ;;
+      *)
+        invalid_arguments
+        ;;
+    esac
+    ;;
+  bluetooth)
+    case $action in
+      power)
+        (($# == 3)) || invalid_arguments
+        case $3 in
+          on)
+            run_command rfkill unblock bluetooth
+            run_command bluetoothctl power on
+            ;;
+          off)
+            run_command bluetoothctl power off
+            run_command rfkill block bluetooth
+            ;;
+          toggle)
+            power_state=$(bluetoothctl show 2>/dev/null) || exit 1
+            if [[ $power_state == *'Powered: yes'* ]]; then
+              run_command bluetoothctl power off
+              run_command rfkill block bluetooth
+            elif [[ $power_state == *'Powered: no'* ]]; then
+              run_command rfkill unblock bluetooth
+              run_command bluetoothctl power on
+            else
+              exit 1
+            fi
+            ;;
+          *)
+            invalid_arguments
+            ;;
+        esac
+        ;;
+      scan)
+        (($# == 3)) || invalid_arguments
+        case $3 in
+          on|off) run_command bluetoothctl scan "$3" ;;
+          *) invalid_arguments ;;
+        esac
+        ;;
+      pair|connect|disconnect|remove)
+        (($# == 3)) || invalid_arguments
+        [[ ${3:-} =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]] || invalid_arguments
+        run_command bluetoothctl "$action" "$3"
+        ;;
+      *)
+        invalid_arguments
+        ;;
+    esac
+    ;;
+  *)
+    invalid_arguments
+    ;;
+esac

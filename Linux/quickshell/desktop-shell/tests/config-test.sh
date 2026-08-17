@@ -7,6 +7,8 @@ TEMPLATE="$SHELL_ROOT/config/shell.json.tmpl"
 THEME="$SHELL_ROOT/config/shell.toml"
 COLOR="$SHELL_ROOT/Commons/Color.qml"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell"
+BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
+TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
 
 command -v node >/dev/null 2>&1 || {
   printf 'config-test: node is required\n' >&2
@@ -14,16 +16,18 @@ command -v node >/dev/null 2>&1 || {
 }
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
-  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" <<'NODE'
+  "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
-const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath] = process.argv.slice(2)
+const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
+  toggleHelperPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
 const registry = fs.readFileSync(registryPath, "utf8")
 const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
+const bar = fs.readFileSync(barPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -177,7 +181,7 @@ function assertConfig(hostname, includeHardware, workspaceLabels) {
     transparent: false,
     centerAnchor: "desktop.clock",
     layout: {
-      left: [{ id: "desktop.workspaces", labels: workspaceLabels }],
+      left: [{ id: "desktop.menu" }, { id: "desktop.workspaces", labels: workspaceLabels }],
       center: [
         commandModules.recording,
         commandModules.voxtype,
@@ -187,6 +191,8 @@ function assertConfig(hostname, includeHardware, workspaceLabels) {
     }
   }, `${hostname}: bar contract`)
   assert.deepEqual(config.plugins, [], `${hostname}: empty plugin selection`)
+  assert.deepEqual(config.disabledPlugins, ["desktop.battery"],
+    `${hostname}: legacy battery service remains disabled during the bar-only phase`)
 }
 
 assertConfig("DESKTOP-E07VTRN", false, {
@@ -203,6 +209,15 @@ assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKT
 assert.match(shell, /previewMode: shell\.previewMode/)
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
+assert.match(shell, /property bool barVisible: true/)
+assert.match(shell, /disabledPlugins: \["desktop\.battery"\]/,
+  "builtin config disables the duplicate battery scheduler")
+assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
+const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
+const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
+assert.notEqual(barPanelStart, -1, "bar panel component exists")
+assert.notEqual(barPanelEnd, -1, "bar module components follow bar panel")
+assert.match(bar.slice(barPanelStart, barPanelEnd), /visible: root\.shell\.barVisible/)
 const panelEntriesStart = shell.indexOf("function computePanelEntries")
 const panelEntriesEnd = shell.indexOf("Connections {", panelEntriesStart)
 assert.notEqual(panelEntriesStart, -1, "panel entry computation exists")
@@ -250,11 +265,22 @@ assert.match(registry, /manifest\.schemaVersion !== 1/)
 assert.ok(registry.includes("if (!/^desktop\\.[a-z0-9-]+$/.test(id))"))
 assert.match(registry, /recordPluginError\(/)
 assert.match(registry, /entry point.*escapes|unsafe entryPoint/)
+assert.match(registry, /if \(isDisabled\(config, key\)\) return false/,
+  "disabled plugin config prevents the legacy battery service from loading")
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
-assert.match(helper, /quickshell ipc -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /quickshell ipc --any-display -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /toggle-bar\)\s+\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}\s+method="toggleBar"/)
 assert.doesNotMatch(helper, /\beval\b/)
+assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")
+const toggleHelper = fs.readFileSync(toggleHelperPath, "utf8")
+assert.match(toggleHelper, /^set -Eeuo pipefail$/m)
+assert.match(toggleHelper, /\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}/)
+assert.match(toggleHelper, /exec quickshell ipc --any-display -p "\$HOME\/\.config\/quickshell\/desktop-shell" call desktop-shell toggleBar/)
+assert.doesNotMatch(toggleHelper, /desktop-shell toggle-bar/)
+assert.doesNotMatch(toggleHelper, /\beval\b/)
+assert.doesNotMatch(toggleHelper, /\$[@{]/)
 console.log("config-test: rendered layout, fallback, preview, registry, and helper contracts verified")
 NODE
 
@@ -272,15 +298,25 @@ printf '%s\0' "$@" >"$DESKTOP_SHELL_IPC_TRACE"
 FAKE_QUICKSHELL
 chmod +x "$fake_bin/quickshell"
 
-run_ipc() {
+run_helper() {
+  local helper=$1
+  shift
   : >"$trace"
-  PATH="$fake_bin:$PATH" HOME="$test_home" DESKTOP_SHELL_IPC_TRACE="$trace" "$HELPER" "$@"
+  PATH="$fake_bin:$PATH" HOME="$test_home" DESKTOP_SHELL_IPC_TRACE="$trace" "$helper" "$@"
+}
+
+run_ipc() {
+  run_helper "$HELPER" "$@"
+}
+
+run_toggle() {
+  run_helper "$TOGGLE_HELPER" "$@"
 }
 
 assert_trace() {
   local -a actual expected
   mapfile -d '' actual <"$trace" || true
-  expected=("ipc" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
+  expected=("ipc" "--any-display" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
   if (( ${#actual[@]} != ${#expected[@]} )); then
     printf 'config-test: IPC argument count mismatch\n' >&2
     exit 1
@@ -301,6 +337,8 @@ run_ipc list-plugins
 assert_trace desktop-shell listPlugins
 run_ipc reload-config
 assert_trace desktop-shell reloadConfig
+run_ipc toggle-bar
+assert_trace desktop-shell toggleBar
 run_ipc summon desktop.agents '{}'
 assert_trace desktop-shell summon desktop.agents '{}'
 run_ipc hide desktop.audio
@@ -309,11 +347,11 @@ run_ipc call desktop.osd show '{"level":1}'
 assert_trace desktop-shell call desktop.osd show '{"level":1}'
 
 set +e
-run_ipc summon omarchy.menu 2>"$fixture/invalid-id.err"
+run_ipc summon legacy.menu 2>"$fixture/invalid-id.err"
 invalid_id_exit=$?
-run_ipc hide omarchy.audio 2>"$fixture/invalid-hide-id.err"
+run_ipc hide legacy.audio 2>"$fixture/invalid-hide-id.err"
 invalid_hide_id_exit=$?
-run_ipc call omarchy.audio show 2>"$fixture/invalid-call-id.err"
+run_ipc call legacy.audio show 2>"$fixture/invalid-call-id.err"
 invalid_call_id_exit=$?
 run_ipc unknown 2>"$fixture/unknown-command.err"
 unknown_exit=$?
@@ -322,4 +360,14 @@ test "$invalid_id_exit" -eq 2
 test "$invalid_hide_id_exit" -eq 2
 test "$invalid_call_id_exit" -eq 2
 test "$unknown_exit" -eq 2
+test ! -s "$trace"
+
+run_toggle
+assert_trace desktop-shell toggleBar
+
+set +e
+run_toggle unexpected 2>"$fixture/toggle-argument.err"
+toggle_exit=$?
+set -e
+test "$toggle_exit" -eq 2
 test ! -s "$trace"

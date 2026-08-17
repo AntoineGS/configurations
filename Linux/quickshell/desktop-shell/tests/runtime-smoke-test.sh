@@ -23,6 +23,17 @@ command -v timeout >/dev/null 2>&1 || {
   exit 1
 }
 
+selected_ids=()
+while IFS='|' read -r plugin_id _ _; do
+  [[ -n $plugin_id && ${plugin_id:0:1} != '#' ]] || continue
+  selected_ids+=("$plugin_id")
+done <"$SHELL_ROOT/SELECTED_PLUGINS"
+
+if ((${#selected_ids[@]} == 0)); then
+  printf 'FAIL: SELECTED_PLUGINS contains no plugin IDs\n' >&2
+  exit 1
+fi
+
 preview_log=$(mktemp)
 preview_pid=''
 
@@ -42,6 +53,14 @@ cleanup() {
 
   if grep -Fq 'Loader.Error' "$preview_log"; then
     printf 'FAIL: Loader.Error found in the Quickshell preview log\n' >&2
+    status=1
+  fi
+  if grep -Eq 'Plugin widget [^[:space:]]+ failed:' "$preview_log"; then
+    printf 'FAIL: plugin widget failure found in the Quickshell preview log\n' >&2
+    status=1
+  fi
+  if grep -Fq 'Handler was registered but will not be used because another handler is registered for target' "$preview_log"; then
+    printf 'FAIL: duplicate Quickshell IPC handler found in the preview log\n' >&2
     status=1
   fi
   if ((status != 0)) && [[ -s $preview_log ]]; then
@@ -85,12 +104,75 @@ plugins=$(timeout --kill-after=1s 3s quickshell ipc --pid "$preview_pid" \
   exit 1
 }
 
-jq -e -s '
-  length == 1 and
-  (.[0] | (if type == "string" then fromjson else . end) | has("desktop.bar"))
-' <<<"$plugins" >/dev/null || {
+plugin_json=$(jq -e -s '
+  if length == 1 then
+    (.[0] | if type == "string" then fromjson else . end)
+  else
+    error("expected one IPC response")
+  end
+' <<<"$plugins") || {
+  printf 'FAIL: listPlugins did not return a JSON object\n' >&2
+  exit 1
+}
+
+jq -e 'has("desktop.bar")' <<<"$plugin_json" >/dev/null || {
   printf 'FAIL: listPlugins did not report desktop.bar\n' >&2
   exit 1
 }
+for plugin_id in "${selected_ids[@]}"; do
+  jq -e --arg id "$plugin_id" 'has($id)' <<<"$plugin_json" >/dev/null || {
+    printf 'FAIL: listPlugins did not report selected plugin %s\n' "$plugin_id" >&2
+    exit 1
+  }
+done
+
+call_ipc() {
+  timeout --kill-after=1s 2s quickshell ipc --pid "$preview_pid" call "$@" 2>/dev/null
+}
+
+wait_for_ipc() {
+  local target=$1
+  local method=$2
+  local expected=$3
+  local optional=${4:-0}
+  local result=''
+  local deadline=$((SECONDS + 10))
+
+  while ((SECONDS < deadline)); do
+    result=$(call_ipc "$target" "$method") || true
+    if [[ $result == "$expected" ]]; then
+      return 0
+    fi
+    if ((optional == 1)) && [[ $result == unavailable ]]; then
+      printf 'INFO: %s %s unavailable\n' "$target" "$method"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  printf 'FAIL: %s %s returned %q, expected %s%s\n' \
+    "$target" "$method" "$result" "$expected" \
+    "$([[ $optional == 1 ]] && printf ' or unavailable')" >&2
+  return 1
+}
+
+call_ipc desktop-shell summon desktop.menu '{"menu":"root"}' | grep -Fxq ok || {
+  printf 'FAIL: desktop.menu summon failed\n' >&2
+  exit 1
+}
+wait_for_ipc desktop.menu ping pong
+
+call_ipc desktop-shell summon desktop.agents '{}' | grep -Fxq ok || {
+  printf 'FAIL: desktop.agents summon failed\n' >&2
+  exit 1
+}
+wait_for_ipc desktop.agents refresh ok
+
+wait_for_ipc desktop.audio ping pong
+wait_for_ipc desktop.network ping pong 1
+wait_for_ipc desktop.bluetooth ping pong
+wait_for_ipc desktop.power ping pong 1
+wait_for_ipc desktop.monitor ping pong 1
+wait_for_ipc desktop.tailscale ping pong 1
 
 printf 'PASS: Quickshell preview runtime\n'
