@@ -128,6 +128,10 @@ live_shell_marker="$HOME/.config/quickshell/desktop-shell"
 unit_properties='LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload'
 live_xdg_runtime_dir=${DESKTOP_SHELL_TEST_LIVE_XDG_RUNTIME_DIR:-}
 live_dbus_address=${DESKTOP_SHELL_TEST_LIVE_DBUS_SESSION_BUS_ADDRESS:-}
+export unit_properties live_xdg_runtime_dir live_dbus_address
+
+# shellcheck disable=SC1091
+source "$SHELL_ROOT/tests/polkit-runtime-unit.sh"
 
 process_identity() {
   local pid=$1
@@ -153,41 +157,12 @@ snapshot_protected_processes() {
   done | sort -t $'\t' -k1,1n -u
 }
 
-unit_property() {
-  local name=$1
-  local path=$2
-  awk -F= -v property="$name" '$1 == property { print substr($0, index($0, "=") + 1); exit }' "$path"
-}
-
-systemctl_user_show() {
-  [[ -n $live_xdg_runtime_dir ]] || return 1
-  if [[ -n $live_dbus_address ]]; then
-    env XDG_RUNTIME_DIR="$live_xdg_runtime_dir" \
-      DBUS_SESSION_BUS_ADDRESS="$live_dbus_address" systemctl --user show "$@"
-  else
-    env XDG_RUNTIME_DIR="$live_xdg_runtime_dir" systemctl --user show "$@"
-  fi
-}
-
-snapshot_unit() {
-  local output=$1
-  local load_state
-
-  command -v systemctl >/dev/null 2>&1 || return 1
-  load_state=$(systemctl_user_show desktop-shell.service --property=LoadState --value 2>/dev/null) || return 1
-  [[ $load_state == loaded ]] || return 1
-  systemctl_user_show desktop-shell.service --property="$unit_properties" >"$output" 2>/dev/null || {
-    rm -f -- "$output"
-    return 1
-  }
-}
-
 append_unit_main_process() {
   local unit_snapshot=$1
   local output=$2
   local main_pid
 
-  main_pid=$(unit_property MainPID "$unit_snapshot")
+  main_pid=$(polkit_unit_property MainPID "$unit_snapshot")
   [[ $main_pid =~ ^[1-9][0-9]*$ ]] || return 0
   process_identity "$main_pid" >>"$output" || {
     printf 'FAIL: unable to snapshot desktop-shell.service MainPID %s\n' "$main_pid" >&2
@@ -197,12 +172,20 @@ append_unit_main_process() {
 
 snapshot_live_state() {
   local unit_present=0
+  local snapshot_status=0
   local normalized="$fixture/protected.normalized"
 
-  if snapshot_unit "$unit_before"; then
+  if polkit_snapshot_unit "$unit_before"; then
     unit_present=1
   else
-    rm -f -- "$unit_before"
+    snapshot_status=$?
+    if ((snapshot_status == POLKIT_UNIT_ABSENT_STATUS)); then
+      rm -f -- "$unit_before"
+    else
+      printf 'FAIL: unable to inspect desktop-shell.service before test (status %s)\n' \
+        "$snapshot_status" >&2
+      return 1
+    fi
   fi
   printf '%s\n' "$unit_present" >"$unit_present_file"
 
@@ -218,13 +201,21 @@ snapshot_live_state() {
 assert_live_state_unchanged() {
   local unit_present_after=0
   local unit_present_before
+  local snapshot_status=0
   local normalized="$fixture/protected.normalized"
 
   unit_present_before=$(<"$unit_present_file")
-  if snapshot_unit "$unit_after"; then
+  if polkit_snapshot_unit "$unit_after"; then
     unit_present_after=1
   else
-    rm -f -- "$unit_after"
+    snapshot_status=$?
+    if ((snapshot_status == POLKIT_UNIT_ABSENT_STATUS)); then
+      rm -f -- "$unit_after"
+    else
+      printf 'FAIL: unable to inspect desktop-shell.service after test (status %s)\n' \
+        "$snapshot_status" >&2
+      return 1
+    fi
   fi
 
   if [[ $unit_present_before != "$unit_present_after" ]]; then
