@@ -13,6 +13,7 @@ fi
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
 readonly POLKIT_AGENT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
+readonly SIGNAL_COMMAND="${DESKTOP_SHELL_SIGNAL_COMMAND:-kill}"
 polkit_comm="${POLKIT_AGENT##*/}"
 polkit_comm="${polkit_comm:0:15}"
 readonly POLKIT_COMM="$polkit_comm"
@@ -32,10 +33,11 @@ query_named_pids() {
   if result=$(pgrep -x -- "$name" 2>/dev/null); then
     printf '%s\n' "$result"
     return 0
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
   fi
-  status=$?
-  ((status == 1)) && return 0
-  return "$status"
 }
 
 query_polkit_pids() {
@@ -53,7 +55,7 @@ query_polkit_pids() {
   fi
 
   while IFS= read -r pid; do
-    [[ $pid =~ ^[1-9][0-9]*$ ]] || continue
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 2
     if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
       return 2
     fi
@@ -74,10 +76,14 @@ wait_for_processes_absent() {
   local process=$1
   local attempt
   local pids
+  local status
 
   for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
-    if ! pids=$(query_process_pids "$process"); then
-      return 1
+    if pids=$(query_process_pids "$process"); then
+      :
+    else
+      status=$?
+      return "$status"
     fi
     [[ -z $pids ]] && return 0
     sleep "$WAIT_INTERVAL"
@@ -87,42 +93,99 @@ wait_for_processes_absent() {
   return 1
 }
 
-terminate_named_process() {
-  local name=$1
-  local pids
-  local -a command=(pkill -TERM -x -- "$name")
+pid_in_set() {
+  local expected_pid=$1
+  local pids=$2
+  local pid
 
-  if ! pids=$(query_process_pids "$name"); then
-    return 1
-  fi
-  [[ -n $pids ]] || return 0
-
-  if "${command[@]}"; then
-    :
-  else
-    local status=$?
-    ((status == 1)) || return "$status"
-  fi
-  wait_for_processes_absent "$name"
+  while IFS= read -r pid; do
+    [[ $pid == "$expected_pid" ]] && return 0
+  done <<<"$pids"
+  return 1
 }
 
-terminate_polkit_process() {
+verify_named_process_pid() {
+  local pid=$1
+  local name=$2
   local pids
-  local pattern="^${POLKIT_AGENT}( |$)"
-  local -a command=(pkill -TERM -f -- "$pattern")
+  local executable
+  local status
 
-  if ! pids=$(query_process_pids polkit); then
-    return 1
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  if pids=$(query_named_pids "$name"); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  pid_in_set "$pid" "$pids" || return 1
+  if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
+    return 2
+  fi
+  [[ ${executable##*/} == "$name" ]]
+}
+
+verify_polkit_pid() {
+  local pid=$1
+  local executable
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
+    return 2
+  fi
+  [[ $executable == "$POLKIT_AGENT" ]]
+}
+
+signal_pid() {
+  local pid=$1
+  local status
+  local -a command=("$SIGNAL_COMMAND" -TERM "$pid")
+
+  if "${command[@]}"; then
+    return 0
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
+  fi
+}
+
+terminate_processes() {
+  local process=$1
+  local pids
+  local pid
+  local status
+
+  if pids=$(query_process_pids "$process"); then
+    :
+  else
+    status=$?
+    return "$status"
   fi
   [[ -n $pids ]] || return 0
 
-  if "${command[@]}"; then
-    :
-  else
-    local status=$?
-    ((status == 1)) || return "$status"
-  fi
-  wait_for_processes_absent polkit
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+    if [[ $process == polkit ]]; then
+      if verify_polkit_pid "$pid"; then
+        status=0
+      else
+        status=$?
+      fi
+    else
+      if verify_named_process_pid "$pid" "$process"; then
+        status=0
+      else
+        status=$?
+      fi
+    fi
+    if ((status == 0)); then
+      signal_pid "$pid" || return 1
+    elif ((status != 1)); then
+      return 1
+    fi
+  done <<<"$pids"
+  wait_for_processes_absent "$process"
 }
 
 wait_for_unit_active() {
@@ -139,15 +202,33 @@ wait_for_unit_active() {
   return 1
 }
 
-verify_notification_owner() {
-  local shell_pid=$1
-  local owner_status
-  local -a command=(busctl --user status org.freedesktop.Notifications)
+query_notification_owner_pid() {
+  local response
+  local type=''
+  local owner_pid=''
+  local extra=''
+  local -a command=(
+    busctl --user call org.freedesktop.DBus /org/freedesktop/DBus
+    org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.Notifications
+  )
 
-  if ! owner_status=$("${command[@]}" 2>/dev/null); then
+  if ! response=$("${command[@]}" 2>/dev/null); then
     return 1
   fi
-  [[ $owner_status == *"PID=$shell_pid"* && $owner_status == *desktop-shell* ]]
+  [[ $response != *$'\n'* ]] || return 1
+  read -r type owner_pid extra <<<"$response"
+  [[ $type == u && $owner_pid =~ ^[1-9][0-9]*$ && -z $extra ]] || return 1
+  printf '%s\n' "$owner_pid"
+}
+
+verify_notification_owner() {
+  local expected_pids=$1
+  local process_name=$2
+  local owner_pid
+
+  owner_pid=$(query_notification_owner_pid) || return 1
+  pid_in_set "$owner_pid" "$expected_pids" || return 1
+  verify_named_process_pid "$owner_pid" "$process_name"
 }
 
 read_shell_pid() {
@@ -198,18 +279,19 @@ verify_shell_health() {
 stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)
 "${stop_units[@]}" || die 'could not stop desktop-shell services'
 
-terminate_named_process mako || die 'could not terminate exact Mako process'
-terminate_named_process swayosd-server || die 'could not terminate exact SwayOSD process'
-terminate_polkit_process || die 'could not terminate exact polkit-gnome process'
+terminate_processes mako || die 'could not terminate exact Mako process'
+terminate_processes swayosd-server || die 'could not terminate exact SwayOSD process'
+terminate_processes polkit || die 'could not terminate exact polkit-gnome process'
 
-rm -f -- "$CUE_FILE"
+remove_cue=(rm -f -- "$CUE_FILE")
+"${remove_cue[@]}" || die 'could not remove stale RustDesk cue state'
 
 start_shell=(systemctl --user start desktop-shell.service)
 "${start_shell[@]}" || die 'could not start desktop-shell.service'
 wait_for_unit_active desktop-shell.service || die 'desktop-shell.service is not active'
 
 shell_pid=$(read_shell_pid) || die 'could not read desktop-shell.service MainPID'
-verify_notification_owner "$shell_pid" || die 'Quickshell does not own notifications'
+verify_notification_owner "$shell_pid" quickshell || die 'Quickshell does not own notifications'
 
 ping_command=(desktop-shell ping)
 ping_result=$("${ping_command[@]}" 2>/dev/null) || die 'desktop-shell ping failed'
