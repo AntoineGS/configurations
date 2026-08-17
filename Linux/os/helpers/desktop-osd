@@ -11,6 +11,7 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 
 IFS=$'\n\t'
+export LC_ALL=C
 
 readonly MAX_STEP=20
 readonly MAX_PERCENT=100
@@ -54,8 +55,8 @@ require_jq() {
 validate_step() {
   local step=$1
 
-  [[ $step =~ ^[0-9]+$ ]] || return 1
-  (( step >= 1 && step <= MAX_STEP )) || return 1
+  [[ $step =~ ^([1-9]|1[0-9]|20)$ ]] || return 1
+  printf '%s\n' "$step"
 }
 
 run_mutation() {
@@ -139,12 +140,16 @@ read_volume_state() {
   if [[ $line == *'[MUTED]'* ]]; then
     muted=true
   fi
-  jq_command=("${JQ[@]}" -nr --arg scalar "$scalar" "\$scalar | tonumber * 100")
+  jq_command=(
+    "${JQ[@]}" -nr
+    --arg scalar "$scalar"
+    "\$scalar | tonumber | (. * 100 | round) | if . < 0 then 0 elif . > 100 then 100 else . end"
+  )
   if ! volume_percent=$("${jq_command[@]}" 2>/dev/null); then
     printf 'desktop-osd: malformed volume scalar\n' >&2
     return 1
   fi
-  [[ $volume_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  [[ $volume_percent =~ ^[0-9]+$ ]] || return 1
   volume_muted=$muted
 }
 
@@ -173,6 +178,7 @@ read_brightness_state() {
   local reported_percent=''
   local extra=''
   local -a command=(brightnessctl)
+  local -a jq_command
 
   if [[ -n $device ]]; then
     command+=(-d "$device")
@@ -186,10 +192,27 @@ read_brightness_state() {
   line=${raw//$'\r'/}
   IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$line"
   [[ -n $reported_device && -n $device_class && -z $extra ]] || return 1
-  [[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ && $maximum -gt 0 ]] || return 1
+  [[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ ]] || return 1
   [[ $reported_percent == *% ]] || return 1
   reported_percent=${reported_percent%\%}
   [[ $reported_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+
+  jq_command=(
+    "${JQ[@]}" -n -e
+    --argjson value "$value"
+    --argjson maximum "$maximum"
+    --arg percent "$reported_percent"
+    "(\$percent | tonumber) as \$reported
+     | (\$value * 100 / \$maximum) as \$expected
+     | (\$maximum > 0)
+       and (\$value <= \$maximum)
+       and (\$reported >= 0 and \$reported <= 100)
+       and ((\$reported == (\$expected | floor)) or (\$reported == (\$expected | round)))"
+  )
+  if ! "${jq_command[@]}" >/dev/null 2>&1; then
+    printf 'desktop-osd: inconsistent brightness state\n' >&2
+    return 1
+  fi
 
   brightness_value=$value
   brightness_max=$maximum
@@ -348,8 +371,9 @@ main() {
   case "$operation" in
     volume-up|volume-down|brightness-up|brightness-down)
       (( $# == 2 )) || usage
-      step=$2
-      validate_step "$step" || usage
+      if ! step=$(validate_step "$2"); then
+        usage
+      fi
       ;;
     volume-toggle|mic-toggle|keyboard-up|keyboard-down|keyboard-cycle|media-next|media-previous|media-play-pause)
       (( $# == 1 )) || usage

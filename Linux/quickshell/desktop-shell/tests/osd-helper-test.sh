@@ -9,6 +9,7 @@ TMP_DIR="$(mktemp -d)"
 CALL_LOG="$TMP_DIR/mutations.log"
 IPC_LOG="$TMP_DIR/ipc.log"
 PAYLOAD_FILE="$TMP_DIR/payload.json"
+LOCALE_LOG="$TMP_DIR/locales.log"
 SYSFS_ROOT="$TMP_DIR/sys"
 STATE_DIR="$TMP_DIR/state"
 
@@ -35,13 +36,16 @@ DISPLAY_MAX_FILE="$STATE_DIR/display-max"
 KEYBOARD_CURRENT_FILE="$STATE_DIR/keyboard-current"
 KEYBOARD_MAX_FILE="$STATE_DIR/keyboard-max"
 
-export CALL_LOG IPC_LOG PAYLOAD_FILE
+export CALL_LOG IPC_LOG PAYLOAD_FILE LOCALE_LOG
 export SINK_VOLUME_FILE SINK_MUTED_FILE SOURCE_VOLUME_FILE SOURCE_MUTED_FILE
 export DISPLAY_CURRENT_FILE DISPLAY_MAX_FILE KEYBOARD_CURRENT_FILE KEYBOARD_MAX_FILE
 
 cat >"$TMP_DIR/bin/wpctl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
+printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
+[[ ${LC_ALL:-} == C ]] || exit 125
 
 log_mutation() {
   printf 'wpctl' >>"$CALL_LOG"
@@ -71,7 +75,9 @@ print_volume() {
   volume_file=$(volume_file_for "$target")
   muted_file=$(muted_file_for "$target")
   volume=$(<"$volume_file")
-  if (( volume >= 100 )); then
+  if [[ -n ${STUB_VOLUME_SCALAR:-} ]]; then
+    scalar=$STUB_VOLUME_SCALAR
+  elif (( volume >= 100 )); then
     scalar='1.00'
   else
     printf -v scalar '0.%02d' "$volume"
@@ -136,6 +142,9 @@ cat >"$TMP_DIR/bin/brightnessctl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
+[[ ${LC_ALL:-} == C ]] || exit 125
+
 log_mutation() {
   printf 'brightnessctl' >>"$CALL_LOG"
   printf ' %q' "$@" >>"$CALL_LOG"
@@ -155,6 +164,10 @@ while (($# > 0)); do
     -m)
       if [[ ${STUB_READBACK_FAILURE:-} == brightnessctl ]]; then
         exit 1
+      fi
+      if [[ -n ${STUB_BRIGHTNESS_OUTPUT:-} ]]; then
+        printf '%s\n' "$STUB_BRIGHTNESS_OUTPUT"
+        exit 0
       fi
       if [[ -n $device ]]; then
         current=$(<"$KEYBOARD_CURRENT_FILE")
@@ -220,6 +233,9 @@ cat >"$TMP_DIR/bin/playerctl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
+[[ ${LC_ALL:-} == C ]] || exit 125
+
 printf 'playerctl' >>"$CALL_LOG"
 printf ' %q' "$@" >>"$CALL_LOG"
 printf '\n' >>"$CALL_LOG"
@@ -235,6 +251,9 @@ EOF
 cat >"$TMP_DIR/bin/desktop-shell" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
+printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
+[[ ${LC_ALL:-} == C ]] || exit 125
 
 (( $# == 4 )) || exit 2
 [[ $1 == call && $2 == desktop.osd && $3 == show ]] || exit 2
@@ -263,8 +282,11 @@ reset_fixture() {
   : >"$CALL_LOG"
   : >"$IPC_LOG"
   : >"$PAYLOAD_FILE"
+  : >"$LOCALE_LOG"
   export STUB_MUTATION_FAILURE=''
   export STUB_READBACK_FAILURE=''
+  export STUB_VOLUME_SCALAR=''
+  export STUB_BRIGHTNESS_OUTPUT=''
   export STUB_IPC_FAILURE=''
   export STUB_IPC_RESPONSE='ok'
 }
@@ -312,11 +334,33 @@ assert_payload() {
   jq -e "$expression" "$PAYLOAD_FILE" >/dev/null || fail "payload assertion failed: $(<"$PAYLOAD_FILE")"
 }
 
+assert_pinned_locale() {
+  local locale
+
+  [[ -s "$LOCALE_LOG" ]] || fail 'external command locale was not recorded'
+  while IFS= read -r locale; do
+    [[ $locale == C ]] || fail "external command locale was not pinned: $locale"
+  done <"$LOCALE_LOG"
+}
+
 reset_fixture
 run_helper volume-up 5
 assert_status 0
 assert_mutation 'wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ --limit 1'
 assert_payload '.icon == "volume-medium" and .message == "" and .value == 47 and .max == 100 and .progressText == "47%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+assert_pinned_locale
+
+reset_fixture
+export STUB_VOLUME_SCALAR=0.07
+run_helper volume-up 5
+assert_status 0
+assert_payload '.icon == "volume-low" and .message == "" and .value == 7 and .max == 100 and .progressText == "7%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+
+reset_fixture
+export STUB_VOLUME_SCALAR=1.25
+run_helper volume-up 5
+assert_status 0
+assert_payload '.icon == "volume-high" and .message == "" and .value == 100 and .max == 100 and .progressText == "100%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
 
 reset_fixture
 run_helper volume-down 5
@@ -390,6 +434,8 @@ invalid_cases=(
   'volume-up 0'
   'volume-up 21'
   'volume-up 1.5'
+  'volume-up 024'
+  'volume-up 999999999999999999999999999999999999999999999999999999999999999999'
   'brightness-up'
   'volume-toggle extra'
   'unknown-operation'
@@ -402,6 +448,18 @@ for invalid_args in "${invalid_cases[@]}"; do
   assert_no_mutation
   assert_no_ipc
 done
+
+reset_fixture
+run_helper ''
+assert_status 2
+assert_no_mutation
+assert_no_ipc
+
+reset_fixture
+run_helper volume-up ''
+assert_status 2
+assert_no_mutation
+assert_no_ipc
 
 reset_fixture
 export STUB_MUTATION_FAILURE=wpctl
@@ -430,6 +488,13 @@ assert_no_ipc
 
 reset_fixture
 export STUB_READBACK_FAILURE=brightnessctl
+run_helper brightness-up 5
+assert_status 1
+assert_one_mutation
+assert_no_ipc
+
+reset_fixture
+export STUB_BRIGHTNESS_OUTPUT='intel_backlight,backlight,120,100,80%'
 run_helper brightness-up 5
 assert_status 1
 assert_one_mutation
