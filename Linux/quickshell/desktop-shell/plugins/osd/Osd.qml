@@ -18,7 +18,8 @@ Item {
   property real maxValue: 100
   property bool hasProgress: false
   property int duration: 1200
-  property var targetScreen: null
+  property var screenList: Quickshell.screens
+  readonly property var targetScreen: OsdModel.screenForMonitor(root.screenList, root.focusedMonitorName)
   property var displayedState: ({
     valid: false,
     iconKey: "",
@@ -49,14 +50,6 @@ Item {
     ? root.iconWidth + root.gap + root.barWidth + root.gap + root.valueWidth
     : (root.message === "" ? root.iconWidth : root.iconWidth + root.messageGap + root.messageWidth)
 
-  // Prefer the focused compositor monitor. The pure selector falls back to
-  // the first available Quickshell screen until the focused output appears.
-  function updateScreen() {
-    root.targetScreen = OsdModel.screenForMonitor(Quickshell.screens, root.focusedMonitorName)
-  }
-
-  onFocusedMonitorNameChanged: if (root.opened) root.updateScreen()
-
   /**
    * Apply a normalized payload without parsing or validating it in QML.
    *
@@ -67,7 +60,6 @@ Item {
     var next = OsdModel.normalizePayload(payloadJson)
     if (!next.valid) return "invalid"
 
-    root.updateScreen()
     root.displayedState = next
     root.iconKey = next.iconKey
     root.maxValue = next.maxValue

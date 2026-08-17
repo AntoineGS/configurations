@@ -228,6 +228,14 @@ while (($# > 0)); do
           current=$(( $(<"$current_file") + BASH_REMATCH[1] ))
         elif [[ $operation =~ ^-([0-9]+)%$ ]]; then
           current=$(( $(<"$current_file") - BASH_REMATCH[1] ))
+        elif [[ $operation =~ ^([0-9]+)%([+-])$ ]]; then
+          current=$(<"$current_file")
+          amount=${BASH_REMATCH[1]}
+          if [[ ${BASH_REMATCH[2]} == + ]]; then
+            current=$((current + amount))
+          else
+            current=$((current - amount))
+          fi
         else
           exit 2
         fi
@@ -348,6 +356,7 @@ set -Eeuo pipefail
 case "${1:-}" in
   -f)
     [[ ${2:-} == json && ${3:-} == list && ${4:-} == sinks ]] || exit 2
+    [[ ${STUB_PACTL_LIST_FAILURE:-0} == 1 ]] && exit 1
     list_count=$(<"$AUDIO_LIST_COUNT_FILE")
     list_count=$((list_count + 1))
     printf '%s\n' "$list_count" >"$AUDIO_LIST_COUNT_FILE"
@@ -358,6 +367,14 @@ case "${1:-}" in
     fi
     ;;
   get-default-sink)
+    [[ ${STUB_PACTL_DEFAULT_FAILURE:-0} == 1 ]] && exit 1
+    if [[ ${STUB_PACTL_DEFAULT_FAILURE_AFTER_MUTATION:-0} == 1 ]] && [[ $(<"$AUDIO_DEFAULT_FILE") == sink-b ]]; then
+      exit 1
+    fi
+    if [[ ${STUB_PACTL_DEFAULT_OUTPUT+x} ]]; then
+      printf '%s\n' "$STUB_PACTL_DEFAULT_OUTPUT"
+      exit 0
+    fi
     cat "$AUDIO_DEFAULT_FILE"
     ;;
   set-default-sink)
@@ -436,6 +453,10 @@ reset_fixture() {
   export STUB_ASD_MUTATION_FAILURE=0
   export STUB_ASD_VALUE=30000
   export STUB_PACTL_MUTATION_FAILURE=0
+  export STUB_PACTL_LIST_FAILURE=0
+  export STUB_PACTL_DEFAULT_FAILURE=0
+  export STUB_PACTL_DEFAULT_FAILURE_AFTER_MUTATION=0
+  unset STUB_PACTL_DEFAULT_OUTPUT
   export STUB_DESKTOP_OSD_EXIT=0
   export STUB_WPCTL_STATUS=''
 }
@@ -469,6 +490,11 @@ run_specialized() {
 assert_status() {
   local expected=$1
   [[ $LAST_STATUS -eq $expected ]] || fail "expected exit $expected, got $LAST_STATUS: $LAST_STDERR"
+}
+
+assert_stderr() {
+  local expected=$1
+  [[ $LAST_STDERR == *"$expected"* ]] || fail "expected stderr to contain <$expected>, got <$LAST_STDERR>"
 }
 
 assert_mutation() {
@@ -722,6 +748,12 @@ assert_status 0
 assert_mutation 'brightnessctl -d intel_backlight set 42%'
 assert_payload '.icon == "brightness" and .message == "" and .value == 42 and .max == 100 and .progressText == "42%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
 
+reset_fixture
+run_specialized "$DISPLAY_HELPER" 5%-
+assert_status 0
+assert_mutation 'brightnessctl -d intel_backlight set 5%-'
+assert_payload '.icon == "brightness" and .message == "" and .value == 45 and .max == 100 and .progressText == "45%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+
 for direction in up down cycle; do
   reset_fixture
   run_specialized "$KEYBOARD_HELPER" "$direction"
@@ -745,24 +777,36 @@ assert_payload '.icon == "brightness" and .message == "" and .value == 50 and .m
 reset_fixture
 export STUB_IPC_EXIT=3
 run_specialized "$APPLE_DISPLAY_HELPER" +5000
-assert_status 0
+assert_status 3
 assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
 [[ -s "$IPC_LOG" ]] || fail 'Apple display feedback was not attempted'
 
 reset_fixture
 export STUB_IPC_RESPONSE=not-ok
 run_specialized "$APPLE_DISPLAY_HELPER" +5000
-assert_status 1
+assert_status 3
+assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
+
+reset_fixture
+export STUB_IPC_EXIT=1
+run_specialized "$APPLE_DISPLAY_HELPER" +5000
+assert_status 3
 assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
 
 reset_fixture
 export STUB_IPC_RESPONSE=not-ok
 run_specialized "$DISPLAY_HELPER" +5%
-assert_status 1
+assert_status 3
 assert_mutation 'brightnessctl -d intel_backlight set +5%'
 
 reset_fixture
 export STUB_IPC_EXIT=3
+run_specialized "$DISPLAY_HELPER" +5%
+assert_status 3
+assert_mutation 'brightnessctl -d intel_backlight set +5%'
+
+reset_fixture
+export STUB_IPC_EXIT=1
 run_specialized "$DISPLAY_HELPER" +5%
 assert_status 3
 assert_mutation 'brightnessctl -d intel_backlight set +5%'
@@ -773,6 +817,70 @@ run_specialized "$AUDIO_SWITCH_HELPER"
 assert_status 1
 assert_no_mutation
 assert_payload '.icon == "volume-muted" and .message == "No audio devices found" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_PACTL_LIST_FAILURE=1
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_no_mutation
+assert_no_ipc
+assert_stderr 'failed to enumerate audio devices'
+
+reset_fixture
+printf '%s\n' '{malformed' >"$AUDIO_SINKS_FILE"
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_no_mutation
+assert_no_ipc
+assert_stderr 'malformed audio device list'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_PACTL_DEFAULT_FAILURE=1
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_no_mutation
+assert_no_ipc
+assert_stderr 'failed to read current default sink'
+
+reset_fixture
+printf '%s\n' '[
+  {"name":"sink-a","description":"Built-in Audio","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"50%"}},"mute":false},
+  {"name":"sink-b","description":"Headphones","ports":[],"properties":{},"volume":{},"mute":false}
+]' >"$AUDIO_SINKS_FILE"
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_no_mutation
+assert_no_ipc
+assert_stderr 'failed to read next sink details'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_PACTL_MUTATION_FAILURE=1
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_one_mutation
+assert_no_ipc
+assert_stderr 'default sink mutation failed'
+
+reset_fixture
+write_audio_transition_fixture
+export STUB_PACTL_DEFAULT_FAILURE_AFTER_MUTATION=1
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_one_mutation
+assert_no_ipc
+assert_stderr 'failed to read post-mutation default sink'
+
+reset_fixture
+write_audio_transition_fixture
+printf '%s\n' '[]' >"$AUDIO_SINKS_AFTER_FILE"
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_one_mutation
+assert_no_ipc
+assert_stderr 'selected sink disappeared after mutation'
 
 reset_fixture
 printf '%s\n' '[
@@ -791,7 +899,7 @@ printf '%s\n' '[
 ]' >"$AUDIO_SINKS_FILE"
 export STUB_IPC_EXIT=3
 run_specialized "$AUDIO_SWITCH_HELPER"
-assert_status 0
+assert_status 3
 assert_mutation 'pactl set-default-sink sink-b'
 [[ -s "$IPC_LOG" ]] || fail 'audio switch feedback was not attempted'
 
@@ -806,7 +914,7 @@ reset_fixture
 write_audio_transition_fixture
 export STUB_IPC_RESPONSE=not-ok
 run_specialized "$AUDIO_SWITCH_HELPER"
-assert_status 1
+assert_status 3
 assert_mutation 'pactl set-default-sink sink-b'
 assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
 
@@ -814,7 +922,7 @@ reset_fixture
 write_audio_transition_fixture
 export STUB_IPC_EXIT=1
 run_specialized "$AUDIO_SWITCH_HELPER"
-assert_status 1
+assert_status 3
 assert_mutation 'pactl set-default-sink sink-b'
 assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
 
@@ -822,7 +930,7 @@ reset_fixture
 write_audio_transition_fixture
 export STUB_IPC_EXIT=3
 run_specialized "$AUDIO_SWITCH_HELPER"
-assert_status 0
+assert_status 3
 assert_mutation 'pactl set-default-sink sink-b'
 assert_payload '.icon == "volume-muted" and .message == "After default" and (keys | sort) == ["icon", "message"]'
 

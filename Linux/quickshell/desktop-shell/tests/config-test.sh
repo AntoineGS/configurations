@@ -359,7 +359,7 @@ assert.match(registry, /if \(isDisabled\(config, key\)\) return false/,
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
-assert.match(helper, /quickshell ipc --any-display -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /quickshell ipc --any-display -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call -- \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
 assert.match(helper, /toggle-bar\)\s+\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}\s+method="toggleBar"/)
 assert.doesNotMatch(helper, /\beval\b/)
 assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")
@@ -384,7 +384,7 @@ cat >"$fake_bin/quickshell" <<'FAKE_QUICKSHELL'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\0' "$@" >"$DESKTOP_SHELL_IPC_TRACE"
-if [[ ${8-} == desktop.notifications && ${9-} == toggleDnd ]]; then
+if [[ ${9-} == desktop.notifications && ${10-} == toggleDnd ]]; then
   printf '%s\n' "${DESKTOP_SHELL_FAKE_RESULT:-disabled}"
 fi
 FAKE_QUICKSHELL
@@ -422,7 +422,7 @@ run_notification_toggle() {
 assert_trace() {
   local -a actual expected
   mapfile -d '' actual <"$trace" || true
-  expected=("ipc" "--any-display" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
+  expected=("ipc" "--any-display" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "--" "$@")
   if (( ${#actual[@]} != ${#expected[@]} )); then
     printf 'config-test: IPC argument count mismatch\n' >&2
     exit 1
@@ -430,6 +430,22 @@ assert_trace() {
   for ((i = 0; i < ${#expected[@]}; i++)); do
     if [[ "${actual[i]}" != "${expected[i]}" ]]; then
       printf 'config-test: IPC argument %d mismatch: %q != %q\n' "$i" "${actual[i]}" "${expected[i]}" >&2
+      exit 1
+    fi
+  done
+}
+
+assert_toggle_trace() {
+  local -a actual expected
+  mapfile -d '' actual <"$trace" || true
+  expected=("ipc" "--any-display" "-p" "$test_home/.config/quickshell/desktop-shell" "call" "$@")
+  if (( ${#actual[@]} != ${#expected[@]} )); then
+    printf 'config-test: toggle IPC argument count mismatch\n' >&2
+    exit 1
+  fi
+  for ((i = 0; i < ${#expected[@]}; i++)); do
+    if [[ "${actual[i]}" != "${expected[i]}" ]]; then
+      printf 'config-test: toggle IPC argument %d mismatch: %q != %q\n' "$i" "${actual[i]}" "${expected[i]}" >&2
       exit 1
     fi
   done
@@ -470,7 +486,7 @@ test "$unknown_exit" -eq 2
 test ! -s "$trace"
 
 run_toggle
-assert_trace desktop-shell toggleBar
+assert_toggle_trace desktop-shell toggleBar
 
 notification_state=$(run_notification_toggle)
 test "$notification_state" = disabled

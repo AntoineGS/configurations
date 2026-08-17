@@ -56,4 +56,4 @@ case "$command_name" in
     ;;
 esac
 
-quickshell ipc --any-display -p "$HOME/.config/quickshell/desktop-shell" call "$target" "$method" "${args[@]}"
+quickshell ipc --any-display -p "$HOME/.config/quickshell/desktop-shell" call -- "$target" "$method" "${args[@]}"
