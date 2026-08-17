@@ -61,7 +61,7 @@ export VM_VIRSH_TRACE
 export VM_STATS_FAIL=0
 
 export VM_LIST_OUTPUT=$'win11 gaming\n'
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 1000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 1000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=1000000000
 run_vm 0
 first=$VM_OUTPUT
@@ -76,7 +76,7 @@ assert_json "$first" \
    .data.memory.percent == 42' \
   'first VM sample was not normalized as required'
 
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 6000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 6000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=6000000000
 run_vm 0
 second=$VM_OUTPUT
@@ -108,14 +108,14 @@ assert_json "$VM_OUTPUT" \
   'no running VM was not reported as unavailable'
 
 export VM_LIST_OUTPUT=$'win11 gaming\n'
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=8000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
   '.data.cpu.available == false and .data.memory.usageAvailable == true' \
   'a new VM sample did not start a fresh CPU baseline'
 
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 8000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 8000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\n'
 export DESKTOP_HARDWARE_NOW_NS=9000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
@@ -126,7 +126,7 @@ assert_json "$VM_OUTPUT" \
    .data.memory.usedKiB == null and .data.memory.percent == null' \
   'missing balloon.usable was not reflected in memory availability'
 
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=10000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
@@ -134,19 +134,31 @@ assert_json "$VM_OUTPUT" \
   'a decreasing CPU counter was treated as a valid delta'
 
 export VM_LIST_OUTPUT=$'replacement\n'
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 8000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 8000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=11000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
   '.data.name == "replacement" and .data.cpu.available == false' \
   'a changed VM name did not reset the CPU delta'
 
-export VM_STATS_OUTPUT=$'state.state = running\ncpu.time = 13000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 13000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=16000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
   '.data.name == "replacement" and .data.cpu.available == true and .data.cpu.percent == 25' \
   'the replacement VM did not establish a new CPU baseline'
+
+cache_before=$(<"$STATE_DIR/vm.json")
+export VM_STATS_OUTPUT=$'state.state = 3\ncpu.time = 14000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export DESKTOP_HARDWARE_NOW_NS=17000000000
+run_vm 1
+assert_json "$VM_OUTPUT" \
+  '.available == true and .stale == true and (.error | length > 0) and
+   .data.name == "replacement" and .data.cpuTimeNs == 13000000000 and
+   .data.sampledAtNs == 16000000000' \
+  'a paused VM race did not return the previous payload as stale'
+cache_after=$(<"$STATE_DIR/vm.json")
+[[ $cache_after == "$cache_before" ]] || fail 'a non-running VM race mutated the fresh cache'
 
 export VM_LIST_OUTPUT=$'one\ntwo\n'
 run_vm 1
