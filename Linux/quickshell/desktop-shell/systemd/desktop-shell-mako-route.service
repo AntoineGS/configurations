@@ -1,0 +1,10 @@
+[Unit]
+Description=Rollback Mako adapter for desktop-shell notification routes
+PartOf=graphical-session.target
+Conflicts=desktop-shell.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/helpers/desktop-shell-mako-route
+Restart=on-failure
+RestartSec=2
