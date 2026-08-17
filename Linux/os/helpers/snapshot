@@ -2,6 +2,13 @@
 
 set -Eeuo pipefail
 
+normalize_post_snapper_failure() {
+  local status=$1
+
+  ((status == 127)) && status=1
+  exit "$status"
+}
+
 COMMAND="${1:-}"
 
 if [[ -z $COMMAND ]]; then
@@ -13,18 +20,95 @@ if ! command -v snapper &>/dev/null; then
   exit 127 # update can use this to just ignore if snapper is not available
 fi
 
+trap 'normalize_post_snapper_failure "$?"' ERR
+
+if SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"; then
+  :
+else
+  path_status=$?
+  printf 'snapshot: failed to resolve helper directory\n' >&2
+  normalize_post_snapper_failure "$path_status"
+fi
+CONFIG="$SCRIPT_DIR/snapshot-config"
+
+if [[ ! -r $CONFIG ]]; then
+  printf 'snapshot: missing rendered configuration: %s\n' "$CONFIG" >&2
+  exit 1
+fi
+
+unset SNAPSHOT_HOST
+
+# shellcheck disable=SC1090
+source "$CONFIG"
+
+case "${SNAPSHOT_HOST-}" in
+omarchbook|other) ;;
+"")
+  printf 'snapshot: rendered configuration has no SNAPSHOT_HOST\n' >&2
+  exit 1
+  ;;
+*)
+  printf 'snapshot: invalid rendered SNAPSHOT_HOST: %s\n' "$SNAPSHOT_HOST" >&2
+  exit 1
+  ;;
+esac
+
 case "$COMMAND" in
 create)
   DESC="pre-update $(date --iso-8601=seconds)"
 
   echo -e "\e[32mCreate system snapshot\e[0m"
 
-  # Get existing snapper config names from CSV output
-  mapfile -t CONFIGS < <(sudo snapper --csvout list-configs | awk -F, 'NR>1 {print $1}')
+  case "$SNAPSHOT_HOST" in
+  omarchbook)
+    if ! command -v flock &>/dev/null; then
+      printf 'snapshot: flock is required for serialized snapshots\n' >&2
+      exit 1
+    fi
 
-  for config in "${CONFIGS[@]}"; do
-    sudo snapper -c "$config" create -c number -d "$DESC"
-  done
+    # Supported scope: one configured user invoking this helper; all supported
+    # invocations share HOME and therefore this per-user lock.
+    lock_dir="$HOME/.cache"
+    (
+      set -e
+      umask 077
+      mkdir -p -- "$lock_dir"
+      exec 9>"$lock_dir/snapshot-omarchbook.lock"
+      flock -x 9
+
+      if OLD_SNAPSHOTS_OUTPUT=$(
+        set -o pipefail
+        sudo snapper -c root --csvout --no-headers list --type single --columns number,cleanup,userdata |
+          awk -F, '$2 == "number" && $0 !~ /important=yes/ { print $1 }'
+      ); then
+        :
+      else
+        inventory_status=$?
+        printf 'snapshot: failed to inventory existing snapshots\n' >&2
+        exit "$inventory_status"
+      fi
+
+      OLD_SNAPSHOTS=()
+      if [[ -n $OLD_SNAPSHOTS_OUTPUT ]]; then
+        mapfile -t OLD_SNAPSHOTS <<<"$OLD_SNAPSHOTS_OUTPUT"
+      fi
+
+      sudo snapper -c root create -c number -d "$DESC"
+
+      for snapshot in "${OLD_SNAPSHOTS[@]}"; do
+        sudo snapper -c root delete "$snapshot"
+      done
+    )
+    ;;
+  other)
+    # Get existing snapper config names from CSV output
+    mapfile -t CONFIGS < <(sudo snapper --csvout list-configs | awk -F, 'NR>1 {print $1}')
+
+    for config in "${CONFIGS[@]}"; do
+      sudo snapper -c "$config" create -c number -d "$DESC"
+    done
+    ;;
+  esac
   echo
   ;;
 restore)
