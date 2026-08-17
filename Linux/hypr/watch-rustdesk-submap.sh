@@ -12,6 +12,10 @@ NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 
+monotonic_seconds() {
+  printf '%s\n' "$SECONDS"
+}
+
 is_rustdesk_remote() {
   printf '%s\n' "$1" | grep -qi "rustdesk" &&
     printf '%s\n' "$1" | grep -qi "Remote Desktop"
@@ -224,7 +228,7 @@ write_notification_route_state() {
     return 1
   fi
 
-  monotonic_now=$SECONDS
+  monotonic_now=$(monotonic_seconds)
   route_write_age=$NOTIFICATION_ROUTE_REWRITE_INTERVAL
   if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]] &&
     ((monotonic_now >= NOTIFICATION_ROUTE_LAST_WRITE_SECONDS)); then
@@ -354,7 +358,7 @@ handle_hyprland_event() {
 consume_hyprland_event_stream() {
   local clean_state_name=$1
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
-  local evline read_status last_write_before_event
+  local evline read_status last_write_before_event monotonic_now
   local last_write_before_reconciliation reconcile_status
   local next_reconciliation remaining route_deadline
 
@@ -365,7 +369,8 @@ consume_hyprland_event_stream() {
   fi
 
   reconcile_notification_routing || true
-  next_reconciliation=$((SECONDS + reconcile_interval))
+  monotonic_now=$(monotonic_seconds)
+  next_reconciliation=$((monotonic_now + reconcile_interval))
   if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
     route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
     if ((route_deadline < next_reconciliation)); then
@@ -374,7 +379,8 @@ consume_hyprland_event_stream() {
   fi
 
   while :; do
-    remaining=$((next_reconciliation - SECONDS))
+    monotonic_now=$(monotonic_seconds)
+    remaining=$((next_reconciliation - monotonic_now))
     if ((remaining <= 0)); then
       last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
       if reconcile_notification_routing; then
@@ -382,7 +388,8 @@ consume_hyprland_event_stream() {
       else
         reconcile_status=$?
       fi
-      next_reconciliation=$((SECONDS + reconcile_interval))
+      monotonic_now=$(monotonic_seconds)
+      next_reconciliation=$((monotonic_now + reconcile_interval))
       if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
         route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
         if ((route_deadline < next_reconciliation)); then
@@ -391,7 +398,8 @@ consume_hyprland_event_stream() {
       fi
       if ((reconcile_status != 0)) &&
         [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
-        next_reconciliation=$((SECONDS + 1))
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + 1))
       fi
       continue
     fi
@@ -400,7 +408,8 @@ consume_hyprland_event_stream() {
       last_write_before_event=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
       handle_hyprland_event "$evline" "$clean_state_name"
       if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} != "$last_write_before_event" ]]; then
-        next_reconciliation=$((SECONDS + reconcile_interval))
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + reconcile_interval))
         if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
           route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
           if ((route_deadline < next_reconciliation)); then
@@ -420,7 +429,8 @@ consume_hyprland_event_stream() {
       else
         reconcile_status=$?
       fi
-      next_reconciliation=$((SECONDS + reconcile_interval))
+      monotonic_now=$(monotonic_seconds)
+      next_reconciliation=$((monotonic_now + reconcile_interval))
       if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
         route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
         if ((route_deadline < next_reconciliation)); then
@@ -429,7 +439,8 @@ consume_hyprland_event_stream() {
       fi
       if ((reconcile_status != 0)) &&
         [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
-        next_reconciliation=$((SECONDS + 1))
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + 1))
       fi
       continue
     fi

@@ -543,10 +543,13 @@ assert_equal $'reconcile\nread-timeout:30' "$(<"$STREAM_LOG")" \
 reset_route_state
 : >"$STREAM_LOG"
 (
-  SECONDS=0
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
   reconcile_count=0
   reconcile_notification_routing() {
-    local reconcile_seconds=$SECONDS
+    local reconcile_seconds=$fake_monotonic_seconds
     ((reconcile_count += 1))
     case $reconcile_count in
       1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
@@ -564,12 +567,12 @@ reset_route_state
     if ((read_count == 0)); then
       read_count=1
       printf -v "$4" '%s' 'workspace>>1'
-      SECONDS=1
+      fake_monotonic_seconds=1
       return 0
     fi
     if ((read_count == 1)); then
       read_count=2
-      SECONDS=$((SECONDS + $3))
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
       return 142
     fi
     return 1
@@ -585,10 +588,13 @@ assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:31:31' \
 reset_route_state
 : >"$STREAM_LOG"
 (
-  SECONDS=0
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
   reconcile_count=0
   reconcile_notification_routing() {
-    local reconcile_seconds=$SECONDS
+    local reconcile_seconds=$fake_monotonic_seconds
     ((reconcile_count += 1))
     case $reconcile_count in
       1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
@@ -606,18 +612,18 @@ reset_route_state
     if ((read_count == 0)); then
       read_count=1
       printf -v "$4" '%s' 'workspace>>1'
-      SECONDS=1
+      fake_monotonic_seconds=1
       return 0
     fi
     if ((read_count == 1)); then
       ((read_count += 1))
       printf -v "$4" '%s' 'activelayout>>keyboard,us'
-      SECONDS=30
+      fake_monotonic_seconds=30
       return 0
     fi
     if ((read_count == 2)); then
       ((read_count += 1))
-      SECONDS=$((SECONDS + $3))
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
       return 142
     fi
     return 1
@@ -636,11 +642,14 @@ reset_route_state
 : >"$STREAM_LOG"
 set +e
 (
-  SECONDS=0
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
   reconcile_count=0
   read_count=0
   reconcile_notification_routing() {
-    local reconcile_seconds=$SECONDS
+    local reconcile_seconds=$fake_monotonic_seconds
     ((reconcile_count += 1))
     if ((reconcile_count == 1)); then
       NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=0
@@ -663,8 +672,8 @@ set +e
     fi
     ((read_count += 1))
     if ((read_count <= 2)); then
-      printf 'read-timeout:%s:%s\n' "$3" "$SECONDS" >>"$STREAM_LOG"
-      SECONDS=$((SECONDS + $3))
+      printf 'read-timeout:%s:%s\n' "$3" "$fake_monotonic_seconds" >>"$STREAM_LOG"
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
       return 142
     fi
     return 1
