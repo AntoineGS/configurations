@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
@@ -13,10 +14,11 @@ Item {
   property string icon: OsdModel.widestIcon
   property string message: ""
   property string iconKey: ""
-  property int value: 0
-  property int maxValue: 100
+  property real value: 0
+  property real maxValue: 100
   property bool hasProgress: false
   property int duration: 1200
+  property var targetScreen: null
   property var displayedState: ({
     valid: false,
     iconKey: "",
@@ -29,6 +31,8 @@ Item {
     error: ""
   })
 
+  readonly property string focusedMonitorName: Hyprland.focusedMonitor
+    ? String(Hyprland.focusedMonitor.name || "") : ""
   readonly property bool mediaOsd: iconKey.indexOf("media") === 0 || iconKey.indexOf("player") === 0
   readonly property int pad: Style.space(12)
   readonly property int gap: Style.space(12)
@@ -45,6 +49,14 @@ Item {
     ? root.iconWidth + root.gap + root.barWidth + root.gap + root.valueWidth
     : (root.message === "" ? root.iconWidth : root.iconWidth + root.messageGap + root.messageWidth)
 
+  // Prefer the focused compositor monitor. The pure selector falls back to
+  // the first available Quickshell screen until the focused output appears.
+  function updateScreen() {
+    root.targetScreen = OsdModel.screenForMonitor(Quickshell.screens, root.focusedMonitorName)
+  }
+
+  onFocusedMonitorNameChanged: if (root.opened) root.updateScreen()
+
   /**
    * Apply a normalized payload without parsing or validating it in QML.
    *
@@ -55,6 +67,7 @@ Item {
     var next = OsdModel.normalizePayload(payloadJson)
     if (!next.valid) return "invalid"
 
+    root.updateScreen()
     root.displayedState = next
     root.iconKey = next.iconKey
     root.maxValue = next.maxValue
@@ -146,6 +159,7 @@ Item {
   PanelWindow {
     id: panel
     visible: root.opened
+    screen: root.targetScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "desktop-shell-osd"
