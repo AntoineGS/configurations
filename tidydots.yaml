@@ -610,6 +610,12 @@ applications:
     entries: []
   - package:
       managers:
+        pacman: fprintd
+    name: fprintd
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: power-profiles-daemon
     name: power-profiles-daemon
     when: '{{ and (eq .OS "linux") .HasDisplay (not .IsWSL) (ne .Hostname "antoinews-linux") }}'

@@ -13,6 +13,7 @@ NOTIFICATION_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-notification-silencing
 UTILITIES="$ROOT/Linux/hypr/bindings/utilities.lua"
 MEDIA="$ROOT/Linux/hypr/bindings/media.lua"
 NOTIFICATION_RUNTIME_TEST="$SHELL_ROOT/tests/notification-runtime-test.sh"
+CONFIG="$ROOT/tidydots.yaml"
 BASH_PATH="$(type -P bash)"
 
 command -v node >/dev/null 2>&1 || {
@@ -22,12 +23,12 @@ command -v node >/dev/null 2>&1 || {
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
-  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" <<'NODE'
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$CONFIG" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
-  toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath] = process.argv.slice(2)
+  toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath, tidydotsPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
@@ -37,6 +38,7 @@ const bar = fs.readFileSync(barPath, "utf8")
 const notificationToggleHelper = fs.readFileSync(notificationToggleHelperPath, "utf8")
 const utilities = fs.readFileSync(utilitiesPath, "utf8")
 const media = fs.readFileSync(mediaPath, "utf8")
+const tidydots = fs.readFileSync(tidydotsPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -244,6 +246,26 @@ assert.match(shell, /OsdModel\.healthAvailable\(\s*shell\.previewMode,\s*shell\.
   "shell health delegates all OSD availability cases")
 assert.match(shell, /panelLoaders\["desktop\.osd"\]/,
   "OSD health reads the desktop.osd loader")
+assert.match(shell, /readonly property var polkitService:\s*shell\.serviceFor\("desktop\.polkit"\)/,
+  "shell health reads the shared polkit service")
+for (const [field, expected] of [
+  ["polkitRegistered", "polkitService ? polkitService.polkitRegistered : false"],
+  ["polkitError", 'polkitService ? polkitService.polkitError : "polkit service unavailable"'],
+  ["polkitPamError", 'polkitService ? polkitService.pamError : "polkit service unavailable"']
+]) {
+  assert.ok(shell.includes(`${field}: ${expected}`),
+    `healthState exposes ${field} with an unavailable fallback`)
+}
+const graphicalLinuxCondition =
+  "{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}"
+const fprintdBlock = tidydots.split(/^  - /m).find(block => block.includes("\n    name: fprintd\n"))
+assert.ok(fprintdBlock, "tidydots declares a standalone fprintd application")
+assert.match(fprintdBlock, /managers:\n        pacman: fprintd\n/,
+  "fprintd uses a direct pacman scalar")
+assert.ok(fprintdBlock.includes(`when: '${graphicalLinuxCondition}'`),
+  "fprintd uses the graphical-Linux host condition")
+assert.match(fprintdBlock, /entries: \[\]/, "fprintd has no configuration entries")
+assert.doesNotMatch(fprintdBlock, /deps:/, "fprintd is not declared as a dependency array")
 const callStart = shell.indexOf("function callIfLoaded")
 const callEnd = shell.indexOf("// One Loader per", callStart)
 assert.notEqual(callStart, -1, "generic call dispatcher exists")
