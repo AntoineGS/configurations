@@ -170,10 +170,19 @@ for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
 done
 
 grep -Fq 'hl.exec_cmd("uwsm-app -- hypridle")' "$AUTOSTART" || fail 'Hypridle autostart was removed'
-grep -Fq 'hl.exec_cmd("uwsm-app -- mako")' "$AUTOSTART" || fail 'Mako autostart was removed'
-grep -Fq 'hl.exec_cmd("uwsm-app -- swayosd-server")' "$AUTOSTART" || fail 'SwayOSD autostart was removed'
-grep -Fq 'hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")' "$AUTOSTART" || \
-  fail 'polkit-gnome autostart was removed'
+legacy_autostart_found=0
+for legacy_autostart in \
+  'hl.exec_cmd("uwsm-app -- mako")' \
+  'hl.exec_cmd("uwsm-app -- swayosd-server")' \
+  'hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")'; do
+  if grep -Fq -- "$legacy_autostart" "$AUTOSTART"; then
+    printf 'FAIL: legacy desktop-service autostart remains in %s: %s\n' "$AUTOSTART" "$legacy_autostart" >&2
+    legacy_autostart_found=1
+  fi
+done
+if ((legacy_autostart_found)); then
+  exit 1
+fi
 assert_binding 'SUPER + CTRL + W' 'systemctl --user restart desktop-shell.service' 'Reload top bar' \
   'top bar reload binding does not restart desktop-shell.service'
 assert_binding 'SUPER + SHIFT + SPACE' 'toggle-desktop-shell-bar' 'Toggle top bar' \
