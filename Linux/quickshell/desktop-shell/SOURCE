@@ -11,3 +11,4 @@ selected_tailscale_paths=shell/plugins/panels/tailscale/manifest.json shell/plug
 selected_battery_paths=shell/plugins/services/battery/manifest.json shell/plugins/services/battery/Service.qml shell/plugins/services/battery/BatteryModel.js
 selected_notifications_paths=shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml
 selected_osd_paths=shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js
+selected_polkit_paths=shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js
