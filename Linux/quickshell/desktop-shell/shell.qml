@@ -61,6 +61,7 @@ ShellRoot {
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
+    osdAvailable: shell.osdAvailable,
     notificationsOwned: notificationService ? notificationService.notificationsOwned : false,
     notificationOwnershipError: notificationService ? notificationService.ownershipError : "notification service unavailable",
     notificationRouteValid: notificationService ? notificationService.routeValid : false,
@@ -506,6 +507,20 @@ ShellRoot {
 
   // Map of pluginId -> Loader, populated by the Instantiator delegate below.
   property var panelLoaders: ({})
+
+  // OSD health is intentionally read-only: a keep-loaded overlay is available
+  // only when its loader has produced an item whose ping contract is healthy.
+  readonly property bool osdAvailable: {
+    if (shell.previewMode) return false
+    var loader = shell.panelLoaders["desktop.osd"]
+    if (!loader || !loader.item || loader.status === Loader.Error) return false
+    try {
+      return typeof loader.item.ping === "function" && loader.item.ping() === "pong"
+    } catch (error) {
+      console.warn("desktop.osd health probe failed:", error)
+      return false
+    }
+  }
 
   function registerPanelLoader(pluginId, loader) {
     var next = ({})

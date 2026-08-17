@@ -5,13 +5,30 @@ shopt -s inherit_errexit
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd -P)"
 HELPER="$ROOT/Linux/os/helpers/desktop-osd"
+DISPLAY_HELPER="$ROOT/Linux/os/helpers/brightness-display"
+APPLE_DISPLAY_HELPER="$ROOT/Linux/os/helpers/brightness-display-apple"
+KEYBOARD_HELPER="$ROOT/Linux/os/helpers/brightness-keyboard"
+AUDIO_SWITCH_HELPER="$ROOT/Linux/os/helpers/cmd-audio-switch"
 TMP_DIR="$(mktemp -d)"
 CALL_LOG="$TMP_DIR/mutations.log"
 IPC_LOG="$TMP_DIR/ipc.log"
 PAYLOAD_FILE="$TMP_DIR/payload.json"
 LOCALE_LOG="$TMP_DIR/locales.log"
 SYSFS_ROOT="$TMP_DIR/sys"
+BACKLIGHT_ROOT="$TMP_DIR/backlight"
 STATE_DIR="$TMP_DIR/state"
+ASD_VALUE_FILE="$STATE_DIR/asd-value"
+AUDIO_DEFAULT_FILE="$STATE_DIR/audio-default"
+AUDIO_SINKS_FILE="$STATE_DIR/audio-sinks.json"
+
+active_route_files=(
+  "$ROOT/Linux/hypr/bindings/media.lua"
+  "$DISPLAY_HELPER"
+  "$APPLE_DISPLAY_HELPER"
+  "$KEYBOARD_HELPER"
+  "$AUDIO_SWITCH_HELPER"
+  "$HELPER"
+)
 
 trap 'rm -rf -- "$TMP_DIR"' EXIT
 
@@ -23,7 +40,8 @@ fail() {
 [[ -x "$HELPER" ]] || fail "$HELPER must exist and be executable"
 command -v jq >/dev/null 2>&1 || fail 'jq is required'
 
-mkdir -p "$TMP_DIR/bin" "$SYSFS_ROOT/class/leds/thinkpad::kbd_backlight" "$STATE_DIR"
+mkdir -p "$TMP_DIR/bin" "$SYSFS_ROOT/class/leds/thinkpad::kbd_backlight" \
+  "$BACKLIGHT_ROOT/class/backlight/intel_backlight" "$STATE_DIR"
 printf '1\n' >"$SYSFS_ROOT/class/leds/thinkpad::kbd_backlight/brightness"
 printf '3\n' >"$SYSFS_ROOT/class/leds/thinkpad::kbd_backlight/max_brightness"
 
@@ -39,6 +57,8 @@ KEYBOARD_MAX_FILE="$STATE_DIR/keyboard-max"
 export CALL_LOG IPC_LOG PAYLOAD_FILE LOCALE_LOG
 export SINK_VOLUME_FILE SINK_MUTED_FILE SOURCE_VOLUME_FILE SOURCE_MUTED_FILE
 export DISPLAY_CURRENT_FILE DISPLAY_MAX_FILE KEYBOARD_CURRENT_FILE KEYBOARD_MAX_FILE
+export ASD_VALUE_FILE AUDIO_DEFAULT_FILE AUDIO_SINKS_FILE
+export BRIGHTNESS_DISPLAY_SYSFS_ROOT="$BACKLIGHT_ROOT"
 
 cat >"$TMP_DIR/bin/wpctl" <<'EOF'
 #!/usr/bin/env bash
@@ -132,6 +152,9 @@ case "$1" in
       printf '1\n' >"$muted_file"
     fi
     ;;
+  status)
+    printf '%s\n' "${STUB_WPCTL_STATUS:-}"
+    ;;
   *)
     exit 2
     ;;
@@ -169,7 +192,12 @@ while (($# > 0)); do
         printf '%s\n' "$STUB_BRIGHTNESS_OUTPUT"
         exit 0
       fi
-      if [[ -n $device ]]; then
+      if [[ -n $device && $device == ${STUB_DISPLAY_DEVICE:-intel_backlight} ]]; then
+        current=$(<"$DISPLAY_CURRENT_FILE")
+        maximum=$(<"$DISPLAY_MAX_FILE")
+        percent=$((current * 100 / maximum))
+        printf '%s,%s,%s,%s,%s%%\n' "$device" backlight "$current" "$maximum" "$percent"
+      elif [[ -n $device ]]; then
         current=$(<"$KEYBOARD_CURRENT_FILE")
         maximum=$(<"$KEYBOARD_MAX_FILE")
         percent=$((current * 100 / maximum))
@@ -189,7 +217,21 @@ while (($# > 0)); do
       if [[ ${STUB_MUTATION_FAILURE:-} == brightnessctl ]]; then
         exit 1
       fi
-      if [[ -n $device ]]; then
+      if [[ -n $device && $device == ${STUB_DISPLAY_DEVICE:-intel_backlight} ]]; then
+        current_file=$DISPLAY_CURRENT_FILE
+        maximum=$(<"$DISPLAY_MAX_FILE")
+        if [[ $operation =~ ^[0-9]+%$ ]]; then
+          current=${operation%\%}
+        elif [[ $operation =~ ^\+([0-9]+)%$ ]]; then
+          current=$(( $(<"$current_file") + BASH_REMATCH[1] ))
+        elif [[ $operation =~ ^-([0-9]+)%$ ]]; then
+          current=$(( $(<"$current_file") - BASH_REMATCH[1] ))
+        else
+          exit 2
+        fi
+        (( current < 0 )) && current=0
+        (( current > maximum )) && current=$maximum
+      elif [[ -n $device ]]; then
         current_file=$KEYBOARD_CURRENT_FILE
         maximum=$(<"$KEYBOARD_MAX_FILE")
         if [[ $operation =~ ^[0-9]+$ ]]; then
@@ -248,6 +290,87 @@ case "$*" in
 esac
 EOF
 
+cat >"$TMP_DIR/bin/desktop-osd" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf 'desktop-osd' >>"$CALL_LOG"
+printf ' %q' "$@" >>"$CALL_LOG"
+printf '\n' >>"$CALL_LOG"
+if [[ ${STUB_DESKTOP_OSD_EXIT:-0} != 0 ]]; then
+  exit "$STUB_DESKTOP_OSD_EXIT"
+fi
+EOF
+
+cat >"$TMP_DIR/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+(( $# >= 1 )) || exit 2
+if [[ $1 == asdcontrol ]]; then
+  shift
+  exec asdcontrol "$@"
+fi
+exec "$@"
+EOF
+
+cat >"$TMP_DIR/bin/asdcontrol" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ ${1:-} == --detect ]]; then
+  if [[ ${STUB_ASD_NO_DEVICE:-0} == 1 ]]; then
+    exit 1
+  fi
+  printf '/dev/usb/hiddev0: Apple Studio Display\n'
+  exit 0
+fi
+
+device=${1:-}
+if [[ ${2:-} == -- ]]; then
+  [[ -n $device && -n ${3:-} ]] || exit 2
+  printf 'asdcontrol %q -- %q\n' "$device" "$3" >>"$CALL_LOG"
+  [[ ${STUB_ASD_MUTATION_FAILURE:-0} == 1 ]] && exit 1
+  printf '%s\n' "${STUB_ASD_VALUE:-30000}" >"$ASD_VALUE_FILE"
+  exit 0
+fi
+
+[[ -n $device ]] || exit 2
+printf 'BRIGHTNESS=%s\n' "$(<"$ASD_VALUE_FILE")"
+EOF
+
+cat >"$TMP_DIR/bin/pactl" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+case "${1:-}" in
+  -f)
+    [[ ${2:-} == json && ${3:-} == list && ${4:-} == sinks ]] || exit 2
+    cat "$AUDIO_SINKS_FILE"
+    ;;
+  get-default-sink)
+    cat "$AUDIO_DEFAULT_FILE"
+    ;;
+  set-default-sink)
+    [[ $# -eq 2 ]] || exit 2
+    printf 'pactl set-default-sink %q\n' "$2" >>"$CALL_LOG"
+    [[ ${STUB_PACTL_MUTATION_FAILURE:-0} == 1 ]] && exit 1
+    printf '%s\n' "$2" >"$AUDIO_DEFAULT_FILE"
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+EOF
+
+cat >"$TMP_DIR/bin/hyprctl" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ $* == 'monitors -j' ]] || exit 2
+printf '%s\n' '[{"name":"DP-1","focused":true}]'
+EOF
+
 cat >"$TMP_DIR/bin/desktop-shell" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -259,13 +382,18 @@ printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
 [[ $1 == call && $2 == desktop.osd && $3 == show ]] || exit 2
 printf 'desktop-shell call desktop.osd show\n' >>"$IPC_LOG"
 printf '%s\n' "$4" >"$PAYLOAD_FILE"
+if [[ ${STUB_IPC_EXIT:-0} != 0 ]]; then
+  exit "$STUB_IPC_EXIT"
+fi
 if [[ ${STUB_IPC_FAILURE:-} == 1 ]]; then
   exit 1
 fi
 printf '%s\n' "${STUB_IPC_RESPONSE:-ok}"
 EOF
 
-chmod +x "$TMP_DIR/bin/wpctl" "$TMP_DIR/bin/brightnessctl" "$TMP_DIR/bin/playerctl" "$TMP_DIR/bin/desktop-shell"
+chmod +x "$TMP_DIR/bin/wpctl" "$TMP_DIR/bin/brightnessctl" "$TMP_DIR/bin/playerctl" \
+  "$TMP_DIR/bin/desktop-osd" "$TMP_DIR/bin/sudo" "$TMP_DIR/bin/asdcontrol" \
+  "$TMP_DIR/bin/pactl" "$TMP_DIR/bin/hyprctl" "$TMP_DIR/bin/desktop-shell"
 
 export PATH="$TMP_DIR/bin:$PATH"
 export DESKTOP_OSD_SYSFS_ROOT="$SYSFS_ROOT"
@@ -279,6 +407,9 @@ reset_fixture() {
   printf '100\n' >"$DISPLAY_MAX_FILE"
   printf '1\n' >"$KEYBOARD_CURRENT_FILE"
   printf '3\n' >"$KEYBOARD_MAX_FILE"
+  printf '30000\n' >"$ASD_VALUE_FILE"
+  printf 'sink-a\n' >"$AUDIO_DEFAULT_FILE"
+  printf '%s\n' '[]' >"$AUDIO_SINKS_FILE"
   : >"$CALL_LOG"
   : >"$IPC_LOG"
   : >"$PAYLOAD_FILE"
@@ -289,12 +420,33 @@ reset_fixture() {
   export STUB_BRIGHTNESS_OUTPUT=''
   export STUB_IPC_FAILURE=''
   export STUB_IPC_RESPONSE='ok'
+  export STUB_IPC_EXIT=0
+  export STUB_ASD_NO_DEVICE=0
+  export STUB_ASD_MUTATION_FAILURE=0
+  export STUB_ASD_VALUE=30000
+  export STUB_PACTL_MUTATION_FAILURE=0
+  export STUB_DESKTOP_OSD_EXIT=0
+  export STUB_WPCTL_STATUS=''
 }
 
 run_helper() {
   local status
 
   if "$HELPER" "$@" >"$TMP_DIR/stdout" 2>"$TMP_DIR/stderr"; then
+    status=0
+  else
+    status=$?
+  fi
+  LAST_STATUS=$status
+  LAST_STDERR=$(<"$TMP_DIR/stderr")
+}
+
+run_specialized() {
+  local helper=$1
+  shift
+  local status
+
+  if "$helper" "$@" >"$TMP_DIR/stdout" 2>"$TMP_DIR/stderr"; then
     status=0
   else
     status=$?
@@ -328,6 +480,19 @@ assert_no_ipc() {
   [[ ! -s "$IPC_LOG" ]] || fail 'unexpected OSD IPC delivery'
   [[ ! -s "$PAYLOAD_FILE" ]] || fail 'unexpected OSD payload'
 }
+
+assert_no_legacy_routes() {
+  local file
+
+  for file in "${active_route_files[@]}"; do
+    [[ -f $file ]] || fail "active route file is missing: $file"
+    if grep -Eiq 'swayosd' "$file"; then
+      fail "legacy SwayOSD route remains active in $file"
+    fi
+  done
+}
+
+assert_no_legacy_routes
 
 assert_payload() {
   local expression=$1
@@ -522,5 +687,84 @@ run_helper media-next
 assert_status 3
 assert_mutation 'playerctl next'
 [[ -s "$IPC_LOG" ]] || fail 'IPC response was not validated'
+
+reset_fixture
+run_specialized "$DISPLAY_HELPER" +5%
+assert_status 0
+assert_mutation 'brightnessctl -d intel_backlight set +5%'
+assert_payload '.icon == "brightness" and .message == "" and .value == 55 and .max == 100 and .progressText == "55%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+
+reset_fixture
+run_specialized "$DISPLAY_HELPER" 42%
+assert_status 0
+assert_mutation 'brightnessctl -d intel_backlight set 42%'
+assert_payload '.icon == "brightness" and .message == "" and .value == 42 and .max == 100 and .progressText == "42%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+
+for direction in up down cycle; do
+  reset_fixture
+  run_specialized "$KEYBOARD_HELPER" "$direction"
+  assert_status 0
+  assert_mutation "desktop-osd keyboard-$direction"
+done
+
+reset_fixture
+export STUB_ASD_NO_DEVICE=1
+run_specialized "$APPLE_DISPLAY_HELPER" +5000
+assert_status 1
+assert_no_mutation
+assert_no_ipc
+
+reset_fixture
+run_specialized "$APPLE_DISPLAY_HELPER" +5000
+assert_status 0
+assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
+assert_payload '.icon == "brightness" and .message == "" and .value == 50 and .max == 100 and .progressText == "50%" and (keys | sort) == ["icon", "max", "message", "progressText", "value"]'
+
+reset_fixture
+export STUB_IPC_EXIT=3
+run_specialized "$APPLE_DISPLAY_HELPER" +5000
+assert_status 0
+assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
+[[ -s "$IPC_LOG" ]] || fail 'Apple display feedback was not attempted'
+
+reset_fixture
+export STUB_IPC_RESPONSE=not-ok
+run_specialized "$APPLE_DISPLAY_HELPER" +5000
+assert_status 1
+assert_mutation 'asdcontrol /dev/usb/hiddev0 -- +5000'
+
+reset_fixture
+export STUB_IPC_RESPONSE=not-ok
+run_specialized "$DISPLAY_HELPER" +5%
+assert_status 1
+assert_mutation 'brightnessctl -d intel_backlight set +5%'
+
+reset_fixture
+printf '%s\n' '[]' >"$AUDIO_SINKS_FILE"
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 1
+assert_no_mutation
+assert_payload '.icon == "volume-muted" and .message == "No audio devices found" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+printf '%s\n' '[
+  {"name":"sink-a","description":"Built-in Audio","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"50%"}},"mute":false},
+  {"name":"sink-b","description":"Headphones","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"20%"}},"mute":true}
+]' >"$AUDIO_SINKS_FILE"
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 0
+assert_mutation 'pactl set-default-sink sink-b'
+assert_payload '.icon == "volume-muted" and .message == "Headphones" and (keys | sort) == ["icon", "message"]'
+
+reset_fixture
+printf '%s\n' '[
+  {"name":"sink-a","description":"Built-in Audio","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"50%"}},"mute":false},
+  {"name":"sink-b","description":"Headphones","ports":[],"properties":{},"volume":{"front-left":{"value_percent":"80%"}},"mute":false}
+]' >"$AUDIO_SINKS_FILE"
+export STUB_IPC_EXIT=3
+run_specialized "$AUDIO_SWITCH_HELPER"
+assert_status 0
+assert_mutation 'pactl set-default-sink sink-b'
+[[ -s "$IPC_LOG" ]] || fail 'audio switch feedback was not attempted'
 
 printf 'PASS: desktop OSD helper behavior\n'

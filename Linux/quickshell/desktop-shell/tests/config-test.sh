@@ -11,6 +11,7 @@ BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
 TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
 NOTIFICATION_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-notification-silencing"
 UTILITIES="$ROOT/Linux/hypr/bindings/utilities.lua"
+MEDIA="$ROOT/Linux/hypr/bindings/media.lua"
 NOTIFICATION_RUNTIME_TEST="$SHELL_ROOT/tests/notification-runtime-test.sh"
 BASH_PATH="$(type -P bash)"
 
@@ -21,12 +22,12 @@ command -v node >/dev/null 2>&1 || {
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
-  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" <<'NODE'
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
-  toggleHelperPath, notificationToggleHelperPath, utilitiesPath] = process.argv.slice(2)
+  toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
@@ -35,6 +36,7 @@ const widgetRegistry = fs.readFileSync(widgetRegistryPath, "utf8")
 const bar = fs.readFileSync(barPath, "utf8")
 const notificationToggleHelper = fs.readFileSync(notificationToggleHelperPath, "utf8")
 const utilities = fs.readFileSync(utilitiesPath, "utf8")
+const media = fs.readFileSync(mediaPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -232,6 +234,18 @@ for (const [field, expected] of [
   assert.ok(shell.includes(`${field}: ${expected}`),
     `healthState exposes ${field} with an unavailable fallback`)
 }
+assert.match(shell, /readonly property bool osdAvailable\s*:/,
+  "shell exposes reactive OSD availability")
+assert.match(shell, /osdAvailable: shell\.osdAvailable/,
+  "healthState exposes osdAvailable")
+assert.match(shell, /if \(shell\.previewMode\) return false/,
+  "preview mode reports OSD unavailable")
+assert.match(shell, /panelLoaders\["desktop\.osd"\]/,
+  "OSD health reads the desktop.osd loader")
+assert.match(shell, /typeof loader\.item\.ping === "function"/,
+  "OSD health checks the loaded item ping method")
+assert.match(shell, /loader\.item\.ping\(\) === "pong"/,
+  "OSD health requires the exact pong response")
 const callStart = shell.indexOf("function callIfLoaded")
 const callEnd = shell.indexOf("// One Loader per", callStart)
 assert.notEqual(callStart, -1, "generic call dispatcher exists")
@@ -253,6 +267,43 @@ assert.match(notificationToggleHelper, /^set -Eeuo pipefail$/m)
 assert.match(notificationToggleHelper, /desktop-shell call desktop\.notifications toggleDnd/)
 assert.match(notificationToggleHelper, /enabled\|disabled/)
 assert.doesNotMatch(notificationToggleHelper, /\bmakoctl\b|\bwaybar\b|\bnotify-send\b|\b(?:pkill|kill|killall|signal)\b/)
+
+const mediaBindings = [
+  ["XF86AudioRaiseVolume", "desktop-osd volume-up 5", true, "Volume up"],
+  ["XF86AudioLowerVolume", "desktop-osd volume-down 5", true, "Volume down"],
+  ["XF86AudioMute", "desktop-osd volume-toggle", true, "Mute"],
+  ["XF86AudioMicMute", "desktop-osd mic-toggle", true, "Mute microphone"],
+  ["XF86MonBrightnessUp", "desktop-osd brightness-up 5", true, "Brightness up"],
+  ["XF86MonBrightnessDown", "desktop-osd brightness-down 5", true, "Brightness down"],
+  ["XF86KbdBrightnessUp", "desktop-osd keyboard-up", true, "Keyboard brightness up"],
+  ["XF86KbdBrightnessDown", "desktop-osd keyboard-down", true, "Keyboard brightness down"],
+  ["XF86KbdLightOnOff", "desktop-osd keyboard-cycle", false, "Keyboard backlight cycle"],
+  ["ALT + XF86AudioRaiseVolume", "desktop-osd volume-up 1", true, "Volume up precise"],
+  ["ALT + XF86AudioLowerVolume", "desktop-osd volume-down 1", true, "Volume down precise"],
+  ["ALT + XF86MonBrightnessUp", "desktop-osd brightness-up 1", true, "Brightness up precise"],
+  ["ALT + XF86MonBrightnessDown", "desktop-osd brightness-down 1", true, "Brightness down precise"],
+  ["XF86AudioNext", "desktop-osd media-next", false, "Next track"],
+  ["XF86AudioPause", "desktop-osd media-play-pause", false, "Pause"],
+  ["XF86AudioPlay", "desktop-osd media-play-pause", false, "Play"],
+  ["XF86AudioPrev", "desktop-osd media-previous", false, "Previous track"],
+  ["SUPER + XF86AudioMute", "cmd-audio-switch", false, "Switch audio output"],
+  ["SUPER + F6", "desktop-osd brightness-down 5", true, "Brightness down"],
+  ["SUPER + F7", "desktop-osd brightness-up 5", true, "Brightness up"],
+  ["SUPER + F8", "desktop-osd volume-toggle", false, "Mute"],
+  ["SUPER + F9", "desktop-osd volume-down 5", true, "Volume down"],
+  ["SUPER + F10", "desktop-osd volume-up 5", true, "Volume up"]
+]
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+for (const [key, command, repeating, description] of mediaBindings) {
+  const match = media.match(new RegExp(`hl\\.bind\\(\\s*"${escapeRegExp(key)}"[\\s\\S]*?\\}\\s*\\)`))
+  const binding = match && match[0]
+  assert.ok(binding, `media binding exists for ${key}`)
+  assert.ok(binding.includes(`exec_cmd("${command}")`), `${key} keeps its command`)
+  assert.match(binding, /locked\s*=\s*true/, `${key} remains locked`)
+  assert.ok(binding.includes(`description = "${description}"`), `${key} keeps its description`)
+  if (repeating) assert.match(binding, /repeating\s*=\s*true/, `${key} remains repeating`)
+  else assert.doesNotMatch(binding, /repeating\s*=/, `${key} remains non-repeating`)
+}
 const barPanelStart = bar.indexOf("component BarPanel: PanelWindow")
 const barPanelEnd = bar.indexOf("component LeftModules", barPanelStart)
 assert.notEqual(barPanelStart, -1, "bar panel component exists")
@@ -400,8 +451,9 @@ run_ipc summon desktop.agents '{}'
 assert_trace desktop-shell summon desktop.agents '{}'
 run_ipc hide desktop.audio
 assert_trace desktop-shell hide desktop.audio
-run_ipc call desktop.osd show '{"level":1}'
-assert_trace desktop-shell call desktop.osd show '{"level":1}'
+osd_payload='{"icon":"brightness","message":"","value":42,"max":100,"progressText":"42%"}'
+run_ipc call desktop.osd show "$osd_payload"
+assert_trace desktop-shell call desktop.osd show "$osd_payload"
 
 set +e
 run_ipc summon legacy.menu 2>"$fixture/invalid-id.err"
