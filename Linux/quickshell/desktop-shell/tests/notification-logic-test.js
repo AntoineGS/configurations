@@ -20,11 +20,51 @@ for (const raw of ["", "{", "{}", '{"version":2}',
   assert.notEqual(logic.normalizeRoute(raw, 1786930040000).error, "")
 }
 assert.match(logic.normalizeRoute(fresh, 1786930046000).error, /stale/)
-assert.equal(logic.shouldBypassDnd({ appName: "Discord", urgency: 2 }, 2), false)
+assert.equal(logic.shouldBypassDnd({ appName: "Discord", urgency: 2 }, 2), true)
 assert.equal(logic.shouldBypassDnd({ appName: "notify-send", urgency: 2 }, 2), true)
-assert.equal(logic.isEphemeral({ appName: "notify-send", hints: {} }), true)
+assert.equal(logic.shouldBypassDnd({ appName: "notify-send", urgency: 1 }, 2), false)
+assert.equal(logic.isEphemeral({ appName: "notify-send", hints: {} }), false)
+assert.equal(logic.isEphemeral({ appName: "other", transient: true, hints: {} }), true)
 assert.equal(logic.isEphemeral({ appName: "build", hints: { transient: true } }), true)
 assert.equal(logic.isEphemeral({ appName: "build", hints: {} }), false)
+
+assert.equal(logic.cueGlyph("left"), "←")
+assert.equal(logic.cueGlyph("right"), "→")
+assert.equal(logic.cueGlyph("up"), "↑")
+assert.equal(logic.cueGlyph("down"), "↓")
+assert.equal(logic.cueGlyph(null), "•")
+
+const actions = [
+  { identifier: "default", text: "Open" },
+  { identifier: "archive", text: "Archive" },
+]
+assert.deepEqual(logic.actionOutcome(actions, "default", false), { found: true, dismiss: true })
+assert.deepEqual(logic.actionOutcome(actions, "archive", false), { found: true, dismiss: true })
+assert.deepEqual(logic.actionOutcome(actions, "archive", true), { found: true, dismiss: false })
+assert.deepEqual(logic.actionOutcome([{ identifier: "archive", text: "Archive" }], "default", false),
+  { found: false, dismiss: false })
+assert.deepEqual(logic.actionMetadata({ actions }), actions,
+  "live action identifiers and labels are retained in popup metadata")
+assert.deepEqual(logic.actionMetadata({ actions: { 0: actions[0], length: 1 } }), [actions[0]],
+  "QML list-like action values retain their metadata")
+const defaultAfterLimit = Array.from({ length: 8 }, (_, index) => ({
+  identifier: "action-" + index,
+  text: "Action " + index,
+})).concat([{ identifier: "default", text: "Open" }])
+assert.equal(logic.actionMetadata({ actions: defaultAfterLimit }).length, 8)
+assert.equal(logic.actionMetadata({ actions: defaultAfterLimit })[7].identifier, "default",
+  "the bounded action set retains the default action")
+
+assert.equal(logic.durationFor(1, 0, 2, 0, 5000, 8000, 30000), 0,
+  "explicit zero means never expire")
+assert.equal(logic.durationFor(1, -1, 2, 0, 5000, 8000, 30000), 8000,
+  "only the server-default sentinel receives the normal default")
+assert.equal(logic.durationFor(1, 10000, 2, 0, 5000, 8000, 30000), 10000,
+  "positive timeout is retained within bounds")
+assert.equal(logic.durationFor(1, 50000, 2, 0, 5000, 8000, 30000), 30000,
+  "positive timeout is capped")
+assert.equal(logic.durationFor(2, 50000, 2, 0, 5000, 8000, 30000), 0,
+  "critical notifications never timer-expire")
 
 const hintedImage = logic.snapshotOf({
   id: 43,
@@ -52,6 +92,7 @@ const notification = {
   urgency: 1,
   expireTimeout: 3000,
   hints: { transient: false },
+  actions,
 }
 const snapshot = logic.snapshotOf(notification, 1786930001000)
 assert.deepEqual(snapshot, {
@@ -65,7 +106,29 @@ assert.deepEqual(snapshot, {
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
+  actions,
 }, "snapshot keeps notification display data without private action hints")
+
+const bounded = logic.snapshotOf({
+  id: 45,
+  appName: "a".repeat(200),
+  summary: "s".repeat(600),
+  body: "b".repeat(5000),
+  expireTimeout: 0,
+  actions: Array.from({ length: 10 }, (_, index) => ({
+    identifier: "action-" + index,
+    text: "x".repeat(300),
+  })),
+}, 1786930001000)
+assert.equal(bounded.app.length, 128)
+assert.equal(bounded.summary.length, 512)
+assert.equal(bounded.body.length, 4096)
+assert.equal(bounded.actions.length, 8)
+assert.equal(bounded.actions[0].text.length, 256)
+assert.equal(bounded.expireTimeout, 0)
+
+const defaultTimeout = logic.snapshotOf({ id: 46, expireTimeout: -1 }, 1786930001000)
+assert.equal(defaultTimeout.expireTimeout, -1, "-1 remains distinct from explicit zero")
 
 const replacement = logic.replacementSnapshot({
   id: 99,
@@ -88,9 +151,11 @@ assert.deepEqual(replacement, {
   urgency: 2,
   expireTimeout: 5000,
   timestamp: 1786930002000,
+  actions: [],
 }, "replacement keeps the original popup identity while updating display data")
 assert.deepEqual(logic.popupRoles(), [
   "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout",
+  "actions",
 ])
 assert.equal(logic.popupRowChanged(snapshot, snapshot), false)
 assert.equal(logic.popupRowChanged(snapshot, replacement), true)
@@ -112,6 +177,7 @@ assert.deepEqual(persisted, {
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
+  actions: [],
   deadline: 1786930010000,
 })
 assert.deepEqual(logic.historyEntry({ id: 7, app: "unknown", timestamp: 10 }, 1), {
@@ -125,6 +191,7 @@ assert.deepEqual(logic.historyEntry({ id: 7, app: "unknown", timestamp: 10 }, 1)
   urgency: 1,
   expireTimeout: 0,
   timestamp: 10,
+  actions: [],
 })
 assert.deepEqual(logic.parseSettings('{"dnd":true,"past":[]}'), {
   error: false, dnd: true, legacy: true,
@@ -142,6 +209,7 @@ assert.equal(logic.serializePopup(snapshot, 1), JSON.stringify({
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
+  actions: [],
 }))
 
 const popupLines = [
@@ -163,6 +231,7 @@ assert.deepEqual(logic.latestHistoryRow(popupLines, 1), {
   urgency: 2,
   expireTimeout: 0,
   timestamp: 1786930003000,
+  actions: [],
 }, "restore selects only the newest archived entry")
 assert.equal(logic.latestHistoryRow("", 1), null)
 assert.equal(logic.popupFileName(snapshot), "1786930001000-42.json")
@@ -180,6 +249,7 @@ assert.deepEqual(logic.persistablePopup(imageEntry, "/state/images/"), {
     ...imageEntry,
     appIcon: "file:///state/images/1786930001000-42-appIcon",
     image: "file:///state/images/1786930001000-42-image",
+    actions: [],
   },
   copies: [
     { from: "/tmp/icon one.png", to: "/state/images/1786930001000-42-appIcon" },
@@ -187,11 +257,40 @@ assert.deepEqual(logic.persistablePopup(imageEntry, "/state/images/"), {
   ],
 })
 assert.deepEqual(logic.persistablePopup({ ...snapshot, image: "image://notification/42" }, "/state/images/").entry.image, "")
+assert.deepEqual(logic.persistablePopup(snapshot, "/state/images/").entry.actions, [],
+  "persisted popup entries do not retain stale live action objects")
+assert.deepEqual(JSON.parse(logic.serializePopup(snapshot, 1)).actions, [],
+  "serialized popup entries contain no stale actions")
+
+const replacementTimeout = logic.replacementSnapshot({
+  id: 99,
+  expireTimeout: -1,
+  actions: [{ identifier: "archive", text: "Archive" }],
+}, 42, 1786930002000)
+assert.equal(replacementTimeout.expireTimeout, -1)
+assert.deepEqual(replacementTimeout.actions, [{ identifier: "archive", text: "Archive" }])
+assert.equal(logic.popupEntry(replacementTimeout, 1).expireTimeout, -1,
+  "replacement timeout survives persistence and restart parsing")
 
 assert.equal(logic.popupExpired({ deadline: 1000 }, 5000, 1000), true)
 assert.equal(logic.popupExpired({ deadline: 1001 }, 5000, 1000), false)
 assert.equal(logic.popupExpired({ timestamp: 1000 }, 5000, 6000), true)
 assert.equal(logic.popupExpired({ timestamp: 1000 }, 0, 600000), false)
+assert.equal(logic.limits().maxActivePopups, 50)
+assert.equal(logic.limits().maxPersistenceJobs, 100)
+assert.equal(logic.limits().maxHistoryEntries, 200)
+assert.deepEqual(logic.persistenceQueueUpdate(
+  [{ key: "popup:1", value: "old" }],
+  { key: "popup:1", value: "new" }, 100, false),
+  { queue: [{ key: "popup:1", value: "new" }], dropped: null })
+const fullQueue = Array.from({ length: 100 }, (_, key) => ({ key }))
+const boundedQueue = logic.persistenceQueueUpdate(fullQueue, { key: "new" }, 100, false)
+assert.equal(boundedQueue.queue.length, 100)
+assert.deepEqual(boundedQueue.dropped, { key: 0 })
+assert.equal(boundedQueue.queue[99].key, "new")
+assert.equal(logic.historyRows("", Array.from({ length: 205 }, (_, id) => ({ id, timestamp: id })), 1, 500).length, 200)
+assert.equal(logic.parsePopupFiles(
+  Array.from({ length: 55 }, (_, id) => JSON.stringify({ id, timestamp: id })).join("\n"), 1, 50).length, 50)
 assert.deepEqual(logic.popupPlacement("top", 12, 4), {
   anchors: { top: true, bottom: false, left: false, right: true },
   margins: { top: 12, bottom: 4, left: 4, right: 4 },

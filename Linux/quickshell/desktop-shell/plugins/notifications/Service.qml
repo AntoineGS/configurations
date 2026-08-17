@@ -61,6 +61,8 @@ Item {
   property int persistenceRetryLimit: 2
   property string persistenceError: ""
   readonly property int historyLimit: 10
+  readonly property int maxActivePopups: 50
+  readonly property int maxPersistenceJobs: 100
   property int historyCount: 0
   property bool historyCountQueued: false
   readonly property int lowPopupDuration: 5000
@@ -79,22 +81,12 @@ Item {
 
   property bool _hydrating: false
   property alias doNotDisturb: persisted.doNotDisturb
+  property var pendingPopups: ({})
 
   function durationFor(urgency, expireTimeout) {
-    switch (urgency) {
-    case NotificationUrgency.Critical:
-      return 0
-    case NotificationUrgency.Low:
-      return Math.min(maxPopupDuration, Math.max(lowPopupDuration, requestedDuration(expireTimeout)))
-    default:
-      return Math.min(maxPopupDuration, Math.max(normalPopupDuration, requestedDuration(expireTimeout)))
-    }
-  }
-
-  function requestedDuration(expireTimeout) {
-    var ms = Number(expireTimeout || 0)
-    if (!isFinite(ms) || ms <= 0) return 0
-    return Math.round(ms)
+    return NotificationLogic.durationFor(
+      urgency, expireTimeout, NotificationUrgency.Critical, NotificationUrgency.Low,
+      lowPopupDuration, normalPopupDuration, maxPopupDuration)
   }
 
   function shouldBypassDnd(notification) {
@@ -115,6 +107,40 @@ Item {
     return source.toLowerCase().indexOf("spotify") >= 0
   }
 
+  function pendingPopupCount() {
+    var count = 0
+    for (var key in pendingPopups) {
+      if (Object.prototype.hasOwnProperty.call(pendingPopups, key)) count++
+    }
+    return count
+  }
+
+  function popupIndexForOriginalId(originalId) {
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (row && row.originalId === originalId) return i
+    }
+    return -1
+  }
+
+  function reservePopupSlot(originalId) {
+    var key = String(originalId)
+    if (popupIndexForOriginalId(originalId) >= 0 || pendingPopups[key] === true) return true
+    if (popupModel.count + pendingPopupCount() >= maxActivePopups) return false
+    pendingPopups[key] = true
+    return true
+  }
+
+  function releaseLiveNotification(notification, originalId, dismiss) {
+    if (liveRefs[originalId] === notification) delete liveRefs[originalId]
+    try {
+      if (dismiss && notification.tracked && typeof notification.dismiss === "function") notification.dismiss()
+      notification.tracked = false
+    } catch (error) {
+      // The notification object was already destroyed.
+    }
+  }
+
   function handleNotification(notification) {
     // This sender is intentionally excluded before it can enter a popup or history.
     if (isSpotify(notification)) return
@@ -132,15 +158,27 @@ Item {
         writeSilenced(notification, snapshot)
         return
       }
-      delete liveRefs[snapshot.originalId]
-      notification.tracked = false
+      releaseLiveNotification(notification, snapshot.originalId, false)
+      return
+    }
+
+    if (!reservePopupSlot(snapshot.originalId)) {
+      service.persistenceError = "notification active popup limit reached"
+      releaseLiveNotification(notification, snapshot.originalId, true)
       return
     }
 
     persistPopupFile(snapshot)
     watchForUpdates(notification, snapshot)
     Qt.callLater(function() {
+      delete service.pendingPopups[String(snapshot.originalId)]
+      if (service.liveRefs[snapshot.originalId] !== notification) return
       removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
+      if (popupModel.count >= service.maxActivePopups) {
+        service.persistenceError = "notification active popup limit reached"
+        service.releaseLiveNotification(notification, snapshot.originalId, true)
+        return
+      }
       popupModel.insert(0, snapshot)
       service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
     })
@@ -186,7 +224,7 @@ Item {
 
   readonly property var updateSignals: [
     "summaryChanged", "bodyChanged", "appNameChanged", "appIconChanged",
-    "imageChanged", "urgencyChanged", "expireTimeoutChanged", "hintsChanged"
+    "imageChanged", "urgencyChanged", "expireTimeoutChanged", "hintsChanged", "actionsChanged"
   ]
 
   function watchForUpdates(notification, snapshot) {
@@ -197,6 +235,12 @@ Item {
     for (var i = 0; i < updateSignals.length; i++) {
       var signal = notification[updateSignals[i]]
       if (signal && typeof signal.connect === "function") signal.connect(refresh)
+    }
+
+    var actions = notification.actions || []
+    for (var a = 0; a < actions.length; a++) {
+      var actionSignal = actions[a] && actions[a].textChanged
+      if (actionSignal && typeof actionSignal.connect === "function") actionSignal.connect(refresh)
     }
   }
 
@@ -227,6 +271,10 @@ Item {
     return !!row && !!restoredPopups[NotificationLogic.popupFileName(row)]
   }
 
+  function restoredSource(row) {
+    return row ? restoredPopups[NotificationLogic.popupFileName(row)] : ""
+  }
+
   function removePopupsByOriginalId(originalId, keepFileName) {
     for (var i = popupModel.count - 1; i >= 0; i--) {
       var row = popupModel.get(i)
@@ -251,12 +299,13 @@ Item {
     var originalId = entry ? entry.originalId : -1
     var internal = Number(originalId) < 0
     var restored = isRestoredRow(entry)
+    var source = restoredSource(entry)
     var ref = !internal && !restored && originalId >= 0 ? liveRefs[originalId] : null
 
-    if (entry && !internal) {
+    if (entry && !internal && source !== "history") {
       archivePopupFileFor(entry)
-      if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
     }
+    if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
     popupModel.remove(index)
 
     if (ref) {
@@ -275,30 +324,53 @@ Item {
     while (popupModel.count > 0) dismissPopup(0)
   }
 
-  function invokePopupDefault(index) {
-    if (index < 0 || index >= popupModel.count) return
+  function liveAction(ref, identifier) {
+    if (!ref || !ref.actions) return null
+    var wanted = String(identifier || "")
+    var limit = Math.min(ref.actions.length, 8)
+    for (var i = 0; i < limit; i++) {
+      var action = ref.actions[i]
+      if (action && action.identifier === wanted) return action
+    }
+    if (wanted === "default") {
+      for (var fallback = limit; fallback < ref.actions.length; fallback++) {
+        var defaultAction = ref.actions[fallback]
+        if (defaultAction && defaultAction.identifier === wanted) return defaultAction
+      }
+    }
+    return null
+  }
+
+  function invokePopupAction(index, identifier) {
+    if (index < 0 || index >= popupModel.count) return false
     var entry = popupModel.get(index)
     var ref = entry && !isRestoredRow(entry) ? liveRefs[entry.originalId] : null
+    var action = liveAction(ref, String(identifier || ""))
+    if (!action) return false
+
     try {
-      if (ref && ref.actions) {
-        for (var i = 0; i < ref.actions.length; i++) {
-          var action = ref.actions[i]
-          if (action && action.identifier === "default") {
-            action.invoke()
-            break
-          }
-        }
-      }
+      action.invoke()
     } catch (error) {
-      console.warn("notifications: default action failed", error)
+      console.warn("notifications: action failed", error)
+      return false
     }
-    dismissPopup(index)
+
+    if (ref.resident !== true) dismissPopup(index)
+    return true
+  }
+
+  function invokePopupDefault(index) {
+    return invokePopupAction(index, "default")
   }
 
   function showDndConfirmation() {
     for (var i = popupModel.count - 1; i >= 0; i--) {
       var old = popupModel.get(i)
       if (old && Number(old.originalId) < 0) popupModel.remove(i)
+    }
+    if (popupModel.count >= maxActivePopups) {
+      service.persistenceError = "notification active popup limit reached"
+      return
     }
     var id = -Date.now()
     popupModel.insert(0, {
@@ -311,6 +383,7 @@ Item {
       image: "",
       urgency: NotificationUrgency.Low,
       expireTimeout: 2500,
+      actions: [],
       timestamp: Date.now()
     })
   }
@@ -340,18 +413,37 @@ Item {
   property var popupFileQueue: []
   property var runningPopupFileJob: null
 
-  function enqueuePopupFileJob(command, done, attempt) {
-    popupFileQueue = popupFileQueue.concat([{
-      command: command,
-      done: done || null,
-      attempt: Number(attempt || 0)
-    }])
+  function pendingPersistenceCount() {
+    return popupFileQueue.length
+  }
+
+  function notifyDroppedPersistenceJob(job) {
+    service.persistenceError = "notification persistence queue full; dropped oldest job"
+    if (!job || !job.done) return
+    try { job.done(false, 75) } catch (error) {
+      console.warn("notifications: dropped file callback failed", error)
+    }
+  }
+
+  function enqueuePersistenceJob(job, front) {
+    var updated = NotificationLogic.persistenceQueueUpdate(
+      popupFileQueue, job, maxPersistenceJobs, front === true)
+    popupFileQueue = updated.queue
+    if (updated.dropped) notifyDroppedPersistenceJob(updated.dropped)
     runNextPopupFileJob()
   }
 
+  function enqueuePopupFileJob(command, done, attempt, key, front) {
+    enqueuePersistenceJob({
+      command: command,
+      done: done || null,
+      attempt: Number(attempt || 0),
+      key: key || "",
+    }, front === true)
+  }
+
   function enqueueHistoryRead() {
-    popupFileQueue = popupFileQueue.concat([{ read: true }])
-    runNextPopupFileJob()
+    enqueuePersistenceJob({ read: true, key: "history-read" }, false)
   }
 
   function runNextPopupFileJob() {
@@ -380,12 +472,12 @@ Item {
       if (!success) {
         service.persistenceError = "notification persistence job failed (exit " + String(exitCode) + ")"
         if (job && job.attempt < service.persistenceRetryLimit) {
-          service.popupFileQueue = [{
+          service.enqueuePersistenceJob({
             command: job.command,
             done: job.done,
-            attempt: job.attempt + 1
-          }].concat(service.popupFileQueue)
-          service.runNextPopupFileJob()
+            attempt: job.attempt + 1,
+            key: job.key || "",
+          }, true)
           return
         }
       }
@@ -413,22 +505,27 @@ Item {
       "mkdir -p -- \"$1\" \"$2\" || exit 1\n" +
       "chmod 700 -- \"$1\" \"$2\" || exit 1\n" +
       "dir=\"$1\" json=\"$3\" name=\"$4\"\n" +
+      "temporary=$(mktemp \"$dir/$name.XXXXXX\") || exit 1\n" +
+      "trap 'rm -f -- \"$temporary\"' EXIT HUP INT TERM\n" +
       copyImagesScript +
-      "printf '%s\\n' \"$json\" > \"$dir/$name\" && chmod 600 -- \"$dir/$name\" || exit 1", "--",
+      "printf '%s\\n' \"$json\" > \"$temporary\" && chmod 600 -- \"$temporary\" && " +
+      "mv -f -- \"$temporary\" \"$dir/$name\" || exit 1\n" +
+      "trap - EXIT HUP INT TERM", "--",
       popupStateDir,
       imagesDir,
       NotificationLogic.serializePopup(persistable.entry, NotificationUrgency.Normal),
       NotificationLogic.popupFileName(snapshot)]
     for (var i = 0; i < persistable.copies.length; i++)
       command.push(persistable.copies[i].from, persistable.copies[i].to)
-    enqueuePopupFileJob(command)
+    enqueuePopupFileJob(command, null, 0, "popup:" + NotificationLogic.popupFileName(snapshot))
   }
 
   function deletePopupFileFor(row) {
     if (!row) return
     enqueuePopupFileJob(["bash", "-c",
       "umask 077\nrm -f -- \"$1/$2.json\" \"$3/$2\"-*", "--",
-      popupStateDir, NotificationLogic.imageStem(row), imagesDir])
+      popupStateDir, NotificationLogic.imageStem(row), imagesDir], null, 0,
+      "popup:" + NotificationLogic.popupFileName(row))
   }
 
   readonly property string trimHistoryScript:
@@ -448,7 +545,7 @@ Item {
       String(historyLimit),
       NotificationLogic.popupFileName(row),
       popupStateDir,
-      imagesDir], service.updateHistoryCount)
+       imagesDir], service.updateHistoryCount, 0, "popup:" + NotificationLogic.popupFileName(row))
   }
 
   function writeHistoryFile(entry, done) {
@@ -462,9 +559,12 @@ Item {
       "mkdir -p -- \"$1\" \"$5\" || exit 1\n" +
       "chmod 700 -- \"$1\" \"$5\" || exit 1\n" +
       "hist=\"$1\" limit=\"$2\" name=\"$3\" json=\"$4\" imgs=\"$5\"\n" +
+      "temporary=$(mktemp \"$hist/$name.XXXXXX\") || exit 1\n" +
+      "trap 'rm -f -- \"$temporary\"' EXIT HUP INT TERM\n" +
       "shift 5\n" +
       copyImagesScript +
-      "printf '%s\\n' \"$json\" > \"$hist/$name\" && chmod 600 -- \"$hist/$name\" || exit 1\n" +
+      "printf '%s\\n' \"$json\" > \"$temporary\" && chmod 600 -- \"$temporary\" && " +
+      "mv -f -- \"$temporary\" \"$hist/$name\" || exit 1\n" +
       trimHistoryScript, "--",
       historyDir,
       String(historyLimit),
@@ -480,7 +580,7 @@ Item {
       }
       service.updateHistoryCount()
       if (done) done(true, exitCode)
-    })
+    }, 0, "history:" + NotificationLogic.popupFileName(entry))
   }
 
   function clearHistory() {
@@ -490,7 +590,7 @@ Item {
       "  [[ -e $f ]] || continue\n" +
       "  stale=\"${f##*/}\"\n" +
       "  rm -f \"$f\" \"$2/${stale%.json}\"-*\n" +
-      "done", "--", historyDir, imagesDir], service.updateHistoryCount)
+       "done", "--", historyDir, imagesDir], service.updateHistoryCount, 0, "history-clear")
   }
 
   function sweepOrphanImages() {
@@ -502,7 +602,7 @@ Item {
       "  stem=\"${img##*/}\"\n" +
       "  stem=\"${stem%-*}\"\n" +
       "  [[ -e $1/$stem.json || -e $2/$stem.json ]] || rm -f \"$img\"\n" +
-      "done", "--", popupStateDir, historyDir, imagesDir])
+       "done", "--", popupStateDir, historyDir, imagesDir], null, 0, "image-sweep")
   }
 
   Process {
@@ -561,7 +661,7 @@ Item {
 
     clearPopups()
     for (var i = 0; i < rows.length; i++) {
-      service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = true
+      service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = "history"
       popupModel.append(rows[i])
     }
   }
@@ -584,7 +684,7 @@ Item {
       var current = popupModel.get(i)
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
-    service.restoredPopups[fileName] = true
+    service.restoredPopups[fileName] = "history"
     popupModel.append(row)
   }
 
@@ -598,7 +698,7 @@ Item {
   }
 
   function restorePopups(raw) {
-    var entries = NotificationLogic.parsePopupFiles(raw, NotificationUrgency.Normal)
+    var entries = NotificationLogic.parsePopupFiles(raw, NotificationUrgency.Normal, service.maxActivePopups)
     var now = Date.now()
     var live = []
     for (var i = 0; i < entries.length; i++) {
@@ -629,7 +729,7 @@ Item {
           }
         }
         if (duplicate) continue
-        service.restoredPopups[NotificationLogic.popupFileName(restored)] = true
+        service.restoredPopups[NotificationLogic.popupFileName(restored)] = "popup"
         popupModel.append(restored)
       }
     })
@@ -767,7 +867,6 @@ Item {
   function cueVisibleOn(screen) {
     return service.routeValid && service.route.cueOutput !== null
       && String(service.route.cueOutput) === screenName(screen)
-      && service.route.direction !== null
   }
 
   Process {
@@ -895,10 +994,15 @@ Item {
       persistenceError: service.persistenceError,
       dnd: service.doNotDisturb,
       liveCount: service.liveReferenceCount(),
+      pendingPersistenceCount: service.pendingPersistenceCount(),
       popupCount: popupModel.count,
       historyCount: service.historyCount,
       routeValid: service.routeValid,
       routeVisible: service.routeVisible,
+      routeCueOutput: service.route.cueOutput,
+      routeDirection: service.route.direction,
+      routeCueGlyph: service.routeValid && service.route.cueOutput !== null
+        ? NotificationLogic.cueGlyph(service.route.direction) : null,
       routeError: service.routeError
     })
   }
@@ -927,6 +1031,11 @@ Item {
     return "ok"
   }
 
+  function invokeAction(identifier) {
+    if (popupModel.count > 0) service.invokePopupAction(0, identifier)
+    return "ok"
+  }
+
   IpcHandler {
     target: "desktop.notifications"
 
@@ -936,6 +1045,7 @@ Item {
     function dismissLast(): string { return service.dismissLast() }
     function restoreLast(): string { return service.restoreLast() }
     function invokeLast(): string { return service.invokeLast() }
+    function invokeAction(identifier: string): string { return service.invokeAction(identifier) }
     function toggleDnd(): string { return service.toggleDnd() }
     function setDnd(value: string): string { return service.setDnd(value) }
   }
@@ -948,7 +1058,7 @@ Item {
       imageSupported: true
       actionsSupported: true
       bodyMarkupSupported: true
-      bodyHyperlinksSupported: true
+      bodyHyperlinksSupported: false
       persistenceSupported: true
 
       onNotification: function(notification) {
@@ -1009,18 +1119,24 @@ Item {
             required property int urgency
             required property double expireTimeout
             required property double timestamp
+            required property var actions
 
             Layout.preferredWidth: card.implicitWidth
             Layout.alignment: Qt.AlignRight
             implicitHeight: card.implicitHeight
 
             readonly property real lifetime: service.durationFor(cardSlot.urgency, cardSlot.expireTimeout)
+            readonly property bool defaultActionAvailable:
+              NotificationLogic.actionOutcome(cardSlot.actions, "default", false).found
             property real remainingLifetime: 1.0
             readonly property bool ticking: cardSlot.lifetime > 0 && !card.hovered
 
             onSummaryChanged: cardSlot.remainingLifetime = 1.0
             onBodyChanged: cardSlot.remainingLifetime = 1.0
             onImageChanged: cardSlot.remainingLifetime = 1.0
+            onUrgencyChanged: cardSlot.remainingLifetime = 1.0
+            onExpireTimeoutChanged: cardSlot.remainingLifetime = 1.0
+            onActionsChanged: cardSlot.remainingLifetime = 1.0
 
             Timer {
               interval: 50
@@ -1046,11 +1162,16 @@ Item {
               image: cardSlot.image
               urgency: cardSlot.urgency
               timestamp: cardSlot.timestamp
+              actions: cardSlot.actions
+              defaultActionAvailable: cardSlot.defaultActionAvailable
               cornerRadius: service.cornerRadius
               fontFamily: service.shell && service.shell.bar
                 ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
 
               onCloseRequested: service.dismissPopup(cardSlot.index)
+              onActionClicked: function(identifier) {
+                service.invokePopupAction(cardSlot.index, identifier)
+              }
               onCardClicked: service.invokePopupDefault(cardSlot.index)
             }
           }
@@ -1073,7 +1194,7 @@ Item {
         Text {
           id: cueLabel
           anchors.centerIn: parent
-          text: "Notifications " + String(service.route.direction || "")
+          text: NotificationLogic.cueGlyph(service.route.direction)
           color: Color.notifications.text
           font.family: Style.font.family
           font.pixelSize: Style.font.body

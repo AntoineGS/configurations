@@ -125,6 +125,7 @@ fi
 fixture="$(mktemp -d)"
 shell_pid=''
 owner_pid=''
+action_pid=''
 runtime_dir="$fixture/runtime"
 state_home="$fixture/state"
 home="$fixture/home"
@@ -159,6 +160,7 @@ cleanup() {
   trap - EXIT HUP INT TERM
   cleanup_process "$shell_pid"
   cleanup_process "$owner_pid"
+  cleanup_process "$action_pid"
   if ((status != 0)); then
     if [[ -n $shell_log && -s $shell_log ]]; then
       printf '%s\n' '--- notification runtime shell log ---' >&2
@@ -316,6 +318,27 @@ wait_for_path() {
   return 1
 }
 
+wait_for_process_exit() {
+  local pid=$1
+  local deadline=$((SECONDS + 10))
+  local stat_line=''
+  local state=''
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -r /proc/$pid/stat ]]; then
+      stat_line=$(<"/proc/$pid/stat")
+      state=${stat_line#*) }
+      state=${state%% *}
+      [[ $state == Z ]] && break
+    fi
+    ((SECONDS < deadline)) || {
+      printf 'FAIL: process %s did not exit in time (%s)\n' "$pid" "$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)" >&2
+      return 1
+    }
+    sleep 0.1
+  done
+  wait "$pid"
+}
+
 wait_for_setting_dnd() {
   local expected_dnd=$1
   local expected_writes=$2
@@ -376,6 +399,7 @@ start_shell() {
   XDG_STATE_HOME="$state_home" \
   XDG_RUNTIME_DIR="$runtime_dir" \
   WAYLAND_DISPLAY="$fixture_wayland_display" \
+  DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
   PATH="$shell_path" \
   DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
   quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
@@ -456,7 +480,7 @@ Item {
 QML
 
 runtime_shell_root="$mixed_shell_root"
-start_shell
+DESKTOP_SHELL_TEST_NO_SURFACES=0 start_shell
 [[ $(call_ipc desktop-shell summon desktop.mixed '{}') == ok ]]
 wait_for_ipc service-ok desktop-shell call desktop.mixed serviceOnly ''
 wait_for_ipc overlay-ok desktop-shell call desktop.mixed overlayOnly ''
@@ -533,6 +557,14 @@ done
   exit 1
 }
 
+# Cue state is visible for both a normal route and an all-unsafe cue-only route.
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left","updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true and .routeCueOutput == "HDMI-A-1" and .routeDirection == "left" and .routeCueGlyph == "←"'
+write_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == false and .routeCueOutput == "DP-2" and .routeDirection == null and .routeCueGlyph == "•"'
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true and .routeCueOutput == null'
+
 # FileView must fail closed across every route lifecycle transition.
 write_route_payload '{malformed'
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("invalid|unavailable"))'
@@ -569,7 +601,121 @@ assert_mode 600 "$history_file"
 wait_for_status '.popupCount == 1 and .historyCount == 1'
 
 [[ $(call_notification dismissAll) == ok ]]
-wait_for_status '.popupCount == 0 and .historyCount == 1'
+wait_for_status '.popupCount == 0 and .historyCount == 1 and .persistenceError == ""'
+
+# Default actions invoke the retained live action and archive only after success.
+default_action_output="$fixture/default-action.out"
+notify-send --app-name task4-default-action --action=default=Open --urgency normal \
+  --expire-time 30000 'Task 4 default action' 'default action contract' >"$default_action_output" 2>&1 &
+action_pid=$!
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+[[ $(call_notification invokeLast) == ok ]]
+wait_for_process_exit "$action_pid"
+action_pid=''
+[[ $(<"$default_action_output") == default ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0 and .historyCount == 2'
+default_history_file=$(printf '%s\n' "$history_dir"/*.json | sort -n | tail -n 1)
+jq -e '.actions == []' "$default_history_file" >/dev/null
+
+# A non-default-only notification must survive the card default click, then invoke
+# the selected action through the retained live reference.
+nondefault_action_output="$fixture/nondefault-action.out"
+notify-send --app-name task4-nondefault-action --action=archive=Archive --urgency normal \
+  --expire-time 30000 'Task 4 non-default action' 'non-default action contract' >"$nondefault_action_output" 2>&1 &
+action_pid=$!
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+[[ $(call_notification invokeLast) == ok ]]
+sleep 0.5
+kill -0 "$action_pid"
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+[[ $(call_notification invokeAction archive) == ok ]]
+wait_for_process_exit "$action_pid"
+action_pid=''
+[[ $(<"$nondefault_action_output") == archive ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+
+# Resident actions remain visible after successful invocation until dismissed.
+resident_action_output="$fixture/resident-action.out"
+resident_sender="$fixture/resident-sender.py"
+cat >"$resident_sender" <<'PY'
+import dbus
+import dbus.mainloop.glib
+import sys
+from gi.repository import GLib
+
+output_path = sys.argv[1]
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+bus = dbus.SessionBus()
+loop = GLib.MainLoop()
+resident_id = None
+
+def write(value):
+    with open(output_path, "a", encoding="ascii") as output:
+        output.write(value + "\n")
+
+def on_action(notification_id, action):
+    if resident_id is not None and int(notification_id) == int(resident_id):
+        write(str(action))
+
+def on_close(notification_id, reason):
+    if resident_id is not None and int(notification_id) == int(resident_id):
+        write("closed")
+        loop.quit()
+
+def on_timeout():
+    loop.quit()
+    return False
+
+bus.add_signal_receiver(
+    on_action,
+    dbus_interface="org.freedesktop.Notifications",
+    signal_name="ActionInvoked",
+    path="/org/freedesktop/Notifications",
+)
+bus.add_signal_receiver(
+    on_close,
+    dbus_interface="org.freedesktop.Notifications",
+    signal_name="NotificationClosed",
+    path="/org/freedesktop/Notifications",
+)
+proxy = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+notifications = dbus.Interface(proxy, "org.freedesktop.Notifications")
+resident_id = notifications.Notify(
+    "task4-resident-python", 0, "", "Resident action", "resident action contract",
+    dbus.Array(["archive", "Archive"], signature="s"),
+    dbus.Dictionary({"resident": dbus.Boolean(True)}, signature="sv"), dbus.Int32(30000),
+)
+GLib.timeout_add(5000, on_timeout)
+loop.run()
+PY
+chmod 700 "$resident_sender"
+python3 "$resident_sender" "$resident_action_output" &
+action_pid=$!
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+[[ $(call_notification invokeAction archive) == ok ]]
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+kill -0 "$action_pid"
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+wait_for_process_exit "$action_pid"
+action_pid=''
+[[ $(<"$resident_action_output") == *archive* ]] && [[ $(<"$resident_action_output") == *closed* ]]
+
+# Explicit zero survives replacement and a service restart, while persisted rows
+# have no action references.
+replacement_id=$(notify-send --app-name task4-timeout --print-id --expire-time 0 \
+  'Task 4 timeout' 'explicit never timeout' 2>/dev/null)
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+notify-send --app-name task4-timeout --replace-id "$replacement_id" --expire-time 0 \
+  'Task 4 timeout replacement' 'replacement remains resident' >/dev/null 2>&1
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+stop_shell
+start_shell
+wait_for_status '.popupCount == 1 and .routeValid == true'
+timeout_file=$(printf '%s\n' "$popup_dir"/*.json)
+jq -e '.expireTimeout == 0 and .actions == []' "$timeout_file" >/dev/null
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
 
 # Hold the first atomic settings rename, change DND again while it is active,
 # and require one follow-up write with the latest state.
@@ -609,11 +755,26 @@ rm -f -- "$history_dir"
 mkdir -p -- "$history_dir"
 chmod 700 "$history_dir"
 
+# Critical notifications bypass DND but share the total active cap. Replacing
+# an existing critical row must not consume another slot.
+critical_id=$(notify-send --app-name task4-critical-flood --print-id --urgency critical \
+  --expire-time 0 'Task 4 critical flood' 'critical replacement seed' 2>/dev/null)
+for index in $(seq 1 59); do
+  notify-send --app-name task4-critical-flood --urgency critical --expire-time 0 \
+    "Task 4 critical flood $index" 'critical active-cap contract'
+done
+wait_for_status '.popupCount == 50 and .liveCount == 50 and .pendingPersistenceCount <= 100'
+notify-send --app-name task4-critical-flood --replace-id "$critical_id" --urgency critical \
+  --expire-time 0 'Task 4 critical replacement' 'replacement does not consume a slot' >/dev/null 2>&1
+wait_for_status '.popupCount == 50 and .liveCount == 50'
+[[ $(call_notification dismissAll) == ok ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+
 stop_shell
 probe_bin="$fixture/probe-bin"
 probe_count="$fixture/probe-count"
 mkdir -p "$probe_bin"
-for command_name in bash sh quickshell mkdir find cat sort awk ls head stat rm mv cp date sleep; do
+for command_name in bash sh quickshell mkdir find cat sort awk ls head stat rm mv cp date sleep mktemp; do
   command_path="$(type -P "$command_name")"
   [[ -n $command_path ]] && ln -s "$command_path" "$probe_bin/$command_name"
 done
