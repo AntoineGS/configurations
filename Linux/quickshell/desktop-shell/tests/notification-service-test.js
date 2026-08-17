@@ -59,6 +59,14 @@ assert.match(service, /umask 077/, "notification persistence uses a restrictive 
 assert.match(service, /chmod 700/, "notification state directories repair their mode")
 assert.match(service, /chmod 600/, "notification state files repair their mode")
 assert.match(service, /settingsWriteProc/, "settings persistence has an explicit mode-controlled writer")
+assert.match(service, /property bool settingsSavePending/,
+  "settings persistence tracks an overlapping save")
+assert.match(service,
+  /if \(settingsWriteProc\.running\)\s*\{[\s\S]*settingsSavePending = true[\s\S]*return/,
+  "an overlapping settings save is recorded instead of dropped")
+assert.match(service,
+  /onExited:[\s\S]*settingsSavePending[\s\S]*scheduleSettingsSave\(\)/,
+  "settings exit schedules one pending follow-up save")
 const writeSilencedStart = service.indexOf("function writeSilenced(")
 const releaseSilencedStart = service.indexOf("function releaseSilenced(")
 assert.ok(writeSilencedStart >= 0 && releaseSilencedStart > writeSilencedStart, "writeSilenced root method exists")

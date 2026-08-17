@@ -316,6 +316,29 @@ wait_for_path() {
   return 1
 }
 
+wait_for_setting_dnd() {
+  local expected_dnd=$1
+  local expected_writes=$2
+  local last_dnd=''
+  local last_writes='0'
+  local deadline=$((SECONDS + 15))
+  while ((SECONDS < deadline)); do
+    if [[ -f $state_home/desktop-shell/notifications.json ]]; then
+      last_dnd=$(jq -r '.dnd' "$state_home/desktop-shell/notifications.json" 2>/dev/null) || last_dnd=''
+    fi
+    if [[ -f ${settings_write_count:-} ]]; then
+      last_writes=$(<"$settings_write_count")
+    fi
+    if [[ $last_dnd == "$expected_dnd" && $last_writes == "$expected_writes" ]]; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  printf 'FAIL: settings did not persist dnd=%s after %s writes (last dnd=%s writes=%s)\n' \
+    "$expected_dnd" "$expected_writes" "$last_dnd" "$last_writes" >&2
+  return 1
+}
+
 count_json_files() {
   local directory=$1
   local count=0
@@ -339,6 +362,9 @@ start_shell() {
     else
       shell_path="$DESKTOP_SHELL_TEST_BUSCTL_BIN:$shell_path"
     fi
+  fi
+  if [[ -n ${DESKTOP_SHELL_TEST_SETTINGS_BIN:-} ]]; then
+    shell_path="$DESKTOP_SHELL_TEST_SETTINGS_BIN:$shell_path"
   fi
   DESKTOP_SHELL_PREVIEW=0 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
@@ -437,6 +463,41 @@ wait_for_ipc overlay-ok desktop-shell call desktop.mixed overlayOnly ''
 stop_shell
 runtime_shell_root="$SHELL_ROOT"
 
+settings_delay_bin="$fixture/settings-delay-bin"
+settings_write_started="$fixture/settings-write-started"
+settings_write_release="$fixture/settings-write-release"
+settings_write_count="$fixture/settings-write-count"
+mkdir -p "$settings_delay_bin"
+real_mv="$(type -P mv)"
+cat >"$settings_delay_bin/mv" <<FAKE_SETTINGS_MV
+#!/usr/bin/env bash
+set -Eeuo pipefail
+args=("\$@")
+last_index=\$((\${#args[@]} - 1))
+source_path=\${args[\$((last_index - 1))]}
+destination_path=\${args[\$last_index]}
+if [[ \$source_path == *notifications.json.* && \$destination_path == *notifications.json ]]; then
+  write_count=0
+  if [[ -f \${DESKTOP_SHELL_TEST_SETTINGS_COUNT:?} ]]; then
+    write_count=\$(<"\${DESKTOP_SHELL_TEST_SETTINGS_COUNT}")
+  fi
+  write_count=\$((write_count + 1))
+  printf '%s\\n' "\$write_count" >"\${DESKTOP_SHELL_TEST_SETTINGS_COUNT}"
+  if ((write_count == 1)); then
+    : >"\${DESKTOP_SHELL_TEST_SETTINGS_START:?}"
+    while [[ ! -e \${DESKTOP_SHELL_TEST_SETTINGS_RELEASE:?} ]]; do
+      sleep 0.05
+    done
+  fi
+fi
+exec "$real_mv" "\$@"
+FAKE_SETTINGS_MV
+chmod 700 "$settings_delay_bin/mv"
+export DESKTOP_SHELL_TEST_SETTINGS_BIN="$settings_delay_bin"
+export DESKTOP_SHELL_TEST_SETTINGS_START="$settings_write_started"
+export DESKTOP_SHELL_TEST_SETTINGS_RELEASE="$settings_write_release"
+export DESKTOP_SHELL_TEST_SETTINGS_COUNT="$settings_write_count"
+
 start_shell
 wait_for_ipc pong desktop.notifications ping
 wait_for_ipc pong desktop-shell call desktop.notifications ping ''
@@ -509,10 +570,27 @@ wait_for_status '.popupCount == 1 and .historyCount == 1'
 
 [[ $(call_notification dismissAll) == ok ]]
 wait_for_status '.popupCount == 0 and .historyCount == 1'
+
+# Hold the first atomic settings rename, change DND again while it is active,
+# and require one follow-up write with the latest state.
 [[ $(call_notification toggleDnd) == enabled ]]
 wait_for_status '.dnd == true and .popupCount == 1'
-wait_for_file "$state_home/desktop-shell/notifications.json"
-[[ $(jq -e -r '.dnd' "$state_home/desktop-shell/notifications.json") == true ]]
+wait_for_path "$settings_write_started"
+[[ $(call_notification toggleDnd) == disabled ]]
+wait_for_status '.dnd == false and .popupCount == 1'
+sleep 1
+: >"$settings_write_release"
+wait_for_setting_dnd false 2
+assert_mode 600 "$state_home/desktop-shell/notifications.json"
+unset DESKTOP_SHELL_TEST_SETTINGS_BIN DESKTOP_SHELL_TEST_SETTINGS_START \
+  DESKTOP_SHELL_TEST_SETTINGS_RELEASE DESKTOP_SHELL_TEST_SETTINGS_COUNT
+
+stop_shell
+start_shell
+wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .dnd == false and .popupCount == 0'
+[[ $(call_notification toggleDnd) == enabled ]]
+wait_for_status '.dnd == true and .popupCount == 1'
+wait_for_setting_dnd true 2
 assert_mode 600 "$state_home/desktop-shell/notifications.json"
 
 stop_shell
