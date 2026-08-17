@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+pref_file="${REMMINA_PREF_FILE:-$HOME/.config/remmina/remmina.pref}"
+temp_file=""
+
+if [[ -L "$pref_file" ]]; then
+  if ! pref_file="$(readlink -f -- "$pref_file")"; then
+    printf '%s\n' 'setup-remmina-hostkey: cannot resolve preference symlink' >&2
+    exit 1
+  fi
+fi
+
+cleanup() {
+  [[ -z "$temp_file" ]] || rm -f -- "$temp_file"
+}
+trap cleanup EXIT
+
+check_hostkey() {
+  [[ -f "$pref_file" ]] &&
+    awk '
+      /^[[:space:]]*\[remmina_pref\][[:space:]]*$/ { in_preferences = 1; next }
+      /^[[:space:]]*\[[^]]+\][[:space:]]*$/ { in_preferences = 0 }
+      in_preferences && /^[[:space:]]*hostkey[[:space:]]*=/ {
+        assignments++
+        if ($0 ~ /^[[:space:]]*hostkey[[:space:]]*=[[:space:]]*0[[:space:]]*$/) valid++
+      }
+      END { exit !(assignments == 1 && valid == 1) }
+    ' "$pref_file"
+}
+
+create_preferences() {
+  local pref_dir
+
+  pref_dir="$(dirname -- "$pref_file")"
+  mkdir -p -- "$pref_dir"
+  temp_file="$(mktemp "$pref_dir/.remmina.pref.XXXXXX")"
+  chmod 600 -- "$temp_file"
+  printf '[remmina_pref]\nhostkey=0\n' > "$temp_file"
+  mv -- "$temp_file" "$pref_file"
+  temp_file=""
+}
+
+rewrite_preferences() {
+  local pref_dir
+  local preserve_no_final_newline=false
+
+  if ! command -v setfacl >/dev/null 2>&1; then
+    printf '%s\n' 'setup-remmina-hostkey: setfacl is required to preserve preference metadata' >&2
+    return 1
+  fi
+
+  pref_dir="$(dirname -- "$pref_file")"
+  if [[ -s "$pref_file" ]] && [[ "$(tail -c 1 -- "$pref_file" | od -An -t x1)" != *0a* ]]; then
+    preserve_no_final_newline=true
+  fi
+  temp_file="$(mktemp "$pref_dir/.remmina.pref.XXXXXX")"
+  awk '
+    function flush_pending() {
+      printf "%s", pending
+      pending = ""
+    }
+    function finish_preferences() {
+      if (!wrote_hostkey) {
+        print "hostkey=0" section_suffix
+        wrote_hostkey = 1
+      }
+      flush_pending()
+    }
+    NR == 1 {
+      default_suffix = ($0 ~ /\r$/ ? "\r" : "")
+    }
+    /^[[:space:]]*\[remmina_pref\][[:space:]]*$/ {
+      if (in_preferences) finish_preferences()
+      saw_preferences = 1
+      in_preferences = 1
+      section_suffix = ($0 ~ /\r$/ ? "\r" : "")
+      print
+      next
+    }
+    /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+      if (in_preferences) finish_preferences()
+      in_preferences = 0
+      print
+      next
+    }
+    in_preferences && /^[[:space:]]*hostkey[[:space:]]*=/ {
+      flush_pending()
+      if (!wrote_hostkey) print "hostkey=0" ($0 ~ /\r$/ ? "\r" : "")
+      wrote_hostkey = 1
+      next
+    }
+    in_preferences && /^[[:space:]]*$/ {
+      pending = pending $0 ORS
+      next
+    }
+    {
+      if (in_preferences) flush_pending()
+      print
+    }
+    END {
+      if (in_preferences) finish_preferences()
+      if (!saw_preferences) {
+        if (NR > 0) print default_suffix
+        print "[remmina_pref]" default_suffix
+        print "hostkey=0" default_suffix
+      }
+    }
+  ' "$pref_file" > "$temp_file"
+  if [[ "$preserve_no_final_newline" == true ]]; then
+    truncate -s -1 -- "$temp_file"
+  fi
+  setfacl -b -- "$temp_file"
+  cp --attributes-only --preserve=mode,ownership,xattr -- "$pref_file" "$temp_file"
+  mv -- "$temp_file" "$pref_file"
+  temp_file=""
+}
+
+case "${1:-}" in
+  --check)
+    check_hostkey
+    ;;
+  --apply)
+    if [[ ! -e "$pref_file" ]]; then
+      create_preferences
+    elif ! check_hostkey; then
+      rewrite_preferences
+      check_hostkey
+    else
+      :
+    fi
+    ;;
+  --help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

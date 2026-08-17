@@ -31,9 +31,11 @@ run_shellcheck() {
     Linux/os/helpers/cmd-screenrecord
     Linux/os/helpers/menu
     Linux/os/helpers/powerprofiles-list
+    Linux/os/helpers/setup-remmina-hostkey
     Linux/os/tests/cmd-screenrecord-test.sh
     Linux/os/tests/desktop-status-independence-test.sh
     Linux/os/tests/helper-independence-test.sh
+    Linux/os/tests/setup-remmina-hostkey-test.sh
     Linux/os/tests/system-helper-independence-test.sh
     Linux/os/tests/theme-independence-test.sh
     Linux/os/tests/power-profile-availability-test.sh
@@ -68,6 +70,7 @@ run bash Linux/os/tests/desktop-status-independence-test.sh
 run bash Linux/os/tests/helper-independence-test.sh
 run bash Linux/os/tests/system-helper-independence-test.sh
 run bash Linux/os/tests/cmd-screenrecord-test.sh
+run bash Linux/os/tests/setup-remmina-hostkey-test.sh
 run bash Linux/network/tests/setup-networkd-iwd-test.sh
 run bash Linux/opencode/tests/test-setup-context-tokenizers.sh
 run bash Linux/opencode/tests/test-setup-temp-cleanup.sh
