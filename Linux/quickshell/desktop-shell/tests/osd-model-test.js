@@ -84,6 +84,10 @@ const screens = [{ name: "DP-1" }, { name: "HDMI-A-1" }]
 assert.equal(model.screenForMonitor(screens, "HDMI-A-1"), screens[1])
 assert.equal(model.screenForMonitor(screens, "missing-monitor"), screens[0])
 assert.equal(model.screenForMonitor([], "HDMI-A-1"), null)
+const screensBeforePublication = [{ name: "DP-1" }]
+assert.equal(model.screenForMonitor(screensBeforePublication, "HDMI-A-1"), screensBeforePublication[0])
+const screensAfterPublication = [{ name: "DP-1" }, { name: "HDMI-A-1" }]
+assert.equal(model.screenForMonitor(screensAfterPublication, "HDMI-A-1"), screensAfterPublication[1])
 
 const loaderError = "error"
 const healthyLoader = { status: "ready", item: { ping: () => "pong" } }
@@ -105,10 +109,12 @@ assert.match(qml, /import Quickshell\.Hyprland/)
 assert.match(qml, /property real value/)
 assert.match(qml, /property real maxValue/)
 assert.match(qml, /property int duration/)
+assert.match(qml, /property var screenList:\s*Quickshell\.screens/)
+assert.match(qml, /readonly property var targetScreen:\s*OsdModel\.screenForMonitor\(root\.screenList,\s*root\.focusedMonitorName\)/)
 assert.match(qml, /screen:\s*root\.targetScreen/)
-assert.match(qml, /function updateScreen\(\)/)
-assert.match(qml, /onFocusedMonitorNameChanged/)
 assert.match(qml, /screenForMonitor/)
+assert.doesNotMatch(qml, /function updateScreen\(\)/)
+assert.doesNotMatch(qml, /onFocusedMonitorNameChanged/)
 assert.match(qml, /WlrLayer\.Overlay/)
 assert.match(qml, /KeyboardFocus\.None/)
 assert.match(qml, /Region \{\s*\}/)

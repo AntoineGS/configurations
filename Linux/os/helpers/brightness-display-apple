@@ -58,15 +58,11 @@ payload=$(jq -cn \
   --arg progressText "${percent}%" \
   '{icon: $icon, message: $message, value: $value, max: $max, progressText: $progressText}')
 
-deliver_status=0
-if response=$(desktop-shell call desktop.osd show "$payload"); then
-  if [[ $response != ok ]]; then
-    deliver_status=1
-  fi
-else
-  deliver_status=$?
-fi
-if (( deliver_status != 0 && deliver_status != 3 )); then
+if ! response=$(desktop-shell call desktop.osd show "$payload"); then
   printf 'brightness-display-apple: OSD delivery failed\n' >&2
-  exit "$deliver_status"
+  exit 3
+fi
+if [[ $response != ok ]]; then
+  printf 'brightness-display-apple: OSD returned an invalid response\n' >&2
+  exit 3
 fi
