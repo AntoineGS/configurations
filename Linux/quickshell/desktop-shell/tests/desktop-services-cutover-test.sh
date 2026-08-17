@@ -151,7 +151,7 @@ assert_route_mutation_detected() {
   local label="$1"
   local relative_path="$2"
   local content="$3"
-  local fixture="$TEST_ROOT/round2-route-$label"
+  local fixture="$TEST_ROOT/route-$label"
   local hits
 
   mkdir -p -- "$fixture"
@@ -160,7 +160,7 @@ assert_route_mutation_detected() {
   git -C "$fixture" add --all
   hits="$(collect_forbidden_hits "$fixture")"
   grep -Fq -- "$relative_path:" <<< "$hits" ||
-    fail "round-2 route mutation was not rejected: $label"
+    fail "route mutation was not rejected: $label ($relative_path)"
 }
 
 assert_round2_route_mutations() {
@@ -174,6 +174,13 @@ assert_round2_route_mutations() {
     'makoctl dismiss'
   assert_route_mutation_detected test-like-file Linux/os/helpers/route-test.sh \
     'swayosd-client --monitor DP-1'
+}
+
+assert_round3_route_mutations() {
+  assert_route_mutation_detected shell-parameter-expansion Linux/os/helpers/source-route \
+    "\${source#*/}; makoctl dismiss"
+  assert_route_mutation_detected lua-length-operator Linux/hypr/route-length.lua \
+    'if #items > 0 then uwsm-app -- mako end'
 }
 
 assert_adapter_reference_mutation_detected() {
@@ -203,12 +210,41 @@ assert_round2_adapter_mutations() {
     'Exec=systemctl --user start desktop-shell-mako-route.service'
 }
 
+assert_adapter_file_mutation_detected() {
+  local label="$1"
+  local relative_path="$2"
+  local content="$3"
+  local fixture="$TEST_ROOT/round3-adapter-$label"
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" "$relative_path" "$content"
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+  assert_rejects_fixture "adapter $label" 'adapter activation or dependency reference' \
+    assert_no_adapter_enrollment "$fixture"
+}
+
+assert_round3_adapter_mutations() {
+  assert_adapter_file_mutation_detected route-allow-zone Linux/mako/config \
+    'desktop-shell-mako-route.service'
+  assert_adapter_file_mutation_detected activation-enable Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user enable --now desktop-shell-mako-route.service'
+  assert_adapter_file_mutation_detected rollback-enable Linux/os/helpers/desktop-shell-rollback \
+    'systemctl --user enable --now desktop-shell-mako-route.service'
+  assert_adapter_file_mutation_detected unit-enable Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service \
+    'ExecStart=systemctl --user enable --now desktop-shell-mako-route.service'
+  assert_adapter_file_mutation_detected unit-start Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service \
+    'ExecStart=systemctl --user start desktop-shell-mako-route.service'
+}
+
 assert_mutation_fixtures() {
   local fixture="$TEST_ROOT/mutation-repository"
   local hits expected_path allowed_path
 
   assert_round2_route_mutations
+  assert_round3_route_mutations
   assert_round2_adapter_mutations
+  assert_round3_adapter_mutations
   assert_graphical_profile_fixture_consumption
 
   mkdir -p -- "$fixture"
@@ -291,9 +327,20 @@ assert_mutation_fixtures() {
     assert_autostart_fixture "$TEST_ROOT/autostart-mutated.lua"
 }
 
-is_allowed_zone() {
+is_route_allowed_zone() {
   case "$1" in
     Linux/mako/*|Linux/swayosd/*|*/tests/*|Linux/os/helpers/desktop-shell-activate|Linux/os/helpers/desktop-shell-rollback|Linux/os/helpers/desktop-shell-mako-route|Linux/os/helpers/notification-dismiss|Linux/os/helpers/restart-mako|Linux/os/helpers/swayosd-brightness|Linux/os/helpers/swayosd-kbd-brightness)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_adapter_non_runtime_file() {
+  case "$1" in
+    Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh|Linux/quickshell/desktop-shell/tests/desktop-services-lifecycle-test.sh|Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh)
       return 0
       ;;
     *)
@@ -316,17 +363,27 @@ is_non_runtime_file() {
 readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--([^;&|]*[[:space:]/\"'])(mako|swayosd-server)([^[:alnum:]_.-]|$)"
 readonly DIRECT_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?(polkit-gnome-authentication-agent-1|makoctl|swayosd-client|swayosd-brightness|swayosd-kbd-brightness)([^[:alnum:]_.-]|$)"
 
-collect_active_route_paths() {
+collect_tracked_text_paths() {
   local root="$1"
   local path
   local -a tracked_paths=()
-  ACTIVE_ROUTE_PATHS=()
+  TRACKED_TEXT_PATHS=()
 
   mapfile -d '' tracked_paths < <(git -C "$root" grep -zIl -e . -- . 2>/dev/null || true)
   for path in "${tracked_paths[@]}"; do
     [[ -f "$root/$path" ]] || continue
-    is_allowed_zone "$path" && continue
     is_non_runtime_file "$path" && continue
+    TRACKED_TEXT_PATHS+=("$path")
+  done
+}
+
+collect_route_paths() {
+  local path
+
+  collect_tracked_text_paths "$1"
+  ACTIVE_ROUTE_PATHS=()
+  for path in "${TRACKED_TEXT_PATHS[@]}"; do
+    is_route_allowed_zone "$path" && continue
     ACTIVE_ROUTE_PATHS+=("$path")
   done
 }
@@ -336,46 +393,35 @@ collect_inventory_hits() {
   local mode="$2"
   local -a files=()
 
-  collect_active_route_paths "$root"
-  for path in "${ACTIVE_ROUTE_PATHS[@]}"; do
-    files+=("$root/$path")
-  done
+  if [[ "$mode" == route ]]; then
+    collect_route_paths "$root"
+    for path in "${ACTIVE_ROUTE_PATHS[@]}"; do
+      files+=("$root/$path")
+    done
+  else
+    collect_tracked_text_paths "$root"
+    for path in "${TRACKED_TEXT_PATHS[@]}"; do
+      is_adapter_non_runtime_file "$path" && continue
+      files+=("$root/$path")
+    done
+  fi
 
   awk -v root="$root" -v mode="$mode" -v uwsm="$UWSM_ROUTE_RE" -v direct="$DIRECT_ROUTE_RE" '
-    function strip_comment(value, output, quote, escaped, position, character, single_quote) {
-      output = ""
-      quote = ""
-      escaped = 0
-      single_quote = sprintf("%c", 39)
-      for (position = 1; position <= length(value); position++) {
-        character = substr(value, position, 1)
-        if (escaped) {
-          output = output character
-          escaped = 0
-          continue
-        }
-        if (character == "\\") {
-          output = output character
-          escaped = 1
-          continue
-        }
-        if (quote != "") {
-          output = output character
-          if (character == quote) {
-            quote = ""
-          }
-          continue
-        }
-        if (character == "\"" || character == single_quote) {
-          quote = character
-          output = output character
-        } else if (character == "#") {
-          break
-        } else {
-          output = output character
-        }
+    function is_whole_line_comment(path, value) {
+      if (value ~ /^[[:space:]]*$/) {
+        return 1
       }
-      return output
+      if (path ~ /\.lua$/) {
+        return value ~ /^[[:space:]]*--/
+      }
+      if (path ~ /\.qml$/) {
+        return value ~ /^[[:space:]]*\/\//
+      }
+      if (path ~ /\.(bash|conf|fish|ini|mount|nu|service|sh|socket|target|timer|toml|yaml|yml|zsh)$/ ||
+          path ~ /^Linux\/os\/helpers\/[^/]+$/) {
+        return value ~ /^[[:space:]]*#/
+      }
+      return 0
     }
 
     function relative_path(value, prefix) {
@@ -396,8 +442,29 @@ collect_inventory_hits() {
       return 0
     }
 
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+
     function adapter_reference_allowed(path, value) {
-      if (path == "tidydots.yaml" && value == "          - desktop-shell-mako-route.service") {
+      value = trim(value)
+      quote = sprintf("%c", 39)
+      if (path == "tidydots.yaml" && value == "- desktop-shell-mako-route.service") {
+        return 1
+      }
+      if (path == "Linux/os/helpers/desktop-shell-activate" &&
+          value == "stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)") {
+        return 1
+      }
+      if (path == "Linux/os/helpers/desktop-shell-rollback" &&
+          (value == "adapter_active=(systemctl --user is-active --quiet desktop-shell-mako-route.service)" ||
+           value == "stop_adapter=(systemctl --user stop desktop-shell-mako-route.service)" ||
+           value == "start_adapter=(systemctl --user start desktop-shell-mako-route.service)" ||
+           value == ("wait_for_unit_active desktop-shell-mako-route.service || die " quote "rollback adapter is not active" quote) ||
+           value == ("\"${stop_adapter[@]}\" || die " quote "could not isolate desktop-shell-mako-route.service" quote) ||
+           value == ("\"${start_adapter[@]}\" || die " quote "could not start desktop-shell-mako-route.service" quote))) {
         return 1
       }
       if (path == "Linux/quickshell/desktop-shell/systemd/desktop-shell.service" &&
@@ -405,15 +472,23 @@ collect_inventory_hits() {
         return 1
       }
       if (path == "Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service" &&
-          value ~ /^ExecStart=.*desktop-shell-mako-route/) {
+          (value == "Conflicts=desktop-shell.service" ||
+           value == "ExecStart=%h/.local/share/helpers/desktop-shell-mako-route")) {
+        return 1
+      }
+      if (path == "Linux/os/helpers/desktop-shell-activate" &&
+          value ~ ("^printf.*" quote "desktop-shell activation status" quote "[[:space:]]+" quote "desktop-shell.service: active" quote "[[:space:]]+" quote "desktop-shell-mako-route.service: inactive" quote)) {
+        return 1
+      }
+      if (path == "Linux/os/helpers/desktop-shell-rollback" &&
+          value ~ ("^printf.*" quote "desktop-shell rollback status" quote "[[:space:]]+" quote "desktop-shell.service: inactive" quote "[[:space:]]+" quote "desktop-shell-mako-route.service: active" quote)) {
         return 1
       }
       return 0
     }
 
     function scan_logical(value, start, path) {
-      value = strip_comment(value)
-      if (value ~ /^[[:space:]]*$/ || package_declaration(path, value)) {
+      if (is_whole_line_comment(path, value) || package_declaration(path, value)) {
         return
       }
       if (mode == "route" && (value ~ uwsm || value ~ direct)) {
