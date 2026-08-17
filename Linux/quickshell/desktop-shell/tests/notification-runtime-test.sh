@@ -4,11 +4,70 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 
+select_local_wayland_display() {
+  local requested=${1-}
+  local selected_runtime=${XDG_RUNTIME_DIR:-}
+  local local_display=${HERDR_LOCAL_WAYLAND_DISPLAY:-}
+  local selected_display=${requested:-${WAYLAND_DISPLAY:-}}
+  local socket
+
+  if [[ ${HERDR_ENV:-0} == 1 ]]; then
+    if [[ -z $local_display ]]; then
+      printf 'FAIL: remote Waypipe session has no HERDR_LOCAL_WAYLAND_DISPLAY\n' >&2
+      return 1
+    fi
+    if [[ -n $requested && $requested != "$local_display" ]]; then
+      printf 'FAIL: refusing remote Waypipe display %s; use local display %s\n' \
+        "$requested" "$local_display" >&2
+      return 1
+    fi
+    selected_display=$local_display
+    selected_runtime=${HERDR_LOCAL_XDG_RUNTIME_DIR:-$selected_runtime}
+  fi
+
+  if [[ -z $selected_display || -z $selected_runtime ]]; then
+    printf 'FAIL: a local WAYLAND_DISPLAY and XDG_RUNTIME_DIR are required\n' >&2
+    return 1
+  fi
+  if [[ $selected_display == /* ]]; then
+    socket=$selected_display
+  else
+    socket="$selected_runtime/$selected_display"
+  fi
+  if [[ ! -S $socket ]]; then
+    printf 'FAIL: local Wayland socket is unavailable: %s\n' "$socket" >&2
+    return 1
+  fi
+
+  printf '%s\n%s\n' "$selected_display" "$selected_runtime"
+}
+
 if [[ ${1-} != --private-bus ]]; then
+  requested_wayland_display=''
+  case ${1-} in
+    '') ;;
+    --wayland-display)
+      [[ -n ${2-} && -z ${3-} ]] || {
+        printf 'usage: %s [--wayland-display DISPLAY]\n' "$0" >&2
+        exit 2
+      }
+      requested_wayland_display=$2
+      ;;
+    *)
+      printf 'usage: %s [--wayland-display DISPLAY]\n' "$0" >&2
+      exit 2
+      ;;
+  esac
   command -v dbus-run-session >/dev/null 2>&1 || {
     printf 'FAIL: dbus-run-session is required\n' >&2
     exit 1
   }
+  if ! selected_wayland_output=$(select_local_wayland_display "$requested_wayland_display"); then
+    exit 1
+  fi
+  mapfile -t selected_wayland <<<"$selected_wayland_output"
+  export DESKTOP_SHELL_TEST_WAYLAND_DISPLAY=${selected_wayland[0]}
+  export DESKTOP_SHELL_TEST_WAYLAND_RUNTIME_DIR=${selected_wayland[1]}
   bus_log=$(mktemp)
   if dbus-run-session -- bash "$0" --private-bus 2>"$bus_log"; then
     status=0
@@ -43,10 +102,23 @@ if ! command -v busctl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; 
   printf 'FAIL: busctl and python3 are required\n' >&2
   exit 1
 fi
-original_runtime_dir=${XDG_RUNTIME_DIR:-}
-wayland_display=wayland-1
-if [[ -z $original_runtime_dir || ! -S "$original_runtime_dir/$wayland_display" ]]; then
-  printf 'FAIL: Wayland socket is unavailable for WAYLAND_DISPLAY=%s\n' "$wayland_display" >&2
+if ! python3 -c 'import dbus' >/dev/null 2>&1; then
+  printf "FAIL: python3 dbus module is required (python3 -c 'import dbus' failed)\n" >&2
+  exit 1
+fi
+original_runtime_dir=${DESKTOP_SHELL_TEST_WAYLAND_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-}}
+wayland_display=${DESKTOP_SHELL_TEST_WAYLAND_DISPLAY:-}
+if [[ -z $original_runtime_dir || -z $wayland_display ]]; then
+  printf 'FAIL: validated local Wayland display selection is unavailable\n' >&2
+  exit 1
+fi
+if [[ $wayland_display == /* ]]; then
+  original_wayland_socket=$wayland_display
+else
+  original_wayland_socket="$original_runtime_dir/$wayland_display"
+fi
+if [[ ! -S $original_wayland_socket ]]; then
+  printf 'FAIL: local Wayland socket is unavailable for WAYLAND_DISPLAY=%s\n' "$wayland_display" >&2
   exit 1
 fi
 
@@ -60,6 +132,10 @@ route_dir="$runtime_dir/desktop-shell"
 route_path="$route_dir/notification-route.json"
 popup_dir="$state_home/desktop-shell/notifications"
 history_dir="$popup_dir/history"
+fixture_wayland_display="$wayland_display"
+if [[ $fixture_wayland_display == /* ]]; then
+  fixture_wayland_display=wayland-test
+fi
 shell_generation=0
 shell_log=''
 runtime_shell_root="$SHELL_ROOT"
@@ -102,14 +178,35 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+umask 022
 mkdir -p "$runtime_dir" "$state_home" "$home/.config" "$home/.cache" "$home/.local/share" "$route_dir"
-chmod 700 "$runtime_dir" "$state_home" "$home" "$route_dir"
-ln -s -- "$original_runtime_dir/$wayland_display" "$runtime_dir/$wayland_display"
-export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$wayland_display"
+chmod 755 "$runtime_dir" "$state_home" "$home" "$route_dir"
+ln -s -- "$original_wayland_socket" "$runtime_dir/$fixture_wayland_display"
+export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
-printf '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null,"updatedAt":%s}\n' \
+printf '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":%s}\n' \
   "$(date +%s)" >"$route_path"
 chmod 600 "$route_path"
+
+write_route_payload() {
+  local payload=$1
+  local mode=${2:-600}
+  local temporary="$route_path.test.$$"
+  printf '%s\n' "$payload" >"$temporary"
+  chmod "$mode" "$temporary"
+  mv -f -- "$temporary" "$route_path"
+}
+
+assert_mode() {
+  local expected=$1
+  local path=$2
+  local actual
+  actual=$(stat -c '%a' -- "$path")
+  [[ $actual == "$expected" ]] || {
+    printf 'FAIL: mode for %s was %s, expected %s\n' "$path" "$actual" "$expected" >&2
+    return 1
+  }
+}
 
 call_ipc() {
   timeout --kill-after=1s 3s quickshell ipc --pid "$shell_pid" call "$@" 2>/dev/null
@@ -208,6 +305,17 @@ wait_for_file() {
   return 1
 }
 
+wait_for_path() {
+  local path=$1
+  local deadline=$((SECONDS + 10))
+  while ((SECONDS < deadline)); do
+    [[ -e $path ]] && return 0
+    sleep 0.2
+  done
+  printf 'FAIL: expected path was not created: %s\n' "$path" >&2
+  return 1
+}
+
 count_json_files() {
   local directory=$1
   local count=0
@@ -241,7 +349,7 @@ start_shell() {
   XDG_DATA_HOME="$home/.local/share" \
   XDG_STATE_HOME="$state_home" \
   XDG_RUNTIME_DIR="$runtime_dir" \
-  WAYLAND_DISPLAY="$wayland_display" \
+  WAYLAND_DISPLAY="$fixture_wayland_display" \
   PATH="$shell_path" \
   DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
   quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
@@ -332,17 +440,69 @@ runtime_shell_root="$SHELL_ROOT"
 start_shell
 wait_for_ipc pong desktop.notifications ping
 wait_for_ipc pong desktop-shell call desktop.notifications ping ''
-wait_for_status '.notificationsOwned == true and .routeValid == true and .routeError == ""'
-wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
+wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
+wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationRouteVisible == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
 
-notify-send --app-name task4-runtime --urgency normal --expire-time 30000 \
+wait_for_path "$state_home/desktop-shell"
+assert_mode 700 "$state_home/desktop-shell"
+assert_mode 700 "$popup_dir"
+assert_mode 700 "$history_dir"
+assert_mode 700 "$popup_dir/images"
+
+notification_image="$fixture/notification-image.png"
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' |
+  base64 -d >"$notification_image"
+chmod 644 "$notification_image"
+
+notify-send --app-name task4-runtime --icon "$notification_image" \
+  --hint=string:image-path:"$notification_image" --urgency normal --expire-time 30000 \
   'Task 4 notification' 'runtime popup/history contract'
 wait_for_status '.popupCount == 1 and .historyCount == 0'
 [[ $(count_json_files "$popup_dir") -eq 1 ]]
+popup_file=$(printf '%s\n' "$popup_dir"/*.json)
+assert_mode 600 "$popup_file"
+image_count=0
+for image_file in "$popup_dir/images"/*; do
+  [[ -f $image_file ]] || continue
+  image_count=$((image_count + 1))
+  assert_mode 600 "$image_file"
+done
+((image_count > 0)) || {
+  printf 'FAIL: notification image was not persisted: %s\n' "$(<"$popup_file")" >&2
+  exit 1
+}
+
+# FileView must fail closed across every route lifecycle transition.
+write_route_payload '{malformed'
+wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("invalid|unavailable"))'
+wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false and (.notificationRouteError | test("invalid|unavailable"))'
+
+write_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == false and .routeError == ""'
+wait_for_health '.notificationRouteValid == true and .notificationRouteVisible == false and .notificationRouteError == ""'
+
+rm -f -- "$route_path"
+wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable"))'
+wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
+
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}' 000
+wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable|invalid"))'
+wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
+
+near_expiry=$(( $(date +%s) - 44 ))
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$near_expiry"'}'
+wait_for_status '.routeValid == true and .routeVisible == true'
+wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("stale"))'
+wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false and (.notificationRouteError | test("stale"))'
+
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
 
 [[ $(call_notification dismissLast) == ok ]]
 wait_for_status '.popupCount == 0 and .historyCount == 1'
 [[ $(count_json_files "$history_dir") -eq 1 ]]
+history_file=$(printf '%s\n' "$history_dir"/*.json)
+assert_mode 600 "$history_file"
 
 [[ $(call_notification restoreLast) == ok ]]
 wait_for_status '.popupCount == 1 and .historyCount == 1'
@@ -353,11 +513,23 @@ wait_for_status '.popupCount == 0 and .historyCount == 1'
 wait_for_status '.dnd == true and .popupCount == 1'
 wait_for_file "$state_home/desktop-shell/notifications.json"
 [[ $(jq -e -r '.dnd' "$state_home/desktop-shell/notifications.json") == true ]]
+assert_mode 600 "$state_home/desktop-shell/notifications.json"
 
 stop_shell
 start_shell
-wait_for_status '.notificationsOwned == true and .routeValid == true and .dnd == true and .popupCount == 0'
+wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .dnd == true and .popupCount == 0'
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationOwnershipError == ""'
+
+# A bounded history failure must be surfaced and must release the tracked object.
+rm -rf -- "$history_dir"
+printf 'history path blocker\n' >"$history_dir"
+chmod 600 "$history_dir"
+notify-send --app-name task4-dnd-failure --urgency normal --expire-time 30000 \
+  'Task 4 DND failure' 'history persistence failure contract'
+wait_for_status '.persistenceError != "" and .popupCount == 0 and .liveCount == 0'
+rm -f -- "$history_dir"
+mkdir -p -- "$history_dir"
+chmod 700 "$history_dir"
 
 stop_shell
 probe_bin="$fixture/probe-bin"
@@ -395,7 +567,17 @@ wait_for_health '.notificationsOwned == false and .notificationOwnershipError ==
 stop_shell
 
 start_competing_owner
+kill -0 "$owner_pid" 2>/dev/null || {
+  printf 'FAIL: competing-owner fixture exited before shell startup\n' >&2
+  exit 1
+}
 start_shell
-wait_for_status '.notificationsOwned == false and (.ownershipError | test("PID [0-9]+")) and .routeValid == true'
-wait_for_health '.notificationsOwned == false and (.notificationOwnershipError | test("PID [0-9]+")) and .notificationRouteValid == true'
+owner_status_filter=".notificationsOwned == false and .ownershipError == \"notification owner is PID $owner_pid\" and .routeValid == true"
+owner_health_filter=".notificationsOwned == false and .notificationOwnershipError == \"notification owner is PID $owner_pid\" and .notificationRouteValid == true"
+wait_for_status "$owner_status_filter"
+wait_for_health "$owner_health_filter"
+kill -0 "$owner_pid" 2>/dev/null || {
+  printf 'FAIL: competing-owner fixture exited during ownership assertion\n' >&2
+  exit 1
+}
 printf 'PASS: isolated notification runtime ownership, routing, persistence, and history contracts\n'

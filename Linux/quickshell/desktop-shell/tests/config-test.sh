@@ -226,6 +226,7 @@ for (const [field, expected] of [
   ["notificationsOwned", "notificationService ? notificationService.notificationsOwned : false"],
   ["notificationOwnershipError", 'notificationService ? notificationService.ownershipError : "notification service unavailable"'],
   ["notificationRouteValid", "notificationService ? notificationService.routeValid : false"],
+  ["notificationRouteVisible", "notificationService ? notificationService.routeVisible : false"],
   ["notificationRouteError", 'notificationService ? notificationService.routeError : "notification service unavailable"']
 ]) {
   assert.ok(shell.includes(`${field}: ${expected}`),

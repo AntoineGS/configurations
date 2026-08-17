@@ -97,14 +97,18 @@ function snapshotOf(notification, timestamp) {
   var id = n.id || 0
   var expireTimeout = Number(n.expireTimeout || 0)
   if (!isFinite(expireTimeout) || expireTimeout < 0) expireTimeout = 0
+  var image = String(n.image || "")
+  var hintedImage = imagePathHint(n)
+  if (!image || (image.indexOf("image://") === 0 && hintedImage)) image = hintedImage || image
   return {
+    // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
     id: id,
     originalId: id,
     app: n.appName || "",
     appIcon: n.appIcon || "",
     summary: String(n.summary || ""),
     body: n.body || "",
-    image: n.image || "",
+    image: image,
     urgency: n.urgency,
     expireTimeout: expireTimeout,
     timestamp: timestamp === undefined ? Date.now() : timestamp
@@ -125,6 +129,16 @@ function popupRowChanged(row, updated) {
     if (current[role] !== next[role]) return true
   }
   return false
+}
+
+function imagePathHint(notification) {
+  try {
+    var hints = notification && notification.hints
+    var value = hints && hints["image-path"]
+    return value === undefined || value === null ? "" : String(value)
+  } catch (e) {
+    return ""
+  }
 }
 
 function replacementSnapshot(notification, originalId, timestamp) {
@@ -178,6 +192,7 @@ function popupEntry(value, normalUrgency) {
 }
 
 function popupFileName(entry) {
+  // File identity includes both generation time and original id, not id alone.
   return imageStem(entry) + ".json"
 }
 
@@ -232,6 +247,7 @@ function parsePopupFiles(raw, normalUrgency) {
       var value = JSON.parse(line)
       if (value && typeof value === "object") entries.push(popupEntry(value, normalUrgency))
     } catch (e) {
+      // Ignore an incomplete final line so one interrupted write cannot hide valid history.
     }
   }
   entries.sort(function(a, b) { return (b.timestamp || 0) - (a.timestamp || 0) })
@@ -275,6 +291,7 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
     for (var i = 0; i < rows.length; i++) {
       var entry = rows[i]
       if (!entry) continue
+      // Live and archived snapshots can overlap while a persistence job is queued.
       var key = popupFileName(entry)
       if (seen[key]) continue
       seen[key] = true

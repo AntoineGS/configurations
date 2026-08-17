@@ -42,6 +42,7 @@ Item {
     direction: null,
     error: "notification route unavailable"
   })
+  readonly property bool routeVisible: routeValid && route.visible === true
 
   readonly property string barPosition: shell && shell.barConfig
     ? String(shell.barConfig.position || "top") : "top"
@@ -145,8 +146,12 @@ Item {
   }
 
   function writeSilenced(notification, written) {
-    writeHistoryFile(written, function(success) {
-      if (!success) return
+    writeHistoryFile(written, function(success, exitCode) {
+      if (!success) {
+        service.persistenceError = "notification history persistence failed (exit " + String(exitCode) + ")"
+        service.releaseSilenced(notification, written.originalId)
+        return
+      }
       var updated = null
       try {
         updated = NotificationLogic.replacementSnapshot(notification, written.originalId, written.timestamp)
@@ -168,6 +173,14 @@ Item {
     } catch (error) {
       // The notification object was already destroyed.
     }
+  }
+
+  function liveReferenceCount() {
+    var count = 0
+    for (var key in liveRefs) {
+      if (Object.prototype.hasOwnProperty.call(liveRefs, key)) count++
+    }
+    return count
   }
 
   readonly property var updateSignals: [
@@ -303,7 +316,19 @@ Item {
 
   Process {
     id: ensureDirsProc
-    command: ["mkdir", "-p", service.stateDir, service.popupStateDir, service.historyDir, service.imagesDir]
+    command: ["bash", "-c",
+      "umask 077\n" +
+      "mkdir -p -- \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" || exit 1\n" +
+      "chmod 700 -- \"$1\" \"$2\" \"$3\" \"$4\" \"$5\" || exit 1\n" +
+      "for file in \"$3\"/*.json \"$4\"/*.json \"$5\"/*; do\n" +
+      "  [[ -e $file ]] || continue\n" +
+      "  [[ -f $file && ! -L $file ]] || exit 1\n" +
+      "  chmod 600 -- \"$file\" || exit 1\n" +
+      "done\n" +
+      "if [[ -L $6 || ( -e $6 && ! -f $6 ) ]]; then exit 1; fi\n" +
+      "if [[ -e $6 ]]; then chmod 600 -- \"$6\" || exit 1; fi", "--",
+      service.stateDir, service.notificationStateDir, service.popupStateDir,
+      service.historyDir, service.imagesDir, service.settingsPath]
     running: false
     onExited: function(exitCode) {
       if (Number(exitCode) !== 0)
@@ -373,19 +398,22 @@ Item {
   }
 
   readonly property string copyImagesScript:
+    "umask 077\n" +
     "while (( $# >= 2 )); do\n" +
     "  if [[ -f $1 ]] && timeout 5 head -c 5242881 -- \"$1\" > \"$2.tmp\" 2>/dev/null &&\n" +
-    "     (( $(stat -c%s -- \"$2.tmp\") <= 5242880 )); then mv -f -- \"$2.tmp\" \"$2\"; else rm -f -- \"$2.tmp\"; fi\n" +
+    "     (( $(stat -c%s -- \"$2.tmp\") <= 5242880 )) && chmod 600 -- \"$2.tmp\"; then mv -f -- \"$2.tmp\" \"$2\"; else rm -f -- \"$2.tmp\"; fi\n" +
     "  shift 2\n" +
     "done\n"
 
   function persistPopupFile(snapshot) {
     var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
     var command = ["bash", "-c",
-      "mkdir -p \"$1\" \"$2\" || exit 1\n" +
+      "umask 077\n" +
+      "mkdir -p -- \"$1\" \"$2\" || exit 1\n" +
+      "chmod 700 -- \"$1\" \"$2\" || exit 1\n" +
       "dir=\"$1\" json=\"$3\" name=\"$4\"\n" +
       copyImagesScript +
-      "printf '%s\\n' \"$json\" > \"$dir/$name\"", "--",
+      "printf '%s\\n' \"$json\" > \"$dir/$name\" && chmod 600 -- \"$dir/$name\" || exit 1", "--",
       popupStateDir,
       imagesDir,
       NotificationLogic.serializePopup(persistable.entry, NotificationUrgency.Normal),
@@ -398,7 +426,7 @@ Item {
   function deletePopupFileFor(row) {
     if (!row) return
     enqueuePopupFileJob(["bash", "-c",
-      "rm -f \"$1/$2.json\" \"$3/$2\"-*", "--",
+      "umask 077\nrm -f -- \"$1/$2.json\" \"$3/$2\"-*", "--",
       popupStateDir, NotificationLogic.imageStem(row), imagesDir])
   }
 
@@ -408,9 +436,12 @@ Item {
   function archivePopupFileFor(row) {
     if (!row) return
     enqueuePopupFileJob(["bash", "-c",
-      "mkdir -p \"$1\" || exit 1\n" +
+      "umask 077\n" +
+      "mkdir -p -- \"$1\" || exit 1\n" +
+      "chmod 700 -- \"$1\" || exit 1\n" +
       "hist=\"$1\" limit=\"$2\" imgs=\"$5\"\n" +
-      "mv -f \"$4/$3\" \"$1/$3\" 2>/dev/null || exit 1\n" +
+      "mv -f -- \"$4/$3\" \"$1/$3\" 2>/dev/null || exit 1\n" +
+      "chmod 600 -- \"$1/$3\" || exit 1\n" +
       trimHistoryScript, "--",
       historyDir,
       String(historyLimit),
@@ -426,11 +457,13 @@ Item {
     }
     var persistable = NotificationLogic.persistablePopup(entry, imagesDir)
     var command = ["bash", "-c",
-      "mkdir -p \"$1\" \"$5\" || exit 1\n" +
+      "umask 077\n" +
+      "mkdir -p -- \"$1\" \"$5\" || exit 1\n" +
+      "chmod 700 -- \"$1\" \"$5\" || exit 1\n" +
       "hist=\"$1\" limit=\"$2\" name=\"$3\" json=\"$4\" imgs=\"$5\"\n" +
       "shift 5\n" +
       copyImagesScript +
-      "printf '%s\\n' \"$json\" > \"$hist/$name\" || exit 1\n" +
+      "printf '%s\\n' \"$json\" > \"$hist/$name\" && chmod 600 -- \"$hist/$name\" || exit 1\n" +
       trimHistoryScript, "--",
       historyDir,
       String(historyLimit),
@@ -451,6 +484,7 @@ Item {
 
   function clearHistory() {
     enqueuePopupFileJob(["bash", "-c",
+      "umask 077\n" +
       "for f in \"$1\"/*.json; do\n" +
       "  [[ -e $f ]] || continue\n" +
       "  stale=\"${f##*/}\"\n" +
@@ -460,6 +494,7 @@ Item {
 
   function sweepOrphanImages() {
     enqueuePopupFileJob(["bash", "-c",
+      "umask 077\n" +
       "for img in \"$3\"/*; do\n" +
       "  [[ -e $img ]] || continue\n" +
       "  [[ $img == *.tmp ]] && { rm -f -- \"$img\"; continue; }\n" +
@@ -599,6 +634,15 @@ Item {
     })
   }
 
+  Process {
+    id: settingsWriteProc
+    running: false
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0)
+        service.persistenceError = "notification settings persistence failed (exit " + String(exitCode) + ")"
+    }
+  }
+
   property bool settingsLoaded: false
 
   FileView {
@@ -638,7 +682,20 @@ Item {
   }
 
   function flushSettings() {
-    settingsFile.setText(JSON.stringify({ version: 3, dnd: persisted.doNotDisturb }, null, 2) + "\n")
+    if (settingsWriteProc.running) return
+    settingsWriteProc.command = ["bash", "-c",
+      "umask 077\n" +
+      "dir=${1%/*}\n" +
+      "mkdir -p -- \"$dir\" || exit 1\n" +
+      "chmod 700 -- \"$dir\" || exit 1\n" +
+      "temporary=$(mktemp \"$1.XXXXXX\") || exit 1\n" +
+      "trap 'rm -f -- \"$temporary\"' EXIT HUP INT TERM\n" +
+      "printf '%s\\n' \"$2\" >\"$temporary\" || exit 1\n" +
+      "chmod 600 -- \"$temporary\" || exit 1\n" +
+      "mv -f -- \"$temporary\" \"$1\" || exit 1\n" +
+      "trap - EXIT HUP INT TERM", "--", service.settingsPath,
+      JSON.stringify({ version: 3, dnd: persisted.doNotDisturb }, null, 2)]
+    settingsWriteProc.running = true
   }
 
   FileView {
@@ -691,7 +748,7 @@ Item {
   }
 
   function cardsVisibleOn(screen) {
-    return service.routeValid && service.route.visible === true
+    return service.routeVisible
       && service.route.output !== null
       && String(service.route.output) === screenName(screen)
       && popupModel.count > 0
@@ -825,10 +882,13 @@ Item {
     return JSON.stringify({
       notificationsOwned: service.notificationsOwned,
       ownershipError: service.ownershipError,
+      persistenceError: service.persistenceError,
       dnd: service.doNotDisturb,
+      liveCount: service.liveReferenceCount(),
       popupCount: popupModel.count,
       historyCount: service.historyCount,
       routeValid: service.routeValid,
+      routeVisible: service.routeVisible,
       routeError: service.routeError
     })
   }

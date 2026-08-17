@@ -26,6 +26,22 @@ assert.equal(logic.isEphemeral({ appName: "notify-send", hints: {} }), true)
 assert.equal(logic.isEphemeral({ appName: "build", hints: { transient: true } }), true)
 assert.equal(logic.isEphemeral({ appName: "build", hints: {} }), false)
 
+const hintedImage = logic.snapshotOf({
+  id: 43,
+  appName: "build",
+  hints: { "image-path": "/tmp/build.png" },
+  image: "",
+}, 1786930001000)
+assert.equal(hintedImage.image, "/tmp/build.png",
+  "image-path hints remain copyable when the server image property is empty")
+const hintedImageUri = logic.snapshotOf({
+  id: 44,
+  hints: { "image-path": "/tmp/build-uri.png" },
+  image: "image://icon//tmp/build-uri.png",
+}, 1786930001000)
+assert.equal(hintedImageUri.image, "/tmp/build-uri.png",
+  "file-backed image hints replace transient image URLs before persistence")
+
 const notification = {
   id: 42,
   appName: "build",
