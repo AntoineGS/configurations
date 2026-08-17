@@ -20,9 +20,14 @@ function promptLooksFingerprint(text) {
  */
 function fingerprintConfiguredFromPamConfig(raw) {
   return String(raw || "").split("\n").some(lineValue => {
-    const line = lineValue.trim()
-    if (!line || line.startsWith("#") || !/^auth\s+/.test(line)) return false
-    return line.includes("pam_fprintd.so")
+    const line = lineValue.replace(/#.*/, "").trim()
+    if (!line || !/^auth\s+/.test(line)) return false
+
+    const fields = line.match(/\[[^\]]*\]|[^\s]+/g) || []
+    if (fields.length < 3) return false
+
+    const moduleName = fields[2].split("/").pop()
+    return moduleName === "pam_fprintd.so"
   })
 }
 

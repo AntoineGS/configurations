@@ -10,6 +10,20 @@ auth sufficient pam_fprintd.so
 auth required pam_unix.so
 `), true)
 assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so"), false)
+assert.equal(model.fingerprintConfiguredFromPamConfig("# auth required pam_fprintd.so"), false,
+  "comment-only PAM lines do not enable fingerprint authentication")
+assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so # pam_fprintd.so"), false,
+  "inline PAM comments do not enable fingerprint authentication")
+assert.equal(model.fingerprintConfiguredFromPamConfig("account required pam_fprintd.so"), false,
+  "non-auth PAM lines do not enable fingerprint authentication")
+assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so /usr/lib/security/pam_fprintd.so"), false,
+  "module arguments do not enable fingerprint authentication")
+assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_fprintd.so.extra"), false,
+  "longer module names do not match pam_fprintd")
+assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_fprintd.so"), true,
+  "ordinary auth lines match pam_fprintd")
+assert.equal(model.fingerprintConfiguredFromPamConfig("auth [success=1 default=ignore] /usr/lib/security/pam_fprintd.so"), true,
+  "bracketed control auth lines match the module basename")
 assert.equal(model.authorizationLabel("Authentication is required to run 'pacman' as the super user"), "Authorize running 'pacman'")
 assert.deepEqual(model.registrationState(false, false, ""), { registered: false, error: "registration disabled" })
 assert.deepEqual(model.registrationState(true, true, "ignored"), { registered: true, error: "" })
