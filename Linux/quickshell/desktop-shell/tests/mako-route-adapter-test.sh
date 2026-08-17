@@ -55,16 +55,49 @@ process_start_time() {
   awk '{print $22}' "/proc/$pid/stat"
 }
 
+process_parent_pid() {
+  local pid=$1
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  [[ -r /proc/$pid/status ]] || return 1
+  awk '/^PPid:/ {print $2; exit}' "/proc/$pid/status"
+}
+
+process_state() {
+  local pid=$1
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  [[ -r /proc/$pid/status ]] || return 1
+  awk '/^State:/ {print $2; exit}' "/proc/$pid/status"
+}
+
+process_identity_is_live() {
+  local pid=$1
+  local expected_start_time=$2
+  local actual_start_time
+  local state
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  actual_start_time=$(process_start_time "$pid") || return 1
+  [[ $actual_start_time == "$expected_start_time" ]] || return 1
+  state=$(process_state "$pid") || return 1
+  case $state in
+    R|S|D|I|T|t|W) return 0 ;;
+    Z|X|*) return 1 ;;
+  esac
+}
+
 assert_process_identity() {
   local pid=$1
   local expected_start_time=$2
   local message=$3
-  local actual_start_time
+  local state
 
-  [[ $pid =~ ^[0-9]+$ ]] || fail "$message: fake Mako PID was not recorded"
-  kill -0 "$pid" 2>/dev/null || fail "$message: fake Mako is not alive"
-  actual_start_time=$(process_start_time "$pid") || fail "$message: fake Mako identity is unavailable"
-  assert_equal "$expected_start_time" "$actual_start_time" "$message start identity"
+  process_identity_is_live "$pid" "$expected_start_time" || {
+    state=$(process_state "$pid" 2>/dev/null || printf 'unavailable')
+    fail "$message: fake Mako is not a live process (state: $state)"
+  }
 }
 
 assert_route_modes() {
@@ -126,33 +159,33 @@ wait_for_file() {
   fail "timed out waiting for file: $path"
 }
 
-date_read_count() {
-  [[ -f $FAKE_DATE_READ_LOG ]] || {
+iteration_completion_count() {
+  [[ -f $FAKE_ITERATION_COMPLETION_LOG ]] || {
     printf '0\n'
     return 0
   }
-  wc -l <"$FAKE_DATE_READ_LOG"
+  wc -l <"$FAKE_ITERATION_COMPLETION_LOG"
 }
 
-wait_for_date_reads() {
+wait_for_iteration_completions() {
   local expected=$1
   local deadline=$((SECONDS + 3))
   local actual
 
   while ((SECONDS < deadline)); do
-    actual=$(date_read_count)
+    actual=$(iteration_completion_count)
     [[ $actual -ge $expected ]] && return 0
     /usr/bin/sleep 0.01
   done
 
-  fail "timed out waiting for $expected adapter route reads; got $(date_read_count)"
+  fail "timed out waiting for $expected completed adapter iterations; got $(iteration_completion_count)"
 }
 
-assert_no_new_mako_call_after_read() {
+assert_no_new_mako_call_after_iterations() {
   local expected_calls=$1
-  local expected_reads=$2
+  local expected_completions=$2
 
-  wait_for_date_reads "$expected_reads"
+  wait_for_iteration_completions "$expected_completions"
   assert_equal "$expected_calls" "$(log_count)" 'unchanged route did not call makoctl'
 }
 
@@ -237,6 +270,78 @@ kill_descendants() {
   done
 }
 
+register_owned_child() {
+  local pid=$1
+  local start_time=$2
+
+  OWNED_CHILDREN+=("$pid:$start_time")
+}
+
+update_owned_child_start_time() {
+  local pid=$1
+  local start_time=$2
+  local entry
+  local entry_pid
+  local updated=()
+
+  for entry in "${OWNED_CHILDREN[@]}"; do
+    entry_pid=${entry%%:*}
+    if [[ $entry_pid == "$pid" ]]; then
+      updated+=("$pid:$start_time")
+    else
+      updated+=("$entry")
+    fi
+  done
+  OWNED_CHILDREN=("${updated[@]}")
+}
+
+forget_owned_child() {
+  local pid=$1
+  local entry
+  local entry_pid
+  local retained=()
+
+  for entry in "${OWNED_CHILDREN[@]}"; do
+    entry_pid=${entry%%:*}
+    [[ $entry_pid == "$pid" ]] || retained+=("$entry")
+  done
+  OWNED_CHILDREN=("${retained[@]}")
+}
+
+cleanup_owned_child() {
+  local pid=$1
+  local expected_start_time=$2
+  local parent_pid
+  local current_start_time
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 0
+  if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+  [[ $parent_pid == "$$" ]] || return 0
+  if [[ -n $expected_start_time ]]; then
+    current_start_time=$(process_start_time "$pid" 2>/dev/null) || return 0
+    [[ $current_start_time == "$expected_start_time" ]] || return 0
+  fi
+
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+cleanup_owned_children() {
+  local entry
+  local pid
+  local expected_start_time
+
+  for entry in "${OWNED_CHILDREN[@]}"; do
+    pid=${entry%%:*}
+    expected_start_time=${entry#*:}
+    cleanup_owned_child "$pid" "$expected_start_time"
+  done
+  OWNED_CHILDREN=()
+}
+
 cleanup_adapter() {
   local status=0
 
@@ -249,23 +354,22 @@ cleanup_adapter() {
   adapter_pid=""
 }
 
-cleanup_fake_mako() {
-  local current_start_time
-
-  if [[ -n ${FAKE_MAKO_PID:-} ]] && kill -0 "$FAKE_MAKO_PID" 2>/dev/null; then
-    current_start_time=$(process_start_time "$FAKE_MAKO_PID") || current_start_time=""
-    if [[ $current_start_time == "$FAKE_MAKO_START_TIME" ]]; then
-      kill -TERM "$FAKE_MAKO_PID" 2>/dev/null || true
-      wait "$FAKE_MAKO_PID" || true
-    fi
-  fi
-  FAKE_MAKO_PID=""
-}
-
 cleanup() {
   cleanup_adapter
-  cleanup_fake_mako
+  cleanup_owned_children
   rm -rf -- "$TEST_RUNTIME_DIR"
+}
+
+assert_setup_failure_cleanup() {
+  local setup_failure_pid
+
+  "$TEST_BIN/fake-mako" &
+  setup_failure_pid=$!
+  register_owned_child "$setup_failure_pid" ""
+  cleanup_owned_child "$setup_failure_pid" ""
+  forget_owned_child "$setup_failure_pid"
+  [[ ! -e /proc/$setup_failure_pid/status ]] || \
+    fail 'setup-failure cleanup did not reap the owned fake Mako child'
 }
 
 [[ -f $ADAPTER ]] || fail "adapter helper is missing: $ADAPTER"
@@ -305,16 +409,17 @@ MV_LOG="$TEST_RUNTIME_DIR/mv.log"
 ADAPTER_STDOUT="$TEST_RUNTIME_DIR/adapter.stdout"
 ADAPTER_STDERR="$TEST_RUNTIME_DIR/adapter.stderr"
 FAKE_NOW=1786930000
-FAKE_DATE_READ_LOG="$TEST_RUNTIME_DIR/date-reads.log"
+FAKE_ITERATION_COMPLETION_LOG="$TEST_RUNTIME_DIR/iteration-completions.log"
 FAKE_MAKO_PID=""
 FAKE_MAKO_START_TIME=""
+OWNED_CHILDREN=()
 adapter_pid=""
 
 mkdir -p -- "$TEST_BIN" "$ROUTE_DIR"
 chmod 0700 -- "$ROUTE_DIR"
 : >"$MAKOCTL_LOG"
 : >"$MV_LOG"
-: >"$FAKE_DATE_READ_LOG"
+: >"$FAKE_ITERATION_COMPLETION_LOG"
 printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
   >"$MAKO_MODE_STATE"
 
@@ -327,12 +432,7 @@ set -Eeuo pipefail
   exit 125
 }
 shift
-
-printf 'mode' >>"${MAKOCTL_LOG:?}"
-for argument in "$@"; do
-  printf '|%s' "$argument" >>"${MAKOCTL_LOG:?}"
-done
-printf '\n' >>"${MAKOCTL_LOG:?}"
+mode_arguments=("$@")
 
 state=$(<"${MAKO_MODE_STATE:?}")
 while (($# > 0)); do
@@ -367,6 +467,11 @@ while (($# > 0)); do
 done
 
 printf '%s\n' "$state" >"${MAKO_MODE_STATE:?}"
+printf 'mode' >>"${MAKOCTL_LOG:?}"
+for argument in "${mode_arguments[@]}"; do
+  printf '|%s' "$argument" >>"${MAKOCTL_LOG:?}"
+done
+printf '\n' >>"${MAKOCTL_LOG:?}"
 EOF
 
 cat >"$TEST_BIN/fake-mako" <<'EOF'
@@ -382,7 +487,6 @@ cat >"$TEST_BIN/date" <<'EOF'
 set -Eeuo pipefail
 
 [[ ${1:-} == +%s ]] || exit 125
-printf '%s\n' "${FAKE_NOW:?}" >>"${FAKE_DATE_READ_LOG:?}"
 printf '%s\n' "${FAKE_NOW:?}"
 EOF
 
@@ -391,6 +495,7 @@ cat >"$TEST_BIN/sleep" <<'EOF'
 set -Eeuo pipefail
 
 /usr/bin/sleep "${1:-0.01}"
+printf '%s\n' "${BASHPID:?}" >>"${FAKE_ITERATION_COMPLETION_LOG:?}"
 EOF
 
 cat >"$TEST_BIN/mv" <<'EOF'
@@ -413,14 +518,18 @@ chmod 0700 -- "$TEST_BIN"/*
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
 export PATH="$TEST_BIN:/usr/bin:/bin"
 FAKE_MAKO_READY_FILE="$TEST_RUNTIME_DIR/fake-mako.ready"
-export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_DATE_READ_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01
+export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01
 export ROUTE_FILE CUE_FILE
 trap cleanup EXIT
 
+assert_setup_failure_cleanup
+
 "$TEST_BIN/fake-mako" &
 FAKE_MAKO_PID=$!
+register_owned_child "$FAKE_MAKO_PID" ""
 wait_for_file "$FAKE_MAKO_READY_FILE"
 FAKE_MAKO_START_TIME=$(process_start_time "$FAKE_MAKO_PID") || fail 'fake Mako start identity is unavailable'
+update_owned_child_start_time "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME"
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" 'fake Mako startup'
 export FAKE_MAKO_PID FAKE_MAKO_START_TIME
 
@@ -438,9 +547,9 @@ assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|r
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
-date_reads_before=$(date_read_count)
 write_route true DVI-D-1 null null "$FAKE_NOW"
-assert_no_new_mako_call_after_read 2 "$((date_reads_before + 1))"
+iteration_completions_after_write=$(iteration_completion_count)
+assert_no_new_mako_call_after_iterations 2 "$((iteration_completions_after_write + 2))"
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
 wait_for_log_count 3
