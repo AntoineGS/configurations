@@ -9,6 +9,32 @@ polkit_unit_property() {
   awk -F= -v property="$name" '$1 == property { print substr($0, index($0, "=") + 1); exit }' "$path"
 }
 
+polkit_validate_unit_snapshot() {
+  local path=$1
+  local properties=${unit_properties:-LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload}
+  local property line key
+  local -a requested_properties
+  local -A requested=() seen=()
+
+  IFS=',' read -r -a requested_properties <<<"$properties"
+  ((${#requested_properties[@]} > 0)) || return 1
+  for property in "${requested_properties[@]}"; do
+    [[ -n $property && -z ${requested[$property]+present} ]] || return 1
+    requested["$property"]=1
+  done
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == *=* ]] || return 1
+    key=${line%%=*}
+    [[ -n ${requested[$key]+present} && -z ${seen[$key]+present} ]] || return 1
+    seen["$key"]=1
+  done <"$path"
+
+  for property in "${requested_properties[@]}"; do
+    [[ -n ${seen[$property]+present} ]] || return 1
+  done
+}
+
 polkit_systemctl_user_show() {
   [[ -n ${live_xdg_runtime_dir:-} ]] || return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   if [[ -n ${live_dbus_address:-} ]]; then
@@ -22,13 +48,13 @@ polkit_systemctl_user_show() {
 polkit_snapshot_unit() {
   local output=$1
   local load_state snapshot_load_state
-  local properties=${unit_properties:-LoadState,ActiveState,SubState,UnitFileState,MainPID}
+  local properties=${unit_properties:-LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload}
 
   command -v systemctl >/dev/null 2>&1 || return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   if ! load_state=$(polkit_systemctl_user_show desktop-shell.service --property=LoadState --value 2>/dev/null); then
     return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   fi
-  [[ -n $load_state ]] || return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
+  [[ -n $load_state && $load_state != *$'\n'* && $load_state != *$'\r'* ]] || return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   if [[ $load_state == not-found ]]; then
     rm -f -- "$output"
     return "$POLKIT_UNIT_ABSENT_STATUS"
@@ -39,6 +65,10 @@ polkit_snapshot_unit() {
     return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   fi
   if [[ ! -s $output ]]; then
+    rm -f -- "$output"
+    return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
+  fi
+  if ! polkit_validate_unit_snapshot "$output"; then
     rm -f -- "$output"
     return "$POLKIT_UNIT_INSPECTION_FAILED_STATUS"
   fi
