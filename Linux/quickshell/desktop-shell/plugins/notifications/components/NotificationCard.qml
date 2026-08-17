@@ -15,6 +15,8 @@ BorderSurface {
   property string image: ""
   property int urgency: 1
   property double timestamp: 0
+  property var actions: []
+  property bool defaultActionAvailable: false
   property int cornerRadius: 0
   property string fontFamily: Style.font.family
 
@@ -32,6 +34,7 @@ BorderSurface {
 
   signal closeRequested()
   signal cardClicked()
+  signal actionClicked(string identifier)
 
   function sanitizeBody(value) {
     return NotificationLogic.sanitizeBody(value, app, appIcon)
@@ -56,11 +59,11 @@ BorderSurface {
 
   MouseArea {
     anchors.fill: parent
-    cursorShape: Qt.PointingHandCursor
+    cursorShape: root.defaultActionAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     onClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) root.closeRequested()
-      else root.cardClicked()
+      else if (root.defaultActionAvailable) root.cardClicked()
     }
   }
 
@@ -132,6 +135,33 @@ BorderSurface {
           wrapMode: Text.WordWrap
           elide: Text.ElideRight
           maximumLineCount: 3
+        }
+      }
+    }
+
+    RowLayout {
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.bottomMargin: Style.space(8)
+      spacing: Style.space(6)
+      visible: !!root.actions && root.actions.length > 0
+
+      Repeater {
+        model: root.actions || []
+
+        Button {
+          required property var modelData
+          Layout.fillWidth: true
+          text: modelData.text
+          foreground: Color.notifications.text
+          accent: Color.notifications.countdown
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          horizontalPadding: Style.space(8)
+          verticalPadding: Style.space(4)
+          bordered: true
+          onClicked: root.actionClicked(String(modelData.identifier || ""))
         }
       }
     }

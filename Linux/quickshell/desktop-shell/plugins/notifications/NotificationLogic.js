@@ -1,3 +1,26 @@
+var NOTIFICATION_LIMITS = {
+  maxAppLength: 128,
+  maxSummaryLength: 512,
+  maxBodyLength: 4096,
+  maxActionIdentifierLength: 256,
+  maxActionLabelLength: 256,
+  maxActions: 8,
+  maxActivePopups: 50,
+  maxHistoryEntries: 200,
+  maxPersistenceJobs: 100,
+}
+
+function limits() {
+  var result = {}
+  for (var key in NOTIFICATION_LIMITS) result[key] = NOTIFICATION_LIMITS[key]
+  return result
+}
+
+function boundedText(value, maxLength) {
+  var text = value === undefined || value === null ? "" : String(value)
+  return text.slice(0, maxLength)
+}
+
 function isChromiumDerived(app, appIcon) {
   var source = (String(app || "") + "\n" + String(appIcon || "")).toLowerCase()
   return source.indexOf("chrom") >= 0 || source.indexOf("brave") >= 0 ||
@@ -15,14 +38,106 @@ function sanitizeBody(body, app, appIcon) {
 }
 
 function shouldBypassDnd(notification, criticalUrgency) {
-  return String((notification && notification.appName) || "") === "notify-send"
-    && notification && notification.urgency === criticalUrgency
+  return !!notification && notification.urgency === criticalUrgency
 }
 
 function isEphemeral(notification) {
   var hints = notification && notification.hints
-  return !!(hints && hints.transient)
-    || String((notification && notification.appName) || "") === "notify-send"
+  return !!(notification && notification.transient === true) || !!(hints && hints.transient)
+}
+
+function cueGlyph(direction) {
+  switch (direction) {
+  case "left": return "←"
+  case "right": return "→"
+  case "up": return "↑"
+  case "down": return "↓"
+  default: return "•"
+  }
+}
+
+function isActionList(value) {
+  return !!value && typeof value.length === "number"
+}
+
+function actionMetadata(notification) {
+  var actions = notification && notification.actions
+  if (!isActionList(actions)) return []
+
+  var result = []
+  var defaultAction = null
+  for (var i = 0; i < actions.length; i++) {
+    var action = actions[i]
+    var identifier = action && action.identifier === undefined ? "" : String(action && action.identifier || "")
+    if (!identifier || identifier.length > NOTIFICATION_LIMITS.maxActionIdentifierLength) continue
+    var metadata = {
+      identifier: identifier,
+      text: boundedText(action && action.text, NOTIFICATION_LIMITS.maxActionLabelLength),
+    }
+    if (identifier === "default") defaultAction = metadata
+    if (result.length < NOTIFICATION_LIMITS.maxActions) result.push(metadata)
+  }
+  if (defaultAction) {
+    var hasDefault = false
+    for (var d = 0; d < result.length; d++) {
+      if (result[d].identifier === "default") {
+        hasDefault = true
+        break
+      }
+    }
+    if (!hasDefault) result[result.length - 1] = defaultAction
+  }
+  return result
+}
+
+function actionOutcome(actions, identifier, resident) {
+  var wanted = String(identifier || "")
+  if (!isActionList(actions) || !wanted) return { found: false, dismiss: false }
+  for (var i = 0; i < actions.length; i++) {
+    var action = actions[i]
+    if (action && String(action.identifier || "") === wanted)
+      return { found: true, dismiss: resident !== true }
+  }
+  return { found: false, dismiss: false }
+}
+
+function normalizedExpireTimeout(value) {
+  var timeout = Number(value)
+  if (!isFinite(timeout)) return -1
+  if (timeout < -1) return -1
+  if (timeout === -1) return -1
+  if (timeout <= 0) return 0
+  return Math.round(timeout)
+}
+
+function requestedDuration(expireTimeout) {
+  return normalizedExpireTimeout(expireTimeout)
+}
+
+function durationFor(urgency, expireTimeout, criticalUrgency, lowUrgency, lowDefault, normalDefault, maxDuration) {
+  var requested = requestedDuration(expireTimeout)
+  if (requested === 0 || urgency === criticalUrgency) return 0
+
+  var minimum = urgency === lowUrgency ? lowDefault : normalDefault
+  var duration = requested === -1 ? minimum : requested
+  return Math.min(maxDuration, Math.max(minimum, duration))
+}
+
+function persistenceQueueUpdate(queue, job, maxLength, front) {
+  var next = Array.isArray(queue) ? queue.slice() : []
+  var dropped = null
+  if (job && job.key) {
+    for (var i = next.length - 1; i >= 0; i--) {
+      if (next[i] && next[i].key === job.key) {
+        next[i] = job
+        return { queue: next, dropped: null }
+      }
+    }
+  }
+  if (next.length >= maxLength) dropped = next.shift()
+  if (front) next.unshift(job)
+  else next.push(job)
+  return { queue: next, dropped: dropped }
 }
 
 function invalidRoute(error) {
@@ -95,8 +210,7 @@ function normalizeRoute(raw, nowMs) {
 function snapshotOf(notification, timestamp) {
   var n = notification || {}
   var id = n.id || 0
-  var expireTimeout = Number(n.expireTimeout || 0)
-  if (!isFinite(expireTimeout) || expireTimeout < 0) expireTimeout = 0
+  var expireTimeout = normalizedExpireTimeout(n.expireTimeout)
   var image = String(n.image || "")
   var hintedImage = imagePathHint(n)
   if (!image || (image.indexOf("image://") === 0 && hintedImage)) image = hintedImage || image
@@ -104,21 +218,33 @@ function snapshotOf(notification, timestamp) {
     // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
     id: id,
     originalId: id,
-    app: n.appName || "",
-    appIcon: n.appIcon || "",
-    summary: String(n.summary || ""),
-    body: n.body || "",
+    app: boundedText(n.appName, NOTIFICATION_LIMITS.maxAppLength),
+    appIcon: boundedText(n.appIcon, NOTIFICATION_LIMITS.maxAppLength),
+    summary: boundedText(n.summary, NOTIFICATION_LIMITS.maxSummaryLength),
+    body: boundedText(n.body, NOTIFICATION_LIMITS.maxBodyLength),
     image: image,
     urgency: n.urgency,
     expireTimeout: expireTimeout,
-    timestamp: timestamp === undefined ? Date.now() : timestamp
+    timestamp: timestamp === undefined ? Date.now() : timestamp,
+    actions: actionMetadata(n),
   }
 }
 
-var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout"]
+var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "actions"]
 
 function popupRoles() {
   return POPUP_ROLES
+}
+
+function actionsEqual(first, second) {
+  var left = isActionList(first) ? first : []
+  var right = isActionList(second) ? second : []
+  if (left.length !== right.length) return false
+  for (var i = 0; i < left.length; i++) {
+    if (!left[i] || !right[i] || left[i].identifier !== right[i].identifier || left[i].text !== right[i].text)
+      return false
+  }
+  return true
 }
 
 function popupRowChanged(row, updated) {
@@ -126,6 +252,10 @@ function popupRowChanged(row, updated) {
   var next = updated || {}
   for (var i = 0; i < POPUP_ROLES.length; i++) {
     var role = POPUP_ROLES[i]
+    if (role === "actions") {
+      if (!actionsEqual(current[role], next[role])) return true
+      continue
+    }
     if (current[role] !== next[role]) return true
   }
   return false
@@ -153,14 +283,15 @@ function historyEntry(value, normalUrgency) {
   return {
     id: e.id || 0,
     originalId: e.originalId || e.id || 0,
-    app: e.app || "",
-    appIcon: e.appIcon || "",
-    summary: e.summary || "",
-    body: e.body || "",
+    app: boundedText(e.app, NOTIFICATION_LIMITS.maxAppLength),
+    appIcon: boundedText(e.appIcon, NOTIFICATION_LIMITS.maxAppLength),
+    summary: boundedText(e.summary, NOTIFICATION_LIMITS.maxSummaryLength),
+    body: boundedText(e.body, NOTIFICATION_LIMITS.maxBodyLength),
     image: e.image || "",
     urgency: typeof e.urgency === "number" ? e.urgency : normalUrgency,
     expireTimeout: 0,
-    timestamp: e.timestamp || 0
+    timestamp: e.timestamp || 0,
+    actions: [],
   }
 }
 
@@ -182,9 +313,9 @@ function parseSettings(raw) {
 
 function popupEntry(value, normalUrgency) {
   var entry = historyEntry(value, normalUrgency)
-  var expire = Number((value || {}).expireTimeout || 0)
-  if (!isFinite(expire) || expire < 0) expire = 0
-  entry.expireTimeout = expire
+  var source = value || {}
+  var hasExpireTimeout = Object.prototype.hasOwnProperty.call(source, "expireTimeout")
+  entry.expireTimeout = normalizedExpireTimeout(hasExpireTimeout ? source.expireTimeout : -1)
 
   var deadline = Number((value || {}).deadline || 0)
   if (isFinite(deadline) && deadline > 0) entry.deadline = deadline
@@ -230,6 +361,7 @@ function persistablePopup(entry, imagesDir) {
       out[role] = ""
     }
   }
+  if (Object.prototype.hasOwnProperty.call(out, "actions")) out.actions = []
   return { entry: out, copies: copies }
 }
 
@@ -238,6 +370,9 @@ function serializePopup(entry, normalUrgency) {
 }
 
 function parsePopupFiles(raw, normalUrgency) {
+  var limit = arguments.length > 2 ? Number(arguments[2]) : 0
+  if (!isFinite(limit) || limit < 0) limit = 0
+  limit = Math.min(NOTIFICATION_LIMITS.maxActivePopups, Math.floor(limit))
   var lines = String(raw || "").split("\n")
   var entries = []
   for (var i = 0; i < lines.length; i++) {
@@ -251,7 +386,7 @@ function parsePopupFiles(raw, normalUrgency) {
     }
   }
   entries.sort(function(a, b) { return (b.timestamp || 0) - (a.timestamp || 0) })
-  return entries
+  return limit > 0 ? entries.slice(0, limit) : entries
 }
 
 function popupExpired(entry, duration, now) {
@@ -283,7 +418,7 @@ function popupPlacement(barPosition, barClearance, gapsOut) {
 function historyRows(raw, liveRows, normalUrgency, limit) {
   var max = limit === undefined || limit === null ? 10 : Number(limit)
   if (isNaN(max)) max = 10
-  max = Math.max(0, max)
+  max = Math.min(NOTIFICATION_LIMITS.maxHistoryEntries, Math.max(0, max))
 
   var out = []
   var seen = {}
@@ -312,13 +447,23 @@ function latestHistoryRow(raw, normalUrgency) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    limits: limits,
+    boundedText: boundedText,
     isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
     normalizeRoute: normalizeRoute,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
+    cueGlyph: cueGlyph,
+    actionMetadata: actionMetadata,
+    actionOutcome: actionOutcome,
+    normalizedExpireTimeout: normalizedExpireTimeout,
+    requestedDuration: requestedDuration,
+    durationFor: durationFor,
+    persistenceQueueUpdate: persistenceQueueUpdate,
     snapshotOf: snapshotOf,
     popupRoles: popupRoles,
+    actionsEqual: actionsEqual,
     popupRowChanged: popupRowChanged,
     replacementSnapshot: replacementSnapshot,
     historyEntry: historyEntry,
