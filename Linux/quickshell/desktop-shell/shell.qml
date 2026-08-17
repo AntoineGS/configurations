@@ -45,7 +45,7 @@ ShellRoot {
       layout: {
         left: [{ id: "desktop.menu" }, { id: "desktop.workspaces" }],
         center: [{ id: "desktop.clock", format: "dddd HH:mm" }],
-        right: [{ id: "desktop.audio" }]
+        right: [{ id: "desktop.audio" }, { id: "desktop.vm" }]
       }
     },
     plugins: [],
