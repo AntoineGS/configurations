@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${XDG_RUNTIME_DIR:=/run/user/$UID}"
+readonly ROUTE_FILE="$XDG_RUNTIME_DIR/desktop-shell/notification-route.json"
+readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
+readonly HIDDEN_MODE="rustdesk-route-hidden"
+readonly CUE_MODE="rustdesk-cue"
+readonly -a MANAGED_MODES=(
+  "rustdesk-route-DVI-D-1"
+  "rustdesk-route-HDMI-A-1"
+  "rustdesk-route-DP-2"
+  "$HIDDEN_MODE"
+  "$CUE_MODE"
+)
+
+ROUTE_MODE=""
+CUE_TEXT=""
+LAST_SIGNATURE=""
+
+apply_modes() {
+  local route_mode=$1
+  local cue_text=$2
+  local -a mode_args=(mode)
+  local managed_mode
+
+  for managed_mode in "${MANAGED_MODES[@]}"; do
+    mode_args+=(-r "$managed_mode")
+  done
+  mode_args+=(-a "$route_mode")
+  [[ -n $cue_text ]] && mode_args+=(-a "$CUE_MODE")
+
+  makoctl "${mode_args[@]}"
+}
+
+write_cue() {
+  local cue_text=$1
+  local temporary_file=""
+
+  if [[ -f $CUE_FILE && ! -L $CUE_FILE ]]; then
+    local current_cue
+    local file_mode
+
+    current_cue=$(<"$CUE_FILE")
+    file_mode=$(stat -c '%a' -- "$CUE_FILE")
+    [[ $current_cue == "$cue_text" && $file_mode == 600 ]] && return 0
+  fi
+
+  if ! temporary_file=$(umask 077 && mktemp "${CUE_FILE}.XXXXXX"); then
+    return 1
+  fi
+  if ! printf '%s\n' "$cue_text" >"$temporary_file"; then
+    rm -f -- "$temporary_file"
+    return 1
+  fi
+  if ! chmod 0600 -- "$temporary_file"; then
+    rm -f -- "$temporary_file"
+    return 1
+  fi
+  if ! mv -f -- "$temporary_file" "$CUE_FILE"; then
+    rm -f -- "$temporary_file"
+    return 1
+  fi
+}
+
+read_route() {
+  local now
+  local route_values
+
+  [[ -f $ROUTE_FILE && ! -L $ROUTE_FILE ]] || return 1
+  now=$(date +%s)
+  [[ $now =~ ^[0-9]+$ ]] || return 1
+
+  if ! route_values=$(jq -er --argjson now "$now" '
+    def valid_output:
+      . == null or (type == "string" and test("^[A-Za-z0-9_.-]+$"));
+    def supported_output:
+      . == "DVI-D-1" or . == "HDMI-A-1" or . == "DP-2";
+
+    if (type != "object") or (type == "array") then error("route must be an object") end
+    | if .version != 1 then error("unsupported route version") end
+    | if (.visible | type) != "boolean" then error("route visibility is invalid") end
+    | if (.updatedAt | type) != "number" then error("route timestamp is invalid") end
+    | if (.updatedAt | floor) != .updatedAt or .updatedAt < 0 then error("route timestamp is invalid") end
+    | if .updatedAt > $now then error("route timestamp is from the future") end
+    | if ($now - .updatedAt) > 45 then error("route is stale") end
+    | if (.output | valid_output | not) then error("route output is invalid") end
+    | if (.cueOutput | valid_output | not) then error("route cue output is invalid") end
+    | if (.direction != null and (.direction | type) != "string") then error("route direction is invalid") end
+    | if (.direction != null and (.direction | test("^(left|right|up|down)$") | not)) then error("route direction is invalid") end
+    | if (.visible and .output == null) then error("visible route has no output") end
+    | if (.visible and (.output | supported_output | not)) then error("unsupported route output") end
+    | if (.cueOutput != null and (.cueOutput | supported_output | not)) then error("unsupported route cue output") end
+    | (if .visible then
+         if .output == "DVI-D-1" then "rustdesk-route-DVI-D-1"
+         elif .output == "HDMI-A-1" then "rustdesk-route-HDMI-A-1"
+         else "rustdesk-route-DP-2"
+         end
+       else "rustdesk-route-hidden"
+       end) as $route_mode
+    | (if .cueOutput == null then ""
+       else .cueOutput + "|" + (if .direction == null then "none" else .direction end)
+       end) as $cue_text
+    | [$route_mode, $cue_text]
+    | @tsv
+  ' "$ROUTE_FILE" 2>/dev/null); then
+    return 1
+  fi
+
+  IFS=$'\t' read -r ROUTE_MODE CUE_TEXT <<<"$route_values"
+}
+
+remove_cue() {
+  rm -f -- "$CUE_FILE"
+}
+
+reconcile_route() {
+  local route_mode
+  local cue_text
+  local signature
+
+  if read_route; then
+    route_mode=$ROUTE_MODE
+    cue_text=$CUE_TEXT
+  else
+    route_mode=$HIDDEN_MODE
+    cue_text=""
+  fi
+  signature="$route_mode|$cue_text"
+
+  if [[ $signature == "$LAST_SIGNATURE" ]]; then
+    if [[ -n $cue_text ]]; then
+      write_cue "$cue_text" || true
+    else
+      remove_cue || true
+    fi
+    return 0
+  fi
+
+  if [[ -n $cue_text ]]; then
+    write_cue "$cue_text" || {
+      LAST_SIGNATURE=""
+      return 1
+    }
+  else
+    remove_cue || {
+      LAST_SIGNATURE=""
+      return 1
+    }
+  fi
+
+  if apply_modes "$route_mode" "$cue_text"; then
+    LAST_SIGNATURE=$signature
+  else
+    LAST_SIGNATURE=""
+    return 1
+  fi
+}
+
+cleanup() {
+  trap - EXIT
+  apply_modes "$HIDDEN_MODE" "" || true
+  remove_cue || true
+}
+
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap cleanup EXIT
+
+if apply_modes "$HIDDEN_MODE" ""; then
+  LAST_SIGNATURE="$HIDDEN_MODE|"
+else
+  LAST_SIGNATURE=""
+fi
+remove_cue || true
+
+while :; do
+  reconcile_route || true
+  sleep "${POLL_INTERVAL:-1}"
+done

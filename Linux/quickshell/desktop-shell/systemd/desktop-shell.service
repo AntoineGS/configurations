@@ -1,6 +1,7 @@
 [Unit]
 Description=Repository desktop shell
 PartOf=graphical-session.target
+Conflicts=desktop-shell-mako-route.service
 
 [Service]
 Type=simple

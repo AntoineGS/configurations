@@ -798,6 +798,7 @@ applications:
         backup: ./Linux/quickshell/desktop-shell/systemd
         files:
           - desktop-shell.service
+          - desktop-shell-mako-route.service
       - check:
           linux: >-
             systemctl --user is-enabled --quiet desktop-shell.service &&
