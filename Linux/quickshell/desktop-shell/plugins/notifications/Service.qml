@@ -640,10 +640,15 @@ Item {
     onExited: function(exitCode) {
       if (Number(exitCode) !== 0)
         service.persistenceError = "notification settings persistence failed (exit " + String(exitCode) + ")"
+      if (service.settingsSavePending) {
+        service.settingsSavePending = false
+        service.scheduleSettingsSave()
+      }
     }
   }
 
   property bool settingsLoaded: false
+  property bool settingsSavePending: false
 
   FileView {
     id: settingsFile
@@ -682,7 +687,11 @@ Item {
   }
 
   function flushSettings() {
-    if (settingsWriteProc.running) return
+    if (settingsWriteProc.running) {
+      service.settingsSavePending = true
+      return
+    }
+    service.settingsSavePending = false
     settingsWriteProc.command = ["bash", "-c",
       "umask 077\n" +
       "dir=${1%/*}\n" +
