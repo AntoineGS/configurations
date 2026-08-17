@@ -871,6 +871,17 @@ applications:
           - config.json
   - package:
       managers:
+        yay: outlook-for-linux-bin
+    name: outlook-for-linux
+    entries:
+      - targets:
+          linux: ~/.config/outlook-for-linux
+        name: config
+        backup: ./Linux/outlook-for-linux
+        files:
+          - config.json
+  - package:
+      managers:
         brew: fzf
         pacman: fzf
         winget: junegunn.fzf
