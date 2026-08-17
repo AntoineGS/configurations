@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s\n' "${0##*/}" >&2
+}
+
+if (($# != 0)); then
+  usage
+  exit 2
+fi
+
+readonly POLKIT_AGENT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
+polkit_comm="${POLKIT_AGENT##*/}"
+polkit_comm="${polkit_comm:0:15}"
+readonly POLKIT_COMM="$polkit_comm"
+readonly MAX_WAIT_ATTEMPTS=50
+readonly WAIT_INTERVAL=0.1
+
+die() {
+  printf 'desktop-shell rollback failed: %s\n' "$1" >&2
+  exit 1
+}
+
+query_named_pids() {
+  local name=$1
+  local result
+  local status
+
+  if result=$(pgrep -x -- "$name" 2>/dev/null); then
+    printf '%s\n' "$result"
+    return 0
+  fi
+  status=$?
+  ((status == 1)) && return 0
+  return "$status"
+}
+
+query_polkit_pids() {
+  local candidates
+  local status
+  local pid
+  local executable
+
+  if candidates=$(pgrep -x -- "$POLKIT_COMM" 2>/dev/null); then
+    :
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
+  fi
+
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || continue
+    if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
+      return 2
+    fi
+    [[ $executable == "$POLKIT_AGENT" ]] || continue
+    printf '%s\n' "$pid"
+  done <<<"$candidates"
+}
+
+query_process_pids() {
+  case $1 in
+    mako|swayosd-server) query_named_pids "$1" ;;
+    polkit) query_polkit_pids ;;
+    *) return 2 ;;
+  esac
+}
+
+wait_for_processes_present() {
+  local process=$1
+  local attempt
+  local pids
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if ! pids=$(query_process_pids "$process"); then
+      return 1
+    fi
+    [[ -n $pids ]] && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'process did not become available: %s\n' "$process" >&2
+  return 1
+}
+
+first_pid() {
+  local pids=$1
+  local pid
+
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] && {
+      printf '%s\n' "$pid"
+      return 0
+    }
+  done <<<"$pids"
+  return 1
+}
+
+start_mako_if_missing() {
+  local pids
+  local -a command=(uwsm-app -- mako)
+
+  if ! pids=$(query_process_pids mako); then
+    return 1
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" || return 1
+  fi
+  wait_for_processes_present mako
+}
+
+start_swaysod_if_missing() {
+  local pids
+  local -a command=(uwsm-app -- swayosd-server)
+
+  if ! pids=$(query_process_pids swayosd-server); then
+    return 1
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" || return 1
+  fi
+  wait_for_processes_present swayosd-server
+}
+
+start_polkit_if_missing() {
+  local pids
+  local launch_pid
+  local -a command=("$POLKIT_AGENT")
+
+  if ! pids=$(query_process_pids polkit); then
+    return 1
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" >/dev/null 2>&1 &
+    launch_pid=$!
+    disown "$launch_pid" 2>/dev/null || true
+  fi
+  wait_for_processes_present polkit
+}
+
+wait_for_mako_mode() {
+  local attempt
+  local pids
+  local -a command=(makoctl mode)
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if ! pids=$(query_process_pids mako); then
+      return 1
+    fi
+    if [[ -n $pids ]] && "${command[@]}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'Mako did not respond to mode query\n' >&2
+  return 1
+}
+
+wait_for_unit_active() {
+  local unit=$1
+  local attempt
+  local -a command=(systemctl --user is-active --quiet "$unit")
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    "${command[@]}" && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'systemd user unit did not become active: %s\n' "$unit" >&2
+  return 1
+}
+
+verify_notification_owner() {
+  local mako_pid=$1
+  local owner_status
+  local -a command=(busctl --user status org.freedesktop.Notifications)
+
+  if ! owner_status=$("${command[@]}" 2>/dev/null); then
+    return 1
+  fi
+  [[ $owner_status == *"PID=$mako_pid"* && $owner_status == *'CommandLine=mako'* ]]
+}
+
+stop_shell=(systemctl --user stop desktop-shell.service)
+"${stop_shell[@]}" || die 'could not stop desktop-shell.service'
+
+start_mako_if_missing || die 'could not start exact Mako process'
+start_swaysod_if_missing || die 'could not start exact SwayOSD process'
+start_polkit_if_missing || die 'could not start exact polkit-gnome process'
+wait_for_mako_mode || die 'Mako did not respond before adapter startup'
+
+adapter_active=(systemctl --user is-active --quiet desktop-shell-mako-route.service)
+if ! "${adapter_active[@]}"; then
+  start_adapter=(systemctl --user start desktop-shell-mako-route.service)
+  "${start_adapter[@]}" || die 'could not start desktop-shell-mako-route.service'
+fi
+wait_for_unit_active desktop-shell-mako-route.service || die 'rollback adapter is not active'
+
+mako_pids=$(query_process_pids mako) || die 'could not verify Mako process'
+swaysod_pids=$(query_process_pids swayosd-server) || die 'could not verify SwayOSD process'
+polkit_pids=$(query_process_pids polkit) || die 'could not verify polkit process'
+mako_pid=$(first_pid "$mako_pids") || die 'Mako PID is unavailable'
+swaysod_pid=$(first_pid "$swaysod_pids") || die 'SwayOSD PID is unavailable'
+polkit_pid=$(first_pid "$polkit_pids") || die 'polkit PID is unavailable'
+verify_notification_owner "$mako_pid" || die 'Mako does not own notifications'
+
+printf '%s\n' \
+  'desktop-shell rollback status' \
+  'desktop-shell.service: inactive' \
+  'desktop-shell-mako-route.service: active' \
+  "mako.pid: $mako_pid" \
+  "swayosd-server.pid: $swaysod_pid" \
+  "polkit.pid: $polkit_pid" \
+  'notification-owner: mako' \
+  'polkit-registered: true'
