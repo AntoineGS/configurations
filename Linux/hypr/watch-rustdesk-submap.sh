@@ -328,6 +328,7 @@ consume_hyprland_event_stream() {
   local clean_state_name=$1
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
   local evline read_status last_write_before_event
+  local last_write_before_reconciliation reconcile_status
   local next_reconciliation remaining route_deadline
 
   if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
@@ -348,13 +349,22 @@ consume_hyprland_event_stream() {
   while :; do
     remaining=$((next_reconciliation - SECONDS))
     if ((remaining <= 0)); then
-      reconcile_notification_routing || true
+      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
+      if reconcile_notification_routing; then
+        reconcile_status=0
+      else
+        reconcile_status=$?
+      fi
       next_reconciliation=$((SECONDS + reconcile_interval))
       if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
         route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
         if ((route_deadline < next_reconciliation)); then
           next_reconciliation=$route_deadline
         fi
+      fi
+      if ((reconcile_status != 0)) &&
+        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+        next_reconciliation=$((SECONDS + 1))
       fi
       continue
     fi
@@ -377,13 +387,22 @@ consume_hyprland_event_stream() {
     fi
 
     if ((read_status > 128)); then
-      reconcile_notification_routing || true
+      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
+      if reconcile_notification_routing; then
+        reconcile_status=0
+      else
+        reconcile_status=$?
+      fi
       next_reconciliation=$((SECONDS + reconcile_interval))
       if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
         route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
         if ((route_deadline < next_reconciliation)); then
           next_reconciliation=$route_deadline
         fi
+      fi
+      if ((reconcile_status != 0)) &&
+        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+        next_reconciliation=$((SECONDS + 1))
       fi
       continue
     fi
