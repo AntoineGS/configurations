@@ -477,8 +477,8 @@ state_vm() {
   maximum_kib=$(jq -r '.maximumKiB' <<<"$parsed_stats")
   usable_kib=$(jq -r '.usableKiB' <<<"$parsed_stats")
 
-  if [[ -z $state ]]; then
-    emit_stale 'virsh domstats did not include state.state' "$empty_data"
+  if [[ $state != 1 ]]; then
+    emit_stale "virsh domstats reported non-running state: $state" "$empty_data"
   fi
   if [[ ! $cpu_time_ns =~ ^[0-9]+$ ]]; then
     emit_stale 'virsh domstats did not include a valid cpu.time' "$empty_data"
