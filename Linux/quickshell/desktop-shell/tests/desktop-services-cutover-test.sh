@@ -8,8 +8,11 @@ AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 SHELL_UNIT="$SHELL_ROOT/systemd/desktop-shell.service"
 ROLLBACK_UNIT="$SHELL_ROOT/systemd/desktop-shell-mako-route.service"
+PROFILE_HARNESS="$ROOT/Linux/pacman/tests/package-preview-test.sh"
 TIDYDOTS_BIN="$(command -v tidydots || true)"
 DOCKER_BIN="$(command -v docker || true)"
+TEST_ROOT="$(mktemp -d)"
+trap 'rm -rf -- "$TEST_ROOT"' EXIT HUP INT TERM
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -32,6 +35,7 @@ assert_executable() {
 
 extract_application() {
   local application="$1"
+  local config_file="${2:-$CONFIG_FILE}"
 
   awk -v wanted="$application" '
     function flush() {
@@ -62,7 +66,52 @@ extract_application() {
         flush()
       }
     }
-  ' "$CONFIG_FILE"
+  ' "$config_file"
+}
+
+extract_application_entry() {
+  local application="$1"
+  local entry="$2"
+  local config_file="${3:-$CONFIG_FILE}"
+  local application_block
+
+  application_block="$(extract_application "$application" "$config_file")"
+  awk -v wanted="$entry" '
+    function flush() {
+      if (entry_name == wanted) {
+        printf "%s", entry_block
+        found = 1
+      }
+    }
+
+    /^      - / {
+      if (length(entry_block) > 0) {
+        flush()
+      }
+      if (found) {
+        exit
+      }
+      entry_block = $0 ORS
+      entry_name = ""
+      next
+    }
+
+    {
+      if (length(entry_block) > 0) {
+        entry_block = entry_block $0 ORS
+        if ($0 ~ /^        name: /) {
+          entry_name = $0
+          sub(/^        name: /, "", entry_name)
+        }
+      }
+    }
+
+    END {
+      if (!found && length(entry_block) > 0) {
+        flush()
+      }
+    }
+  ' <<< "$application_block"
 }
 
 assert_application_line() {
@@ -76,9 +125,112 @@ assert_application_line() {
     fail "$application does not contain expected declaration: $expected_line"
 }
 
+write_fixture_file() {
+  local fixture_root="$1"
+  local relative_path="$2"
+  local content="$3"
+
+  mkdir -p -- "$fixture_root/$(dirname -- "$relative_path")"
+  printf '%s\n' "$content" >"$fixture_root/$relative_path"
+}
+
+assert_rejects_fixture() {
+  local label="$1"
+  local expected="$2"
+  shift 2
+  local output
+
+  if output="$("$@" 2>&1)"; then
+    fail "$label mutation was accepted"
+  fi
+  grep -Fq -- "$expected" <<< "$output" ||
+    fail "$label mutation failed for an unexpected reason: $output"
+}
+
+assert_mutation_fixtures() {
+  local fixture="$TEST_ROOT/mutation-repository"
+  local hits expected_path allowed_path
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" Linux/hypr/autostart.lua \
+    'active-uwsm-mako active-uwsm-swayosd active-polkit active-command-routes'
+  write_fixture_file "$fixture" Linux/os/helpers/active-uwsm-mako \
+    'exec env -- /usr/bin/uwsm-app -- /usr/bin/mako'
+  write_fixture_file "$fixture" Linux/os/helpers/active-uwsm-swayosd \
+    "setsid /usr/bin/uwsm-app -- 'swayosd-server'"
+  write_fixture_file "$fixture" Linux/os/helpers/active-polkit \
+    'exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
+  write_fixture_file "$fixture" Linux/os/helpers/active-command-routes \
+    $'/usr/bin/makoctl dismiss\n/usr/bin/swayosd-client --monitor DP-1\n/usr/bin/swayosd-brightness 40\n/usr/bin/swayosd-kbd-brightness 50\nnotmakoctl makoctl-wrapper not-swayosd-client'
+  write_fixture_file "$fixture" Linux/vicinae/scripts/route-variants.sh \
+    $'/usr/bin/uwsm-app -- /opt/bin/mako\nsetsid uwsm-app -- swayosd-server\nexec /usr/bin/makoctl; /usr/bin/swayosd-client'
+  write_fixture_file "$fixture" Linux/vicinae/scripts/negative-routes.sh \
+    $'notmakoctl makoctl-wrapper not-swayosd-client swayosd-client-wrapper\n# makoctl\n# uwsm-app -- mako'
+  write_fixture_file "$fixture" Linux/mako/config \
+    $'makoctl reload\nuwsm-app -- mako\nswayosd-client'
+  write_fixture_file "$fixture" Linux/swayosd/style.css '/* swayosd-client makoctl */'
+  write_fixture_file "$fixture" Linux/example/tests/route-test.sh \
+    $'makoctl\nswayosd-client\nuwsm-app -- mako'
+  write_fixture_file "$fixture" Linux/os/helpers/desktop-shell-rollback \
+    $'makoctl\nuwsm-app -- mako\n/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1'
+  write_fixture_file "$fixture" Linux/os/helpers/desktop-shell-mako-route \
+    'makoctl mode'
+  write_fixture_file "$fixture" tidydots.yaml \
+    $'        pacman: makoctl\n        pacman: swayosd-client\n        pacman: swayosd-brightness'
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+
+  hits="$(collect_forbidden_hits "$fixture")"
+  for expected_path in \
+    Linux/os/helpers/active-uwsm-mako \
+    Linux/os/helpers/active-uwsm-swayosd \
+    Linux/os/helpers/active-polkit \
+    Linux/os/helpers/active-command-routes \
+    Linux/vicinae/scripts/route-variants.sh; do
+    grep -Fq -- "$expected_path:" <<< "$hits" ||
+      fail "mutation fixture route was not detected: $expected_path"
+  done
+  if grep -Fq -- 'Linux/vicinae/scripts/negative-routes.sh:' <<< "$hits"; then
+    fail 'bounded command token mutation fixture produced a false positive'
+  fi
+  for allowed_path in \
+    Linux/mako/config \
+    Linux/swayosd/style.css \
+    Linux/example/tests/route-test.sh \
+    Linux/os/helpers/desktop-shell-rollback \
+    Linux/os/helpers/desktop-shell-mako-route \
+    tidydots.yaml; do
+    if grep -Fq -- "$allowed_path:" <<< "$hits"; then
+      fail "allowed mutation fixture was incorrectly detected: $allowed_path"
+    fi
+  done
+
+  write_fixture_file "$fixture" setup.yaml \
+    $'applications:\n  - name: fixture\n    entries:\n      - check:\n          linux: systemctl --user enable --now desktop-shell-mako-route.service'
+  git -C "$fixture" add --all
+  assert_rejects_fixture 'adapter setup' 'adapter activation or dependency reference' \
+    assert_no_adapter_enrollment "$fixture"
+
+  write_fixture_file "$fixture" Linux/systemd/graphical-session.target \
+    $'[Unit]\nWants=desktop-shell-mako-route.service'
+  git -C "$fixture" add --all
+  assert_rejects_fixture 'adapter dependency' 'adapter activation or dependency reference' \
+    assert_no_adapter_enrollment "$fixture"
+
+  write_fixture_file "$fixture" mapping.yaml \
+    $'applications:\n  - name: desktop-shell\n    entries:\n      - targets:\n          linux: ~/.config/systemd/user\n        name: systemd-service\n        backup: ./Linux/quickshell/desktop-shell/systemd\n        files:\n          - desktop-shell.service'
+  assert_rejects_fixture 'systemd mapping' 'desktop-shell systemd-service entry is missing' \
+    assert_systemd_mapping "$fixture/mapping.yaml"
+
+  cp -- "$AUTOSTART" "$TEST_ROOT/autostart-mutated.lua"
+  sed -i '/teams-for-linux/d' "$TEST_ROOT/autostart-mutated.lua"
+  assert_rejects_fixture 'autostart content' 'autostart content or order changed' \
+    assert_autostart_fixture "$TEST_ROOT/autostart-mutated.lua"
+}
+
 is_allowed_zone() {
   case "$1" in
-    Linux/mako/*|Linux/swayosd/*|Linux/*/tests/*|Linux/os/helpers/desktop-shell-rollback|Linux/os/helpers/desktop-shell-mako-route)
+    Linux/mako/*|Linux/swayosd/*|*/tests/*|*-test.sh|*_test.sh|test-*.sh|Linux/os/helpers/desktop-shell-rollback|Linux/os/helpers/desktop-shell-mako-route)
       return 0
       ;;
     *)
@@ -87,47 +239,244 @@ is_allowed_zone() {
   esac
 }
 
-active_route_paths() {
-  local path
+is_non_runtime_file() {
+  case "$1" in
+    *.md|*.markdown|*.rst|*.diff|*.patch)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
-  while IFS= read -r path; do
-    case "$path" in
-      Linux/hypr/*|Linux/autostart/*|Linux/vicinae/scripts/*|Linux/os/mimeapps.list|Linux/os/applications/*|Linux/quickshell/desktop-shell/*)
-        if [[ -f "$ROOT/$path" ]] && ! is_allowed_zone "$path"; then
-          printf '%s\n' "$path"
+is_helper_path() {
+  [[ "$1" == Linux/os/helpers/* ]]
+}
+
+is_package_declaration_line() {
+  local path="$1"
+  local line="$2"
+
+  case "$path" in
+    tidydots.yaml)
+      [[ "$line" =~ ^[[:space:]]+(apt|brew|pacman|yay|winget):[[:space:]]+[[:alnum:]_.+:-]+$ ]]
+      ;;
+    Linux/pacman/pkglist-*)
+      [[ "$line" =~ ^[[:alnum:]_.+:-]+$ ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--[[:space:]]+[\"']?([^[:space:];|&()\"']+/)?(mako|swayosd-server)[\"']?([^[:alnum:]_.-]|$)"
+readonly DIRECT_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?(polkit-gnome-authentication-agent-1|makoctl|swayosd-client|swayosd-brightness|swayosd-kbd-brightness)([^[:alnum:]_.-]|$)"
+
+route_line_matches() {
+  local line="$1"
+
+  [[ "$line" =~ $UWSM_ROUTE_RE || "$line" =~ $DIRECT_ROUTE_RE ]]
+}
+
+collect_active_route_paths() {
+  local root="$1"
+  local path helper_name helper_reference_re changed already_active active_content
+  local -a tracked_paths=()
+  local -a active_paths=()
+  local -a active_file_paths=()
+
+  mapfile -d '' tracked_paths < <(git -C "$root" ls-files -z)
+  for path in "${tracked_paths[@]}"; do
+    [[ -f "$root/$path" ]] || continue
+    is_allowed_zone "$path" && continue
+    is_non_runtime_file "$path" && continue
+    is_helper_path "$path" && continue
+    active_paths+=("$path")
+  done
+
+  for path in "${active_paths[@]}"; do
+    active_file_paths+=("$root/$path")
+  done
+  active_content="$(grep -hI -F -e '' -- "${active_file_paths[@]}" 2>/dev/null || true)"
+  changed=1
+  while ((changed)); do
+    changed=0
+    for path in "${tracked_paths[@]}"; do
+      [[ -f "$root/$path" ]] || continue
+      is_allowed_zone "$path" && continue
+      is_helper_path "$path" || continue
+
+      already_active=0
+      for active_path in "${active_paths[@]}"; do
+        if [[ "$active_path" == "$path" ]]; then
+          already_active=1
+          break
         fi
-        ;;
-    esac
-  done < <(git -C "$ROOT" ls-files)
+      done
+      ((already_active)) && continue
+
+      helper_name="${path##*/}"
+      helper_reference_re="(^|[^[:alnum:]_.-])${helper_name}([^[:alnum:]_.-]|$)"
+      if [[ "$active_content" =~ $helper_reference_re ]]; then
+        active_paths+=("$path")
+        active_content+=$'\n'
+        active_content+="$(<"$root/$path")"
+        changed=1
+      fi
+    done
+  done
+
+  ACTIVE_ROUTE_PATHS=("${active_paths[@]}")
+}
+
+collect_forbidden_hits() {
+  local root="$1"
+  local path line line_number
+
+  collect_active_route_paths "$root"
+  for path in "${ACTIVE_ROUTE_PATHS[@]}"; do
+    line_number=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line_number=$((line_number + 1))
+      line="${line%%#*}"
+      [[ -n "${line//[[:space:]]/}" ]] || continue
+      is_package_declaration_line "$path" "$line" && continue
+      if route_line_matches "$line"; then
+        printf '%s:%d:%s\n' "$path" "$line_number" "$line"
+      fi
+    done <"$root/$path"
+  done
 }
 
 audit_active_routes() {
-  local path forbidden_route match
-  local -a forbidden_routes=(
-    'uwsm-app -- mako'
-    'uwsm-app -- swayosd-server'
-    'polkit-gnome-authentication-agent-1'
-    'makoctl'
-    'swayosd-client'
-    'swayosd-brightness'
-    'swayosd-kbd-brightness'
-  )
-  local -a forbidden_hits=()
+  local hits
 
-  while IFS= read -r path; do
-    for forbidden_route in "${forbidden_routes[@]}"; do
-      while IFS= read -r match; do
-        [[ -n "$match" ]] || continue
-        forbidden_hits+=("$path:$match")
-      done < <(grep -nF -- "$forbidden_route" "$ROOT/$path" || true)
-    done
-  done < <(active_route_paths)
-
-  if ((${#forbidden_hits[@]} > 0)); then
-    printf 'FAIL: forbidden active desktop-service routes (%d):\n' "${#forbidden_hits[@]}" >&2
-    printf '  %s\n' "${forbidden_hits[@]}" >&2
+  hits="$(collect_forbidden_hits "$ROOT")"
+  if [[ -n "$hits" ]]; then
+    printf 'FAIL: forbidden active desktop-service routes:\n%s\n' "$hits" >&2
     exit 1
   fi
+}
+
+assert_autostart_fixture() {
+  local path="$1"
+  local expected="$TEST_ROOT/expected-autostart.lua"
+
+  cat >"$expected" <<'EOF'
+-- Autostart processes. Order matches the original autostart.conf exec-once chain.
+
+local hostname_pipe = io.popen("hostname")
+local hostname = hostname_pipe and hostname_pipe:read("*l") or ""
+if hostname_pipe then
+	hostname_pipe:close()
+end
+
+hl.on("hyprland.start", function()
+	hl.exec_cmd("uwsm-app -- hypridle")
+	hl.exec_cmd("uwsm-app -- fcitx5 --disable notificationitem")
+	hl.exec_cmd("uwsm-app -- swaybg -c '#1e1e2e'")
+
+	-- Slow app launch fix -- set systemd vars
+	hl.exec_cmd("systemctl --user import-environment $(env | cut -d'=' -f 1)")
+	hl.exec_cmd("dbus-update-activation-environment --systemd --all")
+
+	-- Extra autostart processes
+	hl.exec_cmd("hyprpm reload -n")
+	hl.exec_cmd("signal-desktop")
+	hl.exec_cmd("teams-for-linux")
+
+	-- Ensure all persistent workspaces are on the correct host-specific monitors.
+	-- Legacy `hyprctl dispatch <name> <args>` strings are rejected by the Lua parser; route through `hyprctl eval`.
+	-- `hl.dsp.*` calls return dispatcher closures -- they only fire when wrapped in `hl.dispatch(...)`.
+	if hostname == "antoinews-linux" then
+		hl.exec_cmd(
+			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-1"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
+		)
+	elseif hostname == "DESKTOP-E07VTRN" then
+		hl.exec_cmd(
+			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
+		)
+	end
+
+	-- Hyprland 0.55 regression: cursor cannot enter DP-2's region until the monitor is re-applied.
+	-- `hyprctl keyword` is disabled under the Lua parser, so route the nudge through `hyprctl eval` instead.
+	if hostname == "antoinews-linux" then
+		hl.exec_cmd(
+			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })']]
+		)
+	elseif hostname == "DESKTOP-E07VTRN" then
+		hl.exec_cmd(
+			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3601x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })']]
+		)
+	end
+end)
+EOF
+
+  cmp -s -- "$expected" "$path" || fail "autostart content or order changed: $path"
+}
+
+assert_systemd_mapping() {
+  local config_file="$1"
+  local entry
+
+  entry="$(extract_application_entry desktop-shell systemd-service "$config_file")"
+  [[ -n "$entry" ]] || fail "desktop-shell systemd-service entry is missing"
+  grep -Fqx -- '          linux: ~/.config/systemd/user' <<< "$entry" ||
+    fail 'desktop-shell systemd service target changed'
+  grep -Fqx -- '        backup: ./Linux/quickshell/desktop-shell/systemd' <<< "$entry" ||
+    fail 'desktop-shell systemd service backup changed'
+  grep -Fqx -- '          - desktop-shell.service' <<< "$entry" ||
+    fail 'desktop-shell service is not in the systemd mapping'
+  grep -Fqx -- '          - desktop-shell-mako-route.service' <<< "$entry" ||
+    fail 'rollback adapter is not in the desktop-shell systemd mapping'
+}
+
+is_allowed_adapter_reference() {
+  local path="$1"
+  local line="$2"
+
+  case "$path" in
+    tidydots.yaml)
+      [[ "$line" == '          - desktop-shell-mako-route.service' ]]
+      ;;
+    Linux/quickshell/desktop-shell/systemd/desktop-shell.service)
+      [[ "$line" == 'Conflicts=desktop-shell-mako-route.service' ]]
+      ;;
+    Linux/quickshell/desktop-shell/systemd/desktop-shell-mako-route.service)
+      [[ "$line" == ExecStart=*desktop-shell-mako-route* ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+assert_no_adapter_enrollment() {
+  local root="$1"
+  local path line line_number
+  local -a tracked_paths=()
+
+  mapfile -d '' tracked_paths < <(git -C "$root" ls-files -z)
+  for path in "${tracked_paths[@]}"; do
+    [[ -f "$root/$path" ]] || continue
+    is_allowed_zone "$path" && continue
+    case "$path" in
+      *.yaml|*.yml|*.service|*.target|*.socket|*.timer|*.path|*.mount)
+        ;;
+      *)
+        continue
+        ;;
+    esac
+    line_number=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line_number=$((line_number + 1))
+      [[ "$line" == *desktop-shell-mako-route* ]] || continue
+      is_allowed_adapter_reference "$path" "$line" && continue
+      fail "adapter activation or dependency reference at $path:$line_number"
+    done <"$root/$path"
+  done
 }
 
 assert_autostart_order() {
@@ -171,10 +520,24 @@ assert_manifests_and_helpers() {
   assert_executable "$ROOT/Linux/os/helpers/desktop-shell-mako-route" 'desktop-shell Mako rollback helper'
   assert_file "$SHELL_UNIT" 'desktop-shell service unit'
   assert_file "$ROLLBACK_UNIT" 'desktop-shell Mako rollback unit'
+  assert_file "$ROOT/Linux/mako/config" 'Mako configuration'
+  assert_executable "$ROOT/Linux/mako/rustdesk-notification-cue" 'Mako RustDesk cue helper'
+  assert_file "$ROOT/Linux/swayosd/config.toml" 'SwayOSD configuration'
+  assert_file "$ROOT/Linux/swayosd/style.css" 'SwayOSD style'
+  [[ -s "$ROOT/Linux/mako/config" ]] || fail 'Mako configuration is empty'
+  [[ -s "$ROOT/Linux/swayosd/config.toml" ]] || fail 'SwayOSD configuration is empty'
+  [[ -s "$ROOT/Linux/swayosd/style.css" ]] || fail 'SwayOSD style is empty'
   grep -Fqx 'Conflicts=desktop-shell-mako-route.service' "$SHELL_UNIT" ||
     fail 'desktop-shell service unit does not isolate the rollback unit'
   grep -Fqx 'Conflicts=desktop-shell.service' "$ROLLBACK_UNIT" ||
     fail 'rollback unit does not isolate desktop-shell.service'
+  grep -Fqx 'PartOf=graphical-session.target' "$ROLLBACK_UNIT" ||
+    fail 'rollback unit lost its graphical-session lifecycle relationship'
+  for forbidden_install_key in '[Install]' 'WantedBy=' 'RequiredBy=' 'Also=' 'Alias='; do
+    if grep -Fq -- "$forbidden_install_key" "$ROLLBACK_UNIT"; then
+      fail "rollback unit contains an install enrollment key: $forbidden_install_key"
+    fi
+  done
 }
 
 assert_legacy_declarations() {
@@ -192,6 +555,7 @@ assert_service_repair() {
 
   block="$(extract_application desktop-shell)"
   [[ -n "$block" ]] || fail 'desktop-shell application is not declared'
+  assert_systemd_mapping "$CONFIG_FILE"
   grep -Fqx -- '          - desktop-shell.service' <<< "$block" ||
     fail 'desktop-shell service is not mapped'
   grep -Fqx -- '          - desktop-shell-mako-route.service' <<< "$block" ||
@@ -234,18 +598,36 @@ assert_rendered_graphical_profile() {
   done
 }
 
+assert_rendered_graphical_profiles() {
+  local hostname
+  local -a graphical_hosts=()
+  declare -A seen_hosts=()
+
+  assert_file "$PROFILE_HARNESS" 'package-preview harness'
+  mapfile -t graphical_hosts < <(awk '$1 == "run_container_profile" && $NF == "graphical" { print $(NF - 1) }' "$PROFILE_HARNESS")
+  ((${#graphical_hosts[@]} > 0)) || fail 'package-preview harness has no graphical profile calls'
+
+  for hostname in "${graphical_hosts[@]}"; do
+    [[ -n "$hostname" ]] || fail 'package-preview harness contains an empty graphical hostname'
+    [[ -z "${seen_hosts[$hostname]+set}" ]] || fail "package-preview harness repeats graphical profile: $hostname"
+    seen_hosts["$hostname"]=1
+    assert_rendered_graphical_profile "$hostname graphical" "$hostname"
+  done
+}
+
 [[ -r "$CONFIG_FILE" ]] || fail "cannot read $CONFIG_FILE"
 [[ -r "$AUTOSTART" ]] || fail "cannot read $AUTOSTART"
 [[ -x "$TIDYDOTS_BIN" ]] || fail 'tidydots is required for rendered profile audits'
 [[ -x "$DOCKER_BIN" ]] || fail 'docker is required for rendered graphical profile audits'
 
+assert_mutation_fixtures
+assert_no_adapter_enrollment "$ROOT"
 audit_active_routes
+assert_autostart_fixture "$AUTOSTART"
 assert_autostart_order
 assert_manifests_and_helpers
 assert_legacy_declarations
 assert_service_repair
-assert_rendered_graphical_profile 'DESKTOP-E07VTRN graphical' DESKTOP-E07VTRN
-assert_rendered_graphical_profile 'antoinews-linux graphical' antoinews-linux
-assert_rendered_graphical_profile 'omarchbook graphical' omarchbook
+assert_rendered_graphical_profiles
 
 printf 'PASS: desktop service cutover and graphical profile audit passed\n'
