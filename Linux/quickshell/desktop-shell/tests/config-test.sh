@@ -11,6 +11,8 @@ BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
 TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
 NOTIFICATION_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-notification-silencing"
 UTILITIES="$ROOT/Linux/hypr/bindings/utilities.lua"
+NOTIFICATION_RUNTIME_TEST="$SHELL_ROOT/tests/notification-runtime-test.sh"
+BASH_PATH="$(type -P bash)"
 
 command -v node >/dev/null 2>&1 || {
   printf 'config-test: node is required\n' >&2
@@ -236,7 +238,7 @@ assert.notEqual(callEnd, -1, "generic call dispatcher ends before panel loading"
 const callFunction = shell.slice(callStart, callEnd)
 assert.ok(callFunction.indexOf("serviceFor(pluginId)") < callFunction.indexOf("panelLoaders[id]"),
   "service-root dispatch precedes overlay dispatch")
-assert.match(callFunction, /typeof service\[method\] !== "function"/)
+assert.match(callFunction, /typeof service\[method\] === "function"/)
 assert.match(callFunction, /service\[method\]\(arg\)/)
 
 const notificationBindingsStart = utilities.indexOf("-- Notifications")
@@ -435,3 +437,27 @@ toggle_exit=$?
 set -e
 test "$toggle_exit" -eq 2
 test ! -s "$trace"
+
+missing_runtime_bin="$fixture/missing-runtime-bin"
+mkdir -p "$missing_runtime_bin"
+for required_command in dirname pwd; do
+  ln -s "$(type -P "$required_command")" "$missing_runtime_bin/$required_command"
+done
+
+set +e
+PATH="$missing_runtime_bin" "$BASH_PATH" "$NOTIFICATION_RUNTIME_TEST" --private-bus \
+  >"$fixture/missing-quickshell.out" 2>&1
+missing_quickshell_exit=$?
+set -e
+test "$missing_quickshell_exit" -ne 0
+[[ $(<"$fixture/missing-quickshell.out") == *"FAIL: quickshell is required"* ]]
+
+printf '#!/bin/sh\nexit 0\n' >"$missing_runtime_bin/quickshell"
+chmod +x "$missing_runtime_bin/quickshell"
+set +e
+PATH="$missing_runtime_bin" "$BASH_PATH" "$NOTIFICATION_RUNTIME_TEST" --private-bus \
+  >"$fixture/missing-notify-send.out" 2>&1
+missing_notify_send_exit=$?
+set -e
+test "$missing_notify_send_exit" -ne 0
+[[ $(<"$fixture/missing-notify-send.out") == *"FAIL: notify-send is required"* ]]

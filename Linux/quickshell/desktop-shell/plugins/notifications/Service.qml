@@ -770,7 +770,8 @@ Item {
 
   Process {
     id: ownershipProbe
-    command: ["busctl", "--user", "status", "org.freedesktop.Notifications"]
+    // Run through bash so a missing busctl becomes a nonzero exit handled below.
+    command: ["bash", "-c", "exec busctl --user status org.freedesktop.Notifications"]
     stdout: StdioCollector {
       id: ownershipStdout
       waitForEnd: true

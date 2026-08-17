@@ -558,8 +558,7 @@ ShellRoot {
   function callIfLoaded(pluginId, method, arg) {
     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
     var service = shell.serviceFor(pluginId)
-    if (service) {
-      if (typeof service[method] !== "function") return "unknown"
+    if (service && typeof service[method] === "function") {
       try {
         var serviceResult = service[method](arg)
         return serviceResult === undefined || serviceResult === null ? "ok" : String(serviceResult)
