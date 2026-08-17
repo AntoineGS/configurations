@@ -111,10 +111,6 @@ clients() {
   jq -sc '.'
 }
 
-# The watcher must define functions but not enter its event loop when sourced.
-# shellcheck source=../watch-rustdesk-submap.sh
-source "$WATCHER"
-
 TEST_RUNTIME_DIR=$(mktemp -d)
 trap 'rm -rf -- "$TEST_RUNTIME_DIR"' EXIT
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
@@ -131,6 +127,12 @@ EOF
 chmod 0700 -- "$TEST_BIN/makoctl"
 unset -f makoctl 2>/dev/null || true
 export PATH="$TEST_BIN:/usr/bin:/bin"
+
+# The watcher must define functions but not enter its event loop when sourced.
+# shellcheck source=../watch-rustdesk-submap.sh
+source "$WATCHER"
+assert_mako_sentinel_empty
+
 NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
 NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
 ROUTE_RENAME_FAIL=false
@@ -498,6 +500,7 @@ assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
   'terminated event stream uses the bounded reconnect delay'
 
 # Configured reconciliation intervals cannot exceed the route freshness budget.
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 : >"$STREAM_LOG"
 (
   reconcile_notification_routing() {
@@ -513,6 +516,47 @@ assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
 )
 assert_equal $'reconcile\nread-timeout:30' "$(<"$STREAM_LOG")" \
   'long reconciliation interval is bounded to 30 seconds'
+
+# An off-cadence event write schedules the next refresh from its successful write.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  SECONDS=0
+  reconcile_count=0
+  reconcile_notification_routing() {
+    ((reconcile_count += 1))
+    case $reconcile_count in
+      1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
+      *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
+    esac
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$SECONDS" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      SECONDS=1
+      return 0
+    fi
+    if ((read_count == 1)); then
+      read_count=2
+      SECONDS=$((SECONDS + $3))
+      return 142
+    fi
+    return 1
+  }
+  event_clean_state=false
+  consume_hyprland_event_stream event_clean_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:31:31' \
+  "$(<"$STREAM_LOG")" \
+  'off-cadence event write receives a refresh at age 30 seconds'
 
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"

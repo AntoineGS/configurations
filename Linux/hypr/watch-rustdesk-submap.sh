@@ -327,8 +327,8 @@ handle_hyprland_event() {
 consume_hyprland_event_stream() {
   local clean_state_name=$1
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
-  local evline read_status
-  local next_reconciliation remaining
+  local evline read_status last_write_before_event
+  local next_reconciliation remaining route_deadline
 
   if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
     reconcile_interval=30
@@ -338,6 +338,13 @@ consume_hyprland_event_stream() {
 
   reconcile_notification_routing || true
   next_reconciliation=$((SECONDS + reconcile_interval))
+  if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+    route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+    if ((route_deadline < next_reconciliation)); then
+      next_reconciliation=$route_deadline
+    fi
+  fi
+
   while :; do
     remaining=$((next_reconciliation - SECONDS))
     if ((remaining <= 0)); then
@@ -347,7 +354,17 @@ consume_hyprland_event_stream() {
     fi
 
     if IFS= read -r -t "$remaining" evline; then
+      last_write_before_event=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
       handle_hyprland_event "$evline" "$clean_state_name"
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} != "$last_write_before_event" ]]; then
+        next_reconciliation=$((SECONDS + reconcile_interval))
+        if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+          route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+          if ((route_deadline < next_reconciliation)); then
+            next_reconciliation=$route_deadline
+          fi
+        fi
+      fi
       continue
     else
       read_status=$?
@@ -356,6 +373,12 @@ consume_hyprland_event_stream() {
     if ((read_status > 128)); then
       reconcile_notification_routing || true
       next_reconciliation=$((SECONDS + reconcile_interval))
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+        if ((route_deadline < next_reconciliation)); then
+          next_reconciliation=$route_deadline
+        fi
+      fi
       continue
     fi
 
