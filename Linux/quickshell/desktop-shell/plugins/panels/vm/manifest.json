@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.vm",
+  "name": "Virtual Machine",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "KVM guest resource monitor and memory allocation control",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "Panel.qml"},
+  "barWidget": {
+    "displayName": "Virtual Machine",
+    "description": "KVM guest resource monitor and memory allocation control",
+    "category": "System",
+    "allowMultiple": false
+  }
+}
