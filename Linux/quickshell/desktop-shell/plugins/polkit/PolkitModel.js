@@ -9,15 +9,12 @@ function promptLooksFingerprint(text) {
   return normalized.includes("finger") || normalized.includes("fprint") || normalized.includes("swipe")
 }
 
-const MAX_ACTION_ID_LENGTH = 256
-
 /**
  * Snapshot the stable authorization context for one native AuthFlow.
  *
  * The message is made suitable for the compact one-line context display. The
- * action ID is kept verbatim within a bounded display snapshot so the UI can
- * show the backend's trusted identity without deriving it from mutable prompt
- * text.
+ * action ID is kept verbatim so the UI can show the backend's trusted identity
+ * without deriving it from mutable prompt text.
  *
  * @param {*} message Authorization message at request start.
  * @param {*} actionId Native AuthFlow action ID at request start.
@@ -28,7 +25,7 @@ function snapshotAuthContext(message, actionId) {
   const actionText = actionId === null || actionId === undefined ? "" : String(actionId)
   return {
     message: messageText.replace(/\s+/g, " ").trim(),
-    actionId: actionText.slice(0, MAX_ACTION_ID_LENGTH),
+    actionId: actionText,
   }
 }
 
