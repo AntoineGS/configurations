@@ -122,4 +122,21 @@
 - Commit ID:
   - `80dd978` `fix(mako): validate stored cleanup identity`
 - Concerns:
+   - None.
+
+## Task 3 Fourth Fix Round
+
+- Changed files:
+  - `Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- What changed:
+  - Pending adapter startup cleanup now recursively validates and cleans descendants using parent PID, process start time, and executable identity before signaling, matching normal adapter cleanup.
+  - Added deterministic promotion-failure coverage that creates a real adapter descendant and asserts both adapter and descendant are reaped without PID-only cleanup.
+  - Added an explicit no-side-effect assertion for the `DVI-D-1;touch` route fixture.
+- Tests:
+  - `bash Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `bash -n Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `shellcheck Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- Commit ID:
+  - `968ba60` `fix(mako): harden pending adapter cleanup`
+- Concerns:
   - None.
