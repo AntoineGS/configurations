@@ -55,6 +55,9 @@ Item {
     ? Style.gapsOut : liveBarSize + Style.gapsOut
 
   property var liveRefs: ({})
+  property var liveGenerations: ({})
+  property var livePersistenceSources: ({})
+  property var actionClosingGenerations: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
 
@@ -63,6 +66,10 @@ Item {
   readonly property int historyLimit: 10
   readonly property int maxActivePopups: 50
   readonly property int maxPersistenceJobs: 100
+  readonly property int admissionLimit: 120
+  readonly property int admissionWindowMs: 60000
+  property var admissionTimestamps: []
+  property int admissionDropped: 0
   property int historyCount: 0
   property bool historyCountQueued: false
   readonly property int lowPopupDuration: 5000
@@ -97,14 +104,43 @@ Item {
     return NotificationLogic.isEphemeral(notification)
   }
 
-  function snapshotOf(notification) {
-    return NotificationLogic.snapshotOf(notification, Date.now())
+  function deadlineFor(urgency, expireTimeout, startedAt) {
+    return NotificationLogic.deadlineFor(
+      urgency, expireTimeout, startedAt, NotificationUrgency.Critical, NotificationUrgency.Low,
+      lowPopupDuration, normalPopupDuration, maxPopupDuration)
+  }
+
+  function snapshotOf(notification, timestamp) {
+    var startedAt = timestamp === undefined ? Date.now() : Number(timestamp)
+    var snapshot = NotificationLogic.snapshotOf(notification, startedAt)
+    var deadline = deadlineFor(snapshot.urgency, snapshot.expireTimeout, startedAt)
+    snapshot.deadline = deadline === null ? 0 : deadline
+    snapshot.transient = isEphemeral(notification)
+    return snapshot
   }
 
   function isSpotify(notification) {
     if (!notification) return false
-    var source = String(notification.appName || "") + "\n" + String(notification.appIcon || "")
+    var source = NotificationLogic.boundedText(notification.appName, 128) + "\n"
+      + NotificationLogic.boundedText(notification.appIcon, 128)
     return source.toLowerCase().indexOf("spotify") >= 0
+  }
+
+  function admitNotification(notification) {
+    var updated = NotificationLogic.admissionUpdate(
+      admissionTimestamps, Date.now(), admissionLimit, admissionWindowMs)
+    admissionTimestamps = updated.timestamps
+    if (updated.accepted) return true
+
+    admissionDropped += updated.dropped
+    persistenceError = "notification admission limit reached"
+    try {
+      notification.tracked = false
+      if (notification && typeof notification.dismiss === "function") notification.dismiss()
+    } catch (error) {
+      // The rejected sender may already be closed.
+    }
+    return false
   }
 
   function pendingPopupCount() {
@@ -132,7 +168,11 @@ Item {
   }
 
   function releaseLiveNotification(notification, originalId, dismiss) {
-    if (liveRefs[originalId] === notification) delete liveRefs[originalId]
+    if (liveRefs[originalId] === notification) {
+      delete liveRefs[originalId]
+      delete liveGenerations[originalId]
+      delete livePersistenceSources[originalId]
+    }
     try {
       if (dismiss && notification.tracked && typeof notification.dismiss === "function") notification.dismiss()
       notification.tracked = false
@@ -144,13 +184,16 @@ Item {
   function handleNotification(notification) {
     // This sender is intentionally excluded before it can enter a popup or history.
     if (isSpotify(notification)) return
+    if (!service.admitNotification(notification)) return
 
     notification.tracked = true
     var snapshot = snapshotOf(notification)
     liveRefs[snapshot.originalId] = notification
+    liveGenerations[snapshot.originalId] = snapshot.timestamp
+    livePersistenceSources[snapshot.originalId] = snapshot.transient ? "none"
+      : (service.doNotDisturb && !shouldBypassDnd(notification) ? "history" : "popup")
     notification.closed.connect(function() {
-      if (service.liveRefs[snapshot.originalId] === notification)
-        delete service.liveRefs[snapshot.originalId]
+      service.handleClosedNotification(notification, snapshot.originalId)
     })
 
     if (service.doNotDisturb && !shouldBypassDnd(notification)) {
@@ -168,7 +211,7 @@ Item {
       return
     }
 
-    persistPopupFile(snapshot)
+    if (!snapshot.transient) service.persistPopupFile(snapshot)
     watchForUpdates(notification, snapshot)
     Qt.callLater(function() {
       delete service.pendingPopups[String(snapshot.originalId)]
@@ -180,12 +223,12 @@ Item {
         return
       }
       popupModel.insert(0, snapshot)
-      service.refreshPopup(notification, snapshot.originalId, snapshot.timestamp)
     })
   }
 
   function writeSilenced(notification, written) {
-    writeHistoryFile(written, function(success, exitCode) {
+    writeHistoryFile(written, function(success, exitCode, stale) {
+      if (stale) return
       if (!success) {
         service.persistenceError = "notification history persistence failed (exit " + String(exitCode) + ")"
         service.releaseSilenced(notification, written.originalId)
@@ -194,6 +237,8 @@ Item {
       var updated = null
       try {
         updated = NotificationLogic.replacementSnapshot(notification, written.originalId, written.timestamp)
+        updated.deadline = written.deadline === undefined ? 0 : written.deadline
+        updated.transient = written.transient === true
       } catch (error) {
         // The sender can disappear while the queued history write is running.
       }
@@ -206,7 +251,11 @@ Item {
   }
 
   function releaseSilenced(notification, originalId) {
-    if (liveRefs[originalId] === notification) delete liveRefs[originalId]
+    if (liveRefs[originalId] === notification) {
+      delete liveRefs[originalId]
+      delete liveGenerations[originalId]
+      delete livePersistenceSources[originalId]
+    }
     try {
       notification.tracked = false
     } catch (error) {
@@ -220,6 +269,31 @@ Item {
       if (Object.prototype.hasOwnProperty.call(liveRefs, key)) count++
     }
     return count
+  }
+
+  function handleClosedNotification(notification, originalId) {
+    if (service.liveRefs[originalId] !== notification) return
+    var generation = Number(service.liveGenerations[originalId])
+    if (Number(service.actionClosingGenerations[originalId]) === generation) return
+    var source = service.livePersistenceSources[originalId] || "popup"
+    var found = false
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (row && row.originalId === originalId && Number(row.timestamp) === generation && !isRestoredRow(row)) {
+        service.removePopup(i, "closed")
+        found = true
+        break
+      }
+    }
+    if (!found) {
+      var row = { originalId: originalId, timestamp: generation }
+      if (source === "history") service.deleteHistoryFileFor(row)
+      else if (source === "popup") service.deletePopupFileFor(row)
+    }
+    delete service.liveRefs[originalId]
+    delete service.liveGenerations[originalId]
+    delete service.livePersistenceSources[originalId]
+    try { notification.tracked = false } catch (error) {}
   }
 
   readonly property var updateSignals: [
@@ -238,7 +312,8 @@ Item {
     }
 
     var actions = notification.actions || []
-    for (var a = 0; a < actions.length; a++) {
+    var actionLimit = Math.min(actions.length, 8)
+    for (var a = 0; a < actionLimit; a++) {
       var actionSignal = actions[a] && actions[a].textChanged
       if (actionSignal && typeof actionSignal.connect === "function") actionSignal.connect(refresh)
     }
@@ -249,7 +324,9 @@ Item {
 
     var updated
     try {
-      updated = NotificationLogic.replacementSnapshot(notification, originalId, timestamp)
+      updated = snapshotOf(notification, Date.now())
+      updated.id = originalId
+      updated.originalId = originalId
     } catch (error) {
       return
     }
@@ -257,10 +334,15 @@ Item {
     var roles = NotificationLogic.popupRoles()
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (!row || row.originalId !== originalId || row.timestamp !== timestamp) continue
-      if (!NotificationLogic.popupRowChanged(row, updated)) return
+      if (!row || row.originalId !== originalId || isRestoredRow(row)) continue
+      var oldFileName = NotificationLogic.popupFileName(row)
+      var newFileName = NotificationLogic.popupFileName(updated)
+      if (oldFileName !== newFileName) deletePopupFileFor(row)
+      service.liveGenerations[originalId] = updated.timestamp
+      livePersistenceSources[originalId] = updated.transient ? "none" : "popup"
+      popupModel.setProperty(i, "timestamp", updated.timestamp)
       for (var r = 0; r < roles.length; r++) popupModel.setProperty(i, roles[r], updated[roles[r]])
-      persistPopupFile(updated)
+      if (!updated.transient) service.persistPopupFile(updated)
       return
     }
   }
@@ -299,16 +381,22 @@ Item {
     var originalId = entry ? entry.originalId : -1
     var internal = Number(originalId) < 0
     var restored = isRestoredRow(entry)
-    var source = restoredSource(entry)
+    var source = restoredSource(entry) || livePersistenceSources[originalId] || ""
     var ref = !internal && !restored && originalId >= 0 ? liveRefs[originalId] : null
 
-    if (entry && !internal && source !== "history") {
+    if (entry && !internal && reason === "closed") {
+      if (source === "history") deleteHistoryFileFor(entry)
+      else if (source === "popup") deletePopupFileFor(entry)
+    } else if (entry && !internal && source !== "history" && entry.transient !== true) {
       archivePopupFileFor(entry)
     }
     if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
     popupModel.remove(index)
 
-    if (ref) {
+    if (ref && reason !== "closed") {
+      delete liveRefs[originalId]
+      delete liveGenerations[originalId]
+      delete livePersistenceSources[originalId]
       try {
         if (ref.tracked) {
           if (reason === "expire" && typeof ref.expire === "function") ref.expire()
@@ -332,12 +420,6 @@ Item {
       var action = ref.actions[i]
       if (action && action.identifier === wanted) return action
     }
-    if (wanted === "default") {
-      for (var fallback = limit; fallback < ref.actions.length; fallback++) {
-        var defaultAction = ref.actions[fallback]
-        if (defaultAction && defaultAction.identifier === wanted) return defaultAction
-      }
-    }
     return null
   }
 
@@ -348,14 +430,20 @@ Item {
     var action = liveAction(ref, String(identifier || ""))
     if (!action) return false
 
+    var shouldDismiss = ref.resident !== true
+    if (shouldDismiss) actionClosingGenerations[entry.originalId] = entry.timestamp
     try {
       action.invoke()
     } catch (error) {
+      if (shouldDismiss) delete actionClosingGenerations[entry.originalId]
       console.warn("notifications: action failed", error)
       return false
     }
 
-    if (ref.resident !== true) dismissPopup(index)
+    if (shouldDismiss) {
+      dismissPopup(index)
+      delete actionClosingGenerations[entry.originalId]
+    }
     return true
   }
 
@@ -383,6 +471,8 @@ Item {
       image: "",
       urgency: NotificationUrgency.Low,
       expireTimeout: 2500,
+      deadline: 0,
+      transient: false,
       actions: [],
       timestamp: Date.now()
     })
@@ -412,6 +502,9 @@ Item {
 
   property var popupFileQueue: []
   property var runningPopupFileJob: null
+  property var runningHistoryReadGeneration: null
+  property int persistenceGeneration: 0
+  property var latestPersistenceGenerations: ({})
 
   function pendingPersistenceCount() {
     return popupFileQueue.length
@@ -420,14 +513,44 @@ Item {
   function notifyDroppedPersistenceJob(job) {
     service.persistenceError = "notification persistence queue full; dropped oldest job"
     if (!job || !job.done) return
-    try { job.done(false, 75) } catch (error) {
+    try { job.done(false, 75, true) } catch (error) {
       console.warn("notifications: dropped file callback failed", error)
     }
   }
 
+  function isCurrentPersistenceJob(job) {
+    if (!job || !job.key) return true
+    return Number(latestPersistenceGenerations[job.key]) === Number(job.generation)
+  }
+
+  function releasePersistenceGeneration(job) {
+    if (!job || !job.key || !service.isCurrentPersistenceJob(job)) return
+    for (var i = 0; i < popupFileQueue.length; i++) {
+      if (popupFileQueue[i] && popupFileQueue[i].key === job.key) return
+    }
+    delete latestPersistenceGenerations[job.key]
+  }
+
+  function notifyStalePersistenceJob(job) {
+    service.persistenceError = "stale persistence job discarded"
+    if (!job || !job.done) return
+    try { job.done(false, 75, true) } catch (error) {
+      console.warn("notifications: stale file callback failed", error)
+    }
+  }
+
   function enqueuePersistenceJob(job, front) {
+    if (job.generation === undefined || job.generation === null) {
+      service.persistenceGeneration++
+      job.generation = service.persistenceGeneration
+      if (job.key) service.latestPersistenceGenerations[job.key] = job.generation
+    }
     var updated = NotificationLogic.persistenceQueueUpdate(
       popupFileQueue, job, maxPersistenceJobs, front === true)
+    if (updated.stale) {
+      service.notifyStalePersistenceJob(job)
+      return
+    }
     popupFileQueue = updated.queue
     if (updated.dropped) notifyDroppedPersistenceJob(updated.dropped)
     runNextPopupFileJob()
@@ -453,6 +576,7 @@ Item {
     var job = popupFileQueue[0]
     popupFileQueue = popupFileQueue.slice(1)
     if (job.read) {
+      service.runningHistoryReadGeneration = job.generation
       startHistoryRead()
       return
     }
@@ -469,6 +593,11 @@ Item {
       var job = service.runningPopupFileJob
       service.runningPopupFileJob = null
       var success = Number(exitCode) === 0
+      if (job && !service.isCurrentPersistenceJob(job)) {
+        service.notifyStalePersistenceJob(job)
+        service.runNextPopupFileJob()
+        return
+      }
       if (!success) {
         service.persistenceError = "notification persistence job failed (exit " + String(exitCode) + ")"
         if (job && job.attempt < service.persistenceRetryLimit) {
@@ -477,6 +606,7 @@ Item {
             done: job.done,
             attempt: job.attempt + 1,
             key: job.key || "",
+            generation: job.generation,
           }, true)
           return
         }
@@ -487,6 +617,7 @@ Item {
         }
       }
       service.runNextPopupFileJob()
+      service.releasePersistenceGeneration(job)
     }
   }
 
@@ -526,6 +657,14 @@ Item {
       "umask 077\nrm -f -- \"$1/$2.json\" \"$3/$2\"-*", "--",
       popupStateDir, NotificationLogic.imageStem(row), imagesDir], null, 0,
       "popup:" + NotificationLogic.popupFileName(row))
+  }
+
+  function deleteHistoryFileFor(row) {
+    if (!row) return
+    enqueuePopupFileJob(["bash", "-c",
+      "umask 077\nrm -f -- \"$1/$2.json\" \"$3/$2\"-*", "--",
+      historyDir, NotificationLogic.imageStem(row), imagesDir], null, 0,
+      "history:" + NotificationLogic.popupFileName(row))
   }
 
   readonly property string trimHistoryScript:
@@ -573,13 +712,14 @@ Item {
       imagesDir]
     for (var i = 0; i < persistable.copies.length; i++)
       command.push(persistable.copies[i].from, persistable.copies[i].to)
-    enqueuePopupFileJob(command, function(success, exitCode) {
+    enqueuePopupFileJob(command, function(success, exitCode, stale) {
+      if (stale) return
       if (!success) {
-        if (done) done(false, exitCode)
+        if (done) done(false, exitCode, false)
         return
       }
       service.updateHistoryCount()
-      if (done) done(true, exitCode)
+      if (done) done(true, exitCode, false)
     }, 0, "history:" + NotificationLogic.popupFileName(entry))
   }
 
@@ -608,7 +748,14 @@ Item {
   Process {
     id: readHistoryProc
     running: false
-    onExited: service.runNextPopupFileJob()
+    onExited: {
+      var completed = {
+        key: "history-read", generation: service.runningHistoryReadGeneration
+      }
+      service.runningHistoryReadGeneration = null
+      service.runNextPopupFileJob()
+      service.releasePersistenceGeneration(completed)
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: service.replayHistory(text)
@@ -637,6 +784,7 @@ Item {
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
       if (!row || Number(row.originalId) < 0) continue
+      if (row.transient === true) continue
       rows.push(NotificationLogic.persistablePopup({
         id: row.id,
         originalId: row.originalId,
@@ -661,6 +809,8 @@ Item {
 
     clearPopups()
     for (var i = 0; i < rows.length; i++) {
+      rows[i].deadline = 0
+      rows[i].transient = false
       service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = "history"
       popupModel.append(rows[i])
     }
@@ -684,6 +834,8 @@ Item {
       var current = popupModel.get(i)
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
+    row.deadline = 0
+    row.transient = false
     service.restoredPopups[fileName] = "history"
     popupModel.append(row)
   }
@@ -703,16 +855,25 @@ Item {
     var live = []
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i]
+      entry.transient = entry.transient === true
+      if (entry.transient) {
+        deletePopupFileFor(entry)
+        continue
+      }
       var duration = durationFor(entry.urgency, entry.expireTimeout)
+      var deadline = Number(entry.deadline)
+      var needsDeadlineWrite = false
+      if (duration > 0 && (!isFinite(deadline) || deadline <= 0)) {
+        entry.deadline = Number(entry.timestamp) + duration
+        deadline = entry.deadline
+        needsDeadlineWrite = true
+      }
       if (NotificationLogic.popupExpired(entry, duration, now)) {
         archivePopupFileFor(entry)
         continue
       }
-      if (duration > 0) {
-        entry.deadline = now + duration
-        persistPopupFile(entry)
-        delete entry.deadline
-      }
+      if (duration <= 0) entry.deadline = 0
+      else if (needsDeadlineWrite) persistPopupFile(entry)
       live.push(entry)
     }
     if (live.length === 0) return
@@ -729,6 +890,8 @@ Item {
           }
         }
         if (duplicate) continue
+        if (restored.deadline === undefined) restored.deadline = 0
+        if (restored.transient === undefined) restored.transient = false
         service.restoredPopups[NotificationLogic.popupFileName(restored)] = "popup"
         popupModel.append(restored)
       }
@@ -995,6 +1158,8 @@ Item {
       dnd: service.doNotDisturb,
       liveCount: service.liveReferenceCount(),
       pendingPersistenceCount: service.pendingPersistenceCount(),
+      admissionDropped: service.admissionDropped,
+      admissionWindowCount: service.admissionTimestamps.length,
       popupCount: popupModel.count,
       historyCount: service.historyCount,
       routeValid: service.routeValid,
@@ -1119,6 +1284,7 @@ Item {
             required property int urgency
             required property double expireTimeout
             required property double timestamp
+            required property var deadline
             required property var actions
 
             Layout.preferredWidth: card.implicitWidth
@@ -1126,27 +1292,35 @@ Item {
             implicitHeight: card.implicitHeight
 
             readonly property real lifetime: service.durationFor(cardSlot.urgency, cardSlot.expireTimeout)
+            readonly property real deadlineLifetime:
+              NotificationLogic.remainingLifetime(cardSlot, Date.now(), cardSlot.lifetime)
             readonly property bool defaultActionAvailable:
               NotificationLogic.actionOutcome(cardSlot.actions, "default", false).found
-            property real remainingLifetime: 1.0
+            property real remainingLifetime: cardSlot.deadlineLifetime
             readonly property bool ticking: cardSlot.lifetime > 0 && !card.hovered
 
-            onSummaryChanged: cardSlot.remainingLifetime = 1.0
-            onBodyChanged: cardSlot.remainingLifetime = 1.0
-            onImageChanged: cardSlot.remainingLifetime = 1.0
-            onUrgencyChanged: cardSlot.remainingLifetime = 1.0
-            onExpireTimeoutChanged: cardSlot.remainingLifetime = 1.0
-            onActionsChanged: cardSlot.remainingLifetime = 1.0
+            function resetLifetime() {
+              cardSlot.remainingLifetime = NotificationLogic.remainingLifetime(
+                cardSlot, Date.now(), cardSlot.lifetime)
+            }
+
+            onSummaryChanged: cardSlot.resetLifetime()
+            onBodyChanged: cardSlot.resetLifetime()
+            onImageChanged: cardSlot.resetLifetime()
+            onUrgencyChanged: cardSlot.resetLifetime()
+            onExpireTimeoutChanged: cardSlot.resetLifetime()
+            onDeadlineChanged: cardSlot.resetLifetime()
+            onActionsChanged: cardSlot.resetLifetime()
 
             Timer {
               interval: 50
               repeat: true
               running: cardSlot.ticking
               onTriggered: {
-                if (cardSlot.lifetime <= 0) return
-                cardSlot.remainingLifetime -= 50.0 / cardSlot.lifetime
-                if (cardSlot.remainingLifetime <= 0) {
-                  cardSlot.remainingLifetime = 0
+                var remaining = NotificationLogic.remainingLifetime(
+                  cardSlot, Date.now(), cardSlot.lifetime)
+                cardSlot.remainingLifetime = remaining
+                if (remaining <= 0) {
                   service.expirePopup(cardSlot.index)
                 }
               }

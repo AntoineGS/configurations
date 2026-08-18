@@ -5,6 +5,8 @@ var NOTIFICATION_LIMITS = {
   maxActionIdentifierLength: 256,
   maxActionLabelLength: 256,
   maxActions: 8,
+  maxImageLength: 2048,
+  maxSerializedPayload: 16384,
   maxActivePopups: 50,
   maxHistoryEntries: 200,
   maxPersistenceJobs: 100,
@@ -65,8 +67,8 @@ function actionMetadata(notification) {
   if (!isActionList(actions)) return []
 
   var result = []
-  var defaultAction = null
-  for (var i = 0; i < actions.length; i++) {
+  var limit = Math.min(actions.length, NOTIFICATION_LIMITS.maxActions)
+  for (var i = 0; i < limit; i++) {
     var action = actions[i]
     var identifier = action && action.identifier === undefined ? "" : String(action && action.identifier || "")
     if (!identifier || identifier.length > NOTIFICATION_LIMITS.maxActionIdentifierLength) continue
@@ -74,18 +76,7 @@ function actionMetadata(notification) {
       identifier: identifier,
       text: boundedText(action && action.text, NOTIFICATION_LIMITS.maxActionLabelLength),
     }
-    if (identifier === "default") defaultAction = metadata
-    if (result.length < NOTIFICATION_LIMITS.maxActions) result.push(metadata)
-  }
-  if (defaultAction) {
-    var hasDefault = false
-    for (var d = 0; d < result.length; d++) {
-      if (result[d].identifier === "default") {
-        hasDefault = true
-        break
-      }
-    }
-    if (!hasDefault) result[result.length - 1] = defaultAction
+    result.push(metadata)
   }
   return result
 }
@@ -93,7 +84,8 @@ function actionMetadata(notification) {
 function actionOutcome(actions, identifier, resident) {
   var wanted = String(identifier || "")
   if (!isActionList(actions) || !wanted) return { found: false, dismiss: false }
-  for (var i = 0; i < actions.length; i++) {
+  var limit = Math.min(actions.length, NOTIFICATION_LIMITS.maxActions)
+  for (var i = 0; i < limit; i++) {
     var action = actions[i]
     if (action && String(action.identifier || "") === wanted)
       return { found: true, dismiss: resident !== true }
@@ -123,13 +115,42 @@ function durationFor(urgency, expireTimeout, criticalUrgency, lowUrgency, lowDef
   return Math.min(maxDuration, Math.max(minimum, duration))
 }
 
+function deadlineFor(urgency, expireTimeout, startedAt, criticalUrgency, lowUrgency,
+                     lowDefault, normalDefault, maxDuration) {
+  var duration = durationFor(
+    urgency, expireTimeout, criticalUrgency, lowUrgency, lowDefault, normalDefault, maxDuration)
+  if (duration <= 0) return null
+  var start = Number(startedAt)
+  return isFinite(start) ? start + duration : null
+}
+
+function remainingLifetime(entry, now, fallbackDuration) {
+  var current = Number(now)
+  if (!isFinite(current)) return 0
+
+  var deadline = Number((entry || {}).deadline)
+  if (isFinite(deadline) && deadline > 0) return Math.max(0, deadline - current)
+
+  var duration = Number(fallbackDuration)
+  var timestamp = Number((entry || {}).timestamp)
+  if (!isFinite(duration) || duration <= 0 || !isFinite(timestamp)) return 0
+  return Math.max(0, timestamp + duration - current)
+}
+
 function persistenceQueueUpdate(queue, job, maxLength, front) {
   var next = Array.isArray(queue) ? queue.slice() : []
   var dropped = null
   if (job && job.key) {
     for (var i = next.length - 1; i >= 0; i--) {
       if (next[i] && next[i].key === job.key) {
-        next[i] = job
+        var currentGeneration = Number(next[i].generation)
+        var incomingGeneration = Number(job.generation)
+        if (isFinite(currentGeneration) && isFinite(incomingGeneration)
+            && incomingGeneration < currentGeneration)
+          return { queue: next, dropped: null, stale: true }
+        next.splice(i, 1)
+        if (front) next.unshift(job)
+        else next.splice(i, 0, job)
         return { queue: next, dropped: null }
       }
     }
@@ -138,6 +159,26 @@ function persistenceQueueUpdate(queue, job, maxLength, front) {
   if (front) next.unshift(job)
   else next.push(job)
   return { queue: next, dropped: dropped }
+}
+
+function admissionUpdate(timestamps, now, maxAccepted, windowMs) {
+  var current = Number(now)
+  var limit = Math.max(1, Math.floor(Number(maxAccepted)))
+  var window = Math.max(1, Number(windowMs))
+  if (!isFinite(current) || !isFinite(limit) || !isFinite(window))
+    return { accepted: false, timestamps: [], dropped: 1 }
+
+  var source = Array.isArray(timestamps) ? timestamps : []
+  var start = Math.max(0, source.length - limit)
+  var cutoff = current - window
+  var next = []
+  for (var i = start; i < source.length; i++) {
+    var timestamp = Number(source[i])
+    if (isFinite(timestamp) && timestamp > cutoff) next.push(timestamp)
+  }
+  if (next.length >= limit) return { accepted: false, timestamps: next, dropped: 1 }
+  next.push(current)
+  return { accepted: true, timestamps: next, dropped: 0 }
 }
 
 function invalidRoute(error) {
@@ -211,10 +252,10 @@ function snapshotOf(notification, timestamp) {
   var n = notification || {}
   var id = n.id || 0
   var expireTimeout = normalizedExpireTimeout(n.expireTimeout)
-  var image = String(n.image || "")
+  var image = boundedText(n.image, NOTIFICATION_LIMITS.maxImageLength)
   var hintedImage = imagePathHint(n)
   if (!image || (image.indexOf("image://") === 0 && hintedImage)) image = hintedImage || image
-  return {
+  var result = {
     // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
     id: id,
     originalId: id,
@@ -228,9 +269,11 @@ function snapshotOf(notification, timestamp) {
     timestamp: timestamp === undefined ? Date.now() : timestamp,
     actions: actionMetadata(n),
   }
+  if (isEphemeral(n)) result.transient = true
+  return result
 }
 
-var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "actions"]
+var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "deadline", "transient", "actions"]
 
 function popupRoles() {
   return POPUP_ROLES
@@ -265,7 +308,7 @@ function imagePathHint(notification) {
   try {
     var hints = notification && notification.hints
     var value = hints && hints["image-path"]
-    return value === undefined || value === null ? "" : String(value)
+    return value === undefined || value === null ? "" : boundedText(value, NOTIFICATION_LIMITS.maxImageLength)
   } catch (e) {
     return ""
   }
@@ -287,7 +330,7 @@ function historyEntry(value, normalUrgency) {
     appIcon: boundedText(e.appIcon, NOTIFICATION_LIMITS.maxAppLength),
     summary: boundedText(e.summary, NOTIFICATION_LIMITS.maxSummaryLength),
     body: boundedText(e.body, NOTIFICATION_LIMITS.maxBodyLength),
-    image: e.image || "",
+    image: boundedText(e.image, NOTIFICATION_LIMITS.maxImageLength),
     urgency: typeof e.urgency === "number" ? e.urgency : normalUrgency,
     expireTimeout: 0,
     timestamp: e.timestamp || 0,
@@ -340,7 +383,7 @@ function localImageFile(value) {
     s = s.slice(7)
     try { s = decodeURIComponent(s) } catch (e) {}
   }
-  return s.charAt(0) === "/" ? s : ""
+  return s.charAt(0) === "/" && s.length <= NOTIFICATION_LIMITS.maxImageLength ? s : ""
 }
 
 function persistablePopup(entry, imagesDir) {
@@ -350,7 +393,8 @@ function persistablePopup(entry, imagesDir) {
   var copies = []
   for (var i = 0; i < PERSISTED_IMAGE_ROLES.length; i++) {
     var role = PERSISTED_IMAGE_ROLES[i]
-    var value = String(out[role] || "")
+    var value = boundedText(out[role], NOTIFICATION_LIMITS.maxImageLength)
+    out[role] = value
     if (!value) continue
     var source = localImageFile(value)
     if (source) {
@@ -366,7 +410,15 @@ function persistablePopup(entry, imagesDir) {
 }
 
 function serializePopup(entry, normalUrgency) {
-  return JSON.stringify(popupEntry(entry, normalUrgency))
+  var popup = popupEntry(entry, normalUrgency)
+  var serialized = JSON.stringify(popup)
+  if (serialized.length <= NOTIFICATION_LIMITS.maxSerializedPayload) return serialized
+
+  popup.appIcon = ""
+  popup.image = ""
+  popup.body = ""
+  popup.summary = boundedText(popup.summary, 128)
+  return JSON.stringify(popup)
 }
 
 function parsePopupFiles(raw, normalUrgency) {
@@ -460,7 +512,10 @@ if (typeof module !== "undefined") {
     normalizedExpireTimeout: normalizedExpireTimeout,
     requestedDuration: requestedDuration,
     durationFor: durationFor,
+    deadlineFor: deadlineFor,
+    remainingLifetime: remainingLifetime,
     persistenceQueueUpdate: persistenceQueueUpdate,
+    admissionUpdate: admissionUpdate,
     snapshotOf: snapshotOf,
     popupRoles: popupRoles,
     actionsEqual: actionsEqual,
