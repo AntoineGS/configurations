@@ -400,6 +400,81 @@ wait_for_status() {
   return 1
 }
 
+assert_metadata_failure_bounded() {
+  local expected_refreshed=$1
+  local expected_expires=$2
+  local label=$3
+  local before_status
+  local before_attempts
+  local max_attempts
+  local status_json=''
+  local health_json=''
+  local attempts=0
+
+  before_status=$(read_status)
+  before_attempts=$(jq -er '.routeMetadataAttemptCount | numbers' <<<"$before_status") || {
+    printf 'FAIL: metadata attempt counter is missing during %s metadata hold: %s\n' "$label" "$before_status" >&2
+    exit 1
+  }
+  max_attempts=$((before_attempts + 2))
+  for window in {1..5}; do
+    status_json=$(read_status) || {
+      printf 'FAIL: notification status disappeared during %s metadata hold\n' "$label" >&2
+      exit 1
+    }
+    attempts=$(jq -er '.routeMetadataAttemptCount | numbers' <<<"$status_json") || {
+      printf 'FAIL: metadata attempt counter is missing during %s metadata hold: %s\n' "$label" "$status_json" >&2
+      exit 1
+    }
+    jq -e --argjson refreshed "$expected_refreshed" --argjson expires "$expected_expires" \
+      '.routeValid == true and .routeAcceptedRefreshedAtMs == $refreshed and
+       .routeAcceptedExpiresAtMs == $expires and .routeCandidatePending == true' \
+      <<<"$status_json" >/dev/null || {
+      printf 'FAIL: accepted route changed during %s metadata hold: %s\n' "$label" "$status_json" >&2
+      exit 1
+    }
+    ((attempts <= max_attempts)) || {
+      printf 'FAIL: %s metadata attempts were unbounded: before=%s current=%s status=%s\n' \
+        "$label" "$before_attempts" "$attempts" "$status_json" >&2
+      exit 1
+    }
+    if ((window < 5)); then sleep 0.1; fi
+  done
+  health_json=$(read_health) || {
+    printf 'FAIL: shell health disappeared during %s metadata hold\n' "$label" >&2
+    exit 1
+  }
+  jq -e --argjson attempts "$attempts" \
+    '.notificationRouteValid == true and .notificationRouteMetadataAttemptCount == $attempts' \
+    <<<"$health_json" >/dev/null || {
+    printf 'FAIL: shell health did not retain the accepted route during %s metadata hold: %s\n' \
+      "$label" "$health_json" >&2
+    exit 1
+  }
+  printf '%s\n' "$attempts"
+}
+
+wait_for_event_route_promotion() {
+  local expected_refreshed=$1
+  local minimum_attempts=$2
+  local last_status=''
+
+  for _ in {1..12}; do
+    if last_status=$(read_status 2>/dev/null) &&
+      jq -e --argjson refreshed "$expected_refreshed" --argjson minimum "$minimum_attempts" \
+        '.routeValid == true and .routeAcceptedRefreshedAtMs == $refreshed and
+         .routeAcceptedRevision == .routeCandidateRevision and
+         .routeCandidatePending == false and .routeCandidateMetadataPending == false and
+         .routeMetadataAttemptCount > $minimum' \
+        <<<"$last_status" >/dev/null; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  printf 'FAIL: valid route did not recover from a file event: %s\n' "$last_status" >&2
+  return 1
+}
+
 wait_for_health() {
   local filter=$1
   local last_health=''
@@ -690,6 +765,39 @@ route_lease_enabled=1
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationRouteVisible == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
+
+# Same-revision metadata failures retain the accepted pair without a 100ms retry
+# loop; the next valid publication must prove event-driven recovery through its file event.
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+stable_status=$(read_status)
+stable_refreshed_at_ms=$(jq -er '.routeAcceptedRefreshedAtMs' <<<"$stable_status")
+stable_expires_at_ms=$(jq -er '.routeAcceptedExpiresAtMs' <<<"$stable_status")
+rm -f -- "$route_path"
+missing_attempts=$(assert_metadata_failure_bounded \
+  "$stable_refreshed_at_ms" "$stable_expires_at_ms" missing)
+
+recovery_updated_at=$(date +%s)
+recovery_refreshed_at_ms=$(date +%s%3N)
+write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$recovery_updated_at"'}'
+write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + 1500))" "$recovery_updated_at"
+wait_for_event_route_promotion "$recovery_refreshed_at_ms" "$missing_attempts"
+
+stable_status=$(read_status)
+stable_refreshed_at_ms=$(jq -er '.routeAcceptedRefreshedAtMs' <<<"$stable_status")
+stable_expires_at_ms=$(jq -er '.routeAcceptedExpiresAtMs' <<<"$stable_status")
+insecure_updated_at=$(date +%s)
+insecure_refreshed_at_ms=$(date +%s%3N)
+write_route_payload '{"version":1,"visible":true,"output":"HDMI-A-1","cueOutput":null,"direction":null,"updatedAt":'"$insecure_updated_at"'}' 000
+write_lease_payload "$insecure_refreshed_at_ms" "$((insecure_refreshed_at_ms + 1500))" "$insecure_updated_at"
+insecure_attempts=$(assert_metadata_failure_bounded \
+  "$stable_refreshed_at_ms" "$stable_expires_at_ms" insecure)
+
+recovery_updated_at=$(date +%s)
+recovery_refreshed_at_ms=$(date +%s%3N)
+write_route_payload '{"version":1,"visible":true,"output":"HDMI-A-1","cueOutput":null,"direction":null,"updatedAt":'"$recovery_updated_at"'}'
+write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + 1500))" "$recovery_updated_at"
+wait_for_event_route_promotion "$recovery_refreshed_at_ms" "$insecure_attempts"
 
 # The millisecond lease is observed as invalid without an extra fixed sleep.
 lease_expiry_started=$SECONDS
