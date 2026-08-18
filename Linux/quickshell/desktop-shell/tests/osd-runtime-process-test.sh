@@ -11,7 +11,6 @@ source "$PROCESS_HELPER"
 TMP_DIR=$(mktemp -d)
 FIXTURE_PIDS=()
 FIXTURE_START_TIMES=()
-FIXTURE_EXECUTABLES=()
 FIXTURE_PARENTS=()
 READLINK_MODE=normal
 
@@ -42,20 +41,28 @@ assert_reaped() {
   [[ ! -e "/proc/$pid/stat" ]] || fail "$description"
 }
 
+wait_for_file() {
+  local path=$1
+
+  for _ in {1..100}; do
+    [[ -e $path ]] && return 0
+    sleep 0.01
+  done
+  fail "timed out waiting for fixture file: $path"
+}
+
 osd_runtime_readlink_executable() {
   [[ $READLINK_MODE == fail ]] && return 1
   readlink -f -- "$1"
 }
 
 register_fixture() {
-  local pid=$1
-  local identity=$2
-  local start_time executable parent_pid
+  local identity=$1
+  local pid start_time parent_pid
 
-  IFS=$'\t' read -r start_time executable parent_pid <<<"$identity"
+  IFS=$'\t' read -r pid start_time parent_pid <<<"$identity"
   FIXTURE_PIDS+=("$pid")
   FIXTURE_START_TIMES+=("$start_time")
-  FIXTURE_EXECUTABLES+=("$executable")
   FIXTURE_PARENTS+=("$parent_pid")
 }
 
@@ -66,7 +73,7 @@ cleanup() {
   for index in "${!FIXTURE_PIDS[@]}"; do
     pid=${FIXTURE_PIDS[index]}
     osd_runtime_cleanup_child \
-      "$pid" "${FIXTURE_START_TIMES[index]}" "${FIXTURE_EXECUTABLES[index]}" "${FIXTURE_PARENTS[index]}" \
+      "$pid" "${FIXTURE_START_TIMES[index]}" "${FIXTURE_PARENTS[index]}" \
       >/dev/null 2>&1 || true
   done
   rm -rf -- "$TMP_DIR"
@@ -74,6 +81,7 @@ cleanup() {
 
 harness_pid=$BASHPID
 sleep_executable=$(osd_runtime_resolve_executable sleep) || fail 'sleep executable lookup failed'
+unexpected_executable=$(osd_runtime_resolve_executable bash) || fail 'bash executable lookup failed'
 
 mkdir -p -- "$TMP_DIR/no-bin"
 READLINK_MODE=fail
@@ -82,72 +90,78 @@ READLINK_MODE=normal
 PATH="$TMP_DIR/no-bin" assert_status_failure 'missing quickshell lookup' osd_runtime_resolve_executable quickshell
 
 sleep 30 &
-lookup_failure_pid=$!
+readlink_failure_pid=$!
 READLINK_MODE=fail
-lookup_failure_started=$SECONDS
-assert_status_failure 'pending identity lookup failure' osd_runtime_capture_pending_identity "$lookup_failure_pid" "$harness_pid"
-((SECONDS - lookup_failure_started <= 3)) || fail 'pending identity lookup failure exceeded its bounded wait'
+readlink_failure_identity=$(osd_runtime_capture_pending_identity "$readlink_failure_pid" "$harness_pid") || \
+  fail 'pending identity depended on executable lookup'
+register_fixture "$readlink_failure_identity"
+IFS=$'\t' read -r captured_pid captured_start captured_parent <<<"$readlink_failure_identity"
+[[ $captured_pid == "$readlink_failure_pid" ]] || fail 'pending identity did not preserve the direct-child PID'
+[[ $captured_parent == "$harness_pid" ]] || fail 'pending identity did not preserve the direct parent'
+osd_runtime_cleanup_pending_identity "$readlink_failure_identity" || \
+  fail 'readlink-failure child cleanup failed'
+assert_reaped "$readlink_failure_pid" 'readlink-failure child leaked after cleanup'
 READLINK_MODE=normal
-lookup_failure_identity=$(osd_runtime_capture_pending_identity "$lookup_failure_pid" "$harness_pid") || \
-  fail 'pending identity could not be recovered after lookup failure'
-register_fixture "$lookup_failure_pid" "$lookup_failure_identity"
-osd_runtime_cleanup_pending_identity "$lookup_failure_pid" "$harness_pid" "$sleep_executable" || \
-  fail 'lookup-failure child cleanup failed'
-assert_reaped "$lookup_failure_pid" 'lookup-failure child leaked after cleanup'
-unset 'FIXTURE_PIDS[-1]' 'FIXTURE_START_TIMES[-1]' 'FIXTURE_EXECUTABLES[-1]' 'FIXTURE_PARENTS[-1]'
 
-true &
+sleep 0.2 &
 setup_failure_pid=$!
 READLINK_MODE=fail
-setup_failure_started=$SECONDS
-assert_status_failure 'setup-failure identity lookup' osd_runtime_capture_pending_identity "$setup_failure_pid" "$harness_pid"
-((SECONDS - setup_failure_started <= 3)) || fail 'setup-failure identity lookup exceeded its bounded wait'
-if ! osd_runtime_cleanup_pending_identity "$setup_failure_pid" "$harness_pid" "$sleep_executable"; then
-  fail 'setup-failure cleanup did not reap an exited child after capture failure'
-fi
-assert_reaped "$setup_failure_pid" 'setup-failure child leaked after capture failure'
+setup_failure_identity=$(osd_runtime_capture_pending_identity "$setup_failure_pid" "$harness_pid") || \
+  fail 'setup-failure pending identity capture failed'
+register_fixture "$setup_failure_identity"
+osd_runtime_cleanup_pending_identity "$setup_failure_identity" || \
+  fail 'setup-failure cleanup did not reap an exited child'
+assert_reaped "$setup_failure_pid" 'setup-failure child leaked after capture'
 READLINK_MODE=normal
 
+preexec_ready="$TMP_DIR/preexec.ready"
+preexec_release="$TMP_DIR/preexec.release"
 preexec_script="$TMP_DIR/preexec-quickshell"
-printf '%s\n' '#!/usr/bin/env bash' 'sleep 0.2' >"$preexec_script"
-printf 'exec %q 30\n' "$sleep_executable" >>"$preexec_script"
+printf '%s\n' '#!/usr/bin/env bash' \
+  "printf ready >$(printf '%q' "$preexec_ready")" \
+  "while [[ ! -e $(printf '%q' "$preexec_release") ]]; do sleep 0.01; done" \
+  "exec $(printf '%q' "$sleep_executable") 30" >"$preexec_script"
 chmod 700 -- "$preexec_script"
 "$preexec_script" &
 preexec_pid=$!
+wait_for_file "$preexec_ready"
 pending_identity=$(osd_runtime_capture_pending_identity "$preexec_pid" "$harness_pid") || \
   fail 'pre-exec pending identity capture failed'
-IFS=$'\t' read -r pending_start pending_executable pending_parent <<<"$pending_identity"
-[[ $pending_parent == "$harness_pid" ]] || fail 'pre-exec child was not a direct harness child'
-[[ -n $pending_executable ]] || fail 'pre-exec child did not expose a pending executable'
-promoted_identity=$(osd_runtime_promote_child_identity \
-  "$preexec_pid" "$harness_pid" "$sleep_executable" "$pending_start") || \
-  fail 'pre-exec child was not promoted after reaching Quickshell executable'
-IFS=$'\t' read -r promoted_start promoted_executable promoted_parent <<<"$promoted_identity"
+register_fixture "$pending_identity"
+IFS=$'\t' read -r pending_pid pending_start pending_parent <<<"$pending_identity"
+[[ $pending_pid == "$preexec_pid" ]] || fail 'pre-exec pending PID was not recorded from the direct child'
+[[ $pending_parent == "$harness_pid" ]] || fail 'pre-exec pending parent was not the harness'
+pending_executable=$(osd_runtime_process_executable "$preexec_pid") || fail 'pre-exec executable lookup failed'
+[[ $pending_executable != "$sleep_executable" ]] || fail 'pre-exec fixture reached target before release'
+touch -- "$preexec_release"
+promoted_identity=$(osd_runtime_promote_child_identity "$pending_identity" "$sleep_executable") || \
+  fail 'pre-exec child was not promoted after the release barrier'
+IFS=$'\t' read -r promoted_pid promoted_start promoted_executable promoted_parent <<<"$promoted_identity"
+[[ $promoted_pid == "$preexec_pid" ]] || fail 'promotion changed the child PID'
 [[ $promoted_start == "$pending_start" ]] || fail 'pre-exec promotion changed start identity'
 [[ $promoted_executable == "$sleep_executable" ]] || fail 'pre-exec promotion accepted the wrong executable'
 [[ $promoted_parent == "$harness_pid" ]] || fail 'pre-exec promotion accepted the wrong parent'
-register_fixture "$preexec_pid" "$promoted_identity"
-osd_runtime_cleanup_child "$preexec_pid" "$promoted_start" "$promoted_executable" "$promoted_parent" || \
+osd_runtime_cleanup_child "$promoted_pid" "$promoted_start" "$promoted_parent" || \
   fail 'pre-exec child cleanup failed'
 assert_reaped "$preexec_pid" 'pre-exec child leaked after successful reap'
-unset 'FIXTURE_PIDS[-1]' 'FIXTURE_START_TIMES[-1]' 'FIXTURE_EXECUTABLES[-1]' 'FIXTURE_PARENTS[-1]'
 
 sleep 30 &
 mismatch_pid=$!
 mismatch_identity=$(osd_runtime_capture_pending_identity "$mismatch_pid" "$harness_pid") || \
   fail 'mismatch fixture identity capture failed'
-IFS=$'\t' read -r mismatch_start mismatch_executable mismatch_parent <<<"$mismatch_identity"
-register_fixture "$mismatch_pid" "$mismatch_identity"
-wrong_start=$((mismatch_start + 1))
-osd_runtime_cleanup_child "$mismatch_pid" "$wrong_start" "$mismatch_executable" "$mismatch_parent"
+register_fixture "$mismatch_identity"
+IFS=$'\t' read -r mismatch_pid captured_start mismatch_parent <<<"$mismatch_identity"
+wrong_start=$((captured_start + 1))
+osd_runtime_cleanup_child "$mismatch_pid" "$wrong_start" "$mismatch_parent"
 assert_alive "$mismatch_pid" 'start-time mismatch signalled the fixture child'
-osd_runtime_cleanup_child "$mismatch_pid" "$mismatch_start" /usr/bin/false "$mismatch_parent"
-assert_alive "$mismatch_pid" 'executable mismatch signalled the fixture child'
-osd_runtime_cleanup_child "$mismatch_pid" "$mismatch_start" "$mismatch_executable" "$((harness_pid + 1))"
+osd_runtime_cleanup_child "$mismatch_pid" "$captured_start" "$((harness_pid + 1))"
 assert_alive "$mismatch_pid" 'parent mismatch signalled the fixture child'
-osd_runtime_cleanup_child "$mismatch_pid" "$mismatch_start" "$mismatch_executable" "$mismatch_parent" || \
-  fail 'matching identity cleanup failed'
-assert_reaped "$mismatch_pid" 'matching identity cleanup did not reap the fixture child'
-unset 'FIXTURE_PIDS[-1]' 'FIXTURE_START_TIMES[-1]' 'FIXTURE_EXECUTABLES[-1]' 'FIXTURE_PARENTS[-1]'
+assert_status_failure 'unexpected executable was promoted' \
+  osd_runtime_promote_child_identity "$mismatch_identity" "$unexpected_executable"
+READLINK_MODE=fail
+osd_runtime_cleanup_child "$mismatch_pid" "$captured_start" "$mismatch_parent" || \
+  fail 'stable identity cleanup failed with unreadable executable'
+assert_reaped "$mismatch_pid" 'stable identity cleanup did not reap the fixture child'
+READLINK_MODE=normal
 
 printf 'PASS: OSD runtime process identity fixtures\n'
