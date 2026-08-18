@@ -28,6 +28,17 @@ assert_route_payload() {
   assert_equal "$expected" "$actual" 'notification route payload'
 }
 
+assert_lease_payload() {
+  local expected=$1
+  local actual
+
+  [[ -f $NOTIFICATION_LEASE_FILE ]] || fail "notification lease is missing: $NOTIFICATION_LEASE_FILE"
+  if ! actual=$(jq -c . "$NOTIFICATION_LEASE_FILE"); then
+    fail "notification lease is not valid JSON: $NOTIFICATION_LEASE_FILE"
+  fi
+  assert_equal "$expected" "$actual" 'notification lease payload'
+}
+
 assert_file_mode() {
   local expected=$1
   local path=$2
@@ -39,13 +50,23 @@ assert_file_mode() {
   assert_equal "${expected#0}" "${actual#0}" "mode for $path"
 }
 
+assert_lease_contract() {
+  assert_file_mode 0600 "$NOTIFICATION_LEASE_FILE"
+  [[ ! -L $NOTIFICATION_LEASE_FILE ]] || fail 'notification lease is a symlink'
+  if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route-lease.json.*" >/dev/null; then
+    fail 'temporary notification lease file was not removed after rename'
+  fi
+}
+
 route_updated_at() {
   jq -er '.updatedAt | select(type == "number" and (floor == .) and (. >= 0))' \
     "$NOTIFICATION_ROUTE_FILE"
 }
 
+fake_epoch_seconds=1786930000
+
 epoch_seconds() {
-  printf '%(%s)T\n' -1
+  printf '%s\n' "$fake_epoch_seconds"
 }
 
 assert_route_contract() {
@@ -132,11 +153,18 @@ export PATH="$TEST_BIN:/usr/bin:/bin"
 # shellcheck source=../watch-rustdesk-submap.sh
 source "$WATCHER"
 assert_mako_sentinel_empty
+fake_epoch_seconds=1786930000
+epoch_seconds() {
+  printf '%s\n' "$fake_epoch_seconds"
+}
+NOTIFICATION_RECONCILE_INTERVAL=30
 
 NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
 NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
+NOTIFICATION_LEASE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"
 ROUTE_RENAME_FAIL=false
 ROUTE_INTERRUPT=false
+LEASE_RENAME_FAIL=false
 HYPR_LOG="$TEST_RUNTIME_DIR/hyprctl.log"
 HYPR_FAIL=false
 HYPR_MONITORS_JSON='[]'
@@ -146,7 +174,13 @@ mv() {
   if [[ $ROUTE_INTERRUPT == true ]]; then
     kill -TERM "$BASHPID"
   fi
-  [[ $ROUTE_RENAME_FAIL != true ]] || return 1
+  local target=${!#}
+  if [[ $ROUTE_RENAME_FAIL == true && $target == "$NOTIFICATION_ROUTE_FILE" ]]; then
+    return 1
+  fi
+  if [[ $LEASE_RENAME_FAIL == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 1
+  fi
   command mv "$@"
 }
 
@@ -296,6 +330,21 @@ reset_route_state
 write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left"}'
 assert_route_contract
+assert_lease_payload '{"version":1,"refreshedAt":1786930000,"expiresAt":1786930002,"routeUpdatedAt":1786930000}'
+assert_lease_contract
+
+# An unchanged route refreshes only the lease and leaves the route file in place.
+first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+first_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
+fake_epoch_seconds=1786930001
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+second_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
+assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
+[[ $first_lease_inode != "$second_lease_inode" ]] || fail 'unchanged route did not refresh the lease'
+assert_lease_payload '{"version":1,"refreshedAt":1786930001,"expiresAt":1786930003,"routeUpdatedAt":1786930000}'
+assert_lease_contract
+fake_epoch_seconds=1786930000
 
 # An unchanged route is a no-op between reconciliation intervals.
 first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
@@ -377,8 +426,41 @@ fi
 ROUTE_RENAME_FAIL=false
 assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
   'failed route write preserves the prior valid file'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed route write left a lease file behind'
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
-assert_route_contract
+
+# A failed lease rename invalidates the lease while preserving the route file.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+LEASE_RENAME_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed lease rename returned success'
+fi
+LEASE_RENAME_FAIL=false
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed lease write left a lease file behind'
+
+# A symlinked route directory is rejected before publication.
+reset_route_state
+mkdir -p -- "$TEST_RUNTIME_DIR/lease-target"
+ln -s -- "$TEST_RUNTIME_DIR/lease-target" "$NOTIFICATION_ROUTE_DIR"
+if write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left' 2>/dev/null; then
+  fail 'symlinked route directory was accepted'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'symlinked route directory created a lease'
+[[ ! -e $NOTIFICATION_ROUTE_FILE ]] || fail 'symlinked route directory created a route file'
+
+# Cleanup removes the lease and publishes hidden state without recreating the lease.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+cleanup_notification_route_state
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup recreated the lease'
+assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
+[[ ! -L $NOTIFICATION_ROUTE_FILE ]] || fail 'cleanup route is a symlink'
+if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+  fail 'cleanup left a temporary notification route file behind'
+fi
 
 # An interruption after mktemp must clean only the publisher's temporary file.
 prior_interrupted_route=$(<"$NOTIFICATION_ROUTE_FILE")
@@ -632,7 +714,7 @@ reset_route_state
   NOTIFICATION_RECONCILE_INTERVAL=29
   consume_hyprland_event_stream event_clean_state </dev/null
 )
-assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:1\nreconcile:4:31:31' \
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:30\nreconcile:4:59:59' \
   "$(<"$STREAM_LOG")" \
   'interval-29 deadline rechecks at route age 30 seconds'
 
