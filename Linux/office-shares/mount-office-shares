@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Mount the four office shares using the current user's selected Kerberos cache.
+# Minimum Bash version: 4.4
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly server='md-fs01.multidev.local'
+readonly realm='MULTIDEV.LOCAL'
+
+unix_user="$(id -un)"
+unix_user="${unix_user%@*}"
+expected_principal="${unix_user}@${realm}"
+cache_dir="${OFFICE_SHARES_CACHE_DIR:-/tmp}"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+legacy_root="${OFFICE_SHARES_GVFS_ROOT:-$runtime_dir/gvfs}"
+shares_dir="${OFFICE_SHARES_DIR:-$HOME/Shares}"
+
+remote_shares=(serveurgdb fichierscommuns applications qa)
+link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA)
+
+log() {
+  printf 'mount-office-shares: %s\n' "$*" >&2
+}
+
+find_cache() {
+  local candidate principal mtime
+  local selected=''
+  local selected_mtime=-1
+
+  while IFS= read -r -d '' candidate; do
+    if ! KRB5CCNAME="FILE:$candidate" klist -s >/dev/null 2>&1; then
+      continue
+    fi
+    principal="$(KRB5CCNAME="FILE:$candidate" klist 2>/dev/null | awk '/^Default principal:/ { print $3; exit }')"
+    [[ "$principal" == "$expected_principal" ]] || continue
+    if ! mtime="$(stat -c %Y -- "$candidate")"; then
+      continue
+    fi
+    if (( mtime > selected_mtime )); then
+      selected="$candidate"
+      selected_mtime="$mtime"
+    fi
+  done < <(find "$cache_dir" -maxdepth 1 -type f -user "$UID" -name "krb5cc_${UID}*" -print0)
+
+  [[ -n "$selected" ]] || return 1
+  printf 'FILE:%s\n' "$selected"
+}
+
+legacy_target() {
+  local share="$1"
+  printf '%s/smb-share:server=%s,share=%s' "$legacy_root" "$server" "$share"
+}
+
+reconcile_path() {
+  local share="$1"
+  local mountpoint_path="$2"
+  local expected_legacy_target
+
+  if [[ -L "$mountpoint_path" ]]; then
+    expected_legacy_target="$(legacy_target "$share")"
+    if [[ "$(readlink -- "$mountpoint_path")" == "$expected_legacy_target" ]]; then
+      rm -- "$mountpoint_path"
+    else
+      log "refusing unrelated path: $mountpoint_path"
+      return 1
+    fi
+  elif [[ -e "$mountpoint_path" && ! -d "$mountpoint_path" ]]; then
+    log "refusing non-directory path: $mountpoint_path"
+    return 1
+  fi
+
+  if [[ ! -d "$mountpoint_path" ]]; then
+    mkdir -- "$mountpoint_path" || return 1
+  fi
+
+  if mountpoint -q "$mountpoint_path"; then
+    return 0
+  fi
+
+  if ! timeout 15s mount "$mountpoint_path" </dev/null; then
+    log "failed to mount $mountpoint_path"
+    return 1
+  fi
+}
+
+prepare_shares_root() {
+  if [[ -L "$shares_dir" ]]; then
+    log "refusing symlinked Shares root: $shares_dir"
+    return 1
+  fi
+  if [[ -e "$shares_dir" && ! -d "$shares_dir" ]]; then
+    log "refusing non-directory Shares root: $shares_dir"
+    return 1
+  fi
+  mkdir -p -- "$shares_dir" || {
+    log "could not create share directory: $shares_dir"
+    return 1
+  }
+}
+
+main() {
+  local ccache share mountpoint_path index
+  local failures=0
+
+  ccache="$(find_cache)" || {
+    log 'no valid current-principal Kerberos cache; waiting for a later retry'
+    return 0
+  }
+  export KRB5CCNAME="$ccache"
+
+  for command_name in mountpoint timeout mount; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      log "required command is unavailable: $command_name"
+      return 1
+    }
+  done
+
+  prepare_shares_root || return 1
+
+  for index in "${!remote_shares[@]}"; do
+    share="${remote_shares[$index]}"
+    mountpoint_path="$shares_dir/${link_names[$index]}"
+    if ! reconcile_path "$share" "$mountpoint_path"; then
+      failures=1
+    fi
+  done
+
+  return "$failures"
+}
+
+main "$@"

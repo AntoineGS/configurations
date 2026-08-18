@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# Manage the Kerberos-only office share block in fstab.
+# Minimum Bash version: 4.4
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly begin_marker='# BEGIN tidydots office-shares'
+readonly end_marker='# END tidydots office-shares'
+readonly default_user='a.simard@multidev.local'
+
+fstab_path=''
+target_user=''
+home_path=''
+uid_value=''
+gid_value=''
+temp_file=''
+original_snapshot=''
+original_identity=''
+original_metadata=''
+original_exists=0
+lock_file=''
+lock_fd=''
+target_fd=''
+error_reported=0
+entries=()
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+log_error() {
+  printf '%s: %s\n' "${0##*/}" "$*" >&2
+}
+
+on_error() {
+  local exit_code=$?
+  if (( error_reported == 0 )); then
+    error_reported=1
+    log_error "command failed at line ${BASH_LINENO[0]:-unknown} (status $exit_code)"
+  fi
+  exit "$exit_code"
+}
+
+cleanup() {
+  if [[ -n "$temp_file" && -e "$temp_file" ]]; then
+    rm -f -- "$temp_file"
+  fi
+  if [[ -n "$original_snapshot" && -e "$original_snapshot" ]]; then
+    rm -f -- "$original_snapshot"
+  fi
+  if [[ -n "$target_fd" ]]; then
+    exec {target_fd}>&-
+  fi
+  if [[ -n "$lock_fd" ]]; then
+    exec {lock_fd}>&-
+  fi
+}
+
+trap on_error ERR
+trap cleanup EXIT
+
+fail() {
+  log_error "$*"
+  return 1
+}
+
+resolve_settings() {
+  local passwd_record resolved_home
+
+  fstab_path="${OFFICE_SHARES_FSTAB:-/etc/fstab}"
+  target_user="${OFFICE_SHARES_USER:-$default_user}"
+  home_path="${OFFICE_SHARES_HOME:-}"
+  uid_value="${OFFICE_SHARES_UID:-}"
+  gid_value="${OFFICE_SHARES_GID:-}"
+
+  if [[ -z "$home_path" || -z "$uid_value" || -z "$gid_value" ]]; then
+    command -v getent >/dev/null 2>&1 || return 1
+    passwd_record="$(getent passwd "$target_user")" || return 1
+    IFS=: read -r _ _ _ _ _ resolved_home _ <<<"$passwd_record"
+    [[ -n "$home_path" ]] || home_path="$resolved_home"
+  fi
+
+  if [[ -z "$uid_value" ]]; then
+    uid_value="$(id -u "$target_user")" || return 1
+  fi
+  if [[ -z "$gid_value" ]]; then
+    gid_value="$(id -g "$target_user")" || return 1
+  fi
+
+  [[ -n "$home_path" ]] || return 1
+  [[ "$home_path" != *[[:space:]]* && "$home_path" != *\\* ]] || return 1
+  [[ "$uid_value" =~ ^[0-9]+$ ]] || return 1
+  [[ "$gid_value" =~ ^[0-9]+$ ]] || return 1
+
+  entries=(
+    "//md-fs01.multidev.local/serveurgdb $home_path/Shares/G-serveurgdb cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//md-fs01.multidev.local/fichierscommuns $home_path/Shares/J-fichierscommuns cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//md-fs01.multidev.local/applications $home_path/Shares/O-applications cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//md-fs01.multidev.local/qa $home_path/Shares/Z-QA cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+  )
+}
+
+is_exact_block() {
+  local line inside=0 block_count=0 entry_index=0
+
+  [[ -f "$fstab_path" && -r "$fstab_path" ]] || return 1
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if (( inside == 0 )); then
+      if [[ "$line" == "$begin_marker" ]]; then
+        block_count=$((block_count + 1))
+        inside=1
+        entry_index=0
+      fi
+      continue
+    fi
+
+    if (( entry_index < ${#entries[@]} )); then
+      [[ "$line" == "${entries[$entry_index]}" ]] || return 1
+      entry_index=$((entry_index + 1))
+    elif [[ "$line" == "$end_marker" ]]; then
+      inside=0
+    else
+      return 1
+    fi
+  done <"$fstab_path"
+
+  (( inside == 0 && block_count == 1 && entry_index == ${#entries[@]} ))
+}
+
+write_block() {
+  local entry
+
+  printf '%s\n' "$begin_marker"
+  for entry in "${entries[@]}"; do
+    printf '%s\n' "$entry"
+  done
+  printf '%s\n' "$end_marker"
+}
+
+remove_old_blocks() {
+  local cleaned_file="${temp_file}.clean" line
+  local inside=0 has_newline
+
+  : >"$cleaned_file"
+  while :; do
+    if IFS= read -r line; then
+      has_newline=1
+    elif [[ -n "$line" ]]; then
+      has_newline=0
+    else
+      break
+    fi
+
+    if (( inside == 0 )) && [[ "$line" == "$begin_marker" ]]; then
+      inside=1
+      continue
+    fi
+    if (( inside == 1 )); then
+      [[ "$line" == "$end_marker" ]] && inside=0
+      continue
+    fi
+
+    printf '%s' "$line" >>"$cleaned_file"
+    if (( has_newline == 1 )); then
+      printf '\n' >>"$cleaned_file"
+    fi
+  done <"$temp_file"
+
+  if (( inside == 1 )); then
+    rm -f -- "$cleaned_file"
+    return 1
+  fi
+
+  chmod --reference="$temp_file" "$cleaned_file"
+  chown --reference="$temp_file" "$cleaned_file"
+  mv -- "$cleaned_file" "$temp_file"
+}
+
+append_block() {
+  local last_byte
+
+  if [[ -s "$temp_file" ]]; then
+    last_byte="$(tail -c 1 -- "$temp_file" | od -An -t x1 | tr -d '[:space:]')"
+    [[ "$last_byte" == '0a' ]] || printf '\n' >>"$temp_file"
+  fi
+  write_block >>"$temp_file"
+}
+
+acquire_lock() {
+  command -v flock >/dev/null 2>&1 || return 1
+  lock_file="${fstab_path}.lock"
+  exec {lock_fd}>"$lock_file"
+  flock -x "$lock_fd"
+
+  # Keep the helper lock and the current target inode lock together.
+  if [[ -e "$fstab_path" || -L "$fstab_path" ]]; then
+    [[ -f "$fstab_path" && ! -L "$fstab_path" ]] || return 1
+    lock_target_file
+  fi
+}
+
+lock_target_file() {
+  if [[ -n "$target_fd" ]]; then
+    return 0
+  fi
+  exec {target_fd}<"$fstab_path"
+  flock -x "$target_fd"
+}
+
+create_candidate() {
+  temp_file="$(mktemp "${fstab_path}.XXXXXX")"
+
+  if [[ -e "$fstab_path" || -L "$fstab_path" ]]; then
+    [[ -f "$fstab_path" && ! -L "$fstab_path" ]] || return 1
+    lock_target_file
+    original_exists=1
+    original_identity="$(stat -c '%d:%i' -- "$fstab_path")"
+    original_metadata="$(stat -c '%a:%u:%g' -- "$fstab_path")"
+    original_snapshot="${temp_file}.original"
+    cp -p -- "$fstab_path" "$original_snapshot"
+    cp -p -- "$fstab_path" "$temp_file"
+  fi
+}
+
+revalidate_target() {
+  local current_identity
+
+  if (( original_exists == 1 )); then
+    [[ -f "$fstab_path" && ! -L "$fstab_path" ]] || return 1
+    current_identity="$(stat -c '%d:%i' -- "$fstab_path")"
+    [[ "$current_identity" == "$original_identity" ]] || return 1
+    [[ "$(stat -c '%a:%u:%g' -- "$fstab_path")" == "$original_metadata" ]] || return 1
+    cmp -s -- "$fstab_path" "$original_snapshot"
+  else
+    [[ ! -e "$fstab_path" && ! -L "$fstab_path" ]]
+  fi
+}
+
+apply_block() {
+  acquire_lock || return 1
+  if is_exact_block; then
+    return 0
+  fi
+
+  create_candidate || return 1
+  remove_old_blocks || return 1
+  append_block
+  command -v findmnt >/dev/null 2>&1 || return 1
+  findmnt --verify --tab-file "$temp_file" || return 1
+  if ! revalidate_target; then
+    log_error 'fstab changed during validation; refusing replacement'
+    return 1
+  fi
+  # This is the last user-space check boundary before the atomic rename.
+  command -v sync >/dev/null 2>&1 || return 1
+  sync -f "$temp_file"
+  if ! revalidate_target; then
+    log_error 'fstab changed at the replacement boundary; refusing replacement'
+    return 1
+  fi
+  # Advisory locks cannot stop a writer that ignores both locks in this final gap.
+  mv -f -- "$temp_file" "$fstab_path"
+  temp_file=''
+}
+
+main() {
+  [[ $# -eq 1 ]] || {
+    usage >&2
+    return 2
+  }
+
+  case "$1" in
+    --help)
+      usage
+      ;;
+    --check|--apply)
+      resolve_settings || {
+        log_error 'could not resolve a safe fstab configuration'
+        return 1
+      }
+      if [[ "$1" == '--check' ]]; then
+        is_exact_block
+      else
+        apply_block
+      fi
+      ;;
+    *)
+      usage >&2
+      return 2
+      ;;
+  esac
+}
+
+main "$@"

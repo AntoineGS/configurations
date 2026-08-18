@@ -1,0 +1,11 @@
+[Unit]
+Description=Retry office network share mounts
+
+[Timer]
+OnStartupSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=office-shares-mount.service
+
+[Install]
+WantedBy=timers.target
