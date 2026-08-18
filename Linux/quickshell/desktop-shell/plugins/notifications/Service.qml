@@ -44,8 +44,13 @@ Item {
   property string routeMetadataError: "notification route metadata unavailable"
   property int routeMetadataGeneration: 0
   property int routeMetadataCheckGeneration: -1
+  property int routeMetadataSnapshotRevision: -1
+  property var routeMetadataSnapshot: null
   property bool routeMetadataCheckScheduled: false
   property int routeAcceptedGeneration: -1
+  property real routeAcceptedRefreshedAtMs: -1
+  property real routeAcceptedExpiresAtMs: -1
+  property string routeLastTransitionReason: ""
   property bool routeCandidatePending: false
   property bool routeCandidateMetadataPending: false
   property string routeCandidateError: "notification route candidate unavailable"
@@ -1138,12 +1143,9 @@ Item {
     path: service.routePath
     watchChanges: true
     printErrors: false
-    onLoaded: service.applyRoute(text())
-    onLoadFailed: service.markRouteUnavailable("notification route unavailable")
     onFileChanged: {
-      service.invalidateRouteMetadata()
+      service.noteRouteCandidateChange()
       service.scheduleRouteMetadataCheck()
-      reload()
     }
   }
 
@@ -1152,36 +1154,25 @@ Item {
     path: service.leasePath
     watchChanges: true
     printErrors: false
-    onLoaded: service.applyLease(text())
-    onLoadFailed: service.markLeaseUnavailable("notification route lease unavailable")
     onFileChanged: {
-      service.invalidateRouteMetadata()
+      service.noteRouteCandidateChange()
       service.scheduleRouteMetadataCheck()
-      reload()
     }
   }
 
   Process {
     id: routeMetadata
     running: false
-    command: ["bash", "-c",
-      "set -eu\n" +
-      "export LC_ALL=C\n" +
-      "uid=$(id -u)\n" +
-      "check_dir() { [[ -d $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 700 && $type == 'directory' ]] || exit 1; }\n" +
-      "check_file() { [[ -f $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 600 && $type == 'regular file' ]] || exit 1; }\n" +
-      "check_dir \"$1\"\ncheck_file \"$2\"\ncheck_file \"$3\"\n", "--",
-      service.routeDir, service.routePath, service.leasePath]
+    command: []
+    stdout: SplitParser {
+      id: routeMetadataStdout
+      splitMarker: "\n"
+      onRead: function(data) {
+        service.captureRouteMetadata(data)
+      }
+    }
     onExited: function(exitCode) {
-      if (service.routeMetadataCheckGeneration !== service.routeMetadataGeneration) {
-        service.scheduleRouteMetadataCheck()
-        return
-      }
-      if (Number(exitCode) !== 0) {
-        service.failClosedRoute("notification route metadata is insecure or unavailable")
-        return
-      }
-      service.promoteRouteCandidate()
+      service.finishRouteMetadata(exitCode)
     }
   }
 
@@ -1191,8 +1182,6 @@ Item {
     repeat: true
     running: true
     onTriggered: {
-      routeFile.reload()
-      leaseFile.reload()
       service.scheduleRouteMetadataCheck()
     }
   }
@@ -1214,9 +1203,7 @@ Item {
     repeat: false
     running: false
     onTriggered: {
-      service.invalidateLease("notification route lease expired")
-      routeFile.reload()
-      leaseFile.reload()
+      service.failClosedRoute("notification route lease expired")
       service.scheduleRouteMetadataCheck()
     }
   }
@@ -1238,6 +1225,7 @@ Item {
     service.routeTransitionLog = log
     service.routeTransitionCount++
     if (previous && !next) service.routeInvalidationCount++
+    service.routeLastTransitionReason = String(reason || "")
     service.routeValid = next
   }
 
@@ -1248,8 +1236,14 @@ Item {
     service.routeMetadataError = message
     service.leaseValid = false
     service.leaseError = message
+    service.routeMetadataSnapshot = null
+    service.routeMetadataSnapshotRevision = -1
     service.acceptedRoute = null
     service.acceptedLease = null
+    service.routeAcceptedRefreshedAtMs = -1
+    service.routeAcceptedExpiresAtMs = -1
+    service.routeRaw = ""
+    service.leaseRaw = ""
     service.route = {
       valid: false,
       visible: false,
@@ -1266,62 +1260,108 @@ Item {
     service.routeAcceptedGeneration = -1
   }
 
-  function markRouteUnavailable(error) {
-    var message = String(error || "notification route unavailable")
-    service.routeRaw = ""
-    service.routeCandidateError = message
-    service.routeCandidatePending = true
-    service.invalidateRouteMetadata()
-    service.scheduleRouteMetadataCheck()
-    if (!service.routeValid) service.routeError = message
+  function routeMetadataScript() {
+    return "set -Eeuo pipefail\n" +
+      "export LC_ALL=C\n" +
+      "uid=$(id -u)\n" +
+      "max_payload_bytes=8192\n" +
+      "max_result_bytes=32768\n" +
+      "route_dir=$1\nroute_file=$2\nlease_file=$3\nrevision=$4\n" +
+      "[[ $revision =~ ^[0-9]+$ ]] || exit 2\n" +
+      "secure_identity() {\n" +
+      "  local path=$1 identity owner mode type\n" +
+      "  [[ -e $path && ! -L $path ]] || exit 10\n" +
+      "  identity=$(stat -c '%d %i %u %a %F' -- \"$path\") || exit 10\n" +
+      "  read -r _device _inode owner mode type <<<\"$identity\"\n" +
+      "  [[ $owner == $uid && $mode == $2 && $type == $3 ]] || exit 10\n" +
+      "  printf '%s\\n' \"$identity\"\n" +
+      "}\n" +
+      "bounded_base64() {\n" +
+      "  local path=$1 size encoded decoded_size\n" +
+      "  size=$(stat -c '%s' -- \"$path\") || exit 11\n" +
+      "  [[ $size =~ ^[0-9]+$ ]] && ((size <= max_payload_bytes)) || exit 11\n" +
+      "  encoded=$(head -c \"$((max_payload_bytes + 1))\" -- \"$path\" | base64 -w0) || exit 11\n" +
+      "  decoded_size=$(printf '%s' \"$encoded\" | base64 -d | wc -c) || exit 11\n" +
+      "  decoded_size=\"${decoded_size//[[:space:]]/}\"\n" +
+      "  [[ $decoded_size == \"$size\" ]] || exit 11\n" +
+      "  printf '%s' \"$encoded\"\n" +
+      "}\n" +
+      "directory_before=$(secure_identity \"$route_dir\" 700 directory)\n" +
+      "route_before=$(secure_identity \"$route_file\" 600 'regular file')\n" +
+      "lease_before=$(secure_identity \"$lease_file\" 600 'regular file')\n" +
+      "route_b64=$(bounded_base64 \"$route_file\")\n" +
+      "lease_b64=$(bounded_base64 \"$lease_file\")\n" +
+      "route_after=$(secure_identity \"$route_file\" 600 'regular file')\n" +
+      "lease_after=$(secure_identity \"$lease_file\" 600 'regular file')\n" +
+      "directory_after=$(secure_identity \"$route_dir\" 700 directory)\n" +
+      "[[ $directory_before == \"$directory_after\" ]] || exit 12\n" +
+      "[[ $route_before == \"$route_after\" && $lease_before == \"$lease_after\" ]] || exit 12\n" +
+      "route_b64_after=$(bounded_base64 \"$route_file\")\n" +
+      "lease_b64_after=$(bounded_base64 \"$lease_file\")\n" +
+      "[[ $route_b64 == \"$route_b64_after\" && $lease_b64 == \"$lease_b64_after\" ]] || exit 12\n" +
+      "result=$(jq -cn --arg revision \"$revision\" --arg routeB64 \"$route_b64\" --arg leaseB64 \"$lease_b64\" '{revision: ($revision | tonumber), routeB64: $routeB64, leaseB64: $leaseB64}')\n" +
+      "((\${#result} <= max_result_bytes)) || exit 13\n" +
+      "printf '%s\\n' \"$result\""
   }
 
-  function markLeaseUnavailable(error) {
-    var message = String(error || "notification route lease unavailable")
-    service.leaseRaw = ""
-    service.routeCandidateError = message
-    service.routeCandidatePending = true
-    service.invalidateRouteMetadata()
-    service.scheduleRouteMetadataCheck()
-    if (!service.routeValid) service.routeError = message
+  function startRouteMetadataCheck() {
+    var revision = service.routeMetadataGeneration
+    service.routeMetadataCheckGeneration = revision
+    service.routeMetadataSnapshot = null
+    service.routeMetadataSnapshotRevision = -1
+    service.routeCandidateMetadataPending = true
+    routeMetadata.command = ["bash", "-c", service.routeMetadataScript(), "--",
+      service.routeDir, service.routePath, service.leasePath, String(revision)]
+    routeMetadata.running = true
   }
 
-  function invalidateRoute(error) {
-    service.markRouteUnavailable(error)
-  }
-
-  function invalidateLease(error) {
-    service.failClosedRoute(error || "invalid route lease")
-  }
-
-  function applyRoute(raw) {
-    var value = String(raw || "")
-    if (!value) {
-      service.markRouteUnavailable("notification route unavailable")
+  function captureRouteMetadata(raw) {
+    var parsed
+    var text = String(raw || "").trim()
+    if (!text || text.length > 32768) return
+    try {
+      parsed = JSON.parse(text)
+    } catch (error) {
       return
     }
-    service.routeRaw = value
-    service.routeCandidateError = ""
-    service.routeCandidatePending = true
-    service.refreshRoute()
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+        typeof parsed.routeB64 !== "string" || typeof parsed.leaseB64 !== "string") return
+    var revision = Number(parsed.revision)
+    if (!isFinite(revision) || Math.floor(revision) !== revision || revision < 0) return
+    var routeRaw = Util.decodeBase64(parsed.routeB64)
+    var leaseRaw = Util.decodeBase64(parsed.leaseB64)
+    service.routeMetadataSnapshotRevision = revision
+    service.routeMetadataSnapshot = Object.freeze({
+      revision: revision,
+      routeB64: parsed.routeB64,
+      leaseB64: parsed.leaseB64,
+      routeRaw: routeRaw,
+      leaseRaw: leaseRaw
+    })
   }
 
-  function applyLease(raw) {
-    var value = String(raw || "")
-    if (!value) {
-      service.markLeaseUnavailable("notification route lease unavailable")
+  function finishRouteMetadata(exitCode) {
+    var revision = service.routeMetadataCheckGeneration
+    var snapshot = service.routeMetadataSnapshot
+    service.routeMetadataSnapshot = null
+    service.routeMetadataSnapshotRevision = -1
+    if (revision !== service.routeMetadataGeneration || !snapshot || snapshot.revision !== revision) {
+      service.scheduleRouteMetadataCheck()
       return
     }
-    service.leaseRaw = value
-    service.routeCandidateError = ""
-    service.routeCandidatePending = true
-    service.refreshRoute()
+    if (Number(exitCode) !== 0) {
+      service.routeCandidatePending = true
+      service.routeCandidateMetadataPending = true
+      service.scheduleRouteMetadataCheck()
+      return
+    }
+    service.promoteRouteCandidate(snapshot)
   }
 
-  function normalizedRouteCandidate() {
+  function normalizedRouteCandidate(routeRaw, leaseRaw) {
     var now = Date.now()
-    var next = NotificationLogic.normalizeRoute(service.routeRaw, now)
-    var nextLease = NotificationLogic.normalizeLease(service.leaseRaw, now, next.updatedAt)
+    var next = NotificationLogic.normalizeRoute(routeRaw, now)
+    var nextLease = NotificationLogic.normalizeLease(leaseRaw, now, next.updatedAt)
     return {
       route: next,
       lease: nextLease,
@@ -1336,33 +1376,18 @@ Item {
 
   function checkRouteMetadata() {
     if (routeMetadata.running) return
-    if (!service.routeRaw || !service.leaseRaw) {
-      service.routeCandidatePending = true
-      return
-    }
-
-    var candidate = service.normalizedRouteCandidate()
-    if (!candidate.valid) {
-      if (service.routeAcceptedGeneration >= 0 && service.candidateWaitsForLease(candidate)) {
-        service.routeCandidatePending = true
-        return
-      }
-      service.failClosedRoute(candidate.route.valid ? candidate.lease.error : candidate.route.error)
-      return
-    }
-    if (service.routeAcceptedGeneration === service.routeMetadataGeneration && service.routeMetadataValid) {
-      service.routeCandidatePending = false
-      return
-    }
-
     service.routeCandidatePending = false
     service.routeCandidateMetadataPending = true
-    service.routeMetadataCheckGeneration = service.routeMetadataGeneration
-    routeMetadata.running = true
+    service.startRouteMetadataCheck()
   }
 
-  function promoteRouteCandidate() {
-    var candidate = service.normalizedRouteCandidate()
+  function promoteRouteCandidate(snapshot) {
+    if (!snapshot || snapshot.revision !== service.routeMetadataGeneration ||
+        snapshot.revision !== service.routeMetadataCheckGeneration) {
+      service.scheduleRouteMetadataCheck()
+      return
+    }
+    var candidate = service.normalizedRouteCandidate(snapshot.routeRaw, snapshot.leaseRaw)
     if (!candidate.valid) {
       if (service.routeAcceptedGeneration >= 0 && service.candidateWaitsForLease(candidate)) {
         service.routeCandidatePending = true
@@ -1377,6 +1402,15 @@ Item {
       return
     }
 
+    if (service.routeMetadataValid && service.routeRaw === snapshot.routeRaw && service.leaseRaw === snapshot.leaseRaw) {
+      service.routeAcceptedGeneration = snapshot.revision
+      service.routeCandidatePending = false
+      service.routeCandidateMetadataPending = false
+      return
+    }
+
+    service.routeRaw = snapshot.routeRaw
+    service.leaseRaw = snapshot.leaseRaw
     service.route = candidate.route
     service.acceptedRoute = candidate.route
     service.acceptedLease = candidate.lease
@@ -1387,7 +1421,9 @@ Item {
     service.routeCandidateError = ""
     service.routeCandidatePending = false
     service.routeCandidateMetadataPending = false
-    service.routeAcceptedGeneration = service.routeMetadataGeneration
+    service.routeAcceptedGeneration = snapshot.revision
+    service.routeAcceptedRefreshedAtMs = Number(candidate.lease.refreshedAtMs)
+    service.routeAcceptedExpiresAtMs = Number(candidate.lease.expiresAtMs)
     service.routeError = ""
     service.recordRouteTransition(true, "accepted route generation")
 
@@ -1407,6 +1443,10 @@ Item {
     service.routeCandidatePending = true
     service.routeCandidateMetadataPending = true
     if (!service.routeValid) service.routeMetadataError = "notification route metadata check pending"
+  }
+
+  function noteRouteCandidateChange() {
+    service.invalidateRouteMetadata()
   }
 
   function refreshRoute() {
@@ -1570,6 +1610,16 @@ Item {
         ? NotificationLogic.cueGlyph(service.route.direction) : null,
       routeError: service.routeError,
       routeAcceptedGeneration: service.routeAcceptedGeneration,
+      routeCandidateRevision: service.routeMetadataGeneration,
+      routeValidationRevision: service.routeMetadataCheckGeneration,
+      routeAcceptedRevision: service.routeAcceptedGeneration,
+      routeAcceptedRefreshedAtMs: service.routeAcceptedRefreshedAtMs,
+      routeAcceptedExpiresAtMs: service.routeAcceptedExpiresAtMs,
+      routeLastTransitionReason: service.routeLastTransitionReason,
+      routeCandidatePending: service.routeCandidatePending,
+      routeCandidateMetadataPending: service.routeCandidateMetadataPending,
+      routeMetadataSnapshotRevision: service.routeMetadataSnapshotRevision,
+      routeMetadataRunning: routeMetadata.running,
       routeCandidateGeneration: service.routeMetadataGeneration,
       routeTransitionCount: service.routeTransitionCount,
       routeInvalidationCount: service.routeInvalidationCount,
@@ -1787,11 +1837,9 @@ Item {
     if (service.ownershipEnabled) service.probeNotificationOwner()
     else service.setOwnershipState(false, "notification registration disabled")
     service.updateHistoryCount()
-    service.checkRouteMetadata()
+    service.scheduleRouteMetadataCheck()
     Qt.callLater(function() {
       settingsFile.reload()
-      routeFile.reload()
-      leaseFile.reload()
       restorePopupsProc.command = ["bash", "-c", "awk 1 \"$1\"/*.json 2>/dev/null || true", "--", service.popupStateDir]
       restorePopupsProc.running = true
       service.sweepOrphanImages()

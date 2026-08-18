@@ -386,6 +386,37 @@ assert_oversized_poll_interval_is_bounded() {
     >"$MAKO_MODE_STATE"
 }
 
+assert_exact_deadline_poll() {
+  local refreshed_at_ms=$((FAKE_NOW * 1000))
+  local before_deadline_ms=$((refreshed_at_ms + 999))
+  local deadline_ms=$((refreshed_at_ms + 1000))
+
+  FAKE_TIME_FILE="$TEST_RUNTIME_DIR/fake-now-ms"
+  export FAKE_TIME_FILE
+  printf '%s\n' "$before_deadline_ms" >"$FAKE_TIME_FILE"
+  rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
+  : >"$MAKOCTL_LOG"
+  : >"$MV_LOG"
+  : >"$FAKE_ITERATION_COMPLETION_LOG"
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+    >"$MAKO_MODE_STATE"
+
+  write_route true DVI-D-1 null null "$FAKE_NOW"
+  write_raw_lease '{"version":2,"refreshedAtMs":'"$refreshed_at_ms"',"expiresAtMs":'"$deadline_ms"',"routeUpdatedAt":'"$FAKE_NOW"'}'
+  start_adapter || fail 'exact deadline adapter startup failed'
+  wait_for_log_count 2
+  assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+  assert_no_cue
+
+  printf '%s\n' "$deadline_ms" >"$FAKE_TIME_FILE"
+  wait_for_log_count 3
+  assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+  assert_no_cue
+  cleanup_adapter
+  FAKE_TIME_FILE=''
+  export FAKE_TIME_FILE
+}
+
 expect_hidden_for_raw_route() {
   local content=$1
   local expected_count=$2
@@ -1033,6 +1064,7 @@ MV_LOG="$TEST_RUNTIME_DIR/mv.log"
 ADAPTER_STDOUT="$TEST_RUNTIME_DIR/adapter.stdout"
 ADAPTER_STDERR="$TEST_RUNTIME_DIR/adapter.stderr"
 FAKE_NOW=1786930000
+FAKE_TIME_FILE=""
 FAKE_MAKO_EXECUTABLE_PATH="/usr/bin/sleep"
 FAKE_ITERATION_COMPLETION_LOG="$TEST_RUNTIME_DIR/iteration-completions.log"
 FAKE_MAKO_PID=""
@@ -1133,10 +1165,15 @@ case ${1:-} in
     if [[ ${REAL_CLOCK_DATE:-0} == 1 ]]; then
       exec /usr/bin/date "$1"
     fi
+    fake_now_ms=$((FAKE_NOW * 1000))
+    if [[ -n ${FAKE_TIME_FILE:-} && -f $FAKE_TIME_FILE ]]; then
+      fake_now_ms=$(<"$FAKE_TIME_FILE")
+    fi
+    [[ $fake_now_ms =~ ^[0-9]+$ ]] || exit 125
     if [[ $1 == +%s ]]; then
-      printf '%s\n' "${FAKE_NOW:?}"
+      printf '%s\n' "$((fake_now_ms / 1000))"
     else
-      printf '%s000\n' "${FAKE_NOW:?}"
+      printf '%s\n' "$fake_now_ms"
     fi
     ;;
   *) exit 125 ;;
@@ -1215,7 +1252,7 @@ export PATH="$TEST_BIN:/usr/bin:/bin"
 FAKE_MAKO_READY_FILE="$TEST_RUNTIME_DIR/fake-mako.ready"
 ADAPTER_DESCENDANT_PID_FILE="$TEST_RUNTIME_DIR/adapter-descendant.pid"
 TOUCH_SENTINEL="$TEST_RUNTIME_DIR/touch-sentinel"
-export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01 TOUCH_SENTINEL
+export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_TIME_FILE FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01 TOUCH_SENTINEL
 export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE ADAPTER_DESCENDANT_PID_FILE
 trap cleanup EXIT
 
@@ -1432,6 +1469,7 @@ printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rus
   >"$MAKO_MODE_STATE"
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
 
+assert_exact_deadline_poll
 assert_oversized_poll_interval_is_bounded
 
 start_owned_fake_mako FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE

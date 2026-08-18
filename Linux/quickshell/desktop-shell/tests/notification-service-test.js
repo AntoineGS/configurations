@@ -7,6 +7,7 @@ const servicePath = path.join(root, "plugins/notifications/Service.qml")
 const cardPath = path.join(root, "plugins/notifications/components/NotificationCard.qml")
 const logicPath = path.join(root, "plugins/notifications/NotificationLogic.js")
 const runtimeTestPath = path.join(root, "tests/notification-runtime-test.sh")
+const makoTestPath = path.join(root, "tests/mako-route-adapter-test.sh")
 const publisherHelperPath = path.join(root, "tests/notification-route-publisher.sh")
 const manifestPath = path.join(root, "plugins/notifications/manifest.json")
 const sourcePath = path.join(root, "SOURCE")
@@ -21,6 +22,7 @@ const service = readRequired(servicePath)
 const card = readRequired(cardPath)
 const logic = readRequired(logicPath)
 const runtimeTest = readRequired(runtimeTestPath)
+const makoTest = readRequired(makoTestPath)
 const publisherHelper = readRequired(publisherHelperPath)
 const manifest = JSON.parse(readRequired(manifestPath))
 const source = readRequired(sourcePath)
@@ -49,13 +51,28 @@ assert.match(service, /property int routeMetadataGeneration/,
   "metadata checks have a generation that identifies the watched file state")
 assert.match(service, /property int routeMetadataCheckGeneration/,
   "metadata process records the generation it checks")
-assert.match(service, /routeMetadataCheckGeneration !== service\.routeMetadataGeneration/,
+assert.match(service, /revision !== service\.routeMetadataGeneration/,
   "stale metadata checks cannot validate a replacement file state")
+assert.match(service, /routeMetadataSnapshotRevision/,
+  "metadata stdout is associated with the revision that produced it")
+assert.match(service, /routeMetadataSnapshot/,
+  "metadata validation keeps one immutable candidate snapshot per process run")
+assert.match(service, /SplitParser/)
+assert.match(service, /onRead:[\s\S]*captureRouteMetadata\(/,
+  "metadata promotion captures one bounded stdout JSON line per process run")
+assert.match(service, /routeB64/)
+assert.match(service, /leaseB64/)
+assert.match(service, /Object\.freeze\(/,
+  "candidate route and lease bytes are immutable after one process snapshot")
+assert.match(service, /before.*after|after.*before/,
+  "the fixed metadata command compares file identity before and after reading")
+assert.match(service, /base64/,
+  "the fixed metadata command safely encodes both raw payloads")
 assert.match(service, /function scheduleRouteMetadataCheck\(\)/,
   "watched replacements have a coalesced metadata scheduling path")
-assert.match(service, /onFileChanged:\s*\{[\s\S]*invalidateRouteMetadata\(\)[\s\S]*scheduleRouteMetadataCheck\(\)[\s\S]*reload\(\)/,
-  "watched replacements retain the accepted generation while scheduling metadata revalidation")
-assert.match(service, /if \(service\.routeMetadataCheckGeneration !== service\.routeMetadataGeneration\)[\s\S]*return[\s\S]*promoteRouteCandidate\(\)/,
+assert.match(service, /onFileChanged:\s*\{[\s\S]*noteRouteCandidateChange\(\)[\s\S]*scheduleRouteMetadataCheck\(\)/,
+  "watched replacements advance a candidate revision while scheduling metadata revalidation")
+assert.match(service, /if \(revision !== service\.routeMetadataGeneration[\s\S]*return[\s\S]*promoteRouteCandidate\(snapshot\)/,
   "stale metadata process results are discarded before they can promote a newer generation")
 assert.match(service, /LC_ALL=C[\s\S]*stat -c/,
   "metadata type comparisons run in the C locale")
@@ -73,6 +90,9 @@ assert.match(service, /routeInvalidationCount/,
   "valid-to-invalid transitions are counted for steady-state assertions")
 assert.match(service, /routeTransitionLog/,
   "route validity transitions retain a bounded diagnostic log")
+assert.match(service, /property real routeAcceptedRefreshedAtMs/)
+assert.match(service, /property real routeAcceptedExpiresAtMs/)
+assert.match(service, /routeLastTransitionReason/)
 const invalidateMetadataStart = service.indexOf("function invalidateRouteMetadata(")
 const invalidateMetadataEnd = service.indexOf("\n  }", invalidateMetadataStart)
 assert.ok(invalidateMetadataStart >= 0 && invalidateMetadataEnd > invalidateMetadataStart)
@@ -84,14 +104,24 @@ for (const fileViewId of ["routeFile", "leaseFile"]) {
   const start = service.indexOf(`id: ${fileViewId}`)
   const end = service.indexOf("\n  }", start)
   assert.ok(start >= 0 && end > start, `${fileViewId} exists`)
-  assert.match(service.slice(start, end), /onFileChanged:\s*\{[\s\S]*invalidateRouteMetadata\(\)[\s\S]*reload\(\)/,
-    `${fileViewId} invalidates metadata before reloading a replacement`)
+  assert.match(service.slice(start, end), /onFileChanged:\s*\{[\s\S]*noteRouteCandidateChange\(\)[\s\S]*scheduleRouteMetadataCheck\(\)/,
+    `${fileViewId} advances the candidate revision without loading route content`)
+  assert.doesNotMatch(service.slice(start, end), /onLoaded|onLoadFailed|reload\(\)/,
+    `${fileViewId} is a change watcher and cannot associate asynchronous text with a revision`)
 }
 assert.match(runtimeTest,
   /refreshed_at_ms=\$\(date \+%s%3N\)[\s\S]*write_lease_payload "\$refreshed_at_ms" "\$\(\(refreshed_at_ms \+ 1500\)\)" "\$updated_at"/,
   "route-pair fixtures derive both millisecond lease endpoints from one timestamp")
 assert.doesNotMatch(runtimeTest, /write_lease_payload "\$\(date \+%s%3N\)"/,
   "route-pair fixtures do not sample the lease endpoints independently")
+assert.match(runtimeTest, /route_metadata_delay_bin[\s\S]*DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN/,
+  "runtime coverage can delay only the metadata process")
+assert.match(runtimeTest, /race_a_refreshed_at_ms[\s\S]*race_b_refreshed_at_ms[\s\S]*stale delayed route generation was promoted/,
+  "runtime coverage rejects a delayed stale generation after a newer pair is published")
+assert.match(makoTest, /assert_exact_deadline_poll\(\)\s*\{/,
+  "Mako runtime coverage has an exact lease deadline poll")
+assert.match(makoTest, /before_deadline_ms[\s\S]*deadline_ms[\s\S]*wait_for_log_count 3[\s\S]*rustdesk-route-hidden/,
+  "Mako runtime coverage polls the valid-before and invalid-at deadline states")
 assert.match(publisherHelper, /NOTIFICATION_RECONCILE_INTERVAL=1/,
   "hermetic lease integration runs the real one-second watcher reconciliation path")
 assert.match(publisherHelper, /notification_publisher_kill\(/,
@@ -186,7 +216,7 @@ assert.match(service, /parsePopupFiles\(raw, NotificationUrgency\.Normal, servic
 assert.match(service, /property string routeRaw/)
 assert.match(service, /readonly property bool routeVisible/)
 assert.match(service, /function refreshRoute\(\)/)
-assert.match(service, /function normalizedRouteCandidate\(\)[\s\S]*normalizeRoute\(service\.routeRaw,\s*now\)/)
+assert.match(service, /function normalizedRouteCandidate\(routeRaw, leaseRaw\)[\s\S]*normalizeRoute\(routeRaw,\s*now\)/)
 assert.match(service, /routeExpiryTimer/)
 const leaseExpiryTimerStart = service.indexOf("id: routeLeaseExpiryTimer")
 const leaseExpiryTimerEnd = service.indexOf("\n  }", leaseExpiryTimerStart)
@@ -194,7 +224,7 @@ assert.ok(leaseExpiryTimerStart >= 0 && leaseExpiryTimerEnd > leaseExpiryTimerSt
   "one-shot lease expiry timer exists")
 const leaseExpiryTimer = service.slice(leaseExpiryTimerStart, leaseExpiryTimerEnd)
 assert.match(leaseExpiryTimer, /repeat:\s*false/)
-assert.match(leaseExpiryTimer, /onTriggered:[\s\S]*invalidateLease\(/,
+assert.match(leaseExpiryTimer, /onTriggered:[\s\S]*failClosedRoute\("notification route lease expired"\)/,
   "lease expiry invalidates the route at the normalized deadline")
 assert.match(service, /expiresAtMs\s*-\s*Date\.now\(\)/,
   "lease expiry scheduling uses the normalized millisecond absolute expiry")
@@ -269,6 +299,12 @@ assert.match(service, /liveCount:\s*service\.liveReferenceCount\(\)/,
 assert.match(service, /silencedRefreshCount:/)
 assert.match(service, /silencedDirtyCount:/)
 assert.match(service, /routeAcceptedGeneration:\s*service\.routeAcceptedGeneration/)
+assert.match(service, /routeCandidateRevision:\s*service\.routeMetadataGeneration/)
+assert.match(service, /routeValidationRevision:\s*service\.routeMetadataCheckGeneration/)
+assert.match(service, /routeAcceptedRevision:\s*service\.routeAcceptedGeneration/)
+assert.match(service, /routeAcceptedRefreshedAtMs:\s*service\.routeAcceptedRefreshedAtMs/)
+assert.match(service, /routeAcceptedExpiresAtMs:\s*service\.routeAcceptedExpiresAtMs/)
+assert.match(service, /routeLastTransitionReason:\s*service\.routeLastTransitionReason/)
 assert.match(service, /routeTransitionCount:\s*service\.routeTransitionCount/)
 assert.match(service, /routeInvalidationCount:\s*service\.routeInvalidationCount/)
 assert.match(service, /routeTransitionLog:\s*service\.routeTransitionLog/)
