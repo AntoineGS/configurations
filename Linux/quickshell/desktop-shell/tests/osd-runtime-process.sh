@@ -76,15 +76,13 @@ osd_runtime_capture_pending_identity() {
   local expected_parent_pid=$2
   local parent_pid
   local start_time
-  local executable
 
   for ((attempt = 0; attempt < OSD_RUNTIME_IDENTITY_ATTEMPTS; attempt++)); do
     parent_pid=$(osd_runtime_process_parent_pid "$pid" 2>/dev/null || true)
     if [[ $parent_pid == "$expected_parent_pid" ]]; then
       start_time=$(osd_runtime_process_start_time "$pid" 2>/dev/null || true)
-      executable=$(osd_runtime_process_executable "$pid" 2>/dev/null || true)
-      if [[ -n $start_time && -n $executable ]]; then
-        printf '%s\t%s\t%s\n' "$start_time" "$executable" "$parent_pid"
+      if [[ -n $start_time ]]; then
+        printf '%s\t%s\t%s\n' "$pid" "$start_time" "$parent_pid"
         return 0
       fi
     fi
@@ -94,11 +92,13 @@ osd_runtime_capture_pending_identity() {
   return 1
 }
 
+# Promotion adds the executable gate after the stable pending tuple is captured.
 osd_runtime_promote_child_identity() {
-  local pid=$1
-  local expected_parent_pid=$2
-  local expected_executable=$3
-  local pending_start_time=$4
+  local pending_identity=$1
+  local expected_executable=$2
+  local pid
+  local pending_start_time
+  local expected_parent_pid
   local parent_pid
   local start_time
   local executable
@@ -106,7 +106,9 @@ osd_runtime_promote_child_identity() {
   local stable_start_time
   local stable_executable
 
-  [[ -n $expected_executable && -n $pending_start_time ]] || return 1
+  IFS=$'\t' read -r pid pending_start_time expected_parent_pid <<<"$pending_identity"
+  [[ $pid =~ ^[1-9][0-9]*$ && -n $expected_executable && -n $pending_start_time &&
+    $expected_parent_pid =~ ^[1-9][0-9]*$ ]] || return 1
   for ((attempt = 0; attempt < OSD_RUNTIME_IDENTITY_ATTEMPTS; attempt++)); do
     parent_pid=$(osd_runtime_process_parent_pid "$pid" 2>/dev/null || true)
     start_time=$(osd_runtime_process_start_time "$pid" 2>/dev/null || true)
@@ -119,7 +121,7 @@ osd_runtime_promote_child_identity() {
       stable_executable=$(osd_runtime_process_executable "$pid" 2>/dev/null || true)
       if [[ $stable_parent_pid == "$expected_parent_pid" &&
         $stable_start_time == "$pending_start_time" && $stable_executable == "$expected_executable" ]]; then
-        printf '%s\t%s\t%s\n' "$stable_start_time" "$stable_executable" "$stable_parent_pid"
+        printf '%s\t%s\t%s\t%s\n' "$pid" "$stable_start_time" "$stable_executable" "$stable_parent_pid"
         return 0
       fi
     fi
@@ -129,15 +131,13 @@ osd_runtime_promote_child_identity() {
   return 1
 }
 
-osd_runtime_identity_matches() {
+osd_runtime_stable_identity_matches() {
   local pid=$1
   local expected_start_time=$2
-  local expected_executable=$3
-  local expected_parent_pid=$4
+  local expected_parent_pid=$3
 
-  [[ -n $expected_start_time && -n $expected_executable && -n $expected_parent_pid ]] || return 1
+  [[ $pid =~ ^[1-9][0-9]*$ && -n $expected_start_time && -n $expected_parent_pid ]] || return 1
   [[ $(osd_runtime_process_start_time "$pid" 2>/dev/null || true) == "$expected_start_time" ]] || return 1
-  [[ $(osd_runtime_process_executable "$pid" 2>/dev/null || true) == "$expected_executable" ]] || return 1
   [[ $(osd_runtime_process_parent_pid "$pid" 2>/dev/null || true) == "$expected_parent_pid" ]]
 }
 
@@ -172,54 +172,32 @@ osd_runtime_wait_for_reap() {
 osd_runtime_cleanup_child() {
   local pid=$1
   local expected_start_time=$2
-  local expected_executable=$3
-  local expected_parent_pid=$4
+  local expected_parent_pid=$3
 
-  osd_runtime_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid" || return 0
+  # Pending cleanup intentionally does not depend on /proc/$pid/exe being readable.
+  osd_runtime_stable_identity_matches "$pid" "$expected_start_time" "$expected_parent_pid" || return 0
   kill -TERM -- "$pid" 2>/dev/null || true
   for ((attempt = 0; attempt < OSD_RUNTIME_CLEANUP_ATTEMPTS; attempt++)); do
-    if ! osd_runtime_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid"; then
+    if ! osd_runtime_stable_identity_matches "$pid" "$expected_start_time" "$expected_parent_pid"; then
       osd_runtime_reap_if_exited "$pid"
       return $?
     fi
     sleep "$OSD_RUNTIME_CLEANUP_DELAY"
   done
 
-  if osd_runtime_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid"; then
+  if osd_runtime_stable_identity_matches "$pid" "$expected_start_time" "$expected_parent_pid"; then
     kill -KILL -- "$pid" 2>/dev/null || true
   fi
   osd_runtime_wait_for_reap "$pid"
 }
 
-osd_runtime_cleanup_pending_child() {
-  local pid=$1
-  local pending_start_time=$2
-  local pending_executable=$3
-  local expected_parent_pid=$4
-  local expected_executable=${5-}
-
-  if osd_runtime_identity_matches "$pid" "$pending_start_time" "$pending_executable" "$expected_parent_pid"; then
-    osd_runtime_cleanup_child "$pid" "$pending_start_time" "$pending_executable" "$expected_parent_pid"
-  elif [[ -n $expected_executable ]] &&
-    osd_runtime_identity_matches "$pid" "$pending_start_time" "$expected_executable" "$expected_parent_pid"; then
-    osd_runtime_cleanup_child "$pid" "$pending_start_time" "$expected_executable" "$expected_parent_pid"
-  fi
-}
-
 osd_runtime_cleanup_pending_identity() {
-  local pid=$1
-  local expected_parent_pid=$2
-  local expected_executable=$3
-  local identity
+  local pending_identity=$1
+  local pid
   local start_time
-  local executable
   local parent_pid
 
-  identity=$(osd_runtime_capture_pending_identity "$pid" "$expected_parent_pid" 2>/dev/null) || {
-    osd_runtime_reap_if_exited "$pid"
-    return $?
-  }
-  IFS=$'\t' read -r start_time executable parent_pid <<<"$identity"
-  osd_runtime_cleanup_pending_child "$pid" "$start_time" "$executable" "$parent_pid" "$expected_executable" || return 1
-  osd_runtime_reap_if_exited "$pid"
+  IFS=$'\t' read -r pid start_time parent_pid <<<"$pending_identity"
+  [[ $pid =~ ^[1-9][0-9]*$ && -n $start_time && $parent_pid =~ ^[1-9][0-9]*$ ]] || return 1
+  osd_runtime_cleanup_child "$pid" "$start_time" "$parent_pid"
 }

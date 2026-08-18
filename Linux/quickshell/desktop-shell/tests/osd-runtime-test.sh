@@ -123,9 +123,7 @@ fixture=$(mktemp -d)
 harness_pid=$BASHPID
 shell_pid=''
 shell_pending_pid=''
-shell_pending_start_time=''
-shell_pending_executable=''
-shell_pending_parent_pid=''
+shell_pending_identity=''
 shell_start_time=''
 shell_executable=''
 shell_parent_pid=''
@@ -140,27 +138,23 @@ fi
 
 cleanup_pending_shell() {
   [[ -n $shell_pending_pid ]] || return 0
-  if [[ -z $shell_pending_start_time || -z $shell_pending_executable || -z $shell_pending_parent_pid ]]; then
-    osd_runtime_cleanup_pending_identity "$shell_pending_pid" "$harness_pid" "$expected_shell_executable" || return 1
+  if [[ -z $shell_pending_identity ]]; then
+    shell_pending_identity=$(osd_runtime_capture_pending_identity "$shell_pending_pid" "$harness_pid" 2>/dev/null || true)
+  fi
+  if [[ -n $shell_pending_identity ]]; then
+    osd_runtime_cleanup_pending_identity "$shell_pending_identity" || return 1
     shell_pending_pid=''
+    shell_pending_identity=''
     return 0
   fi
-  [[ -n $shell_pending_start_time && -n $shell_pending_executable && -n $shell_pending_parent_pid ]] || {
-    osd_runtime_reap_if_exited "$shell_pending_pid"
-    return $?
-  }
-  osd_runtime_cleanup_pending_child \
-    "$shell_pending_pid" "$shell_pending_start_time" "$shell_pending_executable" \
-    "$shell_pending_parent_pid" "$expected_shell_executable" || return 1
-  osd_runtime_reap_if_exited "$shell_pending_pid" || return 1
-  shell_pending_pid=''
+  osd_runtime_reap_if_exited "$shell_pending_pid"
 }
 
 cleanup() {
   local status=$?
   trap - EXIT HUP INT TERM
   if [[ -n $shell_pid ]]; then
-    osd_runtime_cleanup_child "$shell_pid" "$shell_start_time" "$shell_executable" "$shell_parent_pid" || status=1
+    osd_runtime_cleanup_child "$shell_pid" "$shell_start_time" "$shell_parent_pid" || status=1
     osd_runtime_reap_if_exited "$shell_pid" || status=1
   fi
   cleanup_pending_shell || status=1
@@ -186,8 +180,10 @@ cp -- "$HARNESS" "$runtime_shell_root/shell.qml"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
 start_shell() {
-  local pending_identity
   local promoted_identity
+  local pending_pid
+  local pending_start_time
+  local pending_parent_pid
 
   export DESKTOP_SHELL_TEST_NO_SURFACES=1
   DESKTOP_SHELL_PREVIEW=0 \
@@ -201,23 +197,27 @@ start_shell() {
   WAYLAND_DISPLAY="$fixture_wayland_display" \
   quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
   shell_pending_pid=$!
-  shell_pending_parent_pid=$harness_pid
-  pending_identity=$(osd_runtime_capture_pending_identity "$shell_pending_pid" "$harness_pid") || {
+  shell_pending_identity=$(osd_runtime_capture_pending_identity "$shell_pending_pid" "$harness_pid") || {
     printf 'FAIL: unable to capture pending test shell identity\n' >&2
     return 1
   }
-  IFS=$'\t' read -r shell_pending_start_time shell_pending_executable shell_pending_parent_pid <<<"$pending_identity"
+  IFS=$'\t' read -r pending_pid pending_start_time pending_parent_pid <<<"$shell_pending_identity"
+  [[ $pending_pid == "$shell_pending_pid" && -n $pending_start_time && $pending_parent_pid == "$harness_pid" ]] || {
+    printf 'FAIL: pending test shell identity was not a direct harness child\n' >&2
+    return 1
+  }
   promoted_identity=$(osd_runtime_promote_child_identity \
-    "$shell_pending_pid" "$harness_pid" "$expected_shell_executable" "$shell_pending_start_time") || {
+    "$shell_pending_identity" "$expected_shell_executable") || {
     printf 'FAIL: test shell did not reach the expected quickshell executable\n' >&2
     return 1
   }
-  IFS=$'\t' read -r shell_start_time shell_executable shell_parent_pid <<<"$promoted_identity"
-  shell_pid=$shell_pending_pid
+  IFS=$'\t' read -r shell_pid shell_start_time shell_executable shell_parent_pid <<<"$promoted_identity"
+  [[ $shell_executable == "$expected_shell_executable" && $shell_parent_pid == "$harness_pid" ]] || {
+    printf 'FAIL: promoted test shell identity was not exact\n' >&2
+    return 1
+  }
   shell_pending_pid=''
-  shell_pending_start_time=''
-  shell_pending_executable=''
-  shell_pending_parent_pid=''
+  shell_pending_identity=''
 }
 
 call_ipc() {
