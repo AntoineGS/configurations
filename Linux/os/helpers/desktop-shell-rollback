@@ -238,6 +238,8 @@ terminate_exact_mako() {
   fi
   [[ -n $pids ]] || return 0
 
+  # Revalidate the executable immediately before signalling; numeric PID reuse
+  # remains a narrow race without pidfd, which is unnecessary for this helper.
   while IFS= read -r pid; do
     [[ -n $pid ]] || continue
     if verify_exact_process_pid mako "$pid"; then
@@ -473,10 +475,10 @@ probe_polkit_agent() {
 }
 
 stop_adapter=(systemctl --user stop desktop-shell-mako-route.service)
-"${stop_adapter[@]}" || die 'could not isolate desktop-shell-mako-route.service'
+"${stop_adapter[@]}" || fail_before_adapter 'could not isolate desktop-shell-mako-route.service'
 
 stop_shell=(systemctl --user stop desktop-shell.service)
-"${stop_shell[@]}" || die 'could not stop desktop-shell.service'
+"${stop_shell[@]}" || fail_before_adapter 'could not stop desktop-shell.service'
 
 start_mako_if_missing || fail_before_adapter 'could not start exact Mako process'
 wait_for_mako_mode || fail_before_adapter 'Mako did not respond before hidden routing'

@@ -638,6 +638,7 @@ collect_inventory_hits() {
            value == ("wait_for_unit_active desktop-shell-mako-route.service || die " quote "rollback adapter is not active" quote) ||
            value == ("\"${start_adapter[@]}\" || fail_before_adapter " quote "could not start desktop-shell-mako-route.service" quote) ||
            value == ("wait_for_unit_active desktop-shell-mako-route.service || fail_before_adapter " quote "rollback adapter is not active" quote) ||
+           value == ("\"${stop_adapter[@]}\" || fail_before_adapter " quote "could not isolate desktop-shell-mako-route.service" quote) ||
            value == ("\"${stop_adapter[@]}\" || die " quote "could not isolate desktop-shell-mako-route.service" quote) ||
            value == ("\"${start_adapter[@]}\" || die " quote "could not start desktop-shell-mako-route.service" quote))) {
         return 1
