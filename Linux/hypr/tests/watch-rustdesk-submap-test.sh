@@ -515,6 +515,19 @@ fi
 [[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'symlinked route directory created a lease'
 [[ ! -e $NOTIFICATION_ROUTE_FILE ]] || fail 'symlinked route directory created a route file'
 
+# A pre-existing lease is invalidated when route-directory validation fails early.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+mv -- "$NOTIFICATION_ROUTE_DIR" "$TEST_RUNTIME_DIR/failed-route-dir-target"
+ln -s -- "$TEST_RUNTIME_DIR/failed-route-dir-target" "$NOTIFICATION_ROUTE_DIR"
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'early route-directory validation failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'early route-directory validation failure left the lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'early route-directory validation failure should preserve the prior route'
+
 # Cleanup removes the lease and publishes hidden state without recreating the lease.
 reset_route_state
 write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
@@ -565,6 +578,37 @@ if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; t
   fail 'interrupted route publication left a temporary file'
 fi
 write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+assert_route_contract
+
+# Main handles TERM by removing the lease and publishing a hidden route.
+reset_route_state
+MAIN_TRAP_SIG='main-trap-test'
+MAIN_TRAP_DIR="$TEST_RUNTIME_DIR/hypr/$MAIN_TRAP_SIG"
+MAIN_TRAP_SOCKET="$MAIN_TRAP_DIR/.socket2.sock"
+mkdir -p -- "$MAIN_TRAP_DIR"
+command socat -u "UNIX-LISTEN:$MAIN_TRAP_SOCKET,fork" - >/dev/null 2>&1 &
+MAIN_TRAP_SOCAT_PID=$!
+for _ in {1..200}; do
+  [[ -S $MAIN_TRAP_SOCKET ]] && break
+  sleep 0.01
+done
+[[ -S $MAIN_TRAP_SOCKET ]] || fail "failed to create test Hyprland socket: $MAIN_TRAP_SOCKET"
+set +e
+(
+  HYPRLAND_INSTANCE_SIGNATURE=$MAIN_TRAP_SIG
+  watch_hyprland_events() {
+    write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+    kill -TERM "$BASHPID"
+  }
+  main
+)
+main_trap_status=$?
+set -e
+kill "$MAIN_TRAP_SOCAT_PID" 2>/dev/null || true
+wait "$MAIN_TRAP_SOCAT_PID" 2>/dev/null || true
+((main_trap_status == 143)) || fail "main TERM trap exited unexpectedly: $main_trap_status"
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'main TERM trap recreated the lease'
 assert_route_contract
 
 for routing_event in \
@@ -755,7 +799,49 @@ assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:31:31' \
   "$(<"$STREAM_LOG")" \
   'off-cadence event write receives a refresh at age 30 seconds'
 
-# A deadline-driven interval-29 no-op must retry at write age 30, not age 58.
+# Same-state routing events must not postpone an overdue route rewrite.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
+  reconcile_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$fake_monotonic_seconds
+    ((reconcile_count += 1))
+    write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none'
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      fake_monotonic_seconds=10
+      return 0
+    fi
+    if ((read_count == 1)); then
+      read_count=2
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
+      return 142
+    fi
+    return 1
+  }
+  busy_same_state=false
+  consume_hyprland_event_stream busy_same_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:10:0\nreconcile:3:30:30' \
+  "$(<"$STREAM_LOG")" \
+  'same-state routing events preserve the overdue rewrite deadline'
+
+# A deadline-driven interval-29 no-op must retry at the actual route-write age 30.
 reset_route_state
 : >"$STREAM_LOG"
 (
@@ -803,9 +889,9 @@ reset_route_state
   NOTIFICATION_RECONCILE_INTERVAL=29
   consume_hyprland_event_stream event_clean_state </dev/null
 )
-assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:30\nreconcile:4:59:59' \
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:1\nreconcile:4:31:31' \
   "$(<"$STREAM_LOG")" \
-  'interval-29 deadline rechecks at route age 30 seconds'
+  'interval-29 deadline rechecks at the actual route age 30 seconds'
 
 # A persistent overdue reconciliation failure must wait for a bounded retry
 # instead of reusing the expired route deadline without reading from the stream.
