@@ -71,16 +71,28 @@ process_state() {
   awk '/^State:/ {print $2; exit}' "/proc/$pid/status"
 }
 
+process_executable() {
+  local pid=$1
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  [[ -L /proc/$pid/exe ]] || return 1
+  readlink -f -- "/proc/$pid/exe"
+}
+
 process_identity_is_live() {
   local pid=$1
   local expected_start_time=$2
+  local expected_executable=$3
   local actual_start_time
+  local actual_executable
   local state
 
   [[ $pid =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   actual_start_time=$(process_start_time "$pid") || return 1
   [[ $actual_start_time == "$expected_start_time" ]] || return 1
+  actual_executable=$(process_executable "$pid") || return 1
+  [[ $actual_executable == "$expected_executable" ]] || return 1
   state=$(process_state "$pid") || return 1
   case $state in
     R|S|D|I|T|t|W) return 0 ;;
@@ -91,10 +103,11 @@ process_identity_is_live() {
 assert_process_identity() {
   local pid=$1
   local expected_start_time=$2
-  local message=$3
+  local expected_executable=$3
+  local message=$4
   local state
 
-  process_identity_is_live "$pid" "$expected_start_time" || {
+  process_identity_is_live "$pid" "$expected_start_time" "$expected_executable" || {
     state=$(process_state "$pid" 2>/dev/null || printf 'unavailable')
     fail "$message: fake Mako is not a live process (state: $state)"
   }
@@ -228,6 +241,40 @@ write_route() {
   mv -f -- "$temporary_file" "$ROUTE_FILE"
 }
 
+write_lease() {
+  local refreshed_at=$1
+  local expires_at=$2
+  local route_updated_at=$3
+  local temporary_file
+
+  temporary_file=$(mktemp "$ROUTE_DIR/.test-notification-route-lease.XXXXXX")
+  jq -cn \
+    --argjson refreshed_at "$refreshed_at" \
+    --argjson expires_at "$expires_at" \
+    --argjson route_updated_at "$route_updated_at" \
+    '{version: 1, refreshedAt: $refreshed_at,
+      expiresAt: $expires_at, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
+  chmod 0600 -- "$temporary_file"
+  mv -f -- "$temporary_file" "$LEASE_FILE"
+}
+
+write_raw_lease() {
+  local content=$1
+  local temporary_file
+
+  temporary_file=$(mktemp "$ROUTE_DIR/.test-notification-route-lease.XXXXXX")
+  printf '%s\n' "$content" >"$temporary_file"
+  chmod 0600 -- "$temporary_file"
+  mv -f -- "$temporary_file" "$LEASE_FILE"
+}
+
+run_reconcile_once() (
+  # shellcheck disable=SC1091
+  # shellcheck source=../../../os/helpers/desktop-shell-mako-route
+  source "$ADAPTER"
+  reconcile_route
+)
+
 write_raw_route() {
   local content=$1
   local temporary_file
@@ -273,21 +320,26 @@ kill_descendants() {
 register_owned_child() {
   local pid=$1
   local start_time=$2
+  local executable=$3
 
-  OWNED_CHILDREN+=("$pid:$start_time")
+  OWNED_CHILDREN+=("$pid:$start_time:$executable")
 }
 
 update_owned_child_start_time() {
   local pid=$1
   local start_time=$2
+  local executable=${3:-}
   local entry
   local entry_pid
+  local entry_executable
   local updated=()
 
   for entry in "${OWNED_CHILDREN[@]}"; do
     entry_pid=${entry%%:*}
+    entry_executable=${entry#*:*:}
     if [[ $entry_pid == "$pid" ]]; then
-      updated+=("$pid:$start_time")
+      [[ -n $executable ]] && entry_executable=$executable
+      updated+=("$pid:$start_time:$entry_executable")
     else
       updated+=("$entry")
     fi
@@ -311,8 +363,10 @@ forget_owned_child() {
 cleanup_owned_child() {
   local pid=$1
   local expected_start_time=$2
+  local expected_executable=$3
   local parent_pid
   local current_start_time
+  local current_executable
 
   [[ $pid =~ ^[0-9]+$ ]] || return 0
   if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
@@ -324,6 +378,10 @@ cleanup_owned_child() {
     current_start_time=$(process_start_time "$pid" 2>/dev/null) || return 0
     [[ $current_start_time == "$expected_start_time" ]] || return 0
   fi
+  if [[ -n $expected_executable ]]; then
+    current_executable=$(process_executable "$pid" 2>/dev/null) || return 0
+    [[ $current_executable == "$expected_executable" ]] || return 0
+  fi
 
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -333,11 +391,14 @@ cleanup_owned_children() {
   local entry
   local pid
   local expected_start_time
+  local expected_executable
 
   for entry in "${OWNED_CHILDREN[@]}"; do
     pid=${entry%%:*}
     expected_start_time=${entry#*:}
-    cleanup_owned_child "$pid" "$expected_start_time"
+    expected_start_time=${expected_start_time%%:*}
+    expected_executable=${entry#*:*:}
+    cleanup_owned_child "$pid" "$expected_start_time" "$expected_executable"
   done
   OWNED_CHILDREN=()
 }
@@ -365,11 +426,29 @@ assert_setup_failure_cleanup() {
 
   "$TEST_BIN/fake-mako" &
   setup_failure_pid=$!
-  register_owned_child "$setup_failure_pid" ""
-  cleanup_owned_child "$setup_failure_pid" ""
+  register_owned_child "$setup_failure_pid" "" "$(process_executable "$setup_failure_pid")"
+  cleanup_owned_child "$setup_failure_pid" "" "$(process_executable "$setup_failure_pid")"
   forget_owned_child "$setup_failure_pid"
   [[ ! -e /proc/$setup_failure_pid/status ]] || \
     fail 'setup-failure cleanup did not reap the owned fake Mako child'
+}
+
+assert_mismatched_identity_cleanup_skips_child() {
+  local mismatched_pid
+  local mismatched_start_time
+  local fake_mako_executable
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  "$TEST_BIN/fake-mako" &
+  mismatched_pid=$!
+  wait_for_file "$FAKE_MAKO_READY_FILE"
+  fake_mako_executable=$(process_executable "$mismatched_pid") || fail 'mismatched child executable is unavailable'
+  mismatched_start_time=$(process_start_time "$mismatched_pid") || fail 'mismatched child start identity is unavailable'
+  register_owned_child "$mismatched_pid" "$mismatched_start_time" '/usr/bin/false'
+  cleanup_owned_child "$mismatched_pid" "$mismatched_start_time" '/usr/bin/false'
+  assert_process_identity "$mismatched_pid" "$mismatched_start_time" "$fake_mako_executable" 'mismatched child survived cleanup'
+  forget_owned_child "$mismatched_pid"
+  cleanup_owned_child "$mismatched_pid" "$mismatched_start_time" "$fake_mako_executable"
 }
 
 [[ -f $ADAPTER ]] || fail "adapter helper is missing: $ADAPTER"
@@ -402,6 +481,7 @@ TEST_RUNTIME_DIR=$(mktemp -d)
 TEST_BIN="$TEST_RUNTIME_DIR/bin"
 ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
 ROUTE_FILE="$ROUTE_DIR/notification-route.json"
+LEASE_FILE="$ROUTE_DIR/notification-route-lease.json"
 CUE_FILE="$TEST_RUNTIME_DIR/rustdesk-notification-cue"
 MAKOCTL_LOG="$TEST_RUNTIME_DIR/makoctl.log"
 MAKO_MODE_STATE="$TEST_RUNTIME_DIR/mako-modes"
@@ -490,6 +570,38 @@ set -Eeuo pipefail
 printf '%s\n' "${FAKE_NOW:?}"
 EOF
 
+cat >"$TEST_BIN/stat" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ ${1:-} == -c ]] || exec /usr/bin/stat "$@"
+format=${2:-}
+path=${4:-${3:-}}
+
+case "$format|$path" in
+  '%u %a|'"${ROUTE_DIR:?}")
+    [[ -n ${STAT_ROUTE_DIR_OWNER_MODE_OVERRIDE:-} ]] && {
+      printf '%s\n' "$STAT_ROUTE_DIR_OWNER_MODE_OVERRIDE"
+      exit 0
+    }
+    ;;
+  '%u %a|'"${ROUTE_FILE:?}")
+    [[ -n ${STAT_ROUTE_FILE_OWNER_MODE_OVERRIDE:-} ]] && {
+      printf '%s\n' "$STAT_ROUTE_FILE_OWNER_MODE_OVERRIDE"
+      exit 0
+    }
+    ;;
+  '%u %a|'"${LEASE_FILE:?}")
+    [[ -n ${STAT_LEASE_FILE_OWNER_MODE_OVERRIDE:-} ]] && {
+      printf '%s\n' "$STAT_LEASE_FILE_OWNER_MODE_OVERRIDE"
+      exit 0
+    }
+    ;;
+esac
+
+exec /usr/bin/stat "$@"
+EOF
+
 cat >"$TEST_BIN/sleep" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -519,19 +631,166 @@ export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
 export PATH="$TEST_BIN:/usr/bin:/bin"
 FAKE_MAKO_READY_FILE="$TEST_RUNTIME_DIR/fake-mako.ready"
 export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01
-export ROUTE_FILE CUE_FILE
+export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE
 trap cleanup EXIT
 
 assert_setup_failure_cleanup
+assert_mismatched_identity_cleanup_skips_child
+
+rm -f -- "$ROUTE_FILE" "$LEASE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+rm -f -- "$LEASE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+assert_no_cue
+
+write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
+assert_cue 'HDMI-A-1|left'
+
+write_route false null DP-2 left "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$((FAKE_NOW - 45))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 45))"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+assert_no_cue
+
+write_raw_route '{'
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_raw_lease '{'
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$((FAKE_NOW - 3))" "$((FAKE_NOW - 1))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$((FAKE_NOW + 1))" "$((FAKE_NOW + 3))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 3))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 1))"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 DP-1; do
+  write_route true "$unsupported_output" null null "$FAKE_NOW"
+  write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+  run_reconcile_once
+  assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+  assert_no_cue
+
+  write_route true DVI-D-1 "$unsupported_output" left "$FAKE_NOW"
+  write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+  run_reconcile_once
+  assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+  assert_no_cue
+done
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+chmod 0755 -- "$ROUTE_DIR"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+chmod 0700 -- "$ROUTE_DIR"
+
+STAT_ROUTE_DIR_OWNER_MODE_OVERRIDE="999999 700"
+export STAT_ROUTE_DIR_OWNER_MODE_OVERRIDE
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+unset STAT_ROUTE_DIR_OWNER_MODE_OVERRIDE
+
+chmod 0644 -- "$ROUTE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+chmod 0600 -- "$ROUTE_FILE"
+
+STAT_ROUTE_FILE_OWNER_MODE_OVERRIDE="999999 600"
+export STAT_ROUTE_FILE_OWNER_MODE_OVERRIDE
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+unset STAT_ROUTE_FILE_OWNER_MODE_OVERRIDE
+
+chmod 0644 -- "$LEASE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+chmod 0600 -- "$LEASE_FILE"
+
+STAT_LEASE_FILE_OWNER_MODE_OVERRIDE="999999 600"
+export STAT_LEASE_FILE_OWNER_MODE_OVERRIDE
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+unset STAT_LEASE_FILE_OWNER_MODE_OVERRIDE
+
+rm -f -- "$LEASE_FILE"
+ln -s /dev/null "$LEASE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+rm -f -- "$LEASE_FILE"
+
+rm -f -- "$ROUTE_FILE"
+ln -s /dev/null "$ROUTE_FILE"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+rm -f -- "$ROUTE_FILE"
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+
+rm -rf -- "$ROUTE_DIR"
+ln -s "$TEST_RUNTIME_DIR" "$ROUTE_DIR"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+rm -f -- "$ROUTE_DIR"
+mkdir -p -- "$ROUTE_DIR"
+chmod 0700 -- "$ROUTE_DIR"
+
+: >"$MAKOCTL_LOG"
+: >"$MV_LOG"
+: >"$FAKE_ITERATION_COMPLETION_LOG"
+printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+  >"$MAKO_MODE_STATE"
+rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
 
 "$TEST_BIN/fake-mako" &
 FAKE_MAKO_PID=$!
-register_owned_child "$FAKE_MAKO_PID" ""
+register_owned_child "$FAKE_MAKO_PID" "" "$(process_executable "$FAKE_MAKO_PID")"
 wait_for_file "$FAKE_MAKO_READY_FILE"
 FAKE_MAKO_START_TIME=$(process_start_time "$FAKE_MAKO_PID") || fail 'fake Mako start identity is unavailable'
 update_owned_child_start_time "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME"
-assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" 'fake Mako startup'
-export FAKE_MAKO_PID FAKE_MAKO_START_TIME
+FAKE_MAKO_EXECUTABLE=$(process_executable "$FAKE_MAKO_PID") || fail 'fake Mako executable is unavailable'
+update_owned_child_start_time "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE"
+assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako startup'
+export FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 
 bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
 adapter_pid=$!
@@ -542,16 +801,24 @@ assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$FAKE_NOW"
+iteration_completions_after_write=$(iteration_completion_count)
+assert_no_new_mako_call_after_iterations 1 "$((iteration_completions_after_write + 2))"
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 wait_for_log_count 2
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 iteration_completions_after_write=$(iteration_completion_count)
 assert_no_new_mako_call_after_iterations 2 "$((iteration_completions_after_write + 2))"
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 wait_for_log_count 3
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
@@ -559,27 +826,22 @@ assert_cue 'HDMI-A-1|left'
 assert_atomic_cue_rename
 
 write_route false null DP-2 null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 wait_for_log_count 4
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
-assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
-assert_cue 'DP-2|none'
-
-rm -f -- "$ROUTE_FILE"
-wait_for_log_count 5
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
-expect_hidden_for_raw_route '{' 7
-expect_hidden_for_raw_route '{"version":2,"visible":true,"output":"DVI-D-1","updatedAt":1786930000}' 9
-expect_hidden_for_raw_route '{"version":1,"visible":true,"output":"DVI-D-1;touch","updatedAt":1786930000}' 11
-expect_hidden_for_raw_route '{"version":1,"visible":true,"output":"DVI-D-1","updatedAt":1786930001}' 13
-expect_hidden_for_raw_route '{"version":1,"visible":true,"output":"DVI-D-1","updatedAt":1786929954}' 15
-expect_hidden_for_raw_route '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"sideways","updatedAt":1786930000}' 17
-expect_hidden_for_raw_route '{"version":1,"visible":true,"output":null,"updatedAt":1786930000}' 19
+rm -f -- "$ROUTE_FILE"
+iteration_completions_after_write=$(iteration_completion_count)
+assert_no_new_mako_call_after_iterations 4 "$((iteration_completions_after_write + 2))"
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
-wait_for_log_count 20
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+wait_for_log_count 5
 assert_cue 'HDMI-A-1|left'
 assert_file_mode 0600 "$CUE_FILE"
 
@@ -587,6 +849,6 @@ cleanup_adapter
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
-assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" 'fake Mako survived adapter cleanup'
+assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako survived adapter cleanup'
 
 printf 'PASS: fail-closed Mako route adapter contract\n'
