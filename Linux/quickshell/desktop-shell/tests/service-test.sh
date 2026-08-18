@@ -175,8 +175,8 @@ grep -Fq 'systemctl --user is-enabled --quiet desktop-shell.service &&' "$CONFIG
   fail 'tidydots check does not require the service to be enabled'
 grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)\" = no" "$CONFIG" || \
   fail 'tidydots check does not require NeedDaemonReload=no'
-grep -Fq 'systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' "$CONFIG" || \
-  fail 'tidydots repair command is not enable-only'
+grep -Fq 'systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' "$CONFIG" || \
+  fail 'tidydots repair command does not stop before reloading and enabling'
 if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service|--now desktop-shell\.service' "$CONFIG"; then
   fail 'tidydots setup starts or restarts desktop-shell.service'
 fi
@@ -205,8 +205,8 @@ done
 if ((legacy_autostart_found)); then
   exit 1
 fi
-assert_binding 'SUPER + CTRL + W' 'systemctl --user restart desktop-shell.service' 'Reload top bar' \
-  'top bar reload binding does not restart desktop-shell.service'
+assert_binding 'SUPER + CTRL + W' 'desktop-shell-activate' 'Reload top bar' \
+  'top bar reload binding does not use desktop-shell-activate'
 assert_binding 'SUPER + SHIFT + SPACE' 'toggle-desktop-shell-bar' 'Toggle top bar' \
   'top bar toggle binding does not use toggle-desktop-shell-bar'
 grep -Fq 'toggle-desktop-shell-bar' "$VICINAE_TOGGLE" || fail 'Vicinae top bar action does not use toggle-desktop-shell-bar'

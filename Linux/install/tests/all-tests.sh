@@ -77,6 +77,7 @@ run bash Both/ShellPicker/tests/test-setup-shell-picker.sh
 run bash Linux/hypr/tests/monitor-policy-test.sh
 run bash Linux/hypr/tests/watch-rustdesk-submap-test.sh
 run bash Linux/quickshell/desktop-shell/tests/service-test.sh
+run bash Linux/quickshell/desktop-shell/tests/desktop-services-setup-test.sh
 run bash Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh
 run bash Linux/os/tests/power-profile-availability-test.sh
 run bash -n Linux/hypr/watch-rustdesk-submap.sh
