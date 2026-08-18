@@ -10,25 +10,36 @@ function promptLooksFingerprint(text) {
 }
 
 /**
- * Check whether an active PAM auth line enables pam_fprintd.
+ * Snapshot the stable authorization context for one native AuthFlow.
  *
- * Blank lines and comment-only lines are ignored. PAM modules in other
- * management groups do not count as fingerprint authentication configuration.
+ * The message is made suitable for the compact one-line context display. The
+ * action ID is kept verbatim so the UI can show the backend's exact identity
+ * without deriving it from mutable prompt text.
  *
- * @param {*} raw PAM configuration text.
- * @returns {boolean} Whether pam_fprintd is present in the auth stack.
+ * @param {*} message Authorization message at request start.
+ * @param {*} actionId Native AuthFlow action ID at request start.
+ * @returns {{message: string, actionId: string}} Stable request context.
  */
-function fingerprintConfiguredFromPamConfig(raw) {
-  return String(raw || "").split("\n").some(lineValue => {
-    const line = lineValue.replace(/#.*/, "").trim()
-    if (!line || !/^auth\s+/.test(line)) return false
+function snapshotAuthContext(message, actionId) {
+  const messageText = message === null || message === undefined ? "" : String(message)
+  const actionText = actionId === null || actionId === undefined ? "" : String(actionId)
+  return {
+    message: messageText.replace(/\s+/g, " ").trim(),
+    actionId: actionText,
+  }
+}
 
-    const fields = line.match(/\[[^\]]*\]|[^\s]+/g) || []
-    if (fields.length < 3) return false
-
-    const moduleName = fields[2].split("/").pop()
-    return moduleName === "pam_fprintd.so"
-  })
+/**
+ * Parse the standalone PAM probe's deliberately tiny output contract.
+ *
+ * @param {*} raw Probe stdout.
+ * @returns {boolean|null} Configuration state, or null for invalid output.
+ */
+function fingerprintConfiguredFromProbeOutput(raw) {
+  const output = String(raw === null || raw === undefined ? "" : raw)
+  if (output === "true" || output === "true\n") return true
+  if (output === "false" || output === "false\n") return false
+  return null
 }
 
 /**
@@ -81,7 +92,8 @@ function screenForMonitor(screens, focusedMonitorName) {
 if (typeof module !== "undefined") {
   module.exports = {
     promptLooksFingerprint,
-    fingerprintConfiguredFromPamConfig,
+    snapshotAuthContext,
+    fingerprintConfiguredFromProbeOutput,
     authorizationLabel,
     registrationState,
     screenForMonitor,

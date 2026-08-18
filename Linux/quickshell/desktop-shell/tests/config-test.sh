@@ -17,6 +17,7 @@ POLKIT="$SHELL_ROOT/plugins/polkit/PolkitAgent.qml"
 NOTIFICATIONS="$SHELL_ROOT/plugins/notifications/Service.qml"
 OSD="$SHELL_ROOT/plugins/osd/Osd.qml"
 CONFIG="$ROOT/tidydots.yaml"
+PAM_HELPER="$ROOT/Linux/os/helpers/desktop-shell-polkit-pam"
 BASH_PATH="$(type -P bash)"
 
 command -v node >/dev/null 2>&1 || {
@@ -26,13 +27,13 @@ command -v node >/dev/null 2>&1 || {
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
-  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$POLKIT" "$NOTIFICATIONS" "$OSD" "$CONFIG" <<'NODE'
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$POLKIT" "$NOTIFICATIONS" "$OSD" "$CONFIG" "$PAM_HELPER" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
   toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath, polkitPath, notificationsPath,
-  osdPath, tidydotsPath] = process.argv.slice(2)
+  osdPath, tidydotsPath, pamHelperPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
@@ -46,6 +47,7 @@ const polkit = fs.readFileSync(polkitPath, "utf8")
 const notifications = fs.readFileSync(notificationsPath, "utf8")
 const osd = fs.readFileSync(osdPath, "utf8")
 const tidydots = fs.readFileSync(tidydotsPath, "utf8")
+const pamHelper = fs.readFileSync(pamHelperPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -241,6 +243,13 @@ assert.match(notifications,
 assert.match(polkit,
   /property bool registrationEnabled: Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) === "1"/,
   "polkit registration defaults to disabled")
+assert.doesNotMatch(polkit, /FileView\s*\{/, "polkit PAM detection uses the bounded helper probe")
+assert.match(polkit, /desktop-shell-polkit-pam/, "polkit uses the repository PAM helper by default")
+assert.match(polkit, /DESKTOP_SHELL_POLKIT_PAM_HELPER/, "polkit exposes a test-only helper override")
+assert.ok(fs.existsSync(pamHelperPath), "repository PAM helper exists")
+fs.accessSync(pamHelperPath, fs.constants.X_OK)
+assert.match(pamHelper, /DESKTOP_SHELL_PAM_DIR/, "PAM helper has a fixture-root override")
+assert.match(pamHelper, /readonly MAX_DEPTH=16/, "PAM helper has a bounded recursion depth")
 for (const [field, expected] of [
   ["notificationsOwned", "notificationService ? notificationService.notificationsOwned : false"],
   ["notificationOwnershipError", 'notificationService ? notificationService.ownershipError : "notification service unavailable"'],
@@ -303,6 +312,10 @@ assert.ok(fprintdBlock.includes(`when: '${graphicalLinuxCondition}'`),
   "fprintd uses the graphical-Linux host condition")
 assert.match(fprintdBlock, /entries: \[\]/, "fprintd has no configuration entries")
 assert.doesNotMatch(fprintdBlock, /deps:/, "fprintd is not declared as a dependency array")
+const desktopShellBlock = tidydots.split(/^  - /m).find(block => block.includes("\n    name: desktop-shell\n"))
+assert.ok(desktopShellBlock, "tidydots declares desktop-shell")
+assert.match(desktopShellBlock, /name: desktop-shell-helpers/, "desktop-shell maps its helper directory")
+assert.match(desktopShellBlock, /backup: \.\/Linux\/os\/helpers/, "desktop-shell helper mapping uses repository helpers")
 const callStart = shell.indexOf("function callIfLoaded")
 const callEnd = shell.indexOf("// One Loader per", callStart)
 assert.notEqual(callStart, -1, "generic call dispatcher exists")

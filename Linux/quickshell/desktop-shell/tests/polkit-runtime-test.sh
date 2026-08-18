@@ -128,6 +128,7 @@ live_shell_marker="$HOME/.config/quickshell/desktop-shell"
 unit_properties='LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,ExecMainStartTimestampMonotonic,ActiveEnterTimestamp,ActiveEnterTimestampMonotonic,FragmentPath,Result,NeedDaemonReload'
 live_xdg_runtime_dir=${DESKTOP_SHELL_TEST_LIVE_XDG_RUNTIME_DIR:-}
 live_dbus_address=${DESKTOP_SHELL_TEST_LIVE_DBUS_SESSION_BUS_ADDRESS:-}
+pam_helper="$fixture/pam-helper"
 export unit_properties live_xdg_runtime_dir live_dbus_address
 
 # shellcheck disable=SC1091
@@ -302,6 +303,14 @@ assert_surface_suppression_source "$SHELL_ROOT/plugins/notifications/Service.qml
   'visible: !service.testSurfaceSuppressed && (service.cardsVisibleOn(modelData)'
 assert_surface_suppression_source "$SHELL_ROOT/plugins/polkit/PolkitAgent.qml" \
   'visible: !root.testSurfaceSuppressed && root.dialogVisible'
+grep -Fq 'DESKTOP_SHELL_POLKIT_PAM_HELPER' "$SHELL_ROOT/plugins/polkit/PolkitAgent.qml" || {
+  printf '%s\n' 'FAIL: polkit helper override is missing from the agent source' >&2
+  exit 1
+}
+grep -Fq 'fingerprintConfiguredFromProbeOutput' "$SHELL_ROOT/plugins/polkit/PolkitAgent.qml" || {
+  printf '%s\n' 'FAIL: polkit agent does not validate exact probe output' >&2
+  exit 1
+}
 assert_surface_suppression_source "$SHELL_ROOT/plugins/osd/Osd.qml" \
   'visible: !root.testSurfaceSuppressed && root.opened'
 
@@ -310,6 +319,8 @@ snapshot_live_state
 umask 022
 mkdir -p -- "$runtime_dir" "$home/.config" "$home/.cache" "$home/.local/share"
 chmod 755 -- "$runtime_dir" "$home"
+printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'echo false' >"$pam_helper"
+chmod 755 -- "$pam_helper"
 ln -s -- "$original_wayland_socket" "$runtime_dir/$fixture_wayland_display"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
@@ -318,6 +329,7 @@ start_shell() {
   DESKTOP_SHELL_TEST_NO_SURFACES=1 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0 \
+  DESKTOP_SHELL_POLKIT_PAM_HELPER="$pam_helper" \
   HOME="$home" \
   XDG_CONFIG_HOME="$home/.config" \
   XDG_CACHE_HOME="$home/.cache" \
@@ -332,6 +344,7 @@ start_shell_without_registration_env() {
   env -u DESKTOP_SHELL_POLKIT_REGISTER -u DESKTOP_SHELL_NOTIFICATIONS_REGISTER \
     DESKTOP_SHELL_PREVIEW=0 \
     DESKTOP_SHELL_TEST_NO_SURFACES=1 \
+    DESKTOP_SHELL_POLKIT_PAM_HELPER="$pam_helper" \
     HOME="$home" \
     XDG_CONFIG_HOME="$home/.config" \
     XDG_CACHE_HOME="$home/.cache" \
@@ -397,6 +410,27 @@ wait_for_health() {
   return 1
 }
 
+wait_for_environment() {
+  local expected=$1
+  local deadline=$((SECONDS + 15))
+  local environment
+
+  while ((SECONDS < deadline)); do
+    if kill -0 "$shell_pid" 2>/dev/null; then
+      environment=$(tr '\0' '\n' <"/proc/$shell_pid/environ" 2>/dev/null || true)
+      if grep -Fxq "$expected" <<<"$environment"; then
+        return 0
+      fi
+    else
+      printf 'FAIL: shell exited before receiving %s\n' "$expected" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  printf 'FAIL: shell did not receive %s within 15 seconds\n' "$expected" >&2
+  return 1
+}
+
 start_shell_without_registration_env
 wait_for_ipc pong desktop-shell ping
 
@@ -406,7 +440,7 @@ for forbidden_environment in DESKTOP_SHELL_POLKIT_REGISTER DESKTOP_SHELL_NOTIFIC
     exit 1
   fi
 done
-wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled"'
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == ""'
 cleanup_process "$shell_pid"
 shell_pid=''
 
@@ -415,11 +449,9 @@ start_shell
 for expected_environment in \
   'DESKTOP_SHELL_TEST_NO_SURFACES=1' \
   'DESKTOP_SHELL_POLKIT_REGISTER=0' \
-  'DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0'; do
-  tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fx "$expected_environment" >/dev/null || {
-    printf 'FAIL: shell did not receive %s\n' "$expected_environment" >&2
-    exit 1
-  }
+  'DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0' \
+  "DESKTOP_SHELL_POLKIT_PAM_HELPER=$pam_helper"; do
+  wait_for_environment "$expected_environment"
 done
 
 wait_for_ipc pong desktop-shell ping
@@ -430,12 +462,13 @@ jq -e 'has("desktop.polkit")' <<<"$plugins" >/dev/null || {
   exit 1
 }
 
-wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled"'
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == ""'
 health=$(read_health)
 jq -e '
-  .polkitRegistered == false
-  and .polkitError == "registration disabled"
-  and ((.polkitPamError | type) == "string")
+   .polkitRegistered == false
+   and .polkitError == "registration disabled"
+   and .polkitPamError == ""
+   and ((.polkitPamError | type) == "string")
   and ((.configValid | type) == "boolean")
   and ((.pluginErrors | type) == "array")
   and ((.activeBarId | type) == "string")
