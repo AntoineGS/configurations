@@ -17,6 +17,12 @@ Item {
   property bool polkitRegistered: false
   property string polkitError: ""
   property string pamError: ""
+  readonly property string pamProbeCommand: {
+    var override = String(Quickshell.env("DESKTOP_SHELL_POLKIT_PAM_HELPER") || "")
+    return /^\//.test(override)
+      ? override
+      : "desktop-shell-polkit-pam"
+  }
 
   property string fontFamily: Style.font.menuFamily
   property color accent: Color.polkit.accent
@@ -46,6 +52,7 @@ Item {
   property bool closing: false
   property bool submitted: false
   property string currentMessage: ""
+  property string currentActionId: ""
   property string currentPrompt: ""
   property string currentSupplementary: ""
   property bool responseRequired: false
@@ -53,6 +60,7 @@ Item {
   property bool failed: false
   property bool errorFlash: false
   property bool fingerprintConfigured: false
+  property bool pamProbeQueued: false
   property int shakeOffset: 0
 
   readonly property bool dialogVisible: !!root.polkitBackend && root.polkitBackend.isActive || root.closing
@@ -75,8 +83,28 @@ Item {
     return PolkitModel.authorizationLabel(message)
   }
 
-  function loadPamConfig(raw) {
-    root.fingerprintConfigured = PolkitModel.fingerprintConfiguredFromPamConfig(raw)
+  function refreshPamProbe() {
+    if (pamProbe.running) {
+      root.pamProbeQueued = true
+      return
+    }
+    root.pamProbeQueued = false
+    pamProbe.running = true
+    pamProbeTimeout.restart()
+  }
+
+  function applyPamProbe(exitCode, output, errorOutput) {
+    var result = PolkitModel.fingerprintConfiguredFromProbeOutput(output)
+    if (Number(exitCode) !== 0 || result === null) {
+      root.fingerprintConfigured = false
+      var detail = String(errorOutput || "").replace(/\s+/g, " ").trim()
+      if (detail.length > 160) detail = detail.slice(0, 160)
+      root.pamError = "fingerprint PAM probe failed"
+        + (detail.length > 0 ? ": " + detail : "")
+      return
+    }
+    root.pamError = ""
+    root.fingerprintConfigured = result
   }
 
   function loaderError() {
@@ -94,23 +122,29 @@ Item {
     root.polkitError = state.error
   }
 
+  // AuthFlow exposes actionId but not a requester PID or application identity;
+  // the dialog therefore shows only its native message and exact action ID.
   function clearPassword() {
     if (passwordInput) passwordInput.text = ""
   }
 
+  // Clearing the TextInput synchronously is the strongest available boundary;
+  // QML/JavaScript string copies cannot be guaranteed to be zeroized in memory.
   function finishRequest() {
     root.clearPassword()
+    root.resetSnapshot()
     root.closing = true
     closeTimer.restart()
   }
 
   function handleBackendInactive() {
     root.clearPassword()
-    if (!root.closing) root.resetSnapshot()
+    root.resetSnapshot()
   }
 
   function resetSnapshot() {
     root.currentMessage = ""
+    root.currentActionId = ""
     root.currentPrompt = ""
     root.currentSupplementary = ""
     root.responseRequired = false
@@ -124,7 +158,6 @@ Item {
     var currentFlow = root.flow
     if (!currentFlow) return
 
-    root.currentMessage = String(currentFlow.message || "Authentication is needed...")
     root.currentPrompt = String(currentFlow.inputPrompt || "")
     root.currentSupplementary = String(currentFlow.supplementaryMessage || "")
     root.responseRequired = !!currentFlow.isResponseRequired
@@ -135,10 +168,16 @@ Item {
   }
 
   function beginFlow() {
+    var currentFlow = root.flow
+    if (!currentFlow) return
     closeTimer.stop()
+    root.resetSnapshot()
     root.closing = false
     root.submitted = false
     root.clearPassword()
+    var context = PolkitModel.snapshotAuthContext(currentFlow.message, currentFlow.actionId)
+    root.currentMessage = context.message || "Authentication is needed..."
+    root.currentActionId = context.actionId
     root.syncFromFlow()
     Qt.callLater(root.refocus)
   }
@@ -203,20 +242,41 @@ Item {
     NumberAnimation { target: root; property: "shakeOffset"; to: 0; duration: 55; easing.type: Easing.OutQuad }
   }
 
-  FileView {
-    id: pamFile
-    path: "/etc/pam.d/polkit-1"
-    watchChanges: true
-    printErrors: false
-    onLoaded: {
-      root.pamError = ""
-      root.loadPamConfig(text())
+  Process {
+    id: pamProbe
+    command: [root.pamProbeCommand]
+    stdout: StdioCollector {
+      id: pamProbeStdout
+      waitForEnd: true
     }
-    onLoadFailed: function(error) {
-      root.pamError = "failed to read /etc/pam.d/polkit-1: " + String(error)
-      root.fingerprintConfigured = false
+    stderr: StdioCollector {
+      id: pamProbeStderr
+      waitForEnd: true
     }
-    onFileChanged: reload()
+    function onExited(exitCode) {
+      pamProbeTimeout.stop()
+      root.applyPamProbe(exitCode, pamProbeStdout.text || "", pamProbeStderr.text || "")
+      if (!root.pamProbeQueued) return
+      root.pamProbeQueued = false
+      root.refreshPamProbe()
+    }
+  }
+
+  Timer {
+    id: pamProbeTimeout
+    interval: 2000
+    repeat: false
+    onTriggered: {
+      if (pamProbe.running) pamProbe.signal(15)
+    }
+  }
+
+  Timer {
+    id: pamRefreshTimer
+    interval: 30000
+    repeat: true
+    running: true
+    onTriggered: root.refreshPamProbe()
   }
 
   Loader {
@@ -283,9 +343,13 @@ Item {
   }
 
   onRegistrationEnabledChanged: root.syncRegistrationState()
+  onPamProbeCommandChanged: root.refreshPamProbe()
   onActiveScreenChanged: if (root.dialogVisible) Qt.callLater(root.refocus)
 
-  Component.onCompleted: root.syncRegistrationState()
+  Component.onCompleted: {
+    root.syncRegistrationState()
+    root.refreshPamProbe()
+  }
 
   PanelWindow {
     id: panel
@@ -433,27 +497,49 @@ Item {
     }
 
     BorderSurface {
-      width: Math.min(justificationText.implicitWidth + Style.space(24), panel.width - Style.gapsOut * 2)
-      height: Style.space(28)
+      id: contextCard
+      width: Math.min(Style.space(420), panel.width - Style.gapsOut * 2)
+      height: Style.space(50)
       anchors.horizontalCenter: card.horizontalCenter
       anchors.bottom: card.top
       anchors.bottomMargin: Style.space(10)
       radius: root.cornerRadius
       color: root.background
       borderSpec: Border.surfaceSpec("polkit", "border", root.border, Math.max(1, Style.space(2)), "border-alpha")
+      visible: root.dialogVisible && (root.currentMessage !== "" || root.currentActionId !== "")
 
-      Text {
-        id: justificationText
+      Column {
         anchors.fill: parent
         anchors.leftMargin: Style.space(12)
         anchors.rightMargin: Style.space(12)
-        text: root.authorizationLabel(root.currentMessage)
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideMiddle
+        anchors.topMargin: Style.space(6)
+        anchors.bottomMargin: Style.space(6)
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          height: Style.space(18)
+          text: root.authorizationLabel(root.currentMessage)
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          elide: Text.ElideMiddle
+        }
+
+        Text {
+          id: actionIdText
+          width: parent.width
+          height: Style.space(18)
+          text: root.currentActionId
+          color: root.accent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          horizontalAlignment: Text.AlignHCenter
+          verticalAlignment: Text.AlignVCenter
+          elide: Text.ElideMiddle
+        }
       }
     }
   }

@@ -3,27 +3,27 @@ const model = require("../plugins/polkit/PolkitModel.js")
 
 assert.equal(model.promptLooksFingerprint("Place your finger on the reader"), true)
 assert.equal(model.promptLooksFingerprint("Password:"), false)
-assert.equal(model.fingerprintConfiguredFromPamConfig(`
-# auth sufficient pam_fprintd.so
-auth optional pam_exec.so /usr/bin/check-lid
-auth sufficient pam_fprintd.so
-auth required pam_unix.so
-`), true)
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so"), false)
-assert.equal(model.fingerprintConfiguredFromPamConfig("# auth required pam_fprintd.so"), false,
-  "comment-only PAM lines do not enable fingerprint authentication")
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so # pam_fprintd.so"), false,
-  "inline PAM comments do not enable fingerprint authentication")
-assert.equal(model.fingerprintConfiguredFromPamConfig("account required pam_fprintd.so"), false,
-  "non-auth PAM lines do not enable fingerprint authentication")
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_unix.so /usr/lib/security/pam_fprintd.so"), false,
-  "module arguments do not enable fingerprint authentication")
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_fprintd.so.extra"), false,
-  "longer module names do not match pam_fprintd")
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth required pam_fprintd.so"), true,
-  "ordinary auth lines match pam_fprintd")
-assert.equal(model.fingerprintConfiguredFromPamConfig("auth [success=1 default=ignore] /usr/lib/security/pam_fprintd.so"), true,
-  "bracketed control auth lines match the module basename")
+assert.deepEqual(model.snapshotAuthContext(
+  "Authentication is required\nMessage supplied by backend",
+  "org.example.desktop.modify"
+), {
+  message: "Authentication is required Message supplied by backend",
+  actionId: "org.example.desktop.modify"
+})
+assert.equal(model.snapshotAuthContext(
+  "spoof-like requester application text\nAction ID: org.attacker.fake",
+  "org.freedesktop.policykit.exec"
+).actionId, "org.freedesktop.policykit.exec",
+  "the action ID remains independent from message text")
+assert.equal(model.snapshotAuthContext(
+  "spoof-like requester application text\nAction ID: org.attacker.fake",
+  "org.freedesktop.policykit.exec"
+).message, "spoof-like requester application text Action ID: org.attacker.fake",
+  "message text is kept on one line and cannot replace the trusted action ID")
+assert.equal(model.fingerprintConfiguredFromProbeOutput("true\n"), true)
+assert.equal(model.fingerprintConfiguredFromProbeOutput("false\n"), false)
+assert.equal(model.fingerprintConfiguredFromProbeOutput("true false\n"), null)
+assert.equal(model.fingerprintConfiguredFromProbeOutput("true "), null)
 assert.equal(model.authorizationLabel("Authentication is required to run 'pacman' as the super user"), "Authorize running 'pacman'")
 assert.deepEqual(model.registrationState(false, false, ""), { registered: false, error: "registration disabled" })
 assert.deepEqual(model.registrationState(true, true, "ignored"), { registered: true, error: "" })

@@ -4,9 +4,14 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 ROLLBACK_HELPER="$ROOT/Linux/os/helpers/desktop-shell-rollback"
+SELECTED_PLUGINS="$SHELL_ROOT/SELECTED_PLUGINS"
 
 grep -Fxq 'commit=7be59e1f4b7451d352d4673c560168290792590f' "$SHELL_ROOT/SOURCE"
 grep -Fq 'Copyright (c) David Heinemeier Hansson' "$SHELL_ROOT/LICENSE.omarchy"
+grep -Fxq 'selected_polkit_paths=shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js' \
+  "$SHELL_ROOT/SOURCE"
+grep -Fxq 'desktop.polkit|omarchy.polkit|shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js' \
+  "$SELECTED_PLUGINS"
 
 for path in \
   shell.qml \
