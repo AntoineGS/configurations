@@ -246,7 +246,7 @@ function invalidLease(error) {
 
 function validRouteOutput(value) {
   return value === null || value === undefined ||
-    (typeof value === "string" && /^[A-Za-z0-9_.-]+$/.test(value))
+    value === "DVI-D-1" || value === "HDMI-A-1" || value === "DP-2"
 }
 
 function validRouteDirection(value) {

@@ -44,6 +44,7 @@ Item {
   property string routeMetadataError: "notification route metadata unavailable"
   property int routeMetadataGeneration: 0
   property int routeMetadataCheckGeneration: -1
+  property bool routeMetadataCheckScheduled: false
   property var route: ({
     valid: false,
     visible: false,
@@ -1132,6 +1133,7 @@ Item {
     onLoadFailed: service.invalidateRoute("notification route unavailable")
     onFileChanged: {
       service.invalidateRouteMetadata()
+      service.scheduleRouteMetadataCheck()
       reload()
     }
   }
@@ -1145,6 +1147,7 @@ Item {
     onLoadFailed: service.invalidateLease("notification route lease unavailable")
     onFileChanged: {
       service.invalidateRouteMetadata()
+      service.scheduleRouteMetadataCheck()
       reload()
     }
   }
@@ -1154,6 +1157,7 @@ Item {
     running: false
     command: ["bash", "-c",
       "set -eu\n" +
+      "export LC_ALL=C\n" +
       "uid=$(id -u)\n" +
       "check_dir() { [[ -d $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 700 && $type == 'directory' ]] || exit 1; }\n" +
       "check_file() { [[ -f $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 600 && $type == 'regular file' ]] || exit 1; }\n" +
@@ -1161,7 +1165,7 @@ Item {
       service.routeDir, service.routePath, service.leasePath]
     onExited: function(exitCode) {
       if (service.routeMetadataCheckGeneration !== service.routeMetadataGeneration) {
-        Qt.callLater(function() { service.checkRouteMetadata() })
+        service.scheduleRouteMetadataCheck()
         return
       }
       service.routeMetadataValid = Number(exitCode) === 0
@@ -1207,12 +1211,22 @@ Item {
   }
 
   function applyRoute(raw) {
-    service.routeRaw = String(raw || "")
+    var value = String(raw || "")
+    if (!value) {
+      service.invalidateRoute("notification route unavailable")
+      return
+    }
+    service.routeRaw = value
     service.refreshRoute()
   }
 
   function applyLease(raw) {
-    service.leaseRaw = String(raw || "")
+    var value = String(raw || "")
+    if (!value) {
+      service.invalidateLease("notification route lease unavailable")
+      return
+    }
+    service.leaseRaw = value
     service.refreshRoute()
   }
 
@@ -1223,6 +1237,15 @@ Item {
     routeMetadata.running = true
   }
 
+  function scheduleRouteMetadataCheck() {
+    if (service.routeMetadataCheckScheduled) return
+    service.routeMetadataCheckScheduled = true
+    Qt.callLater(function() {
+      service.routeMetadataCheckScheduled = false
+      service.checkRouteMetadata()
+    })
+  }
+
   function invalidateRouteMetadata(incrementGeneration) {
     if (incrementGeneration !== false) service.routeMetadataGeneration++
     service.routeMetadataValid = false
@@ -1231,6 +1254,16 @@ Item {
   }
 
   function refreshRoute() {
+    if (!service.routeRaw) {
+      service.routeValid = false
+      service.routeError = "notification route unavailable"
+      return
+    }
+    if (!service.leaseRaw) {
+      service.routeValid = false
+      service.routeError = "notification route lease unavailable"
+      return
+    }
     var next = NotificationLogic.normalizeRoute(service.routeRaw, Date.now())
     var nextLease = NotificationLogic.normalizeLease(service.leaseRaw, Date.now(), next.updatedAt)
     service.route = next
