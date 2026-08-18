@@ -91,3 +91,35 @@
   - `shellcheck Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
 - Concerns:
   - None.
+
+## Task 3 Third Fix Round
+
+- Changed files:
+  - `Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- What changed:
+  - Pending child registration in the Mako adapter harness now stores the originally observed PID, process start time, executable path, and expected parent PID.
+  - Pending cleanup now validates that stored parent and stored identity triple before signaling, instead of reconstructing cleanup identity from the live process.
+  - Adapter startup now follows the same pending-to-owned promotion path as the fake Mako children, including a regression that injects an identity lookup failure after pending registration to prove the adapter still gets cleaned up.
+- Tests:
+  - `bash Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `bash -n Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `shellcheck Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- Concerns:
+  - None.
+
+## Task 3 Third Fix Round Final
+
+- Changed files:
+  - `Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- What changed:
+  - Added a RED promotion regression proving a correct stored pending record is promoted even when the caller supplies a bogus start time and executable.
+  - Changed pending promotion to validate the live process against the stored pending PID/start-time/executable/parent record and register the owned child from those stored values.
+  - Kept pending cleanup validating the stored triple before TERM, adapter startup cleanup for failed pending promotion, fake-Mako pending cleanup, descendant cleanup identity revalidation, hidden cue-only route coverage, exact-now lease expiry staleness, metacharacter route output regression, and legacy null-direction cue coverage.
+- Tests:
+  - `bash Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `bash -n Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `shellcheck Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- Commit ID:
+  - `80dd978` `fix(mako): validate stored cleanup identity`
+- Concerns:
+  - None.
