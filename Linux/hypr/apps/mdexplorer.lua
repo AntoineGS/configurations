@@ -1,3 +1,9 @@
+hl.window_rule({
+  name = "mdexplorer-workspace",
+  match = { class = "^mdexplorer\\.exe$", title = ".+" },
+  workspace = "9",
+})
+
 -- Hide the empty VCL TApplication window while leaving MDExplorer's titled windows managed normally.
 hl.window_rule({
   name = "mdexplorer-application-window",
