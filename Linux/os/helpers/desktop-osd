@@ -372,8 +372,8 @@ media_operation() {
 
   if [[ $operation == media-play-pause ]]; then
     case "$status" in
-      Playing) icon=media-pause ;;
-      Paused) icon=media-play ;;
+      Playing) icon=media-play ;;
+      Paused) icon=media-pause ;;
       Stopped) icon=media-stop ;;
     esac
     message=$status
