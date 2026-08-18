@@ -19,9 +19,9 @@ Item {
   property string pamError: ""
   readonly property string pamProbeCommand: {
     var override = String(Quickshell.env("DESKTOP_SHELL_POLKIT_PAM_HELPER") || "")
-    return /^\//.test(override)
-      ? override
-      : "desktop-shell-polkit-pam"
+    if (/^\//.test(override)) return override
+    var home = String(Quickshell.env("HOME") || "")
+    return home + "/.local/share/helpers/desktop-shell-polkit-pam"
   }
 
   property string fontFamily: Style.font.menuFamily
@@ -61,6 +61,14 @@ Item {
   property bool errorFlash: false
   property bool fingerprintConfigured: false
   property bool pamProbeQueued: false
+  property int pamProbeAttempt: 0
+  property int pamProbeProcessAttempt: 0
+  property bool pamProbeAttemptActive: false
+  property bool pamProbeAttemptStarted: false
+  property bool pamProbeAttemptExited: false
+  property int pamProbeStartCheckAttempt: 0
+  property int pamProbeTimeoutAttempt: 0
+  property int pamProbeGraceAttempt: 0
   property int shakeOffset: 0
 
   readonly property bool dialogVisible: !!root.polkitBackend && root.polkitBackend.isActive || root.closing
@@ -84,23 +92,82 @@ Item {
   }
 
   function refreshPamProbe() {
-    if (pamProbe.running) {
+    if (pamProbe.running || root.pamProbeAttemptActive) {
       root.pamProbeQueued = true
       return
     }
     root.pamProbeQueued = false
+    root.pamProbeAttempt += 1
+    root.pamProbeProcessAttempt = root.pamProbeAttempt
+    root.pamProbeAttemptActive = true
+    root.pamProbeAttemptStarted = false
+    root.pamProbeAttemptExited = false
+    root.pamProbeStartCheckAttempt = 0
+    root.pamProbeTimeoutAttempt = 0
+    root.pamProbeGraceAttempt = 0
     pamProbe.running = true
+    if (!pamProbe.running) {
+      root.schedulePamProbeStartCheck(root.pamProbeAttempt)
+      return
+    }
+    if (!root.pamProbeAttemptActive) return
+    root.pamProbeTimeoutAttempt = root.pamProbeAttempt
     pamProbeTimeout.restart()
+  }
+
+  function boundedPamError(detail) {
+    var prefix = "fingerprint PAM probe failed"
+    var normalized = String(detail || "").replace(/\s+/g, " ").trim()
+    var maximumDetailLength = 256 - prefix.length - 2
+    if (normalized.length > maximumDetailLength) normalized = normalized.slice(0, maximumDetailLength)
+    return prefix + (normalized.length > 0 ? ": " + normalized : "")
+  }
+
+  function isCurrentPamProbeAttempt(attempt) {
+    return root.pamProbeAttemptActive
+      && Number(attempt) === root.pamProbeAttempt
+      && root.pamProbeProcessAttempt === root.pamProbeAttempt
+  }
+
+  function checkPamProbeStart(attempt) {
+    if (!root.isCurrentPamProbeAttempt(attempt) || pamProbe.running) return
+    if (root.pamProbeAttemptStarted || root.pamProbeAttemptExited) return
+    root.failPamProbeAttempt(attempt, "helper is missing or not executable")
+  }
+
+  function schedulePamProbeStartCheck(attempt) {
+    if (!root.isCurrentPamProbeAttempt(attempt)) return
+    root.pamProbeStartCheckAttempt = attempt
+    Qt.callLater(function() {
+      if (root.pamProbeStartCheckAttempt !== attempt) return
+      root.pamProbeStartCheckAttempt = 0
+      root.checkPamProbeStart(attempt)
+    })
+  }
+
+  function failPamProbeAttempt(attempt, detail) {
+    if (!root.isCurrentPamProbeAttempt(attempt)) return false
+    root.pamProbeAttemptExited = true
+    root.pamProbeAttemptActive = false
+    root.pamProbeStartCheckAttempt = 0
+    root.pamProbeTimeoutAttempt = 0
+    root.pamProbeGraceAttempt = 0
+    pamProbeTimeout.stop()
+    pamProbeGraceTimer.stop()
+    root.fingerprintConfigured = false
+    root.pamError = root.boundedPamError(detail)
+    if (root.pamProbeQueued) {
+      root.pamProbeQueued = false
+      Qt.callLater(root.refreshPamProbe)
+    }
+    return true
   }
 
   function applyPamProbe(exitCode, output, errorOutput) {
     var result = PolkitModel.fingerprintConfiguredFromProbeOutput(output)
     if (Number(exitCode) !== 0 || result === null) {
       root.fingerprintConfigured = false
-      var detail = String(errorOutput || "").replace(/\s+/g, " ").trim()
-      if (detail.length > 160) detail = detail.slice(0, 160)
-      root.pamError = "fingerprint PAM probe failed"
-        + (detail.length > 0 ? ": " + detail : "")
+      root.pamError = root.boundedPamError(errorOutput)
       return
     }
     root.pamError = ""
@@ -123,7 +190,7 @@ Item {
   }
 
   // AuthFlow exposes actionId but not a requester PID or application identity;
-  // the dialog therefore shows only its native message and exact action ID.
+  // the dialog therefore shows only its native message and trusted action ID.
   function clearPassword() {
     if (passwordInput) passwordInput.text = ""
   }
@@ -253,8 +320,29 @@ Item {
       id: pamProbeStderr
       waitForEnd: true
     }
-    function onExited(exitCode) {
+    onStarted: {
+      if (!root.pamProbeAttemptActive || root.pamProbeProcessAttempt !== root.pamProbeAttempt) return
+      root.pamProbeAttemptStarted = true
+    }
+
+    onRunningChanged: {
+      if (pamProbe.running) return
+      var attempt = root.pamProbeProcessAttempt
+      if (!root.isCurrentPamProbeAttempt(attempt)) return
+      if (root.pamProbeAttemptStarted || root.pamProbeAttemptExited) return
+      root.schedulePamProbeStartCheck(attempt)
+    }
+
+    onExited: function(exitCode) {
+      var attempt = root.pamProbeProcessAttempt
+      if (!root.isCurrentPamProbeAttempt(attempt)) return
+      root.pamProbeAttemptExited = true
+      root.pamProbeAttemptActive = false
+      root.pamProbeStartCheckAttempt = 0
+      root.pamProbeTimeoutAttempt = 0
+      root.pamProbeGraceAttempt = 0
       pamProbeTimeout.stop()
+      pamProbeGraceTimer.stop()
       root.applyPamProbe(exitCode, pamProbeStdout.text || "", pamProbeStderr.text || "")
       if (!root.pamProbeQueued) return
       root.pamProbeQueued = false
@@ -267,7 +355,26 @@ Item {
     interval: 2000
     repeat: false
     onTriggered: {
-      if (pamProbe.running) pamProbe.signal(15)
+      var attempt = root.pamProbeTimeoutAttempt
+      if (attempt !== root.pamProbeAttempt || !root.pamProbeAttemptActive) return
+      root.pamProbeTimeoutAttempt = 0
+      if (!pamProbe.running) return
+      pamProbe.signal(15)
+      if (!root.isCurrentPamProbeAttempt(attempt) || !pamProbe.running) return
+      root.pamProbeGraceAttempt = attempt
+      pamProbeGraceTimer.restart()
+    }
+  }
+
+  Timer {
+    id: pamProbeGraceTimer
+    interval: 500
+    repeat: false
+    onTriggered: {
+      var attempt = root.pamProbeGraceAttempt
+      if (attempt !== root.pamProbeAttempt || !root.pamProbeAttemptActive) return
+      root.pamProbeGraceAttempt = 0
+      if (pamProbe.running) pamProbe.signal(9)
     }
   }
 
@@ -277,6 +384,15 @@ Item {
     repeat: true
     running: true
     onTriggered: root.refreshPamProbe()
+  }
+
+  IpcHandler {
+    target: "desktop.polkit"
+
+    function refreshPamProbe(): string {
+      root.refreshPamProbe()
+      return "ok"
+    }
   }
 
   Loader {
@@ -498,8 +614,8 @@ Item {
 
     BorderSurface {
       id: contextCard
-      width: Math.min(Style.space(420), panel.width - Style.gapsOut * 2)
-      height: Style.space(50)
+      width: Math.min(Style.space(520), Math.max(Style.space(260), panel.width - Style.gapsOut * 2))
+      height: contextColumn.implicitHeight + Style.space(12)
       anchors.horizontalCenter: card.horizontalCenter
       anchors.bottom: card.top
       anchors.bottomMargin: Style.space(10)
@@ -509,6 +625,7 @@ Item {
       visible: root.dialogVisible && (root.currentMessage !== "" || root.currentActionId !== "")
 
       Column {
+        id: contextColumn
         anchors.fill: parent
         anchors.leftMargin: Style.space(12)
         anchors.rightMargin: Style.space(12)
@@ -518,27 +635,23 @@ Item {
 
         Text {
           width: parent.width
-          height: Style.space(18)
-          text: root.authorizationLabel(root.currentMessage)
+          text: "Request message: " + root.authorizationLabel(root.currentMessage)
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-          elide: Text.ElideMiddle
+          textFormat: Text.PlainText
+          wrapMode: Text.WrapAnywhere
         }
 
         Text {
           id: actionIdText
           width: parent.width
-          height: Style.space(18)
-          text: root.currentActionId
+          text: "Trusted action ID: " + root.currentActionId
           color: root.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-          elide: Text.ElideMiddle
+          textFormat: Text.PlainText
+          wrapMode: Text.WrapAnywhere
         }
       }
     }

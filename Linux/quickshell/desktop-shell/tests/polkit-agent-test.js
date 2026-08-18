@@ -68,8 +68,8 @@ assert.match(qml, /function resetSnapshot\(\)[\s\S]*?currentMessage\s*=\s*""[\s\
 assert.match(qml, /function finishRequest\(\)[\s\S]*?root\.resetSnapshot\(\)/,
   "completion clears request context before the closing animation")
 assert.match(qml, /function handleBackendInactive\(\)[\s\S]*?root\.resetSnapshot\(\)/)
-assert.match(qml, /text:\s*root\.authorizationLabel\(root\.currentMessage\)/)
-assert.match(qml, /Column\s*\{[\s\S]*?root\.authorizationLabel\(root\.currentMessage\)[\s\S]*?text:\s*root\.currentActionId/,
+assert.match(qml, /text:\s*"Request message: "\s*\+\s*root\.authorizationLabel\(root\.currentMessage\)/)
+assert.match(qml, /Column\s*\{[\s\S]*?root\.authorizationLabel\(root\.currentMessage\)[\s\S]*?root\.currentActionId/,
   "authorization context is rendered as two compact lines")
 assert.match(qml, /requester PID|requester application|does not expose/i,
   "requester identity residual is documented")
@@ -86,4 +86,39 @@ assert.match(qml, /interval:\s*30000/)
 assert.match(qml, /id:\s*pamProbeTimeout/)
 assert.match(qml, /pamProbeTimeout\.restart\(\)/)
 assert.match(qml, /pamProbe\.signal\(15\)/, "a stalled probe is terminated locally")
+assert.match(qml, /var home = String\(Quickshell\.env\("HOME"\) \|\| ""\)/,
+  "the installed helper path is rooted in HOME")
+assert.match(qml, /home \+ "\/\.local\/share\/helpers\/desktop-shell-polkit-pam"/,
+  "the default PAM helper uses its absolute installed path")
+assert.match(qml, /property int pamProbeAttempt/)
+assert.match(qml, /property bool pamProbeAttemptStarted/)
+assert.match(qml, /property bool pamProbeAttemptExited/)
+assert.match(qml, /onStarted:/, "probe startup is part of the attempt lifecycle")
+assert.match(qml, /onRunningChanged:/, "probe startup failures observe runningChanged")
+assert.match(qml, /onExited:\s*function\(exitCode\)/, "probe completion is part of the attempt lifecycle")
+assert.match(qml, /pamProbeGraceTimer/)
+assert.match(qml, /pamProbe\.signal\(9\)/, "probe grace expiry escalates to SIGKILL")
+const timeoutStart = qml.indexOf("id: pamProbeTimeout")
+const graceStart = qml.indexOf("id: pamProbeGraceTimer")
+assert.ok(timeoutStart >= 0 && graceStart > timeoutStart, "probe timeout and grace timers are ordered")
+const timeoutBlock = qml.slice(timeoutStart, graceStart)
+const graceBlock = qml.slice(graceStart)
+assert.match(timeoutBlock, /var attempt = root\.pamProbeTimeoutAttempt/)
+assert.match(timeoutBlock, /attempt !== root\.pamProbeAttempt[\s\S]*?pamProbeAttemptActive/,
+  "probe timeout callbacks are tied to the exact attempt")
+assert.match(graceBlock, /var attempt = root\.pamProbeGraceAttempt/)
+assert.match(graceBlock, /attempt !== root\.pamProbeAttempt[\s\S]*?pamProbeAttemptActive/,
+  "probe grace callbacks are tied to the exact attempt")
+assert.match(qml, /fingerprintConfigured\s*=\s*false[\s\S]*?pamError\s*=/,
+  "probe start failures clear stale fingerprint state and report a bounded error")
+const contextStart = qml.indexOf("id: contextCard")
+assert.notEqual(contextStart, -1, "authorization context panel exists")
+const contextBlock = qml.slice(contextStart)
+assert.match(contextBlock, /text:\s*"Request message: "\s*\+\s*root\.authorizationLabel\(root\.currentMessage\)/)
+assert.match(contextBlock, /text:\s*"Trusted action ID: "\s*\+\s*root\.currentActionId/)
+assert.match(contextBlock, /wrapMode:\s*Text\.WrapAnywhere/,
+  "long trusted IDs wrap instead of disappearing")
+assert.match(contextBlock, /height:\s*contextColumn\.implicitHeight/,
+  "context panel height follows wrapped content")
+assert.doesNotMatch(contextBlock, /elide:/, "trusted context never elides an action ID")
 assert.doesNotMatch(qml, /requesterPid|requesterApplication|applicationPid|processId/)

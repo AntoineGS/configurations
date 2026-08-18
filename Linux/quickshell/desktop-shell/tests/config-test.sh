@@ -250,6 +250,9 @@ assert.ok(fs.existsSync(pamHelperPath), "repository PAM helper exists")
 fs.accessSync(pamHelperPath, fs.constants.X_OK)
 assert.match(pamHelper, /DESKTOP_SHELL_PAM_DIR/, "PAM helper has a fixture-root override")
 assert.match(pamHelper, /readonly MAX_DEPTH=16/, "PAM helper has a bounded recursion depth")
+assert.match(pamHelper, /readonly MAX_UNIQUE_FILES=64/, "PAM helper bounds unique files")
+assert.match(pamHelper, /readonly MAX_TOTAL_BYTES=4194304/, "PAM helper bounds aggregate bytes")
+assert.match(pamHelper, /readonly MAX_TOTAL_LINES=16384/, "PAM helper bounds aggregate lines")
 for (const [field, expected] of [
   ["notificationsOwned", "notificationService ? notificationService.notificationsOwned : false"],
   ["notificationOwnershipError", 'notificationService ? notificationService.ownershipError : "notification service unavailable"'],
@@ -297,11 +300,14 @@ assert.match(shell, /readonly property var polkitService:\s*shell\.serviceFor\("
 for (const [field, expected] of [
   ["polkitRegistered", "polkitService ? polkitService.polkitRegistered : false"],
   ["polkitError", 'polkitService ? polkitService.polkitError : "polkit service unavailable"'],
-  ["polkitPamError", 'polkitService ? polkitService.pamError : "polkit service unavailable"']
+  ["polkitPamError", 'polkitService ? polkitService.pamError : "polkit service unavailable"'],
+  ["polkitFingerprintConfigured", "polkitService ? polkitService.fingerprintConfigured : false"]
 ]) {
   assert.ok(shell.includes(`${field}: ${expected}`),
     `healthState exposes ${field} with an unavailable fallback`)
 }
+assert.match(polkit, /target:\s*"desktop\.polkit"[\s\S]*refreshPamProbe/,
+  "polkit exposes a bounded local probe refresh hook")
 const graphicalLinuxCondition =
   "{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}"
 const fprintdBlock = tidydots.split(/^  - /m).find(block => block.includes("\n    name: fprintd\n"))
