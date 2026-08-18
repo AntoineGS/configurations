@@ -1436,4 +1436,23 @@ assert_no_cue
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako survived adapter cleanup'
 
+iteration_completions_before_sigkill=$(iteration_completion_count)
+start_adapter || fail 'adapter restart identity tracking failed'
+wait_for_iteration_completions "$((iteration_completions_before_sigkill + 1))"
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
+assert_cue 'HDMI-A-1|left'
+assert_process_identity "$adapter_pid" "$ADAPTER_START_TIME" "$ADAPTER_EXECUTABLE" 'adapter before SIGKILL'
+kill -KILL "$adapter_pid"
+wait "$adapter_pid" 2>/dev/null || true
+forget_owned_child "$adapter_pid"
+adapter_pid=""
+ADAPTER_START_TIME=""
+ADAPTER_EXECUTABLE=""
+[[ -f $LEASE_FILE && ! -L $LEASE_FILE ]] || fail 'SIGKILL unexpectedly removed the notification lease'
+
+FAKE_NOW=$((FAKE_NOW + 3))
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
 printf 'PASS: fail-closed Mako route adapter contract\n'
