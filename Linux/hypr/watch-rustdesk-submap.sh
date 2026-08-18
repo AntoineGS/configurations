@@ -41,6 +41,43 @@ rightmost_monitor_from_json() {
   ' <<<"$monitors_json"
 }
 
+is_rustdesk_connection_manager_window() {
+  local window_class=$1
+  local window_title=$2
+  local peer_title
+
+  [[ ${window_class,,} == *rustdesk* && $window_title == *" - RustDesk" ]] || return 1
+  peer_title=${window_title%" - RustDesk"}
+  [[ -n $peer_title && $peer_title != *" - "* ]]
+}
+
+hide_rustdesk_connection_manager() {
+  local window_addr=$1
+
+  if ! hyprctl eval \
+    "hl.dispatch(hl.dsp.window.move({workspace=\"special:rustdesk-cm\", follow=false, window=\"address:0x${window_addr}\"}))"; then
+    printf 'failed to hide RustDesk connection manager window: %s\n' "$window_addr" >&2
+    return 1
+  fi
+}
+
+hide_rustdesk_connection_managers() {
+  local clients_json=$1
+  local window_addr window_class window_title workspace_name
+
+  while IFS=$'\t' read -r window_addr window_class window_title workspace_name; do
+    if is_rustdesk_connection_manager_window "$window_class" "$window_title" &&
+      [[ $workspace_name != special:rustdesk-cm ]]; then
+      hide_rustdesk_connection_manager "${window_addr#0x}" || return 1
+    fi
+  done < <(jq -r '
+    .[]
+    | select((.mapped // false) == true)
+    | [(.address // ""), (.class // ""), (.title // ""), (.workspace.name // "")]
+    | @tsv
+  ' <<<"$clients_json")
+}
+
 notification_route_state() {
   local monitors_json=$1
   local clients_json=$2
@@ -225,6 +262,7 @@ reconcile_notification_routing() {
     apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
     return 1
   fi
+  hide_rustdesk_connection_managers "$clients_json" || true
   if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
     apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
     return 1
@@ -252,11 +290,19 @@ handle_hyprland_event() {
   local evline=$1
   local clean_state_name=$2
   local -n clean_state=$clean_state_name
-  local window_addr
+  local window_addr window_class window_event window_title
   local count
   local monitors_json
   local rightmost_monitor
   local target_ws
+
+  if [[ $evline == "openwindow>>"* ]]; then
+    window_event=${evline#openwindow>>}
+    IFS=, read -r window_addr _ window_class window_title <<<"$window_event"
+    if is_rustdesk_connection_manager_window "$window_class" "$window_title"; then
+      hide_rustdesk_connection_manager "$window_addr" || true
+    fi
+  fi
 
   # Move 2nd+ RustDesk Remote Desktop windows to the rightmost monitor.
   if printf '%s\n' "$evline" | grep -qi "^openwindow>>" && is_rustdesk_remote "$evline"; then
