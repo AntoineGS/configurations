@@ -237,8 +237,8 @@ function invalidRoute(error) {
 function invalidLease(error) {
   return {
     valid: false,
-    refreshedAt: null,
-    expiresAt: null,
+    refreshedAtMs: null,
+    expiresAtMs: null,
     routeUpdatedAt: null,
     error: String(error || "invalid lease")
   }
@@ -311,24 +311,25 @@ function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     return invalidLease("lease must be an object")
-  if (parsed.version !== 1) return invalidLease("unsupported lease version")
+  if (parsed.version !== 2) return invalidLease("unsupported lease version")
   if (typeof nowMs !== "number" || !isFinite(nowMs)) return invalidLease("current time is invalid")
 
-  var refreshedAt = parsed.refreshedAt
-  var expiresAt = parsed.expiresAt
+  var refreshedAtMs = parsed.refreshedAtMs
+  var expiresAtMs = parsed.expiresAtMs
   var routeUpdatedAt = parsed.routeUpdatedAt
-  if (typeof refreshedAt !== "number" || !isFinite(refreshedAt) || Math.floor(refreshedAt) !== refreshedAt || refreshedAt < 0)
-    return invalidLease("lease refreshedAt is invalid")
-  if (typeof expiresAt !== "number" || !isFinite(expiresAt) || Math.floor(expiresAt) !== expiresAt || expiresAt < 0)
-    return invalidLease("lease expiresAt is invalid")
+  if (typeof refreshedAtMs !== "number" || !isFinite(refreshedAtMs) ||
+      Math.floor(refreshedAtMs) !== refreshedAtMs || refreshedAtMs < 0)
+    return invalidLease("lease refreshedAtMs is invalid")
+  if (typeof expiresAtMs !== "number" || !isFinite(expiresAtMs) ||
+      Math.floor(expiresAtMs) !== expiresAtMs || expiresAtMs < 0)
+    return invalidLease("lease expiresAtMs is invalid")
   if (typeof routeUpdatedAt !== "number" || !isFinite(routeUpdatedAt) || Math.floor(routeUpdatedAt) !== routeUpdatedAt || routeUpdatedAt < 0)
     return invalidLease("lease routeUpdatedAt is invalid")
 
-  var current = Math.floor(nowMs / 1000)
-  if (refreshedAt > current) return invalidLease("lease refreshedAt is from the future")
-  if (expiresAt <= current) return invalidLease("lease is stale")
-  if (expiresAt > current + 1) return invalidLease("lease expires too far in the future")
-  if (expiresAt - refreshedAt > 1) return invalidLease("lease expires too long after refresh")
+  if (refreshedAtMs > nowMs) return invalidLease("lease refreshedAtMs is from the future")
+  if (expiresAtMs <= nowMs) return invalidLease("lease is stale")
+  if (expiresAtMs < refreshedAtMs) return invalidLease("lease lifetime is invalid")
+  if (expiresAtMs - refreshedAtMs > 1500) return invalidLease("lease lifetime is too long")
 
   if (typeof expectedRouteUpdatedAt !== "number" || !isFinite(expectedRouteUpdatedAt) ||
       Math.floor(expectedRouteUpdatedAt) !== expectedRouteUpdatedAt || expectedRouteUpdatedAt < 0)
@@ -337,8 +338,8 @@ function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
 
   return {
     valid: true,
-    refreshedAt: refreshedAt,
-    expiresAt: expiresAt,
+    refreshedAtMs: refreshedAtMs,
+    expiresAtMs: expiresAtMs,
     routeUpdatedAt: routeUpdatedAt,
     error: ""
   }

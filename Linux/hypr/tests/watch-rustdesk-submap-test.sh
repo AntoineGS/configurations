@@ -76,9 +76,14 @@ route_updated_at() {
 }
 
 fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
 
 epoch_seconds() {
   printf '%s\n' "$fake_epoch_seconds"
+}
+
+epoch_milliseconds() {
+  printf '%s\n' "$fake_epoch_milliseconds"
 }
 
 assert_route_contract() {
@@ -169,8 +174,12 @@ export PATH="$TEST_BIN:/usr/bin:/bin"
 source "$WATCHER"
 assert_mako_sentinel_empty
 fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
 epoch_seconds() {
   printf '%s\n' "$fake_epoch_seconds"
+}
+epoch_milliseconds() {
+  printf '%s\n' "$fake_epoch_milliseconds"
 }
 NOTIFICATION_RECONCILE_INTERVAL=30
 
@@ -385,21 +394,23 @@ reset_route_state
 write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left"}'
 assert_route_contract
-assert_lease_payload '{"version":1,"refreshedAt":1786930000,"expiresAt":1786930001,"routeUpdatedAt":1786930000}'
+assert_lease_payload '{"version":2,"refreshedAtMs":1786930000000,"expiresAtMs":1786930001500,"routeUpdatedAt":1786930000}'
 assert_lease_contract
 
 # An unchanged route refreshes only the lease and leaves the route file in place.
 first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
 first_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
 fake_epoch_seconds=1786930001
+fake_epoch_milliseconds=1786930001000
 write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
 second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
 second_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
 assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
 [[ $first_lease_inode != "$second_lease_inode" ]] || fail 'unchanged route did not refresh the lease'
-assert_lease_payload '{"version":1,"refreshedAt":1786930001,"expiresAt":1786930002,"routeUpdatedAt":1786930000}'
+assert_lease_payload '{"version":2,"refreshedAtMs":1786930001000,"expiresAtMs":1786930002500,"routeUpdatedAt":1786930000}'
 assert_lease_contract
 fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
 
 # An unchanged route is a no-op between reconciliation intervals.
 first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
@@ -850,7 +861,7 @@ set -e
 assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
   'terminated event stream uses the bounded reconnect delay'
 
-# Configured reconciliation intervals cannot exceed the route freshness budget.
+# Configured reconciliation intervals cannot exceed the lease renewal budget.
 NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 : >"$STREAM_LOG"
 (
@@ -865,8 +876,8 @@ NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
   NOTIFICATION_RECONCILE_INTERVAL=120
   consume_hyprland_event_stream bounded_clean_state </dev/null
 )
-assert_equal $'reconcile\nread-timeout:30' "$(<"$STREAM_LOG")" \
-  'long reconciliation interval is bounded to 30 seconds'
+assert_equal $'reconcile\nread-timeout:1' "$(<"$STREAM_LOG")" \
+  'long reconciliation interval is bounded to one second'
 
 # An off-cadence event write schedules the next refresh from its successful write.
 reset_route_state
@@ -909,9 +920,9 @@ reset_route_state
   event_clean_state=false
   consume_hyprland_event_stream event_clean_state </dev/null
 )
-assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:31:31' \
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:2:1' \
   "$(<"$STREAM_LOG")" \
-  'off-cadence event write receives a refresh at age 30 seconds'
+  'off-cadence event write receives a one-second lease refresh'
 
 # Same-state routing events must not postpone an overdue route rewrite.
 reset_route_state
@@ -951,9 +962,9 @@ reset_route_state
   busy_same_state=false
   consume_hyprland_event_stream busy_same_state </dev/null
 )
-assert_equal $'reconcile:1:0:0\nreconcile:2:10:0\nreconcile:3:30:30' \
+assert_equal $'reconcile:1:0:0\nreconcile:2:10:0\nreconcile:3:10:0\nreconcile:4:11:0' \
   "$(<"$STREAM_LOG")" \
-  'same-state routing events preserve the overdue rewrite deadline'
+  'same-state routing events cannot postpone the one-second lease refresh'
 
 # A deadline-driven interval-29 no-op must retry at the actual route-write age 30.
 reset_route_state
@@ -1055,9 +1066,9 @@ set +e
 failed_retry_status=$?
 set -e
 ((failed_retry_status == 0)) || fail 'overdue reconciliation failure retried without advancing the read/time'
-assert_equal $'reconcile:1:0:0\nread-timeout:30:0\nreconcile:2:30:0:failed\nread-timeout:1:30\nreconcile:3:31:0:failed' \
+assert_equal $'reconcile:1:0:0\nread-timeout:1:0\nreconcile:2:1:0:failed\nread-timeout:1:1\nreconcile:3:2:0:failed' \
   "$(<"$STREAM_LOG")" \
-  'overdue reconciliation failure uses bounded retries'
+  'failed lease renewal uses bounded one-second retries'
 
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"

@@ -303,11 +303,28 @@ write_lease() {
 
   temporary_file=$(mktemp "$ROUTE_DIR/.test-notification-route-lease.XXXXXX")
   jq -cn \
-    --argjson refreshed_at "$refreshed_at" \
-    --argjson expires_at "$expires_at" \
+    --argjson refreshed_at_ms "$((refreshed_at * 1000))" \
+    --argjson expires_at_ms "$((expires_at * 1000))" \
     --argjson route_updated_at "$route_updated_at" \
-    '{version: 1, refreshedAt: $refreshed_at,
-      expiresAt: $expires_at, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
+    '{version: 2, refreshedAtMs: $refreshed_at_ms,
+      expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
+  chmod 0600 -- "$temporary_file"
+  mv -f -- "$temporary_file" "$LEASE_FILE"
+}
+
+write_real_lease() {
+  local route_updated_at=$1
+  local refreshed_at_ms
+  local temporary_file
+
+  refreshed_at_ms=$(/usr/bin/date +%s%3N)
+  temporary_file=$(mktemp "$ROUTE_DIR/.test-notification-route-lease.XXXXXX")
+  jq -cn \
+    --argjson refreshed_at_ms "$refreshed_at_ms" \
+    --argjson expires_at_ms "$((refreshed_at_ms + 1500))" \
+    --argjson route_updated_at "$route_updated_at" \
+    '{version: 2, refreshedAtMs: $refreshed_at_ms,
+      expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
   chmod 0600 -- "$temporary_file"
   mv -f -- "$temporary_file" "$LEASE_FILE"
 }
@@ -671,6 +688,10 @@ cleanup_adapter() {
 }
 
 cleanup() {
+  if [[ -n ${REAL_LEASE_PUBLISHER_PID:-} ]]; then
+    : >"$REAL_LEASE_PUBLISHER_STOP"
+    wait "$REAL_LEASE_PUBLISHER_PID" 2>/dev/null || true
+  fi
   cleanup_adapter
   cleanup_pending_owned_children
   cleanup_owned_children
@@ -1029,6 +1050,8 @@ PENDING_OWNED_CHILDREN=()
 adapter_pid=""
 ADAPTER_START_TIME=""
 ADAPTER_EXECUTABLE=""
+REAL_LEASE_PUBLISHER_PID=""
+REAL_LEASE_PUBLISHER_STOP=""
 
 mkdir -p -- "$TEST_BIN" "$ROUTE_DIR"
 chmod 0700 -- "$ROUTE_DIR"
@@ -1108,8 +1131,19 @@ cat >"$TEST_BIN/date" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-[[ ${1:-} == +%s ]] || exit 125
-printf '%s\n' "${FAKE_NOW:?}"
+case ${1:-} in
+  +%s|+%s%3N)
+    if [[ ${REAL_CLOCK_DATE:-0} == 1 ]]; then
+      exec /usr/bin/date "$1"
+    fi
+    if [[ $1 == +%s ]]; then
+      printf '%s\n' "${FAKE_NOW:?}"
+    else
+      printf '%s000\n' "${FAKE_NOW:?}"
+    fi
+    ;;
+  *) exit 125 ;;
+esac
 EOF
 
 cat >"$TEST_BIN/stat" <<'EOF'
@@ -1492,5 +1526,59 @@ FAKE_NOW=$((FAKE_NOW + 3))
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
+
+# A real-clock publisher must keep Mako visible across multiple renewals, then
+# natural publisher stop must fail closed without cleanup or SIGKILL.
+REAL_CLOCK_DATE=1
+export REAL_CLOCK_DATE
+real_route_updated_at=$(/usr/bin/date +%s)
+write_route true DVI-D-1 null null "$real_route_updated_at"
+write_real_lease "$real_route_updated_at"
+: >"$MAKOCTL_LOG"
+: >"$FAKE_ITERATION_COMPLETION_LOG"
+start_adapter || fail 'real-clock adapter startup identity tracking failed'
+wait_for_log_count 2
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+
+REAL_LEASE_PUBLISHER_STOP="$TEST_RUNTIME_DIR/real-lease-publisher.stop"
+REAL_LEASE_PUBLISHER_COUNT="$TEST_RUNTIME_DIR/real-lease-publisher.count"
+rm -f -- "$REAL_LEASE_PUBLISHER_STOP" "$REAL_LEASE_PUBLISHER_COUNT"
+(
+  real_renewals=0
+  while [[ ! -e $REAL_LEASE_PUBLISHER_STOP ]]; do
+    write_real_lease "$real_route_updated_at"
+    real_renewals=$((real_renewals + 1))
+    printf '%s\n' "$real_renewals" >"$REAL_LEASE_PUBLISHER_COUNT"
+    /usr/bin/sleep 0.75
+  done
+) &
+REAL_LEASE_PUBLISHER_PID=$!
+
+for expected_renewals in 1 2 3 4; do
+  renewal_deadline=$((SECONDS + 10))
+  while ((SECONDS < renewal_deadline)); do
+    [[ -f $REAL_LEASE_PUBLISHER_COUNT ]] &&
+      [[ $(<"$REAL_LEASE_PUBLISHER_COUNT") -ge $expected_renewals ]] && break
+    assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+    /usr/bin/sleep 0.05
+  done
+  [[ -f $REAL_LEASE_PUBLISHER_COUNT ]] &&
+    [[ $(<"$REAL_LEASE_PUBLISHER_COUNT") -ge $expected_renewals ]] ||
+    fail "real-clock Mako publisher did not complete renewal $expected_renewals"
+  assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+done
+
+: >"$REAL_LEASE_PUBLISHER_STOP"
+wait "$REAL_LEASE_PUBLISHER_PID" 2>/dev/null || true
+REAL_LEASE_PUBLISHER_PID=""
+lease_stop_started=$SECONDS
+while ((SECONDS < lease_stop_started + 3)); do
+  [[ $(<"$MAKO_MODE_STATE") == 'unrelated-mode rustdesk-route-hidden' ]] && break
+  /usr/bin/sleep 0.05
+done
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+cleanup_adapter
+unset REAL_CLOCK_DATE
 
 printf 'PASS: fail-closed Mako route adapter contract\n'

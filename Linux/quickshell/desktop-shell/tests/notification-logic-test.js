@@ -15,54 +15,53 @@ assert.deepEqual(logic.normalizeRoute(fresh, 1786930040000), {
   cueOutput: "HDMI-A-1", direction: "left", updatedAt: 1786930000, error: "",
 })
 const freshLease = JSON.stringify({
-  version: 1,
-  refreshedAt: 1786930000,
-  expiresAt: 1786930001,
+  version: 2,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930001500,
   routeUpdatedAt: 1786930000,
 })
 assert.deepEqual(logic.normalizeLease(freshLease, 1786930000000, 1786930000), {
   valid: true,
-  refreshedAt: 1786930000,
-  expiresAt: 1786930001,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930001500,
   routeUpdatedAt: 1786930000,
   error: "",
 })
-assert.deepEqual(logic.normalizeLease(freshLease, 1786930000500, 1786930000), {
+assert.deepEqual(logic.normalizeLease(freshLease, 1786930001000, 1786930000), {
   valid: true,
-  refreshedAt: 1786930000,
-  expiresAt: 1786930001,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930001500,
   routeUpdatedAt: 1786930000,
   error: "",
 })
 assert.equal(logic.normalizeLease("", 1786930001000, 1786930000).valid, false)
-assert.match(logic.normalizeLease(freshLease, 1786930001000, 1786930000).error, /stale/)
-assert.match(logic.normalizeLease(freshLease, 1786930002000, 1786930000).error, /stale/)
-assert.match(logic.normalizeLease(freshLease, 1786930000500, 1786930001).error, /route timestamp/)
-assert.match(logic.normalizeLease(freshLease, 1786930000500, "1786930000").error, /expected route timestamp/)
+assert.match(logic.normalizeLease(freshLease, 1786930001500, 1786930000).error, /stale/)
+assert.match(logic.normalizeLease(freshLease, 1786930001000, 1786930001).error, /route timestamp/)
+assert.match(logic.normalizeLease(freshLease, 1786930001000, "1786930000").error, /expected route timestamp/)
 assert.match(logic.normalizeLease(JSON.stringify({
-  version: 1,
-  refreshedAt: 0,
-  expiresAt: 1,
+  version: 2,
+  refreshedAtMs: 0,
+  expiresAtMs: 1500,
   routeUpdatedAt: 0,
 }), 0, null).error, /expected route timestamp/)
 for (const raw of [
   "{",
-  JSON.stringify({ version: 2, refreshedAt: 1786930000, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: 1786930002, expiresAt: 1786930003, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930004, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: 1786930000.5, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: -1, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930002, routeUpdatedAt: "1786930000" }),
+  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930001, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930003000, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930001501, expiresAtMs: 1786930003001, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000.5, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: -1, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930001500.5, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930001500, routeUpdatedAt: "1786930000" }),
 ]) {
   const result = logic.normalizeLease(raw, 1786930001000, 1786930000)
   assert.equal(result.valid, false)
   assert.notEqual(result.error, "")
 }
 assert.equal(logic.normalizeLease(JSON.stringify({
-  version: 1,
-  refreshedAt: 1786930000,
-  expiresAt: 1786930002,
+  version: 2,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930001500,
   routeUpdatedAt: 1786930001,
 }), 1786930001000, 1786930000).valid, false)
 for (const raw of ["", "{", "{}", '{"version":2}',

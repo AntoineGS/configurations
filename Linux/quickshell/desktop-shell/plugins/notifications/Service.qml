@@ -1289,8 +1289,8 @@ Item {
     service.routeValid = next.valid === true && service.leaseValid && service.routeMetadataValid
     service.routeError = next.error || service.leaseError || service.routeMetadataError || ""
     if (nextLease.valid === true) {
-      var expiresAt = Number(nextLease.expiresAt)
-      var remaining = expiresAt * 1000 - Date.now()
+      var expiresAtMs = Number(nextLease.expiresAtMs)
+      var remaining = expiresAtMs - Date.now()
       routeLeaseExpiryTimer.interval = Math.max(1, Math.ceil(remaining))
       routeLeaseExpiryTimer.restart()
     } else {

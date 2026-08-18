@@ -142,7 +142,10 @@ shell_generation=0
 shell_log=''
 runtime_shell_root="$SHELL_ROOT"
 route_lease_enabled=0
-route_pair_keepalive=false
+lease_publisher_pid=''
+lease_publisher_stop=''
+lease_publisher_ready=''
+lease_publisher_count=''
 
 cleanup_process() {
   local pid=${1-}
@@ -164,6 +167,7 @@ cleanup() {
   cleanup_process "$shell_pid"
   cleanup_process "$owner_pid"
   cleanup_process "$action_pid"
+  stop_route_lease_publisher
   if ((status != 0)); then
     if [[ -n $shell_log && -s $shell_log ]]; then
       printf '%s\n' '--- notification runtime shell log ---' >&2
@@ -204,12 +208,14 @@ write_route_payload() {
 }
 
 write_lease_payload() {
-  local refreshed_at=$1
-  local expires_at=$2
+  local refreshed_at_ms=$1
+  local expires_at_ms=$2
   local route_updated_at=$3
-  local temporary="$lease_path.test.$$"
-  printf '{"version":1,"refreshedAt":%s,"expiresAt":%s,"routeUpdatedAt":%s}\n' \
-    "$refreshed_at" "$expires_at" "$route_updated_at" >"$temporary"
+  local temporary
+
+  temporary=$(mktemp "$lease_path.test.XXXXXX")
+  printf '{"version":2,"refreshedAtMs":%s,"expiresAtMs":%s,"routeUpdatedAt":%s}\n' \
+    "$refreshed_at_ms" "$expires_at_ms" "$route_updated_at" >"$temporary"
   chmod 600 "$temporary"
   mv -f -- "$temporary" "$lease_path"
 }
@@ -217,19 +223,72 @@ write_lease_payload() {
 write_route_pair() {
   local payload=$1
   local updated_at
-  local refreshed_at
+  local refreshed_at_ms
   write_route_payload "$payload"
   updated_at=$(jq -er '.updatedAt' <<<"$payload") || return 1
-  refreshed_at=$(date +%s)
-  write_lease_payload "$refreshed_at" "$((refreshed_at + 1))" "$updated_at"
+  refreshed_at_ms=$(date +%s%3N)
+  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + 1500))" "$updated_at"
 }
 
 refresh_route_lease() {
   local updated_at
-  local refreshed_at
+  local refreshed_at_ms
   updated_at=$(jq -er '.updatedAt' "$route_path") || return 0
-  refreshed_at=$(date +%s)
-  write_lease_payload "$refreshed_at" "$((refreshed_at + 1))" "$updated_at"
+  refreshed_at_ms=$(date +%s%3N)
+  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + 1500))" "$updated_at"
+}
+
+start_route_lease_publisher() {
+  local interval=${1:-0.75}
+
+  stop_route_lease_publisher
+  lease_publisher_stop="$fixture/lease-publisher-stop"
+  lease_publisher_ready="$fixture/lease-publisher-ready"
+  lease_publisher_count="$fixture/lease-publisher-count"
+  rm -f -- "$lease_publisher_stop" "$lease_publisher_ready" "$lease_publisher_count"
+  (
+    local count=0
+    while [[ ! -e $lease_publisher_stop ]]; do
+      if refresh_route_lease; then
+        count=$((count + 1))
+        printf '%s\n' "$count" >"$lease_publisher_count"
+        ((count >= 1)) && : >"$lease_publisher_ready"
+      fi
+      sleep "$interval"
+    done
+  ) &
+  lease_publisher_pid=$!
+}
+
+stop_route_lease_publisher() {
+  [[ -n ${lease_publisher_pid:-} ]] || return 0
+  : >"${lease_publisher_stop:?}"
+  wait "$lease_publisher_pid" 2>/dev/null || true
+  lease_publisher_pid=''
+}
+
+wait_for_lease_renewals() {
+  local expected=$1
+  local count=0
+  local deadline=$((SECONDS + 10))
+  local status_json=''
+
+  while ((SECONDS < deadline)); do
+    if [[ -f ${lease_publisher_count:-} ]]; then
+      count=$(<"$lease_publisher_count")
+    fi
+    if ((count > 0)) && status_json=$(read_status 2>/dev/null); then
+      jq -e '.routeValid == true and .routeVisible == true and .routeError == ""' \
+        <<<"$status_json" >/dev/null || {
+        printf 'FAIL: route became invalid during lease renewal %s\n' "$count" >&2
+        return 1
+      }
+    fi
+    ((count >= expected)) && return 0
+    sleep 0.1
+  done
+  printf 'FAIL: lease publisher completed only %s renewals, expected %s\n' "$count" "$expected" >&2
+  return 1
 }
 
 assert_mode() {
@@ -297,10 +356,6 @@ wait_for_status() {
   local status_json=''
   local deadline=$((SECONDS + 15))
   while ((SECONDS < deadline)); do
-    if [[ $route_pair_keepalive == true &&
-      ($filter == *'.routeValid == true'* || $filter == *'route is stale'*) ]]; then
-      refresh_route_lease
-    fi
     if status_json=$(read_status 2>/dev/null); then
       last_status=$status_json
       if jq -e "$filter" <<<"$status_json" >/dev/null 2>&1; then
@@ -588,11 +643,12 @@ wait_for_ipc pong desktop-shell call desktop.notifications ping ''
 wait_for_status '.notificationsOwned == true and .routeValid == false and .routeVisible == false'
 
 route_now=$(date +%s)
-write_lease_payload "$((route_now - 3))" "$((route_now - 1))" "$route_now"
+route_now_ms=$(date +%s%3N)
+write_lease_payload "$((route_now_ms - 3000))" "$((route_now_ms - 1000))" "$route_now"
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
-write_lease_payload "$route_now" "$((route_now + 1))" "$((route_now + 1))"
+write_lease_payload "$route_now_ms" "$((route_now_ms + 1500))" "$((route_now + 1))"
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
@@ -601,7 +657,7 @@ write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":nul
 wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationRouteVisible == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
 
-# The one-second lease is observed as invalid without an extra fixed sleep.
+# The millisecond lease is observed as invalid without an extra fixed sleep.
 lease_expiry_started=$SECONDS
 wait_for_status '.routeValid == false and .routeVisible == false'
 ((SECONDS - lease_expiry_started <= 2)) || {
@@ -609,8 +665,25 @@ wait_for_status '.routeValid == false and .routeVisible == false'
   exit 1
 }
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
-route_pair_keepalive=true
+start_route_lease_publisher
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+wait_for_file "$lease_publisher_ready"
+wait_for_lease_renewals 4
+
+# Stopping the publisher naturally must fail closed without relying on cleanup
+# traps or a process kill, then a fresh publisher must recover the same route.
+stop_route_lease_publisher
+natural_stop_started=$SECONDS
+wait_for_status '.routeValid == false and .routeVisible == false'
+((SECONDS - natural_stop_started <= 3)) || {
+  printf 'FAIL: natural lease stop was observed after %s seconds\n' \
+    "$((SECONDS - natural_stop_started))" >&2
+  exit 1
+}
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+start_route_lease_publisher
+wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+stop_route_lease_publisher
 
 wait_for_path "$state_home/desktop-shell"
 assert_mode 700 "$state_home/desktop-shell"
@@ -656,7 +729,7 @@ write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":nul
 wait_for_status '.routeValid == true and .routeVisible == true'
 
 rm -f -- "$lease_path"
-printf '%s\n' '{"version":1,"refreshedAt":0,"expiresAt":1,"routeUpdatedAt":0}' >"$fixture/lease-target"
+printf '%s\n' '{"version":2,"refreshedAtMs":0,"expiresAtMs":1,"routeUpdatedAt":0}' >"$fixture/lease-target"
 chmod 600 "$fixture/lease-target"
 ln -s -- "$fixture/lease-target" "$lease_path"
 wait_for_status '.routeValid == false and .routeVisible == false'
@@ -688,6 +761,7 @@ wait_for_health '.notificationRouteValid == false and .notificationRouteVisible 
 
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+start_route_lease_publisher
 
 [[ $(call_notification dismissLast) == ok ]]
 wait_for_status '.popupCount == 0 and .historyCount == 1'

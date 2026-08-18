@@ -6,7 +6,8 @@ set -Eeuo pipefail
 
 readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
-readonly NOTIFICATION_LEASE_MAX_AGE=1
+readonly NOTIFICATION_LEASE_MAX_AGE_MS=1500
+readonly NOTIFICATION_LEASE_RENEW_INTERVAL=1
 NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-1}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
 NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
@@ -23,6 +24,10 @@ monotonic_seconds() {
 
 epoch_seconds() {
   printf '%(%s)T\n' -1
+}
+
+epoch_milliseconds() {
+  date +%s%3N
 }
 
 is_rustdesk_remote() {
@@ -253,16 +258,16 @@ write_notification_route_lease() {
   local route_dir=$1
   local lease_file=$2
   local route_updated_at=$3
-  local refreshed_at expires_at lease_json
+  local refreshed_at_ms expires_at_ms lease_json
 
-  refreshed_at=$(epoch_seconds)
-  expires_at=$((refreshed_at + NOTIFICATION_LEASE_MAX_AGE))
+  refreshed_at_ms=$(epoch_milliseconds)
+  expires_at_ms=$((refreshed_at_ms + NOTIFICATION_LEASE_MAX_AGE_MS))
   if ! lease_json=$(jq -cn \
-    --argjson refreshed_at "$refreshed_at" \
-    --argjson expires_at "$expires_at" \
+    --argjson refreshed_at_ms "$refreshed_at_ms" \
+    --argjson expires_at_ms "$expires_at_ms" \
     --argjson route_updated_at "$route_updated_at" \
-    '{version: 1, refreshedAt: $refreshed_at,
-      expiresAt: $expires_at, routeUpdatedAt: $route_updated_at}'); then
+    '{version: 2, refreshedAtMs: $refreshed_at_ms,
+      expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}'); then
     return 1
   fi
 
@@ -384,7 +389,7 @@ write_notification_route_state() {
   else
     local publish_status
     # Revoke the lease before replacing route content so a crash cannot make an
-    # old same-second lease validate a newly published route.
+    # old route-timestamp lease validate newly published route content.
     if ! invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
       printf 'failed to revoke notification route lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
       return 1
@@ -493,10 +498,9 @@ consume_hyprland_event_stream() {
   local last_write_before_reconciliation reconcile_status
   local next_reconciliation remaining route_deadline
 
-  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
-    reconcile_interval=30
-  elif ((reconcile_interval > NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
-    reconcile_interval=$NOTIFICATION_ROUTE_REWRITE_INTERVAL
+  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]] ||
+    ((reconcile_interval > NOTIFICATION_LEASE_RENEW_INTERVAL)); then
+    reconcile_interval=$NOTIFICATION_LEASE_RENEW_INTERVAL
   fi
 
   reconcile_notification_routing || true
