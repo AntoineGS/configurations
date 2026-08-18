@@ -259,7 +259,7 @@ function validRouteDirection(value) {
  *
  * @param {string} raw JSON route state
  * @param {number} nowMs current time in milliseconds
- * @returns {{valid: boolean, visible: boolean, output: (string|null), cueOutput: (string|null), direction: (string|null), error: string}}
+ * @returns {{valid: boolean, visible: boolean, output: (string|null), cueOutput: (string|null), direction: (string|null), updatedAt: (number|null), error: string}}
  */
 function normalizeRoute(raw, nowMs) {
   var parsed
@@ -327,13 +327,13 @@ function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
   var current = Math.floor(nowMs / 1000)
   if (refreshedAt > current) return invalidLease("lease refreshedAt is from the future")
   if (expiresAt <= current) return invalidLease("lease is stale")
-  if (expiresAt > current + 1) return invalidLease("lease expires too far in the future")
+  if (expiresAt > current + 2) return invalidLease("lease expires too far in the future")
   if (expiresAt - refreshedAt > 2) return invalidLease("lease expires too long after refresh")
 
-  var expected = Number(expectedRouteUpdatedAt)
-  if (!isFinite(expected) || Math.floor(expected) !== expected || expected < 0)
+  if (typeof expectedRouteUpdatedAt !== "number" || !isFinite(expectedRouteUpdatedAt) ||
+      Math.floor(expectedRouteUpdatedAt) !== expectedRouteUpdatedAt || expectedRouteUpdatedAt < 0)
     return invalidLease("expected route timestamp is invalid")
-  if (routeUpdatedAt !== expected) return invalidLease("lease route timestamp does not match route")
+  if (routeUpdatedAt !== expectedRouteUpdatedAt) return invalidLease("lease route timestamp does not match route")
 
   return {
     valid: true,
