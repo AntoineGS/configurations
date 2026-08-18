@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, "..")
 const servicePath = path.join(root, "plugins/notifications/Service.qml")
 const cardPath = path.join(root, "plugins/notifications/components/NotificationCard.qml")
 const logicPath = path.join(root, "plugins/notifications/NotificationLogic.js")
+const runtimeTestPath = path.join(root, "tests/notification-runtime-test.sh")
 const manifestPath = path.join(root, "plugins/notifications/manifest.json")
 const sourcePath = path.join(root, "SOURCE")
 const selectedPluginsPath = path.join(root, "SELECTED_PLUGINS")
@@ -18,6 +19,7 @@ function readRequired(file) {
 const service = readRequired(servicePath)
 const card = readRequired(cardPath)
 const logic = readRequired(logicPath)
+const runtimeTest = readRequired(runtimeTestPath)
 const manifest = JSON.parse(readRequired(manifestPath))
 const source = readRequired(sourcePath)
 const selected = readRequired(selectedPluginsPath)
@@ -39,6 +41,26 @@ assert.match(service, /service\.routeDir,\s*service\.routePath,\s*service\.lease
   "route metadata paths are positional process arguments")
 assert.doesNotMatch(service, /stat -c[^\n]*\$\{service\.(?:routeDir|routePath|leasePath)\}/,
   "route metadata command does not interpolate paths into shell source")
+assert.match(service, /function invalidateRouteMetadata\(/,
+  "watched route state has one fail-closed metadata invalidation path")
+assert.match(service, /property int routeMetadataGeneration/,
+  "metadata checks have a generation that identifies the watched file state")
+assert.match(service, /property int routeMetadataCheckGeneration/,
+  "metadata process records the generation it checks")
+assert.match(service, /routeMetadataCheckGeneration !== service\.routeMetadataGeneration/,
+  "stale metadata checks cannot validate a replacement file state")
+for (const fileViewId of ["routeFile", "leaseFile"]) {
+  const start = service.indexOf(`id: ${fileViewId}`)
+  const end = service.indexOf("\n  }", start)
+  assert.ok(start >= 0 && end > start, `${fileViewId} exists`)
+  assert.match(service.slice(start, end), /onFileChanged:\s*\{[\s\S]*invalidateRouteMetadata\(\)[\s\S]*reload\(\)/,
+    `${fileViewId} invalidates metadata before reloading a replacement`)
+}
+assert.match(runtimeTest,
+  /refreshed_at=\$\(date \+%s\)\n\s*write_lease_payload "\$refreshed_at" "\$\(\(refreshed_at \+ 2\)\)"/,
+  "route-pair fixtures derive both lease endpoints from one timestamp")
+assert.doesNotMatch(runtimeTest, /write_lease_payload "\$\(date \+%s\)"/,
+  "route-pair fixtures do not sample the lease endpoints independently")
 assert.match(service, /desktop-shell\/notifications/)
 assert.match(service, /property bool notificationsOwned/)
 assert.match(service, /property string ownershipError/)

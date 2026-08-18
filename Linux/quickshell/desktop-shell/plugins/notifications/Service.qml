@@ -42,6 +42,8 @@ Item {
   property string leaseError: "notification route lease unavailable"
   property bool routeMetadataValid: false
   property string routeMetadataError: "notification route metadata unavailable"
+  property int routeMetadataGeneration: 0
+  property int routeMetadataCheckGeneration: -1
   property var route: ({
     valid: false,
     visible: false,
@@ -1128,7 +1130,10 @@ Item {
     printErrors: false
     onLoaded: service.applyRoute(text())
     onLoadFailed: service.invalidateRoute("notification route unavailable")
-    onFileChanged: reload()
+    onFileChanged: {
+      service.invalidateRouteMetadata()
+      reload()
+    }
   }
 
   FileView {
@@ -1138,7 +1143,10 @@ Item {
     printErrors: false
     onLoaded: service.applyLease(text())
     onLoadFailed: service.invalidateLease("notification route lease unavailable")
-    onFileChanged: reload()
+    onFileChanged: {
+      service.invalidateRouteMetadata()
+      reload()
+    }
   }
 
   Process {
@@ -1152,6 +1160,10 @@ Item {
       "check_dir \"$1\"\ncheck_file \"$2\"\ncheck_file \"$3\"\n", "--",
       service.routeDir, service.routePath, service.leasePath]
     onExited: function(exitCode) {
+      if (service.routeMetadataCheckGeneration !== service.routeMetadataGeneration) {
+        Qt.callLater(function() { service.checkRouteMetadata() })
+        return
+      }
       service.routeMetadataValid = Number(exitCode) === 0
       service.routeMetadataError = service.routeMetadataValid ? "" : "notification route metadata is insecure or unavailable"
       service.refreshRoute()
@@ -1206,10 +1218,16 @@ Item {
 
   function checkRouteMetadata() {
     if (routeMetadata.running) return
+    service.invalidateRouteMetadata(false)
+    service.routeMetadataCheckGeneration = service.routeMetadataGeneration
+    routeMetadata.running = true
+  }
+
+  function invalidateRouteMetadata(incrementGeneration) {
+    if (incrementGeneration !== false) service.routeMetadataGeneration++
     service.routeMetadataValid = false
     service.routeMetadataError = "notification route metadata check pending"
     service.refreshRoute()
-    routeMetadata.running = true
   }
 
   function refreshRoute() {
