@@ -131,6 +131,7 @@ state_home="$fixture/state"
 home="$fixture/home"
 route_dir="$runtime_dir/desktop-shell"
 route_path="$route_dir/notification-route.json"
+lease_path="$route_dir/notification-route-lease.json"
 popup_dir="$state_home/desktop-shell/notifications"
 history_dir="$popup_dir/history"
 fixture_wayland_display="$wayland_display"
@@ -140,6 +141,7 @@ fi
 shell_generation=0
 shell_log=''
 runtime_shell_root="$SHELL_ROOT"
+route_lease_enabled=0
 
 cleanup_process() {
   local pid=${1-}
@@ -182,7 +184,8 @@ trap 'exit 143' TERM
 
 umask 022
 mkdir -p "$runtime_dir" "$state_home" "$home/.config" "$home/.cache" "$home/.local/share" "$route_dir"
-chmod 755 "$runtime_dir" "$state_home" "$home" "$route_dir"
+chmod 755 "$runtime_dir" "$state_home" "$home"
+chmod 700 "$route_dir"
 ln -s -- "$original_wayland_socket" "$runtime_dir/$fixture_wayland_display"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
@@ -197,6 +200,31 @@ write_route_payload() {
   printf '%s\n' "$payload" >"$temporary"
   chmod "$mode" "$temporary"
   mv -f -- "$temporary" "$route_path"
+}
+
+write_lease_payload() {
+  local refreshed_at=$1
+  local expires_at=$2
+  local route_updated_at=$3
+  local temporary="$lease_path.test.$$"
+  printf '{"version":1,"refreshedAt":%s,"expiresAt":%s,"routeUpdatedAt":%s}\n' \
+    "$refreshed_at" "$expires_at" "$route_updated_at" >"$temporary"
+  chmod 600 "$temporary"
+  mv -f -- "$temporary" "$lease_path"
+}
+
+write_route_pair() {
+  local payload=$1
+  local updated_at
+  write_route_payload "$payload"
+  updated_at=$(jq -er '.updatedAt' <<<"$payload") || return 1
+  write_lease_payload "$(date +%s)" "$(( $(date +%s) + 2 ))" "$updated_at"
+}
+
+refresh_route_lease() {
+  local updated_at
+  updated_at=$(jq -er '.updatedAt' "$route_path") || return 0
+  write_lease_payload "$(date +%s)" "$(( $(date +%s) + 2 ))" "$updated_at"
 }
 
 assert_mode() {
@@ -395,6 +423,9 @@ wait_for_json_count() {
 start_shell() {
   shell_generation=$((shell_generation + 1))
   shell_log="$fixture/shell-$shell_generation.log"
+  if ((route_lease_enabled)); then
+    refresh_route_lease
+  fi
   local shell_path="$PATH"
   if [[ -n ${DESKTOP_SHELL_TEST_BUSCTL_BIN:-} ]]; then
     if [[ ${DESKTOP_SHELL_TEST_BUSCTL_ISOLATE:-0} == 1 ]]; then
@@ -545,6 +576,19 @@ export DESKTOP_SHELL_TEST_SETTINGS_COUNT="$settings_write_count"
 start_shell
 wait_for_ipc pong desktop.notifications ping
 wait_for_ipc pong desktop-shell call desktop.notifications ping ''
+wait_for_status '.notificationsOwned == true and .routeValid == false and .routeVisible == false'
+
+route_now=$(date +%s)
+write_lease_payload "$((route_now - 3))" "$((route_now - 1))" "$route_now"
+wait_for_status '.routeValid == false and .routeVisible == false'
+wait_for_ipc pong desktop.notifications ping
+
+write_lease_payload "$route_now" "$((route_now + 2))" "$((route_now + 1))"
+wait_for_status '.routeValid == false and .routeVisible == false'
+wait_for_ipc pong desktop.notifications ping
+
+route_lease_enabled=1
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationRouteVisible == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
 
@@ -578,19 +622,33 @@ done
 }
 
 # Cue state is visible for both a normal route and an all-unsafe cue-only route.
-write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left","updatedAt":'"$(date +%s)"'}'
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left","updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeCueOutput == "HDMI-A-1" and .routeDirection == "left" and .routeCueGlyph == "←"'
-write_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null,"updatedAt":'"$(date +%s)"'}'
+write_route_pair '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == false and .routeCueOutput == "DP-2" and .routeDirection == null and .routeCueGlyph == "•"'
-write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeCueOutput == null'
+
+chmod 755 "$route_dir"
+wait_for_status '.routeValid == false and .routeVisible == false'
+chmod 700 "$route_dir"
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true'
+
+rm -f -- "$lease_path"
+printf '%s\n' '{"version":1,"refreshedAt":0,"expiresAt":1,"routeUpdatedAt":0}' >"$fixture/lease-target"
+chmod 600 "$fixture/lease-target"
+ln -s -- "$fixture/lease-target" "$lease_path"
+wait_for_status '.routeValid == false and .routeVisible == false'
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+wait_for_status '.routeValid == true and .routeVisible == true'
 
 # FileView must fail closed across every route lifecycle transition.
 write_route_payload '{malformed'
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("invalid|unavailable"))'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false and (.notificationRouteError | test("invalid|unavailable"))'
 
-write_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+write_route_pair '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == false and .routeError == ""'
 wait_for_health '.notificationRouteValid == true and .notificationRouteVisible == false and .notificationRouteError == ""'
 
@@ -598,17 +656,18 @@ rm -f -- "$route_path"
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable"))'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
 
-write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}' 000
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+chmod 000 "$route_path"
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable|invalid"))'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
 
 near_expiry=$(( $(date +%s) - 44 ))
-write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$near_expiry"'}'
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$near_expiry"'}'
 wait_for_status '.routeValid == true and .routeVisible == true'
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("stale"))'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false and (.notificationRouteError | test("stale"))'
 
-write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
 
 [[ $(call_notification dismissLast) == ok ]]

@@ -25,7 +25,9 @@ Item {
   readonly property string historyDir: popupStateDir + "history/"
   readonly property string imagesDir: popupStateDir + "images/"
   readonly property string runtimeDir: String(Quickshell.env("XDG_RUNTIME_DIR") || "")
-  readonly property string routePath: runtimeDir + "/desktop-shell/notification-route.json"
+  readonly property string routeDir: runtimeDir + "/desktop-shell"
+  readonly property string routePath: routeDir + "/notification-route.json"
+  readonly property string leasePath: routeDir + "/notification-route-lease.json"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   readonly property int cornerRadius: Style.cornerRadius
 
@@ -35,6 +37,11 @@ Item {
   property bool routeValid: false
   property string routeError: "notification route unavailable"
   property string routeRaw: ""
+  property string leaseRaw: ""
+  property bool leaseValid: false
+  property string leaseError: "notification route lease unavailable"
+  property bool routeMetadataValid: false
+  property string routeMetadataError: "notification route metadata unavailable"
   property var route: ({
     valid: false,
     visible: false,
@@ -1124,12 +1131,44 @@ Item {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: leaseFile
+    path: service.leasePath
+    watchChanges: true
+    printErrors: false
+    onLoaded: service.applyLease(text())
+    onLoadFailed: service.invalidateLease("notification route lease unavailable")
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: routeMetadata
+    running: false
+    command: ["bash", "-c",
+      "set -eu\n" +
+      "uid=$(id -u)\n" +
+      "check_dir() { [[ -d $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 700 && $type == 'directory' ]] || exit 1; }\n" +
+      "check_file() { [[ -f $1 && ! -L $1 ]] || exit 1; read -r owner mode type < <(stat -c '%u %a %F' -- \"$1\"); [[ $owner == $uid && $mode == 600 && $type == 'regular file' ]] || exit 1; }\n" +
+      "check_dir \"$1\"\ncheck_file \"$2\"\ncheck_file \"$3\"\n", "--",
+      service.routeDir, service.routePath, service.leasePath]
+    onExited: function(exitCode) {
+      service.routeMetadataValid = Number(exitCode) === 0
+      service.routeMetadataError = service.routeMetadataValid ? "" : "notification route metadata is insecure or unavailable"
+      service.refreshRoute()
+    }
+  }
+
   Timer {
     id: routeExpiryTimer
     interval: 1000
     repeat: true
-    running: service.routeRaw.length > 0
-    onTriggered: service.refreshRoute()
+    running: true
+    onTriggered: {
+      routeFile.reload()
+      leaseFile.reload()
+      service.refreshRoute()
+      service.checkRouteMetadata()
+    }
   }
 
   function invalidateRoute(error) {
@@ -1147,16 +1186,40 @@ Item {
     service.routeError = message
   }
 
+  function invalidateLease(error) {
+    var message = String(error || "invalid route lease")
+    service.leaseRaw = ""
+    service.leaseValid = false
+    service.leaseError = message
+    service.refreshRoute()
+  }
+
   function applyRoute(raw) {
     service.routeRaw = String(raw || "")
     service.refreshRoute()
   }
 
+  function applyLease(raw) {
+    service.leaseRaw = String(raw || "")
+    service.refreshRoute()
+  }
+
+  function checkRouteMetadata() {
+    if (routeMetadata.running) return
+    service.routeMetadataValid = false
+    service.routeMetadataError = "notification route metadata check pending"
+    service.refreshRoute()
+    routeMetadata.running = true
+  }
+
   function refreshRoute() {
     var next = NotificationLogic.normalizeRoute(service.routeRaw, Date.now())
+    var nextLease = NotificationLogic.normalizeLease(service.leaseRaw, Date.now(), next.updatedAt)
     service.route = next
-    service.routeValid = next.valid === true
-    service.routeError = next.error || ""
+    service.leaseValid = nextLease.valid === true
+    service.leaseError = nextLease.error || ""
+    service.routeValid = next.valid === true && service.leaseValid && service.routeMetadataValid
+    service.routeError = next.error || service.leaseError || service.routeMetadataError || ""
   }
 
   function screenName(screen) {
@@ -1528,9 +1591,11 @@ Item {
     if (service.ownershipEnabled) service.probeNotificationOwner()
     else service.setOwnershipState(false, "notification registration disabled")
     service.updateHistoryCount()
+    service.checkRouteMetadata()
     Qt.callLater(function() {
       settingsFile.reload()
       routeFile.reload()
+      leaseFile.reload()
       restorePopupsProc.command = ["bash", "-c", "awk 1 \"$1\"/*.json 2>/dev/null || true", "--", service.popupStateDir]
       restorePopupsProc.running = true
       service.sweepOrphanImages()
