@@ -412,6 +412,19 @@ assert_equal false "$handler_clean_state" 'clean-submap state after focus leaves
 assert_equal $'eval hl.dispatch(hl.dsp.submap("clean"))\neval hl.dispatch(hl.dsp.submap("reset"))' \
   "$(<"$HYPR_LOG")" 'clean-submap transitions persist across event iterations'
 
+# Only the incoming connection manager is hidden; ordinary RustDesk windows stay visible.
+: >"$HYPR_LOG"
+handle_hyprland_event \
+  'openwindow>>c0ffee,9,rustdesk,1520351763 - RustDesk' handler_clean_state DP-2
+assert_equal \
+  'eval hl.dispatch(hl.dsp.window.move({workspace="special:rustdesk-cm", follow=false, window="address:0xc0ffee"}))' \
+  "$(<"$HYPR_LOG")" 'RustDesk connection manager moves to its hidden workspace'
+
+: >"$HYPR_LOG"
+handle_hyprland_event \
+  'openwindow>>decaf,9,rustdesk,1520351763 - Remote Desktop - RustDesk' handler_clean_state DP-2
+assert_equal '' "$(<"$HYPR_LOG")" 'ordinary RustDesk window remains visible'
+
 : >"$HYPR_LOG"
 HYPR_MONITORS_JSON='[{"name":"DP-2","x":3840,"y":0,"width":1920,"height":1080,"disabled":false,"dpmsStatus":true,"activeWorkspace":{"id":9}}]'
 HYPR_CLIENTS_JSON='[
