@@ -121,4 +121,6 @@ assert.match(contextBlock, /wrapMode:\s*Text\.WrapAnywhere/,
 assert.match(contextBlock, /height:\s*contextColumn\.implicitHeight/,
   "context panel height follows wrapped content")
 assert.doesNotMatch(contextBlock, /elide:/, "trusted context never elides an action ID")
+assert.doesNotMatch(contextBlock, /currentActionId\.slice|currentActionId\.substring/,
+  "the view renders the complete trusted action ID")
 assert.doesNotMatch(qml, /requesterPid|requesterApplication|applicationPid|processId/)

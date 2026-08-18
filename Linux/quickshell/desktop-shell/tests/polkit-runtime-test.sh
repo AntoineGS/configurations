@@ -513,6 +513,20 @@ jq -e 'has("desktop.polkit")' <<<"$plugins" >/dev/null || {
 
 wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == "" and .polkitFingerprintConfigured == true'
 
+write_pam_helper missing
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: same-shell missing-helper refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError == "fingerprint PAM probe failed: helper is missing or not executable" and .polkitFingerprintConfigured == false'
+
+write_pam_helper true
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: same-shell missing-helper recovery refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError == "" and .polkitFingerprintConfigured == true'
+
 write_pam_helper hang
 [[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
   printf '%s\n' 'FAIL: hanging polkit probe refresh IPC did not return ok' >&2
