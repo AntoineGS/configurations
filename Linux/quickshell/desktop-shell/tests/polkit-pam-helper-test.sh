@@ -10,6 +10,9 @@ stdout_file="$fixture/stdout"
 stderr_file="$fixture/stderr"
 expected_file="$fixture/expected"
 probe_status=0
+max_unique_files=64
+max_total_bytes=4194304
+max_total_lines=16384
 
 trap 'rm -rf -- "$fixture"' EXIT HUP INT TERM
 mkdir -p -- "$pam_dir"
@@ -121,6 +124,72 @@ for index in {0..17}; do
   fi
 done
 write_pam polkit-1 $'@include depth-0\n'
+run_probe
+assert_status 1
+assert_no_stdout
+
+for index in {0..15}; do
+  if ((index == 15)); then
+    write_pam "depth-exact-$index" $'auth required pam_unix.so\n'
+  else
+    printf -v include_line '@include depth-exact-%s\n' "$((index + 1))"
+    write_pam "depth-exact-$index" "$include_line"
+  fi
+done
+write_pam polkit-1 $'@include depth-exact-0\n'
+run_probe
+assert_status 0
+assert_stdout false
+
+for index in {0..16}; do
+  if ((index == 16)); then
+    write_pam "depth-overflow-$index" $'auth required pam_unix.so\n'
+  else
+    printf -v include_line '@include depth-overflow-%s\n' "$((index + 1))"
+    write_pam "depth-overflow-$index" "$include_line"
+  fi
+done
+write_pam polkit-1 $'@include depth-overflow-0\n'
+run_probe
+assert_status 1
+assert_no_stdout
+
+write_pam shared-fanout $'auth sufficient pam_fprintd.so\n'
+fanout=''
+for _ in {1..128}; do
+  fanout+=$'@include shared-fanout\n'
+done
+write_pam polkit-1 "$fanout"
+run_probe
+assert_status 0
+assert_stdout true
+
+unique_includes=''
+for index in $(seq 0 "$max_unique_files"); do
+  write_pam "unique-$index" $'auth required pam_unix.so\n'
+  unique_includes+="$(printf '@include unique-%s\n' "$index")"$'\n'
+done
+write_pam polkit-1 "$unique_includes"
+run_probe
+assert_status 1
+assert_no_stdout
+
+byte_includes=''
+for index in {0..4}; do
+  truncate -s "$((max_total_bytes / 4))" "$pam_dir/bytes-$index"
+  byte_includes+="$(printf '@include bytes-%s\n' "$index")"$'\n'
+done
+write_pam polkit-1 "$byte_includes"
+run_probe
+assert_status 1
+assert_no_stdout
+
+line_content=''
+for _ in $(seq 1 "$((max_total_lines + 1))"); do
+  line_content+=$'auth required pam_unix.so\n'
+done
+write_pam lines-overflow "$line_content"
+write_pam polkit-1 $'@include lines-overflow\n'
 run_probe
 assert_status 1
 assert_no_stdout

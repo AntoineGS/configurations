@@ -20,6 +20,14 @@ assert.equal(model.snapshotAuthContext(
   "org.freedesktop.policykit.exec"
 ).message, "spoof-like requester application text Action ID: org.attacker.fake",
   "message text is kept on one line and cannot replace the trusted action ID")
+const longActionIdA = "org.example.desktop." + "A".repeat(128) + "-middle-a-" + "z".repeat(180)
+const longActionIdB = "org.example.desktop." + "A".repeat(128) + "-middle-b-" + "z".repeat(180)
+const longContextA = model.snapshotAuthContext("Request message", longActionIdA)
+const longContextB = model.snapshotAuthContext("Request message", longActionIdB)
+assert.equal(longContextA.actionId.length, 256, "action IDs have a bounded display snapshot")
+assert.equal(longContextB.actionId.length, 256, "bounded action IDs remain readable")
+assert.notEqual(longContextA.actionId, longContextB.actionId,
+  "long action IDs that differ in the middle remain distinguishable")
 assert.equal(model.fingerprintConfiguredFromProbeOutput("true\n"), true)
 assert.equal(model.fingerprintConfiguredFromProbeOutput("false\n"), false)
 assert.equal(model.fingerprintConfiguredFromProbeOutput("true false\n"), null)

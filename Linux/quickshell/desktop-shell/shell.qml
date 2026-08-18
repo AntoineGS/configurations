@@ -73,7 +73,8 @@ ShellRoot {
     notificationRouteMetadataAttemptCount: notificationService ? notificationService.routeMetadataAttemptCount : 0,
     polkitRegistered: polkitService ? polkitService.polkitRegistered : false,
     polkitError: polkitService ? polkitService.polkitError : "polkit service unavailable",
-    polkitPamError: polkitService ? polkitService.pamError : "polkit service unavailable"
+    polkitPamError: polkitService ? polkitService.pamError : "polkit service unavailable",
+    polkitFingerprintConfigured: polkitService ? polkitService.fingerprintConfigured : false
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false

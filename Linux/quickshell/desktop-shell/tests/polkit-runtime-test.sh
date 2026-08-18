@@ -311,6 +311,14 @@ grep -Fq 'fingerprintConfiguredFromProbeOutput' "$SHELL_ROOT/plugins/polkit/Polk
   printf '%s\n' 'FAIL: polkit agent does not validate exact probe output' >&2
   exit 1
 }
+grep -Fq 'polkitFingerprintConfigured' "$SHELL_ROOT/shell.qml" || {
+  printf '%s\n' 'FAIL: polkit fingerprint state is missing from runtime health' >&2
+  exit 1
+}
+grep -Fq 'target: "desktop.polkit"' "$SHELL_ROOT/plugins/polkit/PolkitAgent.qml" || {
+  printf '%s\n' 'FAIL: polkit probe refresh IPC is missing' >&2
+  exit 1
+}
 assert_surface_suppression_source "$SHELL_ROOT/plugins/osd/Osd.qml" \
   'visible: !root.testSurfaceSuppressed && root.opened'
 
@@ -319,8 +327,6 @@ snapshot_live_state
 umask 022
 mkdir -p -- "$runtime_dir" "$home/.config" "$home/.cache" "$home/.local/share"
 chmod 755 -- "$runtime_dir" "$home"
-printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'echo false' >"$pam_helper"
-chmod 755 -- "$pam_helper"
 ln -s -- "$original_wayland_socket" "$runtime_dir/$fixture_wayland_display"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
@@ -353,6 +359,40 @@ start_shell_without_registration_env() {
     WAYLAND_DISPLAY="$fixture_wayland_display" \
     quickshell --no-color -p "$SHELL_ROOT" >"$shell_log" 2>&1 &
   shell_pid=$!
+}
+
+write_pam_helper() {
+  local mode=$1
+  case $mode in
+    missing)
+      rm -f -- "$pam_helper"
+      return 0
+      ;;
+    nonexecutable)
+      printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'printf "%s\\n" true' >"$pam_helper"
+      chmod 644 -- "$pam_helper"
+      ;;
+    true)
+      printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'printf "%s\\n" true' >"$pam_helper"
+      chmod 755 -- "$pam_helper"
+      ;;
+    false)
+      printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'printf "%s\\n" false' >"$pam_helper"
+      chmod 755 -- "$pam_helper"
+      ;;
+    failure)
+      printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'exit 1' >"$pam_helper"
+      chmod 755 -- "$pam_helper"
+      ;;
+    hang)
+      printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' 'trap "" TERM' 'while :; do sleep 1; done' >"$pam_helper"
+      chmod 755 -- "$pam_helper"
+      ;;
+    *)
+      printf 'FAIL: unknown PAM helper fixture mode: %s\n' "$mode" >&2
+      return 1
+      ;;
+  esac
 }
 
 call_ipc() {
@@ -431,6 +471,7 @@ wait_for_environment() {
   return 1
 }
 
+write_pam_helper missing
 start_shell_without_registration_env
 wait_for_ipc pong desktop-shell ping
 
@@ -440,10 +481,18 @@ for forbidden_environment in DESKTOP_SHELL_POLKIT_REGISTER DESKTOP_SHELL_NOTIFIC
     exit 1
   fi
 done
-wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == ""'
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError != "" and .polkitFingerprintConfigured == false'
 cleanup_process "$shell_pid"
 shell_pid=''
 
+write_pam_helper nonexecutable
+start_shell_without_registration_env
+wait_for_ipc pong desktop-shell ping
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError != "" and .polkitFingerprintConfigured == false'
+cleanup_process "$shell_pid"
+shell_pid=''
+
+write_pam_helper true
 start_shell
 
 for expected_environment in \
@@ -462,13 +511,50 @@ jq -e 'has("desktop.polkit")' <<<"$plugins" >/dev/null || {
   exit 1
 }
 
-wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == ""'
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled" and .polkitPamError == "" and .polkitFingerprintConfigured == true'
+
+write_pam_helper hang
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: hanging polkit probe refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError != "" and .polkitFingerprintConfigured == false'
+
+write_pam_helper true
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: post-timeout polkit recovery refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError == "" and .polkitFingerprintConfigured == true'
+
+write_pam_helper failure
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: polkit probe refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError != "" and .polkitFingerprintConfigured == false'
+
+write_pam_helper true
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: polkit recovery probe refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError == "" and .polkitFingerprintConfigured == true'
+
+write_pam_helper false
+[[ $(call_ipc desktop.polkit refreshPamProbe) == ok ]] || {
+  printf '%s\n' 'FAIL: polkit false-state probe refresh IPC did not return ok' >&2
+  exit 1
+}
+wait_for_health '.polkitPamError == "" and .polkitFingerprintConfigured == false'
 health=$(read_health)
 jq -e '
    .polkitRegistered == false
    and .polkitError == "registration disabled"
    and .polkitPamError == ""
+   and .polkitFingerprintConfigured == false
    and ((.polkitPamError | type) == "string")
+   and ((.polkitFingerprintConfigured | type) == "boolean")
   and ((.configValid | type) == "boolean")
   and ((.pluginErrors | type) == "array")
   and ((.activeBarId | type) == "string")
