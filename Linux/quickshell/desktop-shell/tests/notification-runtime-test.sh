@@ -1032,6 +1032,64 @@ stop_shell
 start_shell
 wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
 
+# A slow first DND history write fills the bounded queue. The evicted history
+# callback must release exactly its tracked notification, and all remaining
+# intents must settle without leaving a live reference behind.
+dnd_queue_bin="$fixture/dnd-queue-bin"
+dnd_queue_started="$fixture/dnd-queue-started"
+dnd_queue_release="$fixture/dnd-queue-release"
+dnd_queue_count="$fixture/dnd-queue-count"
+dnd_queue_real_mv="$(type -P mv)"
+mkdir -p "$dnd_queue_bin"
+cat >"$dnd_queue_bin/mv" <<'FAKE_DND_QUEUE_MV'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+args=("$@")
+last_index=$(( ${#args[@]} - 1 ))
+source_path=${args[$((last_index - 1))]}
+destination_path=${args[$last_index]}
+if [[ $source_path == "$DESKTOP_SHELL_TEST_HISTORY_DIR"/*.json.* &&
+      $destination_path == "$DESKTOP_SHELL_TEST_HISTORY_DIR"/*.json ]]; then
+  count=0
+  if [[ -f ${DESKTOP_SHELL_TEST_DND_QUEUE_COUNT:?} ]]; then
+    count=$(<"$DESKTOP_SHELL_TEST_DND_QUEUE_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$DESKTOP_SHELL_TEST_DND_QUEUE_COUNT"
+  if ((count == 1)); then
+    : >"$DESKTOP_SHELL_TEST_DND_QUEUE_STARTED"
+    while [[ ! -e ${DESKTOP_SHELL_TEST_DND_QUEUE_RELEASE:?} ]]; do
+      sleep 0.05
+    done
+  fi
+fi
+exec "$DESKTOP_SHELL_TEST_DND_QUEUE_REAL_MV" "$@"
+FAKE_DND_QUEUE_MV
+chmod 700 "$dnd_queue_bin/mv"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_queue_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_QUEUE_STARTED="$dnd_queue_started"
+export DESKTOP_SHELL_TEST_DND_QUEUE_RELEASE="$dnd_queue_release"
+export DESKTOP_SHELL_TEST_DND_QUEUE_COUNT="$dnd_queue_count"
+export DESKTOP_SHELL_TEST_DND_QUEUE_REAL_MV="$dnd_queue_real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+for index in $(seq 1 102); do
+  notify-send --app-name task4-dnd-queue --urgency normal --expire-time 30000 \
+    "Task 4 DND queue $index" 'DND queue capacity contract'
+done
+wait_for_path "$dnd_queue_started"
+wait_for_status '.pendingPersistenceCount == 100 and .liveCount == 101 and .admissionDropped == 0'
+: >"$dnd_queue_release"
+wait_for_status '.pendingPersistenceCount == 0 and .persistenceGenerationCount == 0 and .liveCount == 0 and .popupCount == 0'
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_QUEUE_STARTED DESKTOP_SHELL_TEST_DND_QUEUE_RELEASE \
+  DESKTOP_SHELL_TEST_DND_QUEUE_COUNT DESKTOP_SHELL_TEST_DND_QUEUE_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
 # The global admission window applies before DND persistence, even when the
 # active-popup cap is never reached.
 for index in $(seq 1 121); do
@@ -1052,9 +1110,40 @@ for index in $(seq 1 120); do
     "Task 4 critical flood $index" 'critical active-cap contract'
 done
 wait_for_status '.popupCount == 50 and .liveCount == 50 and .pendingPersistenceCount <= 100 and .admissionDropped == 1 and .admissionWindowCount == 120'
+critical_file=$(printf '%s\n' "$popup_dir"/*.json | sort -n | tail -n 1)
+critical_safe_summary=$(jq -r '.summary' "$critical_file")
+[[ -n $critical_safe_summary && $critical_safe_summary != null ]] || {
+  printf 'FAIL: critical flood did not leave a persisted safe snapshot\n' >&2
+  exit 1
+}
 notify-send --app-name task4-critical-flood --replace-id "$critical_id" --urgency critical \
   --expire-time 0 'Task 4 critical replacement' 'replacement does not consume a slot' >/dev/null 2>&1
 wait_for_status '.popupCount == 50 and .liveCount == 50'
+critical_file=$(printf '%s\n' "$popup_dir"/*.json | sort -n | tail -n 1)
+[[ $(jq -r '.summary' "$critical_file") == "$critical_safe_summary" ]] || {
+  printf 'FAIL: denied critical replacement changed the safe snapshot from %s\n' \
+    "$critical_safe_summary" >&2
+  exit 1
+}
+[[ $(call_notification dismissAll) == ok ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0 and .pendingPersistenceCount == 0'
+
+# Restart deterministically resets the admission window; a later replacement
+# is then admitted and becomes the new safe snapshot.
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+reset_critical_id=$(notify-send --app-name task4-critical-reset --print-id --urgency critical \
+  --expire-time 0 'Task 4 critical reset seed' 'reset seed' 2>/dev/null)
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+notify-send --app-name task4-critical-reset --replace-id "$reset_critical_id" --urgency critical \
+  --expire-time 0 'Task 4 critical reset replacement' 'replacement after reset' >/dev/null 2>&1
+wait_for_status '.popupCount == 1 and .liveCount == 1 and .admissionWindowCount == 2'
+critical_file=$(printf '%s\n' "$popup_dir"/*.json | sort -n | tail -n 1)
+[[ $(jq -r '.summary' "$critical_file") == 'Task 4 critical reset replacement' ]] || {
+  printf 'FAIL: admitted critical replacement did not update the safe snapshot\n' >&2
+  exit 1
+}
 [[ $(call_notification dismissAll) == ok ]]
 wait_for_status '.popupCount == 0 and .liveCount == 0'
 

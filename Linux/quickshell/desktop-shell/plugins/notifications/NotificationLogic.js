@@ -137,7 +137,7 @@ function remainingLifetime(entry, now, fallbackDuration) {
   return Math.max(0, timestamp + duration - current)
 }
 
-function persistenceQueueUpdate(queue, job, maxLength, front) {
+function persistenceQueueUpdate(queue, job, maxLength, front, protectedKeys) {
   var next = Array.isArray(queue) ? queue.slice() : []
   var dropped = null
   if (job && job.key) {
@@ -147,18 +147,59 @@ function persistenceQueueUpdate(queue, job, maxLength, front) {
         var incomingGeneration = Number(job.generation)
         if (isFinite(currentGeneration) && isFinite(incomingGeneration)
             && incomingGeneration < currentGeneration)
-          return { queue: next, dropped: null, stale: true }
+          return { queue: next, dropped: null, stale: true, outcome: "superseded" }
+        var superseded = next[i]
         next.splice(i, 1)
         if (front) next.unshift(job)
         else next.splice(i, 0, job)
-        return { queue: next, dropped: null }
+        return {
+          queue: next,
+          dropped: superseded,
+          droppedOutcome: "superseded",
+          outcome: "queued",
+        }
       }
     }
   }
-  if (next.length >= maxLength) dropped = next.shift()
+  if (next.length >= maxLength) {
+    var dropIndex = 0
+    var hasUnprotected = false
+    for (var candidate = 0; candidate < next.length; candidate++) {
+      var candidateKey = next[candidate] && next[candidate].key
+      if (!protectedKeys || !protectedKeys[candidateKey]) {
+        dropIndex = candidate
+        hasUnprotected = true
+        break
+      }
+    }
+    if (!hasUnprotected) {
+      return {
+        queue: next,
+        dropped: job,
+        droppedOutcome: "capacity-dropped",
+        outcome: "capacity-dropped",
+      }
+    }
+    dropped = next.splice(dropIndex, 1)[0]
+  }
   if (front) next.unshift(job)
   else next.push(job)
-  return { queue: next, dropped: dropped }
+  return {
+    queue: next,
+    dropped: dropped,
+    droppedOutcome: dropped ? "capacity-dropped" : null,
+    outcome: dropped ? "capacity-dropped" : "queued",
+  }
+}
+
+function refreshScheduleUpdate(pending, key, request) {
+  var next = {}
+  var source = pending && typeof pending === "object" ? pending : {}
+  for (var existing in source) next[existing] = source[existing]
+  var normalizedKey = String(key)
+  var scheduled = !Object.prototype.hasOwnProperty.call(next, normalizedKey)
+  next[normalizedKey] = request
+  return { pending: next, scheduled: scheduled }
 }
 
 function admissionUpdate(timestamps, now, maxAccepted, windowMs) {
@@ -515,6 +556,7 @@ if (typeof module !== "undefined") {
     deadlineFor: deadlineFor,
     remainingLifetime: remainingLifetime,
     persistenceQueueUpdate: persistenceQueueUpdate,
+    refreshScheduleUpdate: refreshScheduleUpdate,
     admissionUpdate: admissionUpdate,
     snapshotOf: snapshotOf,
     popupRoles: popupRoles,
