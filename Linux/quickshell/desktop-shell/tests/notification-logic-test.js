@@ -12,12 +12,48 @@ const fresh = JSON.stringify({
 
 assert.deepEqual(logic.normalizeRoute(fresh, 1786930040000), {
   valid: true, visible: true, output: "DVI-D-1",
-  cueOutput: "HDMI-A-1", direction: "left", error: "",
+  cueOutput: "HDMI-A-1", direction: "left", updatedAt: 1786930000, error: "",
 })
+const freshLease = JSON.stringify({
+  version: 1,
+  refreshedAt: 1786930000,
+  expiresAt: 1786930002,
+  routeUpdatedAt: 1786930000,
+})
+assert.deepEqual(logic.normalizeLease(freshLease, 1786930001000, 1786930000), {
+  valid: true,
+  refreshedAt: 1786930000,
+  expiresAt: 1786930002,
+  routeUpdatedAt: 1786930000,
+  error: "",
+})
+assert.equal(logic.normalizeLease("", 1786930001000, 1786930000).valid, false)
+assert.match(logic.normalizeLease(freshLease, 1786930002000, 1786930000).error, /stale/)
+assert.match(logic.normalizeLease(freshLease, 1786930001000, 1786930001).error, /route timestamp/)
+for (const raw of [
+  "{",
+  JSON.stringify({ version: 2, refreshedAt: 1786930000, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, refreshedAt: 1786930001, expiresAt: 1786930003, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930003, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, refreshedAt: 1786930000.5, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, refreshedAt: -1, expiresAt: 1786930002, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930002, routeUpdatedAt: "1786930000" }),
+]) {
+  const result = logic.normalizeLease(raw, 1786930001000, 1786930000)
+  assert.equal(result.valid, false)
+  assert.notEqual(result.error, "")
+}
+assert.equal(logic.normalizeLease(JSON.stringify({
+  version: 1,
+  refreshedAt: 1786930000,
+  expiresAt: 1786930002,
+  routeUpdatedAt: 1786930001,
+}), 1786930001000, 1786930000).valid, false)
 for (const raw of ["", "{", "{}", '{"version":2}',
   '{"version":1,"visible":true,"output":"../DP-1","updatedAt":1786930000}']) {
   assert.equal(logic.normalizeRoute(raw, 1786930040000).visible, false)
   assert.notEqual(logic.normalizeRoute(raw, 1786930040000).error, "")
+  assert.equal(logic.normalizeRoute(raw, 1786930040000).updatedAt, null)
 }
 assert.match(logic.normalizeRoute(fresh, 1786930046000).error, /stale/)
 assert.equal(logic.shouldBypassDnd({ appName: "Discord", urgency: 2 }, 2), true)
@@ -392,7 +428,7 @@ const validHidden = JSON.stringify({
 })
 assert.deepEqual(logic.normalizeRoute(validHidden, 1786930045000), {
   valid: true, visible: false, output: null,
-  cueOutput: "DP-2", direction: null, error: "",
+  cueOutput: "DP-2", direction: null, updatedAt: 1786930000, error: "",
 })
 for (const raw of [
   JSON.stringify({ version: 1, visible: "true", output: "DP-1", updatedAt: 1786930000 }),
@@ -409,6 +445,7 @@ for (const raw of [
   assert.equal(result.output, null)
   assert.equal(result.cueOutput, null)
   assert.equal(result.direction, null)
+  assert.equal(result.updatedAt, null)
   assert.notEqual(result.error, "")
 }
 
