@@ -179,6 +179,7 @@ NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
 NOTIFICATION_LEASE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"
 ROUTE_RENAME_FAIL=false
 ROUTE_INTERRUPT=false
+ROUTE_SIGKILL_AFTER_RENAME=false
 LEASE_RENAME_FAIL=false
 ROUTE_POST_RENAME_CHMOD=''
 LEASE_POST_RENAME_CHMOD=''
@@ -209,6 +210,9 @@ mv() {
       local symlink_target="$TEST_RUNTIME_DIR/post-route-symlink-target"
       command mv -- "$target" "$symlink_target"
       command ln -s -- "$symlink_target" "$target"
+    fi
+    if [[ $ROUTE_SIGKILL_AFTER_RENAME == true ]]; then
+      kill -KILL "$BASHPID"
     fi
   elif [[ $target == "$NOTIFICATION_LEASE_FILE" ]]; then
     if [[ -n $LEASE_POST_RENAME_CHMOD ]]; then
@@ -477,6 +481,22 @@ fi
 LEASE_RENAME_FAIL=false
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
 [[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed lease write left a lease file behind'
+
+# A same-second SIGKILL after route replacement cannot leave the old matching
+# lease available for the new route.
+reset_route_state
+fake_epoch_seconds=1786930000
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+set +e
+(
+  ROUTE_SIGKILL_AFTER_RENAME=true
+  write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null
+)
+sigkill_status=$?
+set -e
+((sigkill_status == 137)) || fail "SIGKILL route publisher exited unexpectedly: $sigkill_status"
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'SIGKILL route replacement left the old lease behind'
 
 # Post-rename route verification rejects insecure metadata and invalidates the lease.
 write_notification_route_state 'rustdesk-route-hidden|DP-2|none'

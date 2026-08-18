@@ -366,6 +366,9 @@ write_notification_route_state() {
     route_updated_at=$current_updated_at
   else
     local publish_status
+    # Revoke the lease before replacing route content so a crash cannot make an
+    # old same-second lease validate a newly published route.
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
     if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
       route_rewritten=true
       :

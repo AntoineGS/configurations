@@ -49,6 +49,14 @@ assert.match(service, /property int routeMetadataCheckGeneration/,
   "metadata process records the generation it checks")
 assert.match(service, /routeMetadataCheckGeneration !== service\.routeMetadataGeneration/,
   "stale metadata checks cannot validate a replacement file state")
+assert.match(service, /function scheduleRouteMetadataCheck\(\)/,
+  "watched replacements have a coalesced metadata scheduling path")
+assert.match(service, /onFileChanged:\s*\{[\s\S]*invalidateRouteMetadata\(\)[\s\S]*scheduleRouteMetadataCheck\(\)[\s\S]*reload\(\)/,
+  "watched replacements invalidate route validity and schedule metadata revalidation immediately")
+assert.match(service, /if \(service\.routeMetadataCheckGeneration !== service\.routeMetadataGeneration\)[\s\S]*return[\s\S]*routeMetadataValid = Number\(exitCode\) === 0/,
+  "stale metadata process results are discarded before they can validate a newer generation")
+assert.match(service, /LC_ALL=C[\s\S]*stat -c/,
+  "metadata type comparisons run in the C locale")
 for (const fileViewId of ["routeFile", "leaseFile"]) {
   const start = service.indexOf(`id: ${fileViewId}`)
   const end = service.indexOf("\n  }", start)
