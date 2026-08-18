@@ -672,8 +672,8 @@ for resulting_state in Playing Paused Stopped; do
   assert_mutation 'playerctl play-pause'
   assert_playerctl_calls $'play-pause\nstatus'
   case "$resulting_state" in
-    Playing) expected_icon=media-pause ;;
-    Paused) expected_icon=media-play ;;
+    Playing) expected_icon=media-play ;;
+    Paused) expected_icon=media-pause ;;
     Stopped) expected_icon=media-stop ;;
   esac
   assert_payload ".icon == \"$expected_icon\" and .message == \"$resulting_state\" and (keys | sort) == [\"icon\", \"message\"]"
