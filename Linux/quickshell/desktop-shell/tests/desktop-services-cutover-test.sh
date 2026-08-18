@@ -174,6 +174,90 @@ assert_round1_route_mutations() {
     'hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("systemctl --user enable --now desktop-shell.service"))'
 }
 
+assert_desktop_shell_mutation_detected() {
+  local label="$1"
+  local relative_path="$2"
+  local content="$3"
+  local expected_operation="$4"
+  local fixture="$TEST_ROOT/desktop-shell-$label"
+  local hits
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" "$relative_path" "$content"
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+  hits="$(collect_desktop_shell_systemctl_hits "$fixture")"
+  grep -Fq -- "$relative_path:" <<< "$hits" ||
+    fail "desktop-shell $label diagnostic is missing its path: $hits"
+  grep -Fq -- "$expected_operation" <<< "$hits" ||
+    fail "desktop-shell $label diagnostic is missing its normalized operation: $hits"
+}
+
+assert_desktop_shell_test_directory_ignored() {
+  local fixture="$TEST_ROOT/desktop-shell-test-directory"
+  local hits
+
+  mkdir -p -- "$fixture"
+  write_fixture_file "$fixture" Linux/example/tests/desktop-shell-route.sh \
+    'systemctl --user restart desktop-shell.service'
+  git -C "$fixture" init -q
+  git -C "$fixture" add --all
+  hits="$(collect_desktop_shell_systemctl_hits "$fixture")"
+  [[ -z "$hits" ]] || fail "explicit test directory was scanned: $hits"
+}
+
+assert_round2_desktop_shell_mutations() {
+  assert_desktop_shell_mutation_detected quoted-unit Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user restart "desktop-shell.service"' \
+    'systemctl --user restart "desktop-shell.service"'
+  assert_desktop_shell_mutation_detected global-option Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user --no-block stop desktop-shell.service' \
+    'systemctl --user --no-block stop desktop-shell.service'
+  assert_desktop_shell_mutation_detected verb-option Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user stop --no-block desktop-shell.service' \
+    'systemctl --user stop --no-block desktop-shell.service'
+  assert_desktop_shell_mutation_detected multiple-units-first Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user stop desktop-shell.service other.service' \
+    'systemctl --user stop desktop-shell.service other.service'
+  assert_desktop_shell_mutation_detected multiple-units-last Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user stop other.service desktop-shell.service' \
+    'systemctl --user stop other.service desktop-shell.service'
+  assert_desktop_shell_mutation_detected global-command-option Linux/os/helpers/desktop-shell-activate \
+    'sudo --preserve-env systemctl --user stop desktop-shell.service' \
+    'sudo --preserve-env systemctl --user stop desktop-shell.service'
+  assert_desktop_shell_mutation_detected reload-or-restart Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user reload-or-restart desktop-shell.service' \
+    'systemctl --user reload-or-restart desktop-shell.service'
+  assert_desktop_shell_mutation_detected implicit-suffix Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user restart desktop-shell' \
+    'systemctl --user restart desktop-shell'
+  assert_desktop_shell_mutation_detected logical-continuation Linux/os/helpers/desktop-shell-activate \
+    "$(printf '%s\n' "systemctl --user restart \\" "  desktop-shell.service")" \
+    'systemctl --user restart desktop-shell.service'
+  assert_desktop_shell_mutation_detected now-before-verb Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user --now start desktop-shell' \
+    'systemctl --user --now start desktop-shell'
+  assert_desktop_shell_mutation_detected now-after-verb Linux/os/helpers/desktop-shell-activate \
+    'systemctl --user enable --now desktop-shell.service' \
+    'systemctl --user enable --now desktop-shell.service'
+  assert_desktop_shell_mutation_detected mako-legacy Linux/mako/config \
+    'systemctl --user restart desktop-shell.service' \
+    'systemctl --user restart desktop-shell.service'
+  assert_desktop_shell_mutation_detected swayosd-legacy Linux/swayosd/config \
+    'systemctl --user restart desktop-shell.service' \
+    'systemctl --user restart desktop-shell.service'
+  assert_desktop_shell_mutation_detected rollback-invalid Linux/os/helpers/desktop-shell-rollback \
+    'systemctl --user restart desktop-shell.service' \
+    'systemctl --user restart desktop-shell.service'
+  assert_desktop_shell_mutation_detected helper-legacy Linux/os/helpers/legacy-desktop-route \
+    'systemctl --user stop desktop-shell.service' \
+    'systemctl --user stop desktop-shell.service'
+  assert_desktop_shell_mutation_detected test-like-helper Linux/os/helpers/route-test.sh \
+    'systemctl --user stop desktop-shell.service' \
+    'systemctl --user stop desktop-shell.service'
+  assert_desktop_shell_test_directory_ignored
+}
+
 assert_round2_route_mutations() {
   assert_route_mutation_detected post--wrapper Linux/hypr/route-variants.lua \
     'uwsm-app -- env -- /usr/bin/mako'
@@ -267,6 +351,7 @@ assert_mutation_fixtures() {
   local hits expected_path allowed_path
 
   assert_round1_route_mutations
+  assert_round2_desktop_shell_mutations
   assert_round2_route_mutations
   assert_round3_route_mutations
   assert_round4_route_mutations
@@ -388,9 +473,34 @@ is_non_runtime_file() {
   esac
 }
 
+is_explicit_test_path() {
+  case "$1" in
+    tests/*|*/tests/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+collect_runtime_inventory_paths() {
+  local root="$1"
+  local path
+
+  collect_tracked_text_paths "$root"
+  RUNTIME_INVENTORY_PATHS=()
+  for path in "${TRACKED_TEXT_PATHS[@]}"; do
+    is_explicit_test_path "$path" && continue
+    RUNTIME_INVENTORY_PATHS+=("$path")
+  done
+}
+
 readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--([^;&|]*[[:space:]/\"'])(mako|swayosd-server)([^[:alnum:]_.-]|$)"
 readonly DIRECT_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?(polkit-gnome-authentication-agent-1|makoctl|swayosd-client|swayosd-brightness|swayosd-kbd-brightness)([^[:alnum:]_.-]|$)"
 readonly DIRECT_SHELL_ROUTE_RE="(^|[^[:alnum:]_.-])systemctl[[:space:]]+--user[[:space:]]+(start|restart|try-restart)[[:space:]]+desktop-shell[.]service([^[:alnum:]_.-]|$)|(^|[^[:alnum:]_.-])systemctl[[:space:]]+--user[^;&|]*--now[^;&|]*desktop-shell[.]service([^[:alnum:]_.-]|$)"
+readonly SYSTEMCTL_TOKEN_RE="(^|[^[:alnum:]_.-])systemctl([^[:alnum:]_.-]|$)"
+readonly DESKTOP_SHELL_TOKEN_RE="(^|[^[:alnum:]_.-])desktop-shell([.]service)?([^[:alnum:]_.-]|$)"
 
 collect_tracked_text_paths() {
   local root="$1"
@@ -604,6 +714,121 @@ collect_inventory_hits() {
   ' "${files[@]}"
 }
 
+collect_desktop_shell_systemctl_hits() {
+  local root="$1"
+  local path
+  local -a files=()
+
+  collect_runtime_inventory_paths "$root"
+  for path in "${RUNTIME_INVENTORY_PATHS[@]}"; do
+    files+=("$root/$path")
+  done
+  ((${#files[@]} > 0)) || return 0
+
+  awk -v root="$root" -v systemctl_token="$SYSTEMCTL_TOKEN_RE" \
+    -v desktop_shell_token="$DESKTOP_SHELL_TOKEN_RE" '
+    function is_whole_line_comment(path, value) {
+      if (value ~ /^[[:space:]]*$/) {
+        return 1
+      }
+      if (path ~ /\.lua$/) {
+        return value ~ /^[[:space:]]*--/
+      }
+      if (path ~ /\.qml$/) {
+        return value ~ /^[[:space:]]*\/\//
+      }
+      if (path ~ /\.(bash|conf|fish|ini|mount|nu|service|sh|socket|target|timer|toml|yaml|yml|zsh)$/ ||
+          path ~ /^Linux\/os\/helpers\/[^/]+$/) {
+        return value ~ /^[[:space:]]*#/
+      }
+      return 0
+    }
+
+    function relative_path(value, prefix) {
+      prefix = root "/"
+      if (index(value, prefix) == 1) {
+        return substr(value, length(prefix) + 1)
+      }
+      return value
+    }
+
+    function normalize_logical(value) {
+      gsub(/[[:space:]]+/, " ", value)
+      sub(/^ /, "", value)
+      sub(/ $/, "", value)
+      return value
+    }
+
+    function desktop_shell_operation_allowed(path, value) {
+      if (path == "Linux/os/helpers/desktop-shell-activate" &&
+          (value == "local -a command=(systemctl --user show desktop-shell.service --property=MainPID --value)" ||
+           value == "stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)" ||
+           value == "start_shell=(systemctl --user start desktop-shell.service)")) {
+        return 1
+      }
+      if (path == "Linux/os/helpers/desktop-shell-rollback" &&
+          value == "stop_shell=(systemctl --user stop desktop-shell.service)") {
+        return 1
+      }
+      if (path == "tidydots.yaml" &&
+          (value == "systemctl --user is-enabled --quiet desktop-shell.service &&" ||
+           value == "test \"$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)\" = no" ||
+           value == "linux: systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service")) {
+        return 1
+      }
+      return 0
+    }
+
+    function scan_logical(value, start, path) {
+      value = normalize_logical(value)
+      if (value ~ systemctl_token && value ~ desktop_shell_token &&
+          !desktop_shell_operation_allowed(path, value)) {
+        print path ":" start ":" value
+      }
+    }
+
+    FNR == 1 {
+      if (seen_file && logical != "") {
+        scan_logical(logical, logical_start, previous_path)
+      }
+      logical = ""
+      logical_start = 0
+      previous_path = relative_path(FILENAME)
+      seen_file = 1
+    }
+
+    {
+      if (logical == "") {
+        logical_start = FNR
+      }
+      line = $0
+      if (is_whole_line_comment(relative_path(FILENAME), line)) {
+        if (logical != "") {
+          scan_logical(logical, logical_start, relative_path(FILENAME))
+        }
+        logical = ""
+        logical_start = 0
+        next
+      }
+      if (line ~ /\\[[:space:]]*$/) {
+        sub(/\\[[:space:]]*$/, " ", line)
+        logical = logical line
+        next
+      }
+      logical = logical line
+      scan_logical(logical, logical_start, relative_path(FILENAME))
+      logical = ""
+      logical_start = 0
+    }
+
+    END {
+      if (logical != "") {
+        scan_logical(logical, logical_start, previous_path)
+      }
+    }
+  ' "${files[@]}"
+}
+
 collect_forbidden_hits() {
   collect_inventory_hits "$1" route
 }
@@ -614,6 +839,17 @@ audit_active_routes() {
   hits="$(collect_forbidden_hits "$ROOT")"
   if [[ -n "$hits" ]]; then
     printf 'FAIL: forbidden active desktop-service routes:\n%s\n' "$hits" >&2
+    exit 1
+  fi
+}
+
+assert_no_desktop_shell_systemctl_references() {
+  local root="$1"
+  local hits
+
+  hits="$(collect_desktop_shell_systemctl_hits "$root")"
+  if [[ -n "$hits" ]]; then
+    printf 'FAIL: direct desktop-shell systemctl reference:\n%s\n' "$hits" >&2
     exit 1
   fi
 }
@@ -935,6 +1171,7 @@ assert_rendered_graphical_profiles() {
 
 assert_mutation_fixtures
 assert_no_adapter_enrollment "$ROOT"
+assert_no_desktop_shell_systemctl_references "$ROOT"
 audit_active_routes
 assert_autostart_fixture "$AUTOSTART"
 assert_autostart_order
