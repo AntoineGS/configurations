@@ -140,3 +140,20 @@
   - `968ba60` `fix(mako): harden pending adapter cleanup`
 - Concerns:
   - None.
+
+## Task 3 Fifth Fix Round
+
+- Changed files:
+  - `Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- What changed:
+  - Pending cleanup now verifies the live parent PID matches the stored expected parent before recursively traversing or signaling the process tree.
+  - Added a regression where a pending parent with a descendant has a mismatched stored parent; both remain live until a correct pending record is supplied, after which both are reaped.
+  - Replaced the inert metacharacter side-effect check with a fake `touch` executable in `TEST_BIN` that writes an exported sentinel file; the `DVI-D-1;touch` route fixture asserts that sentinel remains absent.
+- Tests:
+  - `bash Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `bash -n Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `shellcheck Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- Commit ID:
+  - `28017ac` `fix(mako): validate pending cleanup parent`
+- Concerns:
+  - None.
