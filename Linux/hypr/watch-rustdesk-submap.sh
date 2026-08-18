@@ -305,6 +305,7 @@ write_notification_route_state() {
   local route_dir route_file current_core current_updated_at updated_at
   local route_json route_core route_updated_at
   local monotonic_now route_write_age
+  local route_rewritten=false
 
   parse_notification_route_state "$state" route_mode cue_output direction || return 1
 
@@ -318,6 +319,7 @@ write_notification_route_state() {
   route_dir=$NOTIFICATION_ROUTE_DIR
   route_file=$NOTIFICATION_ROUTE_FILE
   if ! ensure_notification_route_dir "$route_dir"; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
     return 1
   fi
 
@@ -365,6 +367,7 @@ write_notification_route_state() {
   else
     local publish_status
     if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
+      route_rewritten=true
       :
     else
       publish_status=$?
@@ -380,7 +383,9 @@ write_notification_route_state() {
     return 1
   fi
 
-  NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
+  if [[ $route_rewritten == true ]]; then
+    NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
+  fi
   return 0
 }
 
