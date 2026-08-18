@@ -576,6 +576,7 @@ cleanup_pending_owned_children() {
       wait "$pid" 2>/dev/null || true
       continue
     fi
+    cleanup_process_tree "$pid" "$start_time" "$executable"
     cleanup_child_process "$expected_parent_pid" "$pid" "$start_time" "$executable"
   done
   PENDING_OWNED_CHILDREN=()
@@ -782,6 +783,49 @@ assert_adapter_pending_registration_cleans_up_on_identity_lookup_failure() {
   adapter_pid=""
   [[ ! -e /proc/$failed_pid/status ]] || fail 'failed adapter startup cleanup did not reap the pending adapter process'
   [[ ! -n ${adapter_pid:-} ]] || fail 'failed adapter startup left an untracked adapter process behind'
+}
+
+assert_adapter_pending_cleanup_reaps_descendants_on_promotion_failure() {
+  local failed_pid
+  local initial_start_time
+  local initial_executable
+  local descendant_pid
+  local descendant_start_time
+
+  rm -f -- "$ADAPTER_DESCENDANT_PID_FILE"
+  export SPAWN_ADAPTER_DESCENDANT_PID_FILE="$ADAPTER_DESCENDANT_PID_FILE"
+  bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
+  adapter_pid=$!
+  initial_start_time=$(process_start_time "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    fail 'descendant adapter initial start identity is unavailable'
+  }
+  initial_executable=$(process_executable "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    fail 'descendant adapter initial executable is unavailable'
+  }
+  register_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$"
+  wait_for_file "$ADAPTER_DESCENDANT_PID_FILE"
+  descendant_pid=$(<"$ADAPTER_DESCENDANT_PID_FILE")
+  descendant_start_time=$(process_start_time "$descendant_pid") || fail 'adapter descendant start identity is unavailable'
+  assert_process_identity "$descendant_pid" "$descendant_start_time" '/usr/bin/sleep' 'adapter descendant startup'
+
+  PROCESS_EXECUTABLE_FAIL_PID=$adapter_pid
+  PROCESS_EXECUTABLE_FAIL_FILE="$TEST_RUNTIME_DIR/process-executable-fail"
+  : >"$PROCESS_EXECUTABLE_FAIL_FILE"
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  promote_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$" &&
+    fail 'adapter descendant promotion unexpectedly succeeded during injected lookup failure'
+  failed_pid=$adapter_pid
+  cleanup_pending_owned_children
+  wait "$failed_pid" 2>/dev/null || true
+  PROCESS_EXECUTABLE_FAIL_PID=""
+  PROCESS_EXECUTABLE_FAIL_FILE=""
+  SPAWN_ADAPTER_DESCENDANT_PID_FILE=""
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE SPAWN_ADAPTER_DESCENDANT_PID_FILE
+  adapter_pid=""
+  [[ ! -e /proc/$failed_pid/status ]] || fail 'failed adapter descendant cleanup left the adapter running'
+  [[ ! -e /proc/$descendant_pid/status ]] || fail 'failed adapter cleanup left its descendant running'
 }
 
 assert_incomplete_identity_cleanup_skips_child() {
@@ -1019,6 +1063,16 @@ cat >"$TEST_BIN/sleep" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+if [[ -n ${SPAWN_ADAPTER_DESCENDANT_PID_FILE:-} && ! -e $SPAWN_ADAPTER_DESCENDANT_PID_FILE ]]; then
+  trap 'exit 143' TERM
+  /usr/bin/sleep 2147483647 &
+  descendant_pid=$!
+  printf '%s\n' "$descendant_pid" >"$SPAWN_ADAPTER_DESCENDANT_PID_FILE"
+  /usr/bin/sleep "${1:-0.01}"
+  wait "$descendant_pid"
+  exit 0
+fi
+
 /usr/bin/sleep "${1:-0.01}"
 printf '%s\n' "${BASHPID:?}" >>"${FAKE_ITERATION_COMPLETION_LOG:?}"
 EOF
@@ -1043,8 +1097,9 @@ chmod 0700 -- "$TEST_BIN"/*
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
 export PATH="$TEST_BIN:/usr/bin:/bin"
 FAKE_MAKO_READY_FILE="$TEST_RUNTIME_DIR/fake-mako.ready"
+ADAPTER_DESCENDANT_PID_FILE="$TEST_RUNTIME_DIR/adapter-descendant.pid"
 export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01
-export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE
+export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE ADAPTER_DESCENDANT_PID_FILE
 trap cleanup EXIT
 
 assert_pending_owned_child_registration_preserves_observed_identity
@@ -1058,6 +1113,7 @@ assert_mismatched_identity_cleanup_skips_child
 assert_descendant_cleanup_revalidates_identity
 assert_adapter_startup_cleans_up_initial_identity_failure
 assert_adapter_pending_registration_cleans_up_on_identity_lookup_failure
+assert_adapter_pending_cleanup_reaps_descendants_on_promotion_failure
 
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE"
 run_reconcile_once
@@ -1180,6 +1236,7 @@ write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
+[[ ! -e "$TEST_RUNTIME_DIR/touch" ]] || fail 'metacharacter route output caused a side effect'
 
 write_route false null DP-2 null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
