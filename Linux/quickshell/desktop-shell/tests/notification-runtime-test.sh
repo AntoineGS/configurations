@@ -665,10 +665,9 @@ chmod 000 "$route_path"
 wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable|invalid"))'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
 
-near_expiry=$(( $(date +%s) - 44 ))
-write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$near_expiry"'}'
-wait_for_status '.routeValid == true and .routeVisible == true'
-wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("stale"))'
+stale_route=$(( $(date +%s) - 46 ))
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$stale_route"'}'
+wait_for_status '.routeValid == false and .routeVisible == false and .routeError == "route is stale"'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false and (.notificationRouteError | test("stale"))'
 
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
