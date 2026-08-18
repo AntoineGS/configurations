@@ -653,9 +653,10 @@ export XDG_RUNTIME_DIR="$RUNTIME_DIR" XDG_STATE_HOME="$STATE_HOME"
 
 write_services() {
   local adapter_state=${1-inactive}
+  local shell_state=${2-inactive}
 
   printf '%s\n' \
-    'desktop-shell.service=inactive' \
+    "desktop-shell.service=$shell_state" \
     "desktop-shell-mako-route.service=$adapter_state" >"$SERVICE_STATE"
   : >"$SERVICE_PID_STATE"
 }
@@ -1376,6 +1377,48 @@ expect_mako_disappearance() {
   assert_no_fallthrough
 }
 
+prepare_partial_initial_stop_state() {
+  reset_log
+  write_services active active
+  write_processes
+  printf '%s\n' mako >"$BUS_OWNER_STATE"
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1' >"$MAKO_MODE_STATE"
+  rollback_output="$TEST_ROOT/partial-stop.out"
+  rollback_error="$TEST_ROOT/partial-stop.err"
+}
+
+expect_partial_initial_stop_failure() {
+  local label=$1
+  local status=0
+
+  prepare_partial_initial_stop_state
+  case $label in
+    adapter-stop) SYSTEMCTL_STOP_ADAPTER_STATUS=7 ;;
+    shell-stop) SYSTEMCTL_STOP_SHELL_STATUS=7 ;;
+    *) fail "unknown partial initial stop injection: $label" ;;
+  esac
+
+  run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
+  ((status != 0)) || fail "partial initial stop failure was accepted: $label"
+  assert_no_rollback_success_status
+  if awk -F'|' -v expected_path="$DESKTOP_SHELL_MAKO" \
+    '$3 == expected_path { found = 1; exit } END { exit !found }' "$PROCESS_STATE"; then
+    assert_safe_hidden_adapter
+  else
+    assert_exact_process_path_absent "$DESKTOP_SHELL_MAKO"
+  fi
+  if [[ $label == adapter-stop ]]; then
+    assert_log_not_contains 'systemctl|--user|stop|desktop-shell.service' \
+      'adapter-stop failure continued into shell stop'
+  else
+    assert_log_order \
+      'systemctl|--user|stop|desktop-shell-mako-route.service' \
+      'systemctl|--user|stop|desktop-shell.service'
+  fi
+  assert_log_not_contains 'pkcheck|' "partial initial stop reached polkit probe: $label"
+  assert_no_fallthrough
+}
+
 prepare_clean_rollback_state
 printf '%s\n' \
   "mako|1201|/usr/bin/mako-decoy|mako|11201|1000" \
@@ -1423,6 +1466,10 @@ done
 
 for disappearance in after-hidden after-adapter after-swayosd after-polkit after-probe before-owner; do
   expect_mako_disappearance "$disappearance"
+done
+
+for partial_stop in adapter-stop shell-stop; do
+  expect_partial_initial_stop_failure "$partial_stop"
 done
 
 prepare_clean_rollback_state
