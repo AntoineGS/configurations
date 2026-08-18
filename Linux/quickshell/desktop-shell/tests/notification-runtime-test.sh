@@ -1248,6 +1248,69 @@ stop_shell
 start_shell
 wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
 
+# Close a hidden sender after it changes while the initial history write is
+# still blocked. Exact close cleanup must clear dirty/pending state and delete
+# the queued history intent without touching another notification's history.
+rm -f -- "$dnd_refresh_started" "$dnd_refresh_release" "$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_refresh_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_REFRESH_STARTED="$dnd_refresh_started"
+export DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE="$dnd_refresh_release"
+export DESKTOP_SHELL_TEST_DND_REFRESH_COUNT="$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV="$dnd_refresh_real_mv"
+closed_hidden_sender="$fixture/closed-hidden-sender.py"
+closed_hidden_id_file="$fixture/closed-hidden-id"
+closed_hidden_request="$fixture/closed-hidden-request"
+cat >"$closed_hidden_sender" <<'PY'
+import dbus
+import sys
+import time
+
+id_path, request_path = sys.argv[1:]
+bus = dbus.SessionBus()
+proxy = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+notifications = dbus.Interface(proxy, "org.freedesktop.Notifications")
+notification_id = notifications.Notify(
+    "task4-dnd-close", 0, "", "Task 4 DND close seed", "close seed",
+    dbus.Array([], signature="s"),
+    dbus.Dictionary({}, signature="sv"), dbus.Int32(30000),
+)
+with open(id_path, "w", encoding="ascii") as output:
+    output.write(str(notification_id))
+while not __import__("os").path.exists(request_path):
+    time.sleep(0.05)
+notifications.CloseNotification(notification_id)
+PY
+chmod 700 "$closed_hidden_sender"
+rm -f -- "$closed_hidden_id_file" "$closed_hidden_request"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+python3 "$closed_hidden_sender" "$closed_hidden_id_file" "$closed_hidden_request" &
+action_pid=$!
+wait_for_path "$dnd_refresh_started"
+closed_hidden_id=$(<"$closed_hidden_id_file")
+notify-send --app-name task4-dnd-close --replace-id "$closed_hidden_id" --urgency normal --expire-time 30000 \
+  'Task 4 DND close update' 'close update while persistence runs' >/dev/null 2>&1
+wait_for_status '.silencedDirtyCount == 1'
+: >"$closed_hidden_request"
+wait_for_process_exit "$action_pid"
+action_pid=''
+: >"$dnd_refresh_release"
+wait_for_status '.dnd == true and .popupCount == 0 and .pendingPersistenceCount == 0 and .liveCount == 0 and .silencedRefreshCount == 0 and .silencedDirtyCount == 0'
+for file in "$history_dir"/*.json; do
+  [[ -f $file ]] || continue
+  [[ $(jq -r '.app' "$file" 2>/dev/null) == task4-dnd-close ]] || continue
+  printf 'FAIL: closed hidden notification history survived exact cleanup: %s\n' "$file" >&2
+  exit 1
+done
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_REFRESH_STARTED DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE \
+  DESKTOP_SHELL_TEST_DND_REFRESH_COUNT DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
 # The global admission window applies before DND persistence, even when the
 # active-popup cap is never reached.
 for index in $(seq 1 121); do

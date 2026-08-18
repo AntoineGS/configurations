@@ -367,6 +367,7 @@ Item {
     if (service.liveRefs[originalId] !== notification) return
     delete service.pendingRefreshes[String(originalId)]
     delete service.pendingSilencedRefreshes[String(originalId)]
+    delete service.silencedDirty[originalId]
     var generation = Number(service.liveGenerations[originalId])
     if (Number(service.actionClosingGenerations[originalId]) === generation) return
     var source = service.livePersistenceSources[originalId] || "popup"
@@ -1301,6 +1302,8 @@ Item {
       liveCount: service.liveReferenceCount(),
       pendingPersistenceCount: service.pendingPersistenceCount(),
       persistenceGenerationCount: Object.keys(service.latestPersistenceGenerations).length,
+      silencedRefreshCount: Object.keys(service.pendingSilencedRefreshes).length,
+      silencedDirtyCount: Object.keys(service.silencedDirty).length,
       admissionDropped: service.admissionDropped,
       admissionWindowCount: service.admissionTimestamps.length,
       popupCount: popupModel.count,
