@@ -14,6 +14,7 @@ CALL_LOG="$TMP_DIR/mutations.log"
 IPC_LOG="$TMP_DIR/ipc.log"
 PAYLOAD_FILE="$TMP_DIR/payload.json"
 LOCALE_LOG="$TMP_DIR/locales.log"
+PLAYERCTL_LOG="$TMP_DIR/playerctl.log"
 SYSFS_ROOT="$TMP_DIR/sys"
 BACKLIGHT_ROOT="$TMP_DIR/backlight"
 STATE_DIR="$TMP_DIR/state"
@@ -56,7 +57,7 @@ DISPLAY_MAX_FILE="$STATE_DIR/display-max"
 KEYBOARD_CURRENT_FILE="$STATE_DIR/keyboard-current"
 KEYBOARD_MAX_FILE="$STATE_DIR/keyboard-max"
 
-export CALL_LOG IPC_LOG PAYLOAD_FILE LOCALE_LOG
+export CALL_LOG IPC_LOG PAYLOAD_FILE LOCALE_LOG PLAYERCTL_LOG
 export SINK_VOLUME_FILE SINK_MUTED_FILE SOURCE_VOLUME_FILE SOURCE_MUTED_FILE
 export DISPLAY_CURRENT_FILE DISPLAY_MAX_FILE KEYBOARD_CURRENT_FILE KEYBOARD_MAX_FILE
 export ASD_VALUE_FILE AUDIO_DEFAULT_FILE AUDIO_SINKS_FILE AUDIO_SINKS_AFTER_FILE AUDIO_LIST_COUNT_FILE
@@ -288,15 +289,29 @@ set -Eeuo pipefail
 printf '%s\n' "${LC_ALL:-unset}" >>"$LOCALE_LOG"
 [[ ${LC_ALL:-} == C ]] || exit 125
 
-printf 'playerctl' >>"$CALL_LOG"
-printf ' %q' "$@" >>"$CALL_LOG"
-printf '\n' >>"$CALL_LOG"
-if [[ ${STUB_MUTATION_FAILURE:-} == playerctl ]]; then
-  exit 1
-fi
-case "$*" in
-  next|previous|play-pause) exit 0 ;;
-  *) exit 2 ;;
+printf '%s\n' "$*" >>"$PLAYERCTL_LOG"
+case "${1:-}" in
+  next|previous|play-pause)
+    printf 'playerctl' >>"$CALL_LOG"
+    printf ' %q' "$@" >>"$CALL_LOG"
+    printf '\n' >>"$CALL_LOG"
+    [[ ${STUB_MUTATION_FAILURE:-} == playerctl ]] && exit 1
+    exit 0
+    ;;
+  status)
+    [[ ${STUB_PLAYERCTL_STATUS_FAILURE:-0} == 1 ]] && exit 1
+    printf '%s\n' "${STUB_PLAYERCTL_STATUS:-Playing}"
+    exit 0
+    ;;
+  metadata)
+    [[ $# -eq 3 && $2 == --format && $3 == '{{title}}' ]] || exit 2
+    [[ ${STUB_PLAYERCTL_TITLE_FAILURE:-0} == 1 ]] && exit 1
+    printf '%s\n' "${STUB_PLAYERCTL_TITLE-Resulting title}"
+    exit 0
+    ;;
+  *)
+    exit 2
+    ;;
 esac
 EOF
 
@@ -442,6 +457,7 @@ reset_fixture() {
   : >"$IPC_LOG"
   : >"$PAYLOAD_FILE"
   : >"$LOCALE_LOG"
+  : >"$PLAYERCTL_LOG"
   export STUB_MUTATION_FAILURE=''
   export STUB_READBACK_FAILURE=''
   export STUB_VOLUME_SCALAR=''
@@ -449,6 +465,10 @@ reset_fixture() {
   export STUB_IPC_FAILURE=''
   export STUB_IPC_RESPONSE='ok'
   export STUB_IPC_EXIT=0
+  export STUB_PLAYERCTL_STATUS='Playing'
+  export STUB_PLAYERCTL_STATUS_FAILURE=0
+  export STUB_PLAYERCTL_TITLE='Resulting title'
+  export STUB_PLAYERCTL_TITLE_FAILURE=0
   export STUB_ASD_NO_DEVICE=0
   export STUB_ASD_MUTATION_FAILURE=0
   export STUB_ASD_VALUE=30000
@@ -516,6 +536,12 @@ assert_no_mutation() {
 assert_no_ipc() {
   [[ ! -s "$IPC_LOG" ]] || fail 'unexpected OSD IPC delivery'
   [[ ! -s "$PAYLOAD_FILE" ]] || fail 'unexpected OSD payload'
+}
+
+assert_playerctl_calls() {
+  local expected=$1 actual
+  actual=$(<"$PLAYERCTL_LOG")
+  [[ $actual == "$expected" ]] || fail "playerctl call mismatch: expected <$expected>, got <$actual>"
 }
 
 assert_no_legacy_routes() {
@@ -628,19 +654,70 @@ reset_fixture
 run_helper media-next
 assert_status 0
 assert_mutation 'playerctl next'
-assert_payload '.icon == "media-next" and .message == "Next track" and (.value == null) and (.max == null) and (.progressText == null) and (keys | sort) == ["icon", "message"]'
+assert_playerctl_calls $'next\nstatus\nmetadata --format {{title}}'
+assert_payload '.icon == "media-next" and .message == "Resulting title" and (.value == null) and (.max == null) and (.progressText == null) and (keys | sort) == ["icon", "message"]'
 
 reset_fixture
 run_helper media-previous
 assert_status 0
 assert_mutation 'playerctl previous'
-assert_payload '.icon == "media-previous" and .message == "Previous track" and (.value == null) and (.max == null) and (.progressText == null) and (keys | sort) == ["icon", "message"]'
+assert_playerctl_calls $'previous\nstatus\nmetadata --format {{title}}'
+assert_payload '.icon == "media-previous" and .message == "Resulting title" and (.value == null) and (.max == null) and (.progressText == null) and (keys | sort) == ["icon", "message"]'
+
+for resulting_state in Playing Paused Stopped; do
+  reset_fixture
+  export STUB_PLAYERCTL_STATUS=$resulting_state
+  run_helper media-play-pause
+  assert_status 0
+  assert_mutation 'playerctl play-pause'
+  assert_playerctl_calls $'play-pause\nstatus'
+  case "$resulting_state" in
+    Playing) expected_icon=media-pause ;;
+    Paused) expected_icon=media-play ;;
+    Stopped) expected_icon=media-stop ;;
+  esac
+  assert_payload ".icon == \"$expected_icon\" and .message == \"$resulting_state\" and (keys | sort) == [\"icon\", \"message\"]"
+done
 
 reset_fixture
+export STUB_PLAYERCTL_STATUS_FAILURE=1
 run_helper media-play-pause
-assert_status 0
-assert_mutation 'playerctl play-pause'
-assert_payload '.icon == "media" and .message == "Play/Pause" and (.value == null) and (.max == null) and (.progressText == null) and (keys | sort) == ["icon", "message"]'
+assert_status 1
+assert_playerctl_calls $'play-pause\nstatus'
+assert_no_ipc
+
+reset_fixture
+export STUB_PLAYERCTL_STATUS=$'Playing\nPaused'
+run_helper media-next
+assert_status 1
+assert_playerctl_calls $'next\nstatus'
+assert_no_ipc
+
+reset_fixture
+export STUB_PLAYERCTL_TITLE_FAILURE=1
+run_helper media-previous
+assert_status 1
+assert_playerctl_calls $'previous\nstatus\nmetadata --format {{title}}'
+assert_no_ipc
+
+reset_fixture
+export STUB_PLAYERCTL_TITLE=''
+run_helper media-next
+assert_status 1
+assert_no_ipc
+
+reset_fixture
+export STUB_PLAYERCTL_TITLE=$'Line one\nLine two'
+run_helper media-next
+assert_status 1
+assert_no_ipc
+
+reset_fixture
+printf -v oversized_title '%*s' 257 ''
+export STUB_PLAYERCTL_TITLE=${oversized_title// /x}
+run_helper media-next
+assert_status 1
+assert_no_ipc
 
 invalid_cases=(
   'volume-up'

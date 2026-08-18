@@ -15,6 +15,7 @@ export LC_ALL=C
 
 readonly MAX_STEP=20
 readonly MAX_PERCENT=100
+readonly MAX_MEDIA_TITLE_LENGTH=256
 readonly SYSFS_ROOT_DEFAULT=/sys
 declare -ar JQ=(jq)
 
@@ -335,29 +336,59 @@ media_operation() {
   local operation=$1
   local icon
   local message
+  local status
+  local title
   local -a command
 
   case "$operation" in
     media-next)
       command=(playerctl next)
       icon=media-next
-      message='Next track'
       ;;
     media-previous)
       command=(playerctl previous)
       icon=media-previous
-      message='Previous track'
       ;;
     media-play-pause)
       command=(playerctl play-pause)
-      icon=media
-      message='Play/Pause'
       ;;
     *) return 1 ;;
   esac
   if ! run_mutation "${command[@]}"; then
     return 1
   fi
+
+  if ! status=$(playerctl status 2>/dev/null); then
+    printf 'desktop-osd: failed to read resulting media status\n' >&2
+    return 1
+  fi
+  case "$status" in
+    Playing|Paused|Stopped) ;;
+    *)
+      printf 'desktop-osd: malformed resulting media status\n' >&2
+      return 1
+      ;;
+  esac
+
+  if [[ $operation == media-play-pause ]]; then
+    case "$status" in
+      Playing) icon=media-pause ;;
+      Paused) icon=media-play ;;
+      Stopped) icon=media-stop ;;
+    esac
+    message=$status
+  else
+    if ! title=$(playerctl metadata --format '{{title}}' 2>/dev/null); then
+      printf 'desktop-osd: failed to read resulting media title\n' >&2
+      return 1
+    fi
+    if [[ -z $title || $title == *$'\n'* || $title == *$'\r'* || ${#title} -gt MAX_MEDIA_TITLE_LENGTH ]]; then
+      printf 'desktop-osd: malformed resulting media title\n' >&2
+      return 1
+    fi
+    message=$title
+  fi
+
   build_message_payload "$icon" "$message"
   deliver_osd "$payload"
 }

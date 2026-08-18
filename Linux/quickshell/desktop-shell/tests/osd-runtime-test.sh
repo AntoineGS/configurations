@@ -112,6 +112,9 @@ fi
 
 fixture=$(mktemp -d)
 shell_pid=''
+shell_start_time=''
+shell_executable=''
+shell_parent_pid=''
 shell_log="$fixture/shell.log"
 runtime_dir="$fixture/runtime"
 home="$fixture/home"
@@ -123,22 +126,70 @@ fi
 
 cleanup_process() {
   local pid=${1-}
+  local expected_start_time=${2-}
+  local expected_executable=${3-}
+  local expected_parent_pid=${4-}
   [[ -n $pid ]] || return 0
-  if kill -0 "$pid" 2>/dev/null; then
+  [[ -n $expected_start_time && -n $expected_executable && -n $expected_parent_pid ]] || return 0
+  if child_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid"; then
     kill "$pid" 2>/dev/null || true
     for _ in {1..50}; do
-      kill -0 "$pid" 2>/dev/null || break
+      child_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid" || break
       sleep 0.1
     done
-    kill -KILL "$pid" 2>/dev/null || true
+    if child_identity_matches "$pid" "$expected_start_time" "$expected_executable" "$expected_parent_pid"; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
   wait "$pid" 2>/dev/null || true
+}
+
+read_proc_identity() {
+  local pid=$1
+  local stat
+  local -a fields
+
+  [[ -r "/proc/$pid/stat" ]] || return 1
+  stat=$(<"/proc/$pid/stat")
+  [[ $stat =~ ^[0-9]+[[:space:]]\(.*\)[[:space:]](.*)$ ]] || return 1
+  read -r -a fields <<<"${BASH_REMATCH[1]}"
+  (( ${#fields[@]} >= 20 )) || return 1
+  printf '%s\n%s\n' "${fields[1]}" "${fields[19]}"
+}
+
+child_identity_matches() {
+  local pid=$1
+  local expected_start_time=$2
+  local expected_executable=$3
+  local expected_parent_pid=$4
+  local identity current_executable
+  local -a fields
+
+  identity=$(read_proc_identity "$pid") || return 1
+  mapfile -t fields <<<"$identity"
+  (( ${#fields[@]} == 2 )) || return 1
+  [[ ${fields[0]} == "$expected_parent_pid" && ${fields[1]} == "$expected_start_time" ]] || return 1
+  current_executable=$(readlink -e -- "/proc/$pid/exe") || return 1
+  [[ $current_executable == "$expected_executable" ]]
+}
+
+store_child_identity() {
+  local identity
+  local -a fields
+
+  identity=$(read_proc_identity "$shell_pid") || return 1
+  mapfile -t fields <<<"$identity"
+  (( ${#fields[@]} == 2 )) || return 1
+  shell_parent_pid=${fields[0]}
+  shell_start_time=${fields[1]}
+  shell_executable=$(readlink -e -- "/proc/$shell_pid/exe")
+  [[ -n $shell_executable ]]
 }
 
 cleanup() {
   local status=$?
   trap - EXIT HUP INT TERM
-  cleanup_process "$shell_pid"
+  cleanup_process "$shell_pid" "$shell_start_time" "$shell_executable" "$shell_parent_pid"
   if ((status != 0)) && [[ -s $shell_log ]]; then
     printf '%s\n' '--- OSD runtime shell log ---' >&2
     printf '%s\n' "$(<"$shell_log")" >&2
@@ -161,6 +212,7 @@ cp -- "$HARNESS" "$runtime_shell_root/shell.qml"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
 
 start_shell() {
+  export DESKTOP_SHELL_TEST_NO_SURFACES=1
   DESKTOP_SHELL_PREVIEW=0 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
@@ -172,6 +224,10 @@ start_shell() {
   WAYLAND_DISPLAY="$fixture_wayland_display" \
   quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
   shell_pid=$!
+  store_child_identity || {
+    printf 'FAIL: unable to store test shell process identity\n' >&2
+    return 1
+  }
 }
 
 call_ipc() {
@@ -248,6 +304,12 @@ wait_for_state() {
 start_shell
 wait_for_ipc pong desktop.osd ping
 
+surface_state=$(call_ipc desktop.osd-test surfaceState | normalize_json)
+jq -e '.suppressed == true and .visible == false and .opened == false' <<<"$surface_state" >/dev/null || {
+  printf 'FAIL: OSD test surface was not suppressed before opening: %s\n' "$surface_state" >&2
+  exit 1
+}
+
 screen_state=$(read_screen_state)
 jq -e '.target as $target | ($target != "") and (.focused == "" or any(.screens[]; . == $target))' <<<"$screen_state" >/dev/null || {
   printf 'FAIL: initial OSD target screen is not a validated local screen: %s\n' "$screen_state" >&2
@@ -272,6 +334,11 @@ show_result=$(call_ipc_debug desktop.osd show '{"icon":"brightness","message":""
   exit 1
 }
 wait_for_state '.opened == true and .value == 20 and .duration == 500'
+surface_state=$(call_ipc desktop.osd-test surfaceState | normalize_json)
+jq -e '.suppressed == true and .visible == false and .opened == true' <<<"$surface_state" >/dev/null || {
+  printf 'FAIL: OSD test surface became visible while suppressed: %s\n' "$surface_state" >&2
+  exit 1
+}
 before_invalid=$(read_state)
 [[ $(call_ipc desktop.osd show '{"value":"invalid"}') == invalid ]] || {
   printf 'FAIL: invalid OSD show was accepted\n' >&2
