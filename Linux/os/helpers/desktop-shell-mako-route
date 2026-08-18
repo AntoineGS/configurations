@@ -88,15 +88,19 @@ route_file_is_secure() {
 
 read_route() {
   local now
+  local now_ms
   local route_values
 
   route_dir_is_secure || return 1
   route_file_is_secure "$ROUTE_FILE" || return 1
   route_file_is_secure "$LEASE_FILE" || return 1
   now=$(date +%s)
+  now_ms=$(date +%s%3N)
   [[ $now =~ ^[0-9]+$ ]] || return 1
+  [[ $now_ms =~ ^[0-9]+$ ]] || return 1
 
-  if ! route_values=$(jq -ner --argjson now "$now" --slurpfile route "$ROUTE_FILE" --slurpfile lease "$LEASE_FILE" '
+  if ! route_values=$(jq -ner --argjson now "$now" --argjson now_ms "$now_ms" \
+    --slurpfile route "$ROUTE_FILE" --slurpfile lease "$LEASE_FILE" '
     def non_negative_integer($label):
       if (type != "number") or (floor != .) or . < 0 then error($label + " is invalid") else . end;
     def supported_output:
@@ -109,19 +113,18 @@ read_route() {
     | if ($route_json | type) != "object" or ($route_json | type) == "array" then error("route must be an object") else . end
     | if ($lease_json | type) != "object" or ($lease_json | type) == "array" then error("lease must be an object") else . end
     | if $route_json.version != 1 then error("unsupported route version") else . end
-    | if $lease_json.version != 1 then error("unsupported lease version") else . end
+    | if $lease_json.version != 2 then error("unsupported lease version") else . end
     | if ($route_json.visible | type) != "boolean" then error("route visibility is invalid") else . end
     | ($route_json.updatedAt | non_negative_integer("route timestamp")) as $route_updated_at
-    | ($lease_json.refreshedAt | non_negative_integer("lease refresh time")) as $lease_refreshed_at
-    | ($lease_json.expiresAt | non_negative_integer("lease expiration time")) as $lease_expires_at
+    | ($lease_json.refreshedAtMs | non_negative_integer("lease refresh time")) as $lease_refreshed_at_ms
+    | ($lease_json.expiresAtMs | non_negative_integer("lease expiration time")) as $lease_expires_at_ms
     | ($lease_json.routeUpdatedAt | non_negative_integer("lease route timestamp")) as $lease_route_updated_at
     | if $route_updated_at > $now then error("route timestamp is from the future") else . end
     | if ($now - $route_updated_at) > 45 then error("route is stale") else . end
-    | if $lease_refreshed_at > $now then error("lease refresh time is from the future") else . end
-    | if $lease_expires_at <= $now then error("lease is stale") else . end
-    | if $lease_expires_at > ($now + 1) then error("lease expires too far in the future") else . end
-    | if $lease_expires_at < $lease_refreshed_at then error("lease lifetime is invalid") else . end
-    | if ($lease_expires_at - $lease_refreshed_at) > 1 then error("lease lifetime is too long") else . end
+    | if $lease_refreshed_at_ms > $now_ms then error("lease refresh time is from the future") else . end
+    | if $lease_expires_at_ms <= $now_ms then error("lease is stale") else . end
+    | if $lease_expires_at_ms < $lease_refreshed_at_ms then error("lease lifetime is invalid") else . end
+    | if ($lease_expires_at_ms - $lease_refreshed_at_ms) > 1500 then error("lease lifetime is too long") else . end
     | if $lease_route_updated_at != $route_updated_at then error("lease route timestamp does not match") else . end
     | if ($route_json.output != null and (($route_json.output | type) != "string" or ($route_json.output | supported_output | not))) then error("unsupported route output") else . end
     | if ($route_json.cueOutput != null and (($route_json.cueOutput | type) != "string" or ($route_json.cueOutput | supported_output | not))) then error("unsupported route cue output") else . end
@@ -202,11 +205,11 @@ cleanup() {
 }
 
 run_adapter() {
-  local poll_interval=${POLL_INTERVAL:-1}
+  local poll_interval=${POLL_INTERVAL:-0.25}
 
   if [[ ! $poll_interval =~ ^[0-9]+([.][0-9]+)?$ ]] ||
-    ! awk -v value="$poll_interval" 'BEGIN { exit !(value > 0 && value <= 1) }'; then
-    poll_interval=1
+    ! awk -v value="$poll_interval" 'BEGIN { exit !(value > 0 && value <= 0.25) }'; then
+    poll_interval=0.25
   fi
 
   trap 'exit 129' HUP
