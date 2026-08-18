@@ -216,15 +216,19 @@ write_lease_payload() {
 write_route_pair() {
   local payload=$1
   local updated_at
+  local refreshed_at
   write_route_payload "$payload"
   updated_at=$(jq -er '.updatedAt' <<<"$payload") || return 1
-  write_lease_payload "$(date +%s)" "$(( $(date +%s) + 2 ))" "$updated_at"
+  refreshed_at=$(date +%s)
+  write_lease_payload "$refreshed_at" "$((refreshed_at + 2))" "$updated_at"
 }
 
 refresh_route_lease() {
   local updated_at
+  local refreshed_at
   updated_at=$(jq -er '.updatedAt' "$route_path") || return 0
-  write_lease_payload "$(date +%s)" "$(( $(date +%s) + 2 ))" "$updated_at"
+  refreshed_at=$(date +%s)
+  write_lease_payload "$refreshed_at" "$((refreshed_at + 2))" "$updated_at"
 }
 
 assert_mode() {
