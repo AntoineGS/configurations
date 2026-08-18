@@ -4,6 +4,7 @@ const path = require("node:path")
 
 const root = path.resolve(__dirname, "..")
 const servicePath = path.join(root, "plugins/notifications/Service.qml")
+const shellPath = path.join(root, "shell.qml")
 const cardPath = path.join(root, "plugins/notifications/components/NotificationCard.qml")
 const logicPath = path.join(root, "plugins/notifications/NotificationLogic.js")
 const runtimeTestPath = path.join(root, "tests/notification-runtime-test.sh")
@@ -19,6 +20,7 @@ function readRequired(file) {
 }
 
 const service = readRequired(servicePath)
+const shell = readRequired(shellPath)
 const card = readRequired(cardPath)
 const logic = readRequired(logicPath)
 const runtimeTest = readRequired(runtimeTestPath)
@@ -51,6 +53,8 @@ assert.match(service, /property int routeMetadataGeneration/,
   "metadata checks have a generation that identifies the watched file state")
 assert.match(service, /property int routeMetadataCheckGeneration/,
   "metadata process records the generation it checks")
+assert.match(service, /property int routeMetadataAttemptCount/,
+  "metadata attempts are observable for bounded retry assertions")
 assert.match(service, /revision !== service\.routeMetadataGeneration/,
   "stale metadata checks cannot validate a replacement file state")
 assert.match(service, /routeMetadataSnapshotRevision/,
@@ -72,8 +76,15 @@ assert.match(service, /function scheduleRouteMetadataCheck\(\)/,
   "watched replacements have a coalesced metadata scheduling path")
 assert.match(service, /onFileChanged:\s*\{[\s\S]*noteRouteCandidateChange\(\)[\s\S]*scheduleRouteMetadataCheck\(\)/,
   "watched replacements advance a candidate revision while scheduling metadata revalidation")
-assert.match(service, /if \(revision !== service\.routeMetadataGeneration[\s\S]*return[\s\S]*promoteRouteCandidate\(snapshot\)/,
+assert.match(service, /if \(!currentRevision\)[\s\S]*return[\s\S]*promoteRouteCandidate\(snapshot\)/,
   "stale metadata process results are discarded before they can promote a newer generation")
+const finishRouteMetadataStart = service.indexOf("function finishRouteMetadata(")
+const finishRouteMetadataEnd = service.indexOf("\n  function normalizedRouteCandidate", finishRouteMetadataStart)
+const currentFailureStart = service.indexOf("if (!matchingSnapshot || Number(exitCode) !== 0)", finishRouteMetadataStart)
+assert.ok(finishRouteMetadataStart >= 0 && finishRouteMetadataEnd > finishRouteMetadataStart)
+assert.ok(currentFailureStart >= 0 && currentFailureStart < finishRouteMetadataEnd)
+assert.doesNotMatch(service.slice(currentFailureStart, finishRouteMetadataEnd), /scheduleRouteMetadataCheck\(\)/,
+  "same-revision metadata failures wait for file or fallback events instead of restarting the settle loop")
 assert.match(service, /LC_ALL=C[\s\S]*stat -c/,
   "metadata type comparisons run in the C locale")
 assert.match(service, /property int routeAcceptedGeneration/,
@@ -93,6 +104,8 @@ assert.match(service, /routeTransitionLog/,
 assert.match(service, /property real routeAcceptedRefreshedAtMs/)
 assert.match(service, /property real routeAcceptedExpiresAtMs/)
 assert.match(service, /routeLastTransitionReason/)
+assert.match(service, /routeMetadataAttemptCount\+\+/,
+  "each metadata process start increments the attempt counter")
 const invalidateMetadataStart = service.indexOf("function invalidateRouteMetadata(")
 const invalidateMetadataEnd = service.indexOf("\n  }", invalidateMetadataStart)
 assert.ok(invalidateMetadataStart >= 0 && invalidateMetadataEnd > invalidateMetadataStart)
@@ -118,6 +131,10 @@ assert.match(runtimeTest, /route_metadata_delay_bin[\s\S]*DESKTOP_SHELL_TEST_ROU
   "runtime coverage can delay only the metadata process")
 assert.match(runtimeTest, /race_a_refreshed_at_ms[\s\S]*race_b_refreshed_at_ms[\s\S]*stale delayed route generation was promoted/,
   "runtime coverage rejects a delayed stale generation after a newer pair is published")
+assert.match(runtimeTest, /assert_metadata_failure_bounded\(\)\s*\{/,
+  "runtime coverage bounds same-revision metadata failures")
+assert.match(runtimeTest, /routeMetadataAttemptCount[\s\S]*event-driven recovery/,
+  "runtime coverage exposes bounded attempts and event-driven recovery")
 assert.match(makoTest, /assert_exact_deadline_poll\(\)\s*\{/,
   "Mako runtime coverage has an exact lease deadline poll")
 assert.match(makoTest, /before_deadline_ms[\s\S]*deadline_ms[\s\S]*wait_for_log_count 3[\s\S]*rustdesk-route-hidden/,
@@ -304,10 +321,13 @@ assert.match(service, /routeValidationRevision:\s*service\.routeMetadataCheckGen
 assert.match(service, /routeAcceptedRevision:\s*service\.routeAcceptedGeneration/)
 assert.match(service, /routeAcceptedRefreshedAtMs:\s*service\.routeAcceptedRefreshedAtMs/)
 assert.match(service, /routeAcceptedExpiresAtMs:\s*service\.routeAcceptedExpiresAtMs/)
+assert.match(service, /routeMetadataAttemptCount:\s*service\.routeMetadataAttemptCount/)
 assert.match(service, /routeLastTransitionReason:\s*service\.routeLastTransitionReason/)
 assert.match(service, /routeTransitionCount:\s*service\.routeTransitionCount/)
 assert.match(service, /routeInvalidationCount:\s*service\.routeInvalidationCount/)
 assert.match(service, /routeTransitionLog:\s*service\.routeTransitionLog/)
+assert.match(shell, /notificationRouteMetadataAttemptCount:\s*notificationService\s*\?\s*notificationService\.routeMetadataAttemptCount/,
+  "shell health exposes notification metadata attempts")
 
 assert.match(card, /^BorderSurface\s*\{/m)
 assert.match(card, /Color\.notifications\.[A-Za-z]+/)

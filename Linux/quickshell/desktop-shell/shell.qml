@@ -70,6 +70,7 @@ ShellRoot {
     notificationRouteValid: notificationService ? notificationService.routeValid : false,
     notificationRouteVisible: notificationService ? notificationService.routeVisible : false,
     notificationRouteError: notificationService ? notificationService.routeError : "notification service unavailable",
+    notificationRouteMetadataAttemptCount: notificationService ? notificationService.routeMetadataAttemptCount : 0,
     polkitRegistered: polkitService ? polkitService.polkitRegistered : false,
     polkitError: polkitService ? polkitService.polkitError : "polkit service unavailable",
     polkitPamError: polkitService ? polkitService.pamError : "polkit service unavailable"

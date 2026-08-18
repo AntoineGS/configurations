@@ -44,6 +44,7 @@ Item {
   property string routeMetadataError: "notification route metadata unavailable"
   property int routeMetadataGeneration: 0
   property int routeMetadataCheckGeneration: -1
+  property int routeMetadataAttemptCount: 0
   property int routeMetadataSnapshotRevision: -1
   property var routeMetadataSnapshot: null
   property bool routeMetadataCheckScheduled: false
@@ -1306,6 +1307,7 @@ Item {
 
   function startRouteMetadataCheck() {
     var revision = service.routeMetadataGeneration
+    service.routeMetadataAttemptCount++
     service.routeMetadataCheckGeneration = revision
     service.routeMetadataSnapshot = null
     service.routeMetadataSnapshotRevision = -1
@@ -1343,16 +1345,17 @@ Item {
   function finishRouteMetadata(exitCode) {
     var revision = service.routeMetadataCheckGeneration
     var snapshot = service.routeMetadataSnapshot
+    var currentRevision = revision === service.routeMetadataGeneration
+    var matchingSnapshot = !!snapshot && snapshot.revision === revision
     service.routeMetadataSnapshot = null
     service.routeMetadataSnapshotRevision = -1
-    if (revision !== service.routeMetadataGeneration || !snapshot || snapshot.revision !== revision) {
+    if (!currentRevision) {
       service.scheduleRouteMetadataCheck()
       return
     }
-    if (Number(exitCode) !== 0) {
+    if (!matchingSnapshot || Number(exitCode) !== 0) {
       service.routeCandidatePending = true
       service.routeCandidateMetadataPending = true
-      service.scheduleRouteMetadataCheck()
       return
     }
     service.promoteRouteCandidate(snapshot)
@@ -1612,6 +1615,7 @@ Item {
       routeAcceptedGeneration: service.routeAcceptedGeneration,
       routeCandidateRevision: service.routeMetadataGeneration,
       routeValidationRevision: service.routeMetadataCheckGeneration,
+      routeMetadataAttemptCount: service.routeMetadataAttemptCount,
       routeAcceptedRevision: service.routeAcceptedGeneration,
       routeAcceptedRefreshedAtMs: service.routeAcceptedRefreshedAtMs,
       routeAcceptedExpiresAtMs: service.routeAcceptedExpiresAtMs,
