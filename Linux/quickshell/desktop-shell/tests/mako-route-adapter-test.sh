@@ -564,6 +564,7 @@ cleanup_pending_owned_children() {
   local start_time
   local executable
   local expected_parent_pid
+  local parent_pid
 
   for entry in "${PENDING_OWNED_CHILDREN[@]}"; do
     pid=${entry%%:*}
@@ -572,10 +573,11 @@ cleanup_pending_owned_children() {
     remainder=${remainder#*:}
     executable=${remainder%%:*}
     expected_parent_pid=${remainder##*:}
-    if ! process_parent_pid "$pid" >/dev/null 2>&1; then
+    if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
       wait "$pid" 2>/dev/null || true
       continue
     fi
+    [[ $parent_pid == "$expected_parent_pid" ]] || continue
     cleanup_process_tree "$pid" "$start_time" "$executable"
     cleanup_child_process "$expected_parent_pid" "$pid" "$start_time" "$executable"
   done
@@ -698,6 +700,53 @@ assert_pending_cleanup_revalidates_stored_parent() {
   assert_process_identity "$pid" "$start_time" "$executable" 'pending cleanup must skip mismatched stored parent'
 
   cleanup_owned_child "$pid" "$start_time" "$executable"
+}
+
+assert_pending_cleanup_skips_tree_when_stored_parent_mismatches() {
+  local parent_pid
+  local parent_start_time
+  local parent_executable
+  local child_pid
+  local child_start_time
+  local child_executable
+  local wrong_parent_pid=$(( $$ + 1 ))
+  local children=()
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  bash -c 'child=""; trap '\''[[ -n $child ]] && kill -TERM "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit 0'\'' TERM; "$1" & child=$!; wait "$child"' _ "$TEST_BIN/fake-mako" &
+  parent_pid=$!
+  await_file "$FAKE_MAKO_READY_FILE" || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'pending-parent mismatch fake Mako ready file did not appear'
+  }
+  await_process_executable "$parent_pid" '/usr/bin/bash' || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'pending-parent mismatch parent executable did not reach /usr/bin/bash'
+  }
+  parent_start_time=$(process_start_time "$parent_pid") || fail 'pending-parent mismatch parent start identity is unavailable'
+  parent_executable=$(process_executable "$parent_pid") || fail 'pending-parent mismatch parent executable is unavailable'
+  register_owned_child "$parent_pid" "$parent_start_time" "$parent_executable"
+  mapfile -t children < <(pgrep -P "$parent_pid" 2>/dev/null || true)
+  [[ ${#children[@]} -eq 1 ]] || fail 'pending-parent mismatch descendant pid is unavailable'
+  child_pid=${children[0]}
+  wait_for_process_executable "$child_pid" "$FAKE_MAKO_EXECUTABLE_PATH"
+  child_start_time=$(process_start_time "$child_pid") || fail 'pending-parent mismatch descendant start identity is unavailable'
+  child_executable=$(process_executable "$child_pid") || fail 'pending-parent mismatch descendant executable is unavailable'
+
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$parent_pid" "$parent_start_time" "$parent_executable" "$wrong_parent_pid"
+  cleanup_pending_owned_children
+  assert_process_identity "$parent_pid" "$parent_start_time" "$parent_executable" \
+    'pending cleanup must leave a parent with a mismatched stored parent alive'
+  assert_process_identity "$child_pid" "$child_start_time" "$child_executable" \
+    'pending cleanup must leave descendants with a mismatched stored parent alive'
+
+  register_pending_owned_child "$parent_pid" "$parent_start_time" "$parent_executable" "$$"
+  cleanup_pending_owned_children
+  wait "$parent_pid" 2>/dev/null || true
+  [[ ! -e /proc/$parent_pid/status ]] || fail 'matching pending cleanup did not reap the parent'
+  [[ ! -e /proc/$child_pid/status ]] || fail 'matching pending cleanup did not reap the descendant'
+  forget_owned_child "$parent_pid"
 }
 
 assert_pending_promotion_reuses_stored_identity() {
@@ -1019,6 +1068,13 @@ set -Eeuo pipefail
 exec /usr/bin/sleep 2147483647
 EOF
 
+cat >"$TEST_BIN/touch" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: >"${TOUCH_SENTINEL:?}"
+EOF
+
 cat >"$TEST_BIN/date" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -1098,7 +1154,8 @@ export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
 export PATH="$TEST_BIN:/usr/bin:/bin"
 FAKE_MAKO_READY_FILE="$TEST_RUNTIME_DIR/fake-mako.ready"
 ADAPTER_DESCENDANT_PID_FILE="$TEST_RUNTIME_DIR/adapter-descendant.pid"
-export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01
+TOUCH_SENTINEL="$TEST_RUNTIME_DIR/touch-sentinel"
+export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG FAKE_MAKO_READY_FILE POLL_INTERVAL=0.01 TOUCH_SENTINEL
 export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE ADAPTER_DESCENDANT_PID_FILE
 trap cleanup EXIT
 
@@ -1107,6 +1164,7 @@ assert_setup_failure_cleanup
 assert_pending_owned_child_cleanup_reaps_started_child
 assert_pending_cleanup_revalidates_stored_identity
 assert_pending_cleanup_revalidates_stored_parent
+assert_pending_cleanup_skips_tree_when_stored_parent_mismatches
 assert_pending_promotion_reuses_stored_identity
 assert_incomplete_identity_cleanup_skips_child
 assert_mismatched_identity_cleanup_skips_child
@@ -1233,10 +1291,11 @@ done
 
 write_route true 'DVI-D-1;touch' null null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+rm -f -- "$TOUCH_SENTINEL"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
-[[ ! -e "$TEST_RUNTIME_DIR/touch" ]] || fail 'metacharacter route output caused a side effect'
+[[ ! -e $TOUCH_SENTINEL ]] || fail 'metacharacter route output invoked touch'
 
 write_route false null DP-2 null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
