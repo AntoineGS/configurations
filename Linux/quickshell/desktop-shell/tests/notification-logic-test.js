@@ -52,8 +52,8 @@ const defaultAfterLimit = Array.from({ length: 8 }, (_, index) => ({
   text: "Action " + index,
 })).concat([{ identifier: "default", text: "Open" }])
 assert.equal(logic.actionMetadata({ actions: defaultAfterLimit }).length, 8)
-assert.equal(logic.actionMetadata({ actions: defaultAfterLimit })[7].identifier, "default",
-  "the bounded action set retains the default action")
+assert.equal(logic.actionMetadata({ actions: defaultAfterLimit })[7].identifier, "action-7",
+  "the bounded action set does not inspect a late default action")
 
 assert.equal(logic.durationFor(1, 0, 2, 0, 5000, 8000, 30000), 0,
   "explicit zero means never expire")
@@ -65,6 +65,20 @@ assert.equal(logic.durationFor(1, 50000, 2, 0, 5000, 8000, 30000), 30000,
   "positive timeout is capped")
 assert.equal(logic.durationFor(2, 50000, 2, 0, 5000, 8000, 30000), 0,
   "critical notifications never timer-expire")
+assert.equal(logic.deadlineFor(1, -1, 1000, 2, 0, 5000, 8000, 30000), 9000,
+  "default lifetime becomes an absolute deadline")
+assert.equal(logic.deadlineFor(1, 12000, 1000, 2, 0, 5000, 8000, 30000), 13000,
+  "positive lifetime becomes an absolute deadline")
+assert.equal(logic.deadlineFor(1, 0, 1000, 2, 0, 5000, 8000, 30000), null,
+  "explicit zero has no deadline")
+assert.equal(logic.deadlineFor(2, 3000, 1000, 2, 0, 5000, 8000, 30000), null,
+  "critical notifications have no deadline")
+assert.equal(logic.remainingLifetime({ deadline: 4000 }, 2500, 8000), 1500,
+  "delegate lifetime uses the remaining absolute deadline")
+assert.equal(logic.remainingLifetime({ deadline: 4000 }, 4500, 8000), 0,
+  "expired absolute deadlines do not restart")
+assert.equal(logic.remainingLifetime({ timestamp: 1000 }, 2500, 8000), 6500,
+  "legacy rows derive a fixed deadline from their original timestamp")
 
 const hintedImage = logic.snapshotOf({
   id: 43,
@@ -109,6 +123,15 @@ assert.deepEqual(snapshot, {
   actions,
 }, "snapshot keeps notification display data without private action hints")
 
+const transientSnapshot = logic.snapshotOf({
+  id: 47,
+  appName: "transient-build",
+  summary: "Transient build",
+  transient: true,
+}, 1786930001000)
+assert.equal(transientSnapshot.transient, true,
+  "transient notifications carry a no-persistence marker through the model")
+
 const bounded = logic.snapshotOf({
   id: 45,
   appName: "a".repeat(200),
@@ -126,6 +149,23 @@ assert.equal(bounded.body.length, 4096)
 assert.equal(bounded.actions.length, 8)
 assert.equal(bounded.actions[0].text.length, 256)
 assert.equal(bounded.expireTimeout, 0)
+
+const oversizedImage = logic.snapshotOf({
+  id: 48,
+  image: "https://example.com/" + "x".repeat(10000),
+  hints: { "image-path": "/tmp/" + "y".repeat(10000) },
+}, 1786930001000)
+assert.equal(oversizedImage.image.length, logic.limits().maxImageLength)
+assert.ok(logic.serializePopup({
+  ...oversizedImage,
+  body: "b".repeat(4096),
+}, 1).length <= logic.limits().maxSerializedPayload,
+"serialized popup payloads stay within the fixed bound")
+assert.equal(logic.persistablePopup({
+  ...oversizedImage,
+  image: "https://example.com/" + "z".repeat(10000),
+}, "/state/images/").entry.image.length, logic.limits().maxImageLength,
+"persistable image URIs stay within the fixed bound")
 
 const defaultTimeout = logic.snapshotOf({ id: 46, expireTimeout: -1 }, 1786930001000)
 assert.equal(defaultTimeout.expireTimeout, -1, "-1 remains distinct from explicit zero")
@@ -154,8 +194,8 @@ assert.deepEqual(replacement, {
   actions: [],
 }, "replacement keeps the original popup identity while updating display data")
 assert.deepEqual(logic.popupRoles(), [
-  "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout",
-  "actions",
+  "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "deadline",
+  "transient", "actions",
 ])
 assert.equal(logic.popupRowChanged(snapshot, snapshot), false)
 assert.equal(logic.popupRowChanged(snapshot, replacement), true)
@@ -279,10 +319,26 @@ assert.equal(logic.popupExpired({ timestamp: 1000 }, 0, 600000), false)
 assert.equal(logic.limits().maxActivePopups, 50)
 assert.equal(logic.limits().maxPersistenceJobs, 100)
 assert.equal(logic.limits().maxHistoryEntries, 200)
+assert.deepEqual(logic.admissionUpdate([], 1000, 120, 60000), {
+  accepted: true, timestamps: [1000], dropped: 0,
+})
+const admissionWindow = Array.from({ length: 120 }, (_, index) => index + 1)
+const admissionRejected = logic.admissionUpdate(admissionWindow, 60000, 120, 60000)
+assert.equal(admissionRejected.accepted, false, "the global admission window rejects the 121st notification")
+assert.equal(admissionRejected.dropped, 1)
+assert.equal(admissionRejected.timestamps.length, 120)
+assert.deepEqual(logic.admissionUpdate([0, 1000], 60999, 120, 60000), {
+  accepted: true, timestamps: [1000, 60999], dropped: 0,
+}, "admission timestamps expire through the injected clock")
 assert.deepEqual(logic.persistenceQueueUpdate(
   [{ key: "popup:1", value: "old" }],
   { key: "popup:1", value: "new" }, 100, false),
   { queue: [{ key: "popup:1", value: "new" }], dropped: null })
+const newerQueuedJob = { key: "popup:2", generation: 2, value: "newer" }
+const staleRetry = logic.persistenceQueueUpdate(
+  [newerQueuedJob], { key: "popup:2", generation: 1, value: "stale" }, 100, true)
+assert.equal(staleRetry.stale, true, "stale retries are rejected when newer intent is queued")
+assert.deepEqual(staleRetry.queue, [newerQueuedJob])
 const fullQueue = Array.from({ length: 100 }, (_, key) => ({ key }))
 const boundedQueue = logic.persistenceQueueUpdate(fullQueue, { key: "new" }, 100, false)
 assert.equal(boundedQueue.queue.length, 100)

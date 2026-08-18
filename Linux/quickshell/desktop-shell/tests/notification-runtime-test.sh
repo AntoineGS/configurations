@@ -375,6 +375,23 @@ count_json_files() {
   printf '%s\n' "$count"
 }
 
+wait_for_json_count() {
+  local directory=$1
+  local expected=$2
+  local deadline=$((SECONDS + 10))
+  while ((SECONDS < deadline)); do
+    [[ $(count_json_files "$directory") == "$expected" ]] && return 0
+    sleep 0.2
+  done
+  printf 'FAIL: expected %s JSON files in %s, found %s\n' \
+    "$expected" "$directory" "$(count_json_files "$directory")" >&2
+  for file in "$directory"/*.json; do
+    [[ -f $file ]] || continue
+    printf '  %s: %s\n' "$file" "$(jq -c . "$file" 2>/dev/null || true)" >&2
+  done
+  return 1
+}
+
 start_shell() {
   shell_generation=$((shell_generation + 1))
   shell_log="$fixture/shell-$shell_generation.log"
@@ -388,6 +405,9 @@ start_shell() {
   fi
   if [[ -n ${DESKTOP_SHELL_TEST_SETTINGS_BIN:-} ]]; then
     shell_path="$DESKTOP_SHELL_TEST_SETTINGS_BIN:$shell_path"
+  fi
+  if [[ -n ${DESKTOP_SHELL_TEST_PERSISTENCE_BIN:-} ]]; then
+    shell_path="$DESKTOP_SHELL_TEST_PERSISTENCE_BIN:$shell_path"
   fi
   DESKTOP_SHELL_PREVIEW=0 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
@@ -701,6 +721,169 @@ wait_for_process_exit "$action_pid"
 action_pid=''
 [[ $(<"$resident_action_output") == *archive* ]] && [[ $(<"$resident_action_output") == *closed* ]]
 
+# Sender-side closure removes the matching live row and active file without
+# archiving it or invoking a backend dismiss/expire operation.
+closed_sender="$fixture/closed-sender.py"
+cat >"$closed_sender" <<'PY'
+import dbus
+import sys
+import time
+
+output_path, app_name, urgency, expire_timeout = sys.argv[1:]
+bus = dbus.SessionBus()
+proxy = bus.get_object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
+notifications = dbus.Interface(proxy, "org.freedesktop.Notifications")
+notification_id = notifications.Notify(
+    app_name, 0, "", "Sender close", "sender close contract",
+    dbus.Array([], signature="s"),
+    dbus.Dictionary({"urgency": dbus.Byte(int(urgency))}, signature="sv"),
+    dbus.Int32(int(expire_timeout)),
+)
+time.sleep(0.5)
+notifications.CloseNotification(notification_id)
+with open(output_path, "w", encoding="ascii") as output:
+    output.write("closed\n")
+PY
+chmod 700 "$closed_sender"
+
+run_sender_close_case() {
+  local app_name=$1
+  local urgency=$2
+  local expire_timeout=$3
+  local output_path="$fixture/$app_name-closed.out"
+  local history_before
+  history_before=$(count_json_files "$history_dir")
+  python3 - "$output_path" "$app_name" "$urgency" "$expire_timeout" <"$closed_sender" &
+  action_pid=$!
+  wait_for_status '.popupCount == 1 and .liveCount == 1'
+  wait_for_process_exit "$action_pid"
+  action_pid=''
+  wait_for_status '.popupCount == 0 and .liveCount == 0'
+  wait_for_json_count "$popup_dir" 0 || {
+    printf 'sender-close status: %s\n' "$(read_status 2>/dev/null || true)" >&2
+    exit 1
+  }
+  [[ $(count_json_files "$history_dir") == "$history_before" ]]
+  [[ $(<"$output_path") == closed ]]
+}
+
+# Positive and default lifetimes persist an absolute deadline. Replacements reset
+# that deadline, while one or more service restarts preserve the same deadline.
+positive_id=$(notify-send --app-name task4-positive-deadline --print-id --expire-time 12000 \
+  'Task 4 positive deadline' 'initial positive lifetime' 2>/dev/null)
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 1
+positive_file=$(printf '%s\n' "$popup_dir"/*.json)
+positive_deadline=$(jq -r '.deadline' "$positive_file")
+[[ $positive_deadline =~ ^[0-9]+$ && $positive_deadline -gt $(date +%s%3N) ]] || {
+  printf 'FAIL: positive deadline was %s in %s\n' "$positive_deadline" "$positive_file" >&2
+  exit 1
+}
+sleep 0.2
+notify-send --app-name task4-positive-deadline --replace-id "$positive_id" --expire-time 12000 \
+  'Task 4 positive deadline replacement' 'replacement resets lifetime' >/dev/null 2>&1
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 1
+positive_file=$(printf '%s\n' "$popup_dir"/*.json)
+replaced_positive_deadline=$(jq -r '.deadline' "$positive_file")
+[[ $replaced_positive_deadline =~ ^[0-9]+$ && $replaced_positive_deadline -gt $positive_deadline ]] || {
+  printf 'FAIL: replacement positive deadline was %s, initial was %s\n' \
+    "$replaced_positive_deadline" "$positive_deadline" >&2
+  exit 1
+}
+stop_shell
+start_shell
+wait_for_status '.popupCount == 1 and .routeValid == true'
+wait_for_json_count "$popup_dir" 1
+positive_file=$(printf '%s\n' "$popup_dir"/*.json)
+restored_positive_deadline=$(jq -r '.deadline' "$positive_file")
+[[ $restored_positive_deadline == "$replaced_positive_deadline" ]] || {
+  printf 'FAIL: one-restart positive deadline was %s, expected %s\n' \
+    "$restored_positive_deadline" "$replaced_positive_deadline" >&2
+  exit 1
+}
+stop_shell
+start_shell
+wait_for_status '.popupCount == 1 and .routeValid == true'
+wait_for_json_count "$popup_dir" 1
+positive_file=$(printf '%s\n' "$popup_dir"/*.json)
+restarted_positive_deadline=$(jq -r '.deadline' "$positive_file")
+[[ $restarted_positive_deadline == "$replaced_positive_deadline" ]] || {
+  printf 'FAIL: two-restart positive deadline was %s, expected %s\n' \
+    "$restarted_positive_deadline" "$replaced_positive_deadline" >&2
+  exit 1
+}
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
+
+default_id=$(notify-send --app-name task4-default-deadline --print-id \
+  'Task 4 default deadline' 'default lifetime' 2>/dev/null)
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 1
+default_file=$(printf '%s\n' "$popup_dir"/*.json)
+default_deadline=$(jq -r '.deadline' "$default_file")
+[[ $default_deadline =~ ^[0-9]+$ && $default_deadline -gt $(date +%s%3N) ]] || {
+  printf 'FAIL: default deadline was %s in %s\n' "$default_deadline" "$default_file" >&2
+  exit 1
+}
+notify-send --app-name task4-default-deadline --replace-id "$default_id" \
+  'Task 4 default deadline replacement' 'default replacement resets lifetime' >/dev/null 2>&1
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 1
+default_file=$(printf '%s\n' "$popup_dir"/*.json)
+replaced_default_deadline=$(jq -r '.deadline' "$default_file")
+[[ $replaced_default_deadline =~ ^[0-9]+$ && $replaced_default_deadline -gt $default_deadline ]] || {
+  printf 'FAIL: replacement default deadline was %s, initial was %s\n' \
+    "$replaced_default_deadline" "$default_deadline" >&2
+  exit 1
+}
+stop_shell
+start_shell
+wait_for_status '.popupCount == 1 and .routeValid == true'
+wait_for_json_count "$popup_dir" 1
+default_file=$(printf '%s\n' "$popup_dir"/*.json)
+[[ $(jq -r '.deadline' "$default_file") == "$replaced_default_deadline" ]] || {
+  printf 'FAIL: restored default deadline was %s, expected %s\n' \
+    "$(jq -r '.deadline' "$default_file")" "$replaced_default_deadline" >&2
+  exit 1
+}
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
+
+# Transient notifications may render, but never create active files or history
+# entries when dismissed or when their visible lifetime ends.
+transient_history_before=$(count_json_files "$history_dir")
+notify-send --app-name task4-transient-visible --hint=boolean:transient:true --expire-time 12000 \
+  'Task 4 transient visible' 'transient dismissal contract'
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 0
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+[[ $(count_json_files "$history_dir") == "$transient_history_before" ]]
+
+[[ $(call_notification toggleDnd) == enabled ]]
+wait_for_status '.dnd == true and .popupCount == 1'
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
+transient_history_before=$(count_json_files "$history_dir")
+notify-send --app-name task4-transient-dnd --hint=boolean:transient:true --expire-time 12000 \
+  'Task 4 transient DND' 'transient DND contract'
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+wait_for_json_count "$popup_dir" 0
+[[ $(count_json_files "$history_dir") == "$transient_history_before" ]]
+[[ $(call_notification toggleDnd) == disabled ]]
+wait_for_status '.dnd == false and .popupCount == 1'
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
+
+transient_history_before=$(count_json_files "$history_dir")
+notify-send --app-name task4-transient-timeout --hint=boolean:transient:true --urgency low --expire-time 1000 \
+  'Task 4 transient timeout' 'transient timeout contract'
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 0
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+[[ $(count_json_files "$history_dir") == "$transient_history_before" ]]
+
 # Explicit zero survives replacement and a service restart, while persisted rows
 # have no action references.
 replacement_id=$(notify-send --app-name task4-timeout --print-id --expire-time 0 \
@@ -716,6 +899,97 @@ timeout_file=$(printf '%s\n' "$popup_dir"/*.json)
 jq -e '.expireTimeout == 0 and .actions == []' "$timeout_file" >/dev/null
 [[ $(call_notification dismissLast) == ok ]]
 wait_for_status '.popupCount == 0'
+
+run_sender_close_case task4-closed-critical 2 0
+run_sender_close_case task4-closed-zero 1 0
+run_sender_close_case task4-closed-positive 1 12000
+
+# A stale close from the replaced object must not remove the replacement row.
+stale_replacement_id=$(notify-send --app-name task4-stale-close --print-id --expire-time 0 \
+  'Task 4 stale close' 'old generation' 2>/dev/null)
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+notify-send --app-name task4-stale-close --replace-id "$stale_replacement_id" --expire-time 0 \
+  'Task 4 stale close replacement' 'new generation' >/dev/null 2>&1
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+sleep 0.5
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_json_count "$popup_dir" 1
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0'
+
+# A failed running write must not retry over a newer archive operation for the
+# same key. The newer archive may fail because A never published, but stale A
+# must not recreate the active file.
+persistence_bin="$fixture/persistence-bin"
+persistence_fail_started="$fixture/persistence-fail-started"
+persistence_fail_release="$fixture/persistence-fail-release"
+persistence_fail_count="$fixture/persistence-fail-count"
+real_mv="$(type -P mv)"
+mkdir -p "$persistence_bin"
+cat >"$persistence_bin/mv" <<'FAKE_PERSISTENCE_MV'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+args=("$@")
+last_index=$(( ${#args[@]} - 1 ))
+source_path=${args[$((last_index - 1))]}
+destination_path=${args[$last_index]}
+if [[ $source_path == "$DESKTOP_SHELL_TEST_POPUP_DIR"/*.json.* &&
+      $destination_path == "$DESKTOP_SHELL_TEST_POPUP_DIR"/*.json ]]; then
+  count=0
+  if [[ -f ${DESKTOP_SHELL_TEST_PERSISTENCE_COUNT:?} ]]; then
+    count=$(<"$DESKTOP_SHELL_TEST_PERSISTENCE_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$DESKTOP_SHELL_TEST_PERSISTENCE_COUNT"
+  if ((count == 1)); then
+    : >"$DESKTOP_SHELL_TEST_PERSISTENCE_START"
+    while [[ ! -e ${DESKTOP_SHELL_TEST_PERSISTENCE_RELEASE:?} ]]; do
+      sleep 0.05
+    done
+    exit 1
+  fi
+fi
+exec "$DESKTOP_SHELL_TEST_REAL_MV" "$@"
+FAKE_PERSISTENCE_MV
+chmod 700 "$persistence_bin/mv"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$persistence_bin"
+export DESKTOP_SHELL_TEST_POPUP_DIR="$popup_dir"
+export DESKTOP_SHELL_TEST_PERSISTENCE_START="$persistence_fail_started"
+export DESKTOP_SHELL_TEST_PERSISTENCE_RELEASE="$persistence_fail_release"
+export DESKTOP_SHELL_TEST_PERSISTENCE_COUNT="$persistence_fail_count"
+export DESKTOP_SHELL_TEST_REAL_MV="$real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == false and .popupCount == 0'
+generation_history_before=$(count_json_files "$history_dir")
+notify-send --app-name task4-generation-failure --expire-time 0 \
+  'Task 4 generation failure' 'older write must not supersede newer archive'
+wait_for_status '.popupCount == 1 and .liveCount == 1'
+wait_for_path "$persistence_fail_started"
+[[ $(call_notification dismissLast) == ok ]]
+wait_for_status '.popupCount == 0 and .liveCount == 0'
+: >"$persistence_fail_release"
+wait_for_json_count "$popup_dir" 0
+[[ $(count_json_files "$history_dir") == "$generation_history_before" ]]
+wait_for_status '.persistenceError != ""'
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_POPUP_DIR \
+  DESKTOP_SHELL_TEST_PERSISTENCE_START DESKTOP_SHELL_TEST_PERSISTENCE_RELEASE \
+  DESKTOP_SHELL_TEST_PERSISTENCE_COUNT DESKTOP_SHELL_TEST_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == false and .popupCount == 0'
+
+# A popup whose persisted absolute deadline is already elapsed is archived and
+# removed during restore instead of being shown or extending its lifetime.
+stop_shell
+expired_timestamp=$(date +%s%3N)
+expired_file="$popup_dir/${expired_timestamp}-77.json"
+printf '%s\n' '{"id":77,"originalId":77,"app":"task4-expired","appIcon":"","summary":"Expired restore","body":"expired","image":"","urgency":1,"expireTimeout":12000,"timestamp":'"$expired_timestamp"',"actions":[],"deadline":'"$((expired_timestamp - 1))"'}' >"$expired_file"
+chmod 600 "$expired_file"
+start_shell
+wait_for_status '.popupCount == 0 and .routeValid == true'
+wait_for_json_count "$popup_dir" 0
+wait_for_file "$history_dir/${expired_timestamp}-77.json"
 
 # Hold the first atomic settings rename, change DND again while it is active,
 # and require one follow-up write with the latest state.
@@ -754,16 +1028,30 @@ wait_for_status '.persistenceError != "" and .popupCount == 0 and .liveCount == 
 rm -f -- "$history_dir"
 mkdir -p -- "$history_dir"
 chmod 700 "$history_dir"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
+# The global admission window applies before DND persistence, even when the
+# active-popup cap is never reached.
+for index in $(seq 1 121); do
+  notify-send --app-name task4-dnd-admission --urgency normal --expire-time 30000 \
+    "Task 4 DND admission $index" 'DND admission window contract'
+done
+wait_for_status '.popupCount == 0 and .liveCount == 0 and .admissionDropped == 1 and .admissionWindowCount == 120'
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
 
 # Critical notifications bypass DND but share the total active cap. Replacing
 # an existing critical row must not consume another slot.
 critical_id=$(notify-send --app-name task4-critical-flood --print-id --urgency critical \
   --expire-time 0 'Task 4 critical flood' 'critical replacement seed' 2>/dev/null)
-for index in $(seq 1 59); do
+for index in $(seq 1 120); do
   notify-send --app-name task4-critical-flood --urgency critical --expire-time 0 \
     "Task 4 critical flood $index" 'critical active-cap contract'
 done
-wait_for_status '.popupCount == 50 and .liveCount == 50 and .pendingPersistenceCount <= 100'
+wait_for_status '.popupCount == 50 and .liveCount == 50 and .pendingPersistenceCount <= 100 and .admissionDropped == 1 and .admissionWindowCount == 120'
 notify-send --app-name task4-critical-flood --replace-id "$critical_id" --urgency critical \
   --expire-time 0 'Task 4 critical replacement' 'replacement does not consume a slot' >/dev/null 2>&1
 wait_for_status '.popupCount == 50 and .liveCount == 50'
