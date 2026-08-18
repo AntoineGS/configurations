@@ -330,20 +330,46 @@ assert.equal(admissionRejected.timestamps.length, 120)
 assert.deepEqual(logic.admissionUpdate([0, 1000], 60999, 120, 60000), {
   accepted: true, timestamps: [1000, 60999], dropped: 0,
 }, "admission timestamps expire through the injected clock")
+const supersededQueuedJob = { key: "popup:1", value: "old" }
 assert.deepEqual(logic.persistenceQueueUpdate(
-  [{ key: "popup:1", value: "old" }],
+  [supersededQueuedJob],
   { key: "popup:1", value: "new" }, 100, false),
-  { queue: [{ key: "popup:1", value: "new" }], dropped: null })
+  {
+    queue: [{ key: "popup:1", value: "new" }],
+    dropped: supersededQueuedJob,
+    droppedOutcome: "superseded",
+    outcome: "queued",
+  })
 const newerQueuedJob = { key: "popup:2", generation: 2, value: "newer" }
 const staleRetry = logic.persistenceQueueUpdate(
   [newerQueuedJob], { key: "popup:2", generation: 1, value: "stale" }, 100, true)
 assert.equal(staleRetry.stale, true, "stale retries are rejected when newer intent is queued")
+assert.equal(staleRetry.outcome, "superseded")
 assert.deepEqual(staleRetry.queue, [newerQueuedJob])
 const fullQueue = Array.from({ length: 100 }, (_, key) => ({ key }))
 const boundedQueue = logic.persistenceQueueUpdate(fullQueue, { key: "new" }, 100, false)
 assert.equal(boundedQueue.queue.length, 100)
 assert.deepEqual(boundedQueue.dropped, { key: 0 })
+assert.equal(boundedQueue.droppedOutcome, "capacity-dropped")
+assert.equal(boundedQueue.outcome, "capacity-dropped")
 assert.equal(boundedQueue.queue[99].key, "new")
+const firstRefresh = logic.refreshScheduleUpdate({}, "42", { timestamp: 1, value: "first" })
+assert.equal(firstRefresh.scheduled, true, "the first property signal schedules one refresh")
+const coalescedRefresh = logic.refreshScheduleUpdate(
+  firstRefresh.pending, "42", { timestamp: 2, value: "latest" })
+assert.equal(coalescedRefresh.scheduled, false, "additional property signals coalesce")
+assert.deepEqual(coalescedRefresh.pending["42"], { timestamp: 2, value: "latest" })
+const archiveQueuedJob = { key: "popup:3", generation: 2, value: "archive" }
+const deleteQueued = logic.persistenceQueueUpdate(
+  [archiveQueuedJob], { key: "popup:3", generation: 3, value: "delete" }, 100, true)
+assert.equal(deleteQueued.dropped, archiveQueuedJob, "same-key delete supersedes queued archive")
+assert.equal(deleteQueued.droppedOutcome, "superseded")
+const protectedWrite = { key: "popup:target", generation: 2, value: "write" }
+const protectedQueue = logic.persistenceQueueUpdate(
+  [protectedWrite, { key: "history:other" }],
+  { key: "history:new", generation: 3, value: "write" }, 2, false, { "popup:target": true })
+assert.equal(protectedQueue.dropped.key, "history:other", "running same-key intent is protected from eviction")
+assert.equal(protectedQueue.queue[0], protectedWrite)
 assert.equal(logic.historyRows("", Array.from({ length: 205 }, (_, id) => ({ id, timestamp: id })), 1, 500).length, 200)
 assert.equal(logic.parsePopupFiles(
   Array.from({ length: 55 }, (_, id) => JSON.stringify({ id, timestamp: id })).join("\n"), 1, 50).length, 50)
