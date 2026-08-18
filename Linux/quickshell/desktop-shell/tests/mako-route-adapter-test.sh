@@ -369,19 +369,16 @@ cleanup_owned_child() {
   local current_executable
 
   [[ $pid =~ ^[0-9]+$ ]] || return 0
+  [[ -n $expected_start_time && -n $expected_executable ]] || return 0
   if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
     wait "$pid" 2>/dev/null || true
     return 0
   fi
   [[ $parent_pid == "$$" ]] || return 0
-  if [[ -n $expected_start_time ]]; then
-    current_start_time=$(process_start_time "$pid" 2>/dev/null) || return 0
-    [[ $current_start_time == "$expected_start_time" ]] || return 0
-  fi
-  if [[ -n $expected_executable ]]; then
-    current_executable=$(process_executable "$pid" 2>/dev/null) || return 0
-    [[ $current_executable == "$expected_executable" ]] || return 0
-  fi
+  current_start_time=$(process_start_time "$pid" 2>/dev/null) || return 0
+  [[ $current_start_time == "$expected_start_time" ]] || return 0
+  current_executable=$(process_executable "$pid" 2>/dev/null) || return 0
+  [[ $current_executable == "$expected_executable" ]] || return 0
 
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -423,14 +420,42 @@ cleanup() {
 
 assert_setup_failure_cleanup() {
   local setup_failure_pid
+  local setup_failure_start_time
+  local setup_failure_executable
 
   "$TEST_BIN/fake-mako" &
   setup_failure_pid=$!
-  register_owned_child "$setup_failure_pid" "" "$(process_executable "$setup_failure_pid")"
-  cleanup_owned_child "$setup_failure_pid" "" "$(process_executable "$setup_failure_pid")"
+  wait_for_file "$FAKE_MAKO_READY_FILE"
+  setup_failure_start_time=$(process_start_time "$setup_failure_pid") || fail 'setup-failure child start identity is unavailable'
+  setup_failure_executable=$(process_executable "$setup_failure_pid") || fail 'setup-failure child executable is unavailable'
+  register_owned_child "$setup_failure_pid" "$setup_failure_start_time" "$setup_failure_executable"
+  cleanup_owned_child "$setup_failure_pid" "$setup_failure_start_time" "$setup_failure_executable"
   forget_owned_child "$setup_failure_pid"
   [[ ! -e /proc/$setup_failure_pid/status ]] || \
     fail 'setup-failure cleanup did not reap the owned fake Mako child'
+}
+
+assert_incomplete_identity_cleanup_skips_child() {
+  local pid
+  local start_time
+  local executable
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  "$TEST_BIN/fake-mako" &
+  pid=$!
+  wait_for_file "$FAKE_MAKO_READY_FILE"
+  start_time=$(process_start_time "$pid") || fail 'incomplete-identity child start identity is unavailable'
+  executable=$(process_executable "$pid") || fail 'incomplete-identity child executable is unavailable'
+  register_owned_child "$pid" "$start_time" "$executable"
+
+  cleanup_owned_child "$pid" '' "$executable"
+  assert_process_identity "$pid" "$start_time" "$executable" 'empty start time must skip cleanup'
+
+  cleanup_owned_child "$pid" "$start_time" ''
+  assert_process_identity "$pid" "$start_time" "$executable" 'empty executable must skip cleanup'
+
+  forget_owned_child "$pid"
+  cleanup_owned_child "$pid" "$start_time" "$executable"
 }
 
 assert_mismatched_identity_cleanup_skips_child() {
@@ -635,6 +660,7 @@ export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE
 trap cleanup EXIT
 
 assert_setup_failure_cleanup
+assert_incomplete_identity_cleanup_skips_child
 assert_mismatched_identity_cleanup_skips_child
 
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE"
@@ -661,6 +687,12 @@ assert_cue 'HDMI-A-1|left'
 
 write_route false null DP-2 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
+assert_cue 'DP-2|left'
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$FAKE_NOW" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
@@ -702,6 +734,36 @@ write_route true DVI-D-1 null null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 1))"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+write_raw_route '{"version":2,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":1786930000}'
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$((FAKE_NOW + 1))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW + 1))"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 null null "$((FAKE_NOW - 46))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 46))"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route true DVI-D-1 HDMI-A-1 sideways "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_raw_route '{"version":1,"visible":true,"output":null,"cueOutput":null,"direction":null,"updatedAt":1786930000}'
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
 
 for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 DP-1; do
   write_route true "$unsupported_output" null null "$FAKE_NOW"
@@ -825,23 +887,23 @@ assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
 assert_cue 'HDMI-A-1|left'
 assert_atomic_cue_rename
 
-write_route false null DP-2 null "$FAKE_NOW"
+write_route false null DP-2 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 wait_for_log_count 4
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
-assert_route_modes 'unrelated-mode rustdesk-route-hidden'
-assert_no_cue
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
+assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
+assert_cue 'DP-2|left'
 
 rm -f -- "$ROUTE_FILE"
 iteration_completions_after_write=$(iteration_completion_count)
-assert_no_new_mako_call_after_iterations 4 "$((iteration_completions_after_write + 2))"
+wait_for_log_count 5
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
-wait_for_log_count 5
+wait_for_log_count 6
 assert_cue 'HDMI-A-1|left'
 assert_file_mode 0600 "$CUE_FILE"
 
