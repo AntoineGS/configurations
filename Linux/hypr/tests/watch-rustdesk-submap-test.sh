@@ -180,6 +180,8 @@ NOTIFICATION_LEASE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"
 ROUTE_RENAME_FAIL=false
 ROUTE_INTERRUPT=false
 ROUTE_SIGKILL_AFTER_RENAME=false
+LEASE_UNLINK_FAIL=false
+LEASE_UNLINK_STUCK=false
 LEASE_RENAME_FAIL=false
 ROUTE_POST_RENAME_CHMOD=''
 LEASE_POST_RENAME_CHMOD=''
@@ -224,6 +226,17 @@ mv() {
       command ln -s -- "$symlink_target" "$target"
     fi
   fi
+}
+
+rm() {
+  local target=${!#}
+  if [[ ${LEASE_UNLINK_FAIL:-false} == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 1
+  fi
+  if [[ ${LEASE_UNLINK_STUCK:-false} == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 0
+  fi
+  command rm "$@"
 }
 
 hyprctl() {
@@ -372,7 +385,7 @@ reset_route_state
 write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left"}'
 assert_route_contract
-assert_lease_payload '{"version":1,"refreshedAt":1786930000,"expiresAt":1786930002,"routeUpdatedAt":1786930000}'
+assert_lease_payload '{"version":1,"refreshedAt":1786930000,"expiresAt":1786930001,"routeUpdatedAt":1786930000}'
 assert_lease_contract
 
 # An unchanged route refreshes only the lease and leaves the route file in place.
@@ -384,7 +397,7 @@ second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
 second_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
 assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
 [[ $first_lease_inode != "$second_lease_inode" ]] || fail 'unchanged route did not refresh the lease'
-assert_lease_payload '{"version":1,"refreshedAt":1786930001,"expiresAt":1786930003,"routeUpdatedAt":1786930000}'
+assert_lease_payload '{"version":1,"refreshedAt":1786930001,"expiresAt":1786930002,"routeUpdatedAt":1786930000}'
 assert_lease_contract
 fake_epoch_seconds=1786930000
 
@@ -481,6 +494,67 @@ fi
 LEASE_RENAME_FAIL=false
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
 [[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed lease write left a lease file behind'
+
+# A failed lease revocation must prevent a replacement and preserve the old
+# route and its still-valid lease.
+reset_route_state
+fake_epoch_seconds=1786930000
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+prior_lease=$(<"$NOTIFICATION_LEASE_FILE")
+LEASE_UNLINK_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed lease revocation returned success'
+fi
+LEASE_UNLINK_FAIL=false
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'failed lease revocation replaced the prior route'
+assert_equal "$prior_lease" "$(<"$NOTIFICATION_LEASE_FILE")" \
+  'failed lease revocation changed the prior lease'
+
+# A successful unlink command is not enough when the lease path still exists,
+# including when it remains a symlink.
+LEASE_UNLINK_STUCK=true
+if invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+  fail 'stuck lease revocation returned success'
+fi
+[[ -f $NOTIFICATION_LEASE_FILE ]] || fail 'stuck lease fixture lost its lease unexpectedly'
+LEASE_UNLINK_STUCK=false
+rm -f -- "$NOTIFICATION_LEASE_FILE"
+ln -s -- "$TEST_RUNTIME_DIR/stuck-lease-target" "$NOTIFICATION_LEASE_FILE"
+LEASE_UNLINK_STUCK=true
+if invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+  fail 'symlink lease revocation returned success'
+fi
+LEASE_UNLINK_STUCK=false
+rm -f -- "$NOTIFICATION_LEASE_FILE"
+
+# Parse and build failures revoke an existing lease even though the route file
+# itself is left untouched.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+if write_notification_route_state 'invalid-route-state' 2>/dev/null; then
+  fail 'parse failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE && ! -L $NOTIFICATION_LEASE_FILE ]] || \
+  fail 'parse failure left a valid lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'parse failure replaced the prior route'
+
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+if (
+  build_notification_route_json() { return 1; }
+  write_notification_route_state 'rustdesk-route-hidden|none|none'
+) 2>/dev/null; then
+  fail 'build failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE && ! -L $NOTIFICATION_LEASE_FILE ]] || \
+  fail 'build failure left a valid lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'build failure replaced the prior route'
 
 # A same-second SIGKILL after route replacement cannot leave the old matching
 # lease available for the new route.
@@ -600,7 +674,27 @@ fi
 write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
 assert_route_contract
 
-# Main handles TERM by removing the lease and publishing a hidden route.
+# Main installs cleanup before discovery, so an early TERM still removes the
+# lease and publishes a hidden route through the secure route directory. The
+# child signals only its own BASHPID publisher, never this test process.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+set +e
+(
+  HYPRLAND_INSTANCE_SIGNATURE=''
+  sleep() { kill -TERM "$BASHPID"; }
+  main
+)
+discovery_trap_status=$?
+set -e
+((discovery_trap_status == 143)) || \
+  fail "discovery TERM trap exited unexpectedly: $discovery_trap_status"
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'discovery TERM trap recreated the lease'
+assert_route_contract
+
+# Main handles TERM after discovery by removing the lease and publishing a
+# hidden route.
 reset_route_state
 MAIN_TRAP_SIG='main-trap-test'
 MAIN_TRAP_DIR="$TEST_RUNTIME_DIR/hypr/$MAIN_TRAP_SIG"

@@ -142,6 +142,7 @@ shell_generation=0
 shell_log=''
 runtime_shell_root="$SHELL_ROOT"
 route_lease_enabled=0
+route_pair_keepalive=false
 
 cleanup_process() {
   local pid=${1-}
@@ -220,7 +221,7 @@ write_route_pair() {
   write_route_payload "$payload"
   updated_at=$(jq -er '.updatedAt' <<<"$payload") || return 1
   refreshed_at=$(date +%s)
-  write_lease_payload "$refreshed_at" "$((refreshed_at + 2))" "$updated_at"
+  write_lease_payload "$refreshed_at" "$((refreshed_at + 1))" "$updated_at"
 }
 
 refresh_route_lease() {
@@ -228,7 +229,7 @@ refresh_route_lease() {
   local refreshed_at
   updated_at=$(jq -er '.updatedAt' "$route_path") || return 0
   refreshed_at=$(date +%s)
-  write_lease_payload "$refreshed_at" "$((refreshed_at + 2))" "$updated_at"
+  write_lease_payload "$refreshed_at" "$((refreshed_at + 1))" "$updated_at"
 }
 
 assert_mode() {
@@ -296,6 +297,10 @@ wait_for_status() {
   local status_json=''
   local deadline=$((SECONDS + 15))
   while ((SECONDS < deadline)); do
+    if [[ $route_pair_keepalive == true &&
+      ($filter == *'.routeValid == true'* || $filter == *'route is stale'*) ]]; then
+      refresh_route_lease
+    fi
     if status_json=$(read_status 2>/dev/null); then
       last_status=$status_json
       if jq -e "$filter" <<<"$status_json" >/dev/null 2>&1; then
@@ -587,7 +592,7 @@ write_lease_payload "$((route_now - 3))" "$((route_now - 1))" "$route_now"
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
-write_lease_payload "$route_now" "$((route_now + 2))" "$((route_now + 1))"
+write_lease_payload "$route_now" "$((route_now + 1))" "$((route_now + 1))"
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
@@ -595,6 +600,17 @@ route_lease_enabled=1
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
 wait_for_health '.notificationsOwned == true and .notificationRouteValid == true and .notificationRouteVisible == true and .notificationOwnershipError == "" and .notificationRouteError == ""'
+
+# The one-second lease is observed as invalid without an extra fixed sleep.
+lease_expiry_started=$SECONDS
+wait_for_status '.routeValid == false and .routeVisible == false'
+((SECONDS - lease_expiry_started <= 2)) || {
+  printf 'FAIL: lease expiry was observed after %s seconds\n' "$((SECONDS - lease_expiry_started))" >&2
+  exit 1
+}
+write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
+route_pair_keepalive=true
+wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
 
 wait_for_path "$state_home/desktop-shell"
 assert_mode 700 "$state_home/desktop-shell"

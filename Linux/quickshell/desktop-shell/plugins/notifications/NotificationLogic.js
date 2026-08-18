@@ -327,8 +327,8 @@ function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
   var current = Math.floor(nowMs / 1000)
   if (refreshedAt > current) return invalidLease("lease refreshedAt is from the future")
   if (expiresAt <= current) return invalidLease("lease is stale")
-  if (expiresAt > current + 2) return invalidLease("lease expires too far in the future")
-  if (expiresAt - refreshedAt > 2) return invalidLease("lease expires too long after refresh")
+  if (expiresAt > current + 1) return invalidLease("lease expires too far in the future")
+  if (expiresAt - refreshedAt > 1) return invalidLease("lease expires too long after refresh")
 
   if (typeof expectedRouteUpdatedAt !== "number" || !isFinite(expectedRouteUpdatedAt) ||
       Math.floor(expectedRouteUpdatedAt) !== expectedRouteUpdatedAt || expectedRouteUpdatedAt < 0)

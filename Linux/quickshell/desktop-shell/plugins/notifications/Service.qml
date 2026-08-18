@@ -1187,8 +1187,22 @@ Item {
     }
   }
 
+  Timer {
+    id: routeLeaseExpiryTimer
+    interval: 1
+    repeat: false
+    running: false
+    onTriggered: {
+      service.invalidateLease("notification route lease expired")
+      routeFile.reload()
+      leaseFile.reload()
+      service.checkRouteMetadata()
+    }
+  }
+
   function invalidateRoute(error) {
     var message = String(error || "invalid route")
+    routeLeaseExpiryTimer.stop()
     service.routeRaw = ""
     service.route = {
       valid: false,
@@ -1204,6 +1218,7 @@ Item {
 
   function invalidateLease(error) {
     var message = String(error || "invalid route lease")
+    routeLeaseExpiryTimer.stop()
     service.leaseRaw = ""
     service.leaseValid = false
     service.leaseError = message
@@ -1255,11 +1270,13 @@ Item {
 
   function refreshRoute() {
     if (!service.routeRaw) {
+      routeLeaseExpiryTimer.stop()
       service.routeValid = false
       service.routeError = "notification route unavailable"
       return
     }
     if (!service.leaseRaw) {
+      routeLeaseExpiryTimer.stop()
       service.routeValid = false
       service.routeError = "notification route lease unavailable"
       return
@@ -1271,6 +1288,14 @@ Item {
     service.leaseError = nextLease.error || ""
     service.routeValid = next.valid === true && service.leaseValid && service.routeMetadataValid
     service.routeError = next.error || service.leaseError || service.routeMetadataError || ""
+    if (nextLease.valid === true) {
+      var expiresAt = Number(nextLease.expiresAt)
+      var remaining = expiresAt * 1000 - Date.now()
+      routeLeaseExpiryTimer.interval = Math.max(1, Math.ceil(remaining))
+      routeLeaseExpiryTimer.restart()
+    } else {
+      routeLeaseExpiryTimer.stop()
+    }
   }
 
   function screenName(screen) {
