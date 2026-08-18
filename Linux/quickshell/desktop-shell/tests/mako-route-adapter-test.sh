@@ -7,6 +7,15 @@ ADAPTER="$SCRIPT_DIR/../../../os/helpers/desktop-shell-mako-route"
 ADAPTER_UNIT="$SCRIPT_DIR/../systemd/desktop-shell-mako-route.service"
 SHELL_UNIT="$SCRIPT_DIR/../systemd/desktop-shell.service"
 TIDYDOTS="$SCRIPT_DIR/../../../../tidydots.yaml"
+PUBLISHER_HELPER="$SCRIPT_DIR/notification-route-publisher.sh"
+
+[[ -r $PUBLISHER_HELPER ]] || {
+  printf 'FAIL: notification publisher helper is missing: %s\n' "$PUBLISHER_HELPER" >&2
+  exit 1
+}
+# The helper path is validated above and is resolved from the feature worktree.
+# shellcheck disable=SC1090
+source "$PUBLISHER_HELPER"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -305,23 +314,6 @@ write_lease() {
   jq -cn \
     --argjson refreshed_at_ms "$((refreshed_at * 1000))" \
     --argjson expires_at_ms "$((expires_at * 1000))" \
-    --argjson route_updated_at "$route_updated_at" \
-    '{version: 2, refreshedAtMs: $refreshed_at_ms,
-      expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
-  chmod 0600 -- "$temporary_file"
-  mv -f -- "$temporary_file" "$LEASE_FILE"
-}
-
-write_real_lease() {
-  local route_updated_at=$1
-  local refreshed_at_ms
-  local temporary_file
-
-  refreshed_at_ms=$(/usr/bin/date +%s%3N)
-  temporary_file=$(mktemp "$ROUTE_DIR/.test-notification-route-lease.XXXXXX")
-  jq -cn \
-    --argjson refreshed_at_ms "$refreshed_at_ms" \
-    --argjson expires_at_ms "$((refreshed_at_ms + 1500))" \
     --argjson route_updated_at "$route_updated_at" \
     '{version: 2, refreshedAtMs: $refreshed_at_ms,
       expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}' >"$temporary_file"
@@ -688,9 +680,10 @@ cleanup_adapter() {
 }
 
 cleanup() {
-  if [[ -n ${REAL_LEASE_PUBLISHER_PID:-} ]]; then
-    : >"$REAL_LEASE_PUBLISHER_STOP"
-    wait "$REAL_LEASE_PUBLISHER_PID" 2>/dev/null || true
+  if [[ -n ${WATCHER_PUBLISHER_PID:-} ]]; then
+    notification_publisher_cleanup \
+      "$WATCHER_PUBLISHER_PID" "$WATCHER_PUBLISHER_START_TIME" "$WATCHER_PUBLISHER_EXECUTABLE" \
+      "$WATCHER_SOCKET_PID" "$WATCHER_SOCKET_START_TIME" "$WATCHER_SOCKET_EXECUTABLE"
   fi
   cleanup_adapter
   cleanup_pending_owned_children
@@ -1050,8 +1043,12 @@ PENDING_OWNED_CHILDREN=()
 adapter_pid=""
 ADAPTER_START_TIME=""
 ADAPTER_EXECUTABLE=""
-REAL_LEASE_PUBLISHER_PID=""
-REAL_LEASE_PUBLISHER_STOP=""
+WATCHER_PUBLISHER_PID=""
+WATCHER_PUBLISHER_START_TIME=""
+WATCHER_PUBLISHER_EXECUTABLE=""
+WATCHER_SOCKET_PID=""
+WATCHER_SOCKET_START_TIME=""
+WATCHER_SOCKET_EXECUTABLE=""
 
 mkdir -p -- "$TEST_BIN" "$ROUTE_DIR"
 chmod 0700 -- "$ROUTE_DIR"
@@ -1527,57 +1524,57 @@ run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
-# A real-clock publisher must keep Mako visible across multiple renewals, then
-# natural publisher stop must fail closed without cleanup or SIGKILL.
+# Start the real watcher before Mako so renewals exercise the production
+# one-second reconciliation path rather than a test-side writer.
 REAL_CLOCK_DATE=1
 export REAL_CLOCK_DATE
-real_route_updated_at=$(/usr/bin/date +%s)
-write_route true DVI-D-1 null null "$real_route_updated_at"
-write_real_lease "$real_route_updated_at"
+printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+  >"$MAKO_MODE_STATE"
 : >"$MAKOCTL_LOG"
 : >"$FAKE_ITERATION_COMPLETION_LOG"
+notification_publisher_start \
+  "$TEST_RUNTIME_DIR" "$ROUTE_DIR" "$TEST_RUNTIME_DIR/watcher-publisher.log" \
+  WATCHER_PUBLISHER_PID WATCHER_PUBLISHER_START_TIME WATCHER_PUBLISHER_EXECUTABLE \
+  WATCHER_SOCKET_PID WATCHER_SOCKET_START_TIME WATCHER_SOCKET_EXECUTABLE
+await_file "$ROUTE_FILE" || fail 'real watcher did not publish a route before Mako startup'
+await_file "$LEASE_FILE" || fail 'real watcher did not publish a lease before Mako startup'
+last_refreshed_at_ms=$(jq -er '.refreshedAtMs' "$LEASE_FILE")
+
 start_adapter || fail 'real-clock adapter startup identity tracking failed'
 wait_for_log_count 2
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+real_visible_log_count=$(log_count)
 
-REAL_LEASE_PUBLISHER_STOP="$TEST_RUNTIME_DIR/real-lease-publisher.stop"
-REAL_LEASE_PUBLISHER_COUNT="$TEST_RUNTIME_DIR/real-lease-publisher.count"
-rm -f -- "$REAL_LEASE_PUBLISHER_STOP" "$REAL_LEASE_PUBLISHER_COUNT"
-(
-  real_renewals=0
-  while [[ ! -e $REAL_LEASE_PUBLISHER_STOP ]]; do
-    write_real_lease "$real_route_updated_at"
-    real_renewals=$((real_renewals + 1))
-    printf '%s\n' "$real_renewals" >"$REAL_LEASE_PUBLISHER_COUNT"
-    /usr/bin/sleep 0.75
-  done
-) &
-REAL_LEASE_PUBLISHER_PID=$!
-
-for expected_renewals in 1 2 3 4; do
-  renewal_deadline=$((SECONDS + 10))
-  while ((SECONDS < renewal_deadline)); do
-    [[ -f $REAL_LEASE_PUBLISHER_COUNT ]] &&
-      [[ $(<"$REAL_LEASE_PUBLISHER_COUNT") -ge $expected_renewals ]] && break
-    assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
-    /usr/bin/sleep 0.05
-  done
-  [[ -f $REAL_LEASE_PUBLISHER_COUNT ]] &&
-    [[ $(<"$REAL_LEASE_PUBLISHER_COUNT") -ge $expected_renewals ]] ||
-    fail "real-clock Mako publisher did not complete renewal $expected_renewals"
+renewal_count=0
+renewal_deadline=$((SECONDS + 15))
+while ((SECONDS < renewal_deadline && renewal_count < 4)); do
+  refreshed_at_ms=$(jq -er '.refreshedAtMs' "$LEASE_FILE" 2>/dev/null || true)
+  if [[ -n $refreshed_at_ms && $refreshed_at_ms != "$last_refreshed_at_ms" ]]; then
+    renewal_count=$((renewal_count + 1))
+    last_refreshed_at_ms=$refreshed_at_ms
+  fi
   assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
+  assert_equal "$real_visible_log_count" "$(log_count)" \
+    'real-clock healthy renewals did not add hidden/visible Mako mode calls'
+  /usr/bin/sleep 0.05
 done
+((renewal_count >= 4)) || fail "real watcher completed only $renewal_count renewals"
 
-: >"$REAL_LEASE_PUBLISHER_STOP"
-wait "$REAL_LEASE_PUBLISHER_PID" 2>/dev/null || true
-REAL_LEASE_PUBLISHER_PID=""
+# SIGKILL the publisher, not Mako. Mako must observe the natural lease expiry
+# through its own polling loop with no manual reconciliation.
+notification_publisher_kill \
+  "$WATCHER_PUBLISHER_PID" "$WATCHER_PUBLISHER_START_TIME" "$WATCHER_PUBLISHER_EXECUTABLE" KILL
 lease_stop_started=$SECONDS
-while ((SECONDS < lease_stop_started + 3)); do
+while ((SECONDS < lease_stop_started + 5)); do
   [[ $(<"$MAKO_MODE_STATE") == 'unrelated-mode rustdesk-route-hidden' ]] && break
   /usr/bin/sleep 0.05
 done
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
+notification_publisher_cleanup \
+  "$WATCHER_PUBLISHER_PID" "$WATCHER_PUBLISHER_START_TIME" "$WATCHER_PUBLISHER_EXECUTABLE" \
+  "$WATCHER_SOCKET_PID" "$WATCHER_SOCKET_START_TIME" "$WATCHER_SOCKET_EXECUTABLE"
+WATCHER_PUBLISHER_PID=""
 cleanup_adapter
 unset REAL_CLOCK_DATE
 
