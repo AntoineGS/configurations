@@ -1449,6 +1449,8 @@ adapter_pid=""
 ADAPTER_START_TIME=""
 ADAPTER_EXECUTABLE=""
 [[ -f $LEASE_FILE && ! -L $LEASE_FILE ]] || fail 'SIGKILL unexpectedly removed the notification lease'
+assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
+assert_cue 'HDMI-A-1|left'
 
 FAKE_NOW=$((FAKE_NOW + 3))
 run_reconcile_once
