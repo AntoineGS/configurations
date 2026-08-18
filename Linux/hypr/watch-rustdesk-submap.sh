@@ -13,6 +13,10 @@ NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 
+NOTIFICATION_ROUTE_DIR=${NOTIFICATION_ROUTE_DIR:-"$XDG_RUNTIME_DIR/desktop-shell"}
+NOTIFICATION_ROUTE_FILE=${NOTIFICATION_ROUTE_FILE:-"$NOTIFICATION_ROUTE_DIR/notification-route.json"}
+NOTIFICATION_LEASE_FILE=${NOTIFICATION_LEASE_FILE:-"$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"}
+
 monotonic_seconds() {
   printf '%s\n' "$SECONDS"
 }
@@ -186,6 +190,27 @@ notification_route_file_is_secure() {
   [[ $owner == "$UID" && $mode == 600 ]]
 }
 
+ensure_notification_route_dir() {
+  local route_dir=$1
+
+  if [[ -e $route_dir && -L $route_dir ]]; then
+    printf 'notification route directory is a symlink: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! (umask 077 && mkdir -p -- "$route_dir"); then
+    printf 'failed to create notification route directory: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! chmod 0700 -- "$route_dir"; then
+    printf 'failed to secure notification route directory: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! notification_route_dir_is_secure "$route_dir"; then
+    printf 'notification route directory is not secure: %s\n' "$route_dir" >&2
+    return 1
+  fi
+}
+
 publish_notification_json() (
   local route_dir=$1
   local route_file=$2
@@ -203,6 +228,9 @@ publish_notification_json() (
   trap 'exit 130' INT
   trap 'exit 143' TERM
 
+  if ! notification_route_dir_is_secure "$route_dir"; then
+    return 1
+  fi
   if ! temporary_file=$(umask 077 && mktemp "$route_dir/$temp_prefix.XXXXXX"); then
     return 1
   fi
@@ -213,6 +241,9 @@ publish_notification_json() (
     return 1
   fi
   if ! mv -f -- "$temporary_file" "$route_file"; then
+    return 1
+  fi
+  if ! notification_route_file_is_secure "$route_file"; then
     return 1
   fi
   temporary_file=""
@@ -244,14 +275,27 @@ invalidate_notification_route_lease() {
   rm -f -- "$route_file"
 }
 
-cleanup_notification_route_state() {
-  local route_dir=${1:-"$XDG_RUNTIME_DIR/desktop-shell"}
-  local route_file=${2:-"$route_dir/notification-route.json"}
+publish_hidden_notification_route_state() {
+  local route_dir=$1
+  local route_file=$2
   local route_json
 
-  invalidate_notification_route_lease "$route_dir/notification-route-lease.json"
-  if route_json=$(build_notification_route_json false "" "none" "none" "$(epoch_seconds)"); then
-    publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json" || true
+  ensure_notification_route_dir "$route_dir" || return 1
+  if ! route_json=$(build_notification_route_json false "" "none" "none" "$(epoch_seconds)"); then
+    return 1
+  fi
+
+  publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"
+}
+
+cleanup_notification_route_state() {
+  local route_dir=${1:-"$NOTIFICATION_ROUTE_DIR"}
+  local route_file=${2:-"$NOTIFICATION_ROUTE_FILE"}
+  local lease_file=${3:-"$NOTIFICATION_LEASE_FILE"}
+
+  invalidate_notification_route_lease "$lease_file"
+  if notification_route_dir_is_secure "$route_dir"; then
+    publish_hidden_notification_route_state "$route_dir" "$route_file" || true
   fi
 }
 
@@ -271,22 +315,9 @@ write_notification_route_state() {
     rustdesk-route-hidden) visible=false; output="" ;;
   esac
 
-  route_dir="$XDG_RUNTIME_DIR/desktop-shell"
-  route_file="$route_dir/notification-route.json"
-  if [[ -e $route_dir && -L $route_dir ]]; then
-    printf 'notification route directory is a symlink: %s\n' "$route_dir" >&2
-    return 1
-  fi
-  if ! (umask 077 && mkdir -p -- "$route_dir"); then
-    printf 'failed to create notification route directory: %s\n' "$route_dir" >&2
-    return 1
-  fi
-  if ! chmod 0700 -- "$route_dir"; then
-    printf 'failed to secure notification route directory: %s\n' "$route_dir" >&2
-    return 1
-  fi
-  if ! notification_route_dir_is_secure "$route_dir"; then
-    printf 'notification route directory is not secure: %s\n' "$route_dir" >&2
+  route_dir=$NOTIFICATION_ROUTE_DIR
+  route_file=$NOTIFICATION_ROUTE_FILE
+  if ! ensure_notification_route_dir "$route_dir"; then
     return 1
   fi
 
@@ -337,15 +368,15 @@ write_notification_route_state() {
       :
     else
       publish_status=$?
-      invalidate_notification_route_lease "$route_dir/notification-route-lease.json"
+      invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
       printf 'failed to publish notification route: %s\n' "$route_file" >&2
       return "$publish_status"
     fi
   fi
 
-  if ! write_notification_route_lease "$route_dir" "$route_dir/notification-route-lease.json" "$route_updated_at"; then
-    invalidate_notification_route_lease "$route_dir/notification-route-lease.json"
-    printf 'failed to publish notification lease: %s\n' "$route_dir/notification-route-lease.json" >&2
+  if ! write_notification_route_lease "$route_dir" "$NOTIFICATION_LEASE_FILE" "$route_updated_at"; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    printf 'failed to publish notification lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
     return 1
   fi
 
@@ -357,11 +388,13 @@ reconcile_notification_routing() {
   local monitors_json clients_json state
 
   if ! monitors_json=$(hyprctl monitors -j) || ! clients_json=$(hyprctl clients -j); then
-    write_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
   if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
-    write_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
   write_notification_route_state "$state"
