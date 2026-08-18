@@ -14,11 +14,7 @@ hl.bind(
 	hl.dsp.exec_cmd("vicinae vicinae://extensions/vicinae/calculator/history"),
 	{ description = "Calculator" }
 )
-hl.bind(
-	"SUPER + CTRL + W",
-	hl.dsp.exec_cmd("systemctl --user restart desktop-shell.service"),
-	{ description = "Reload top bar" }
-)
+hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("desktop-shell-activate"), { description = "Reload top bar" })
 hl.bind("SUPER + CTRL + H", hl.dsp.exec_cmd("restart-hyprctl"), { description = "Reload Hyprland" })
 
 -- Aesthetics

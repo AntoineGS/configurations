@@ -163,6 +163,17 @@ assert_route_mutation_detected() {
     fail "route mutation was not rejected: $label ($relative_path)"
 }
 
+assert_round1_route_mutations() {
+  assert_route_mutation_detected direct-shell-restart Linux/hypr/bindings/utilities.lua \
+    'hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("systemctl --user restart desktop-shell.service"))'
+  assert_route_mutation_detected direct-shell-start Linux/hypr/bindings/utilities.lua \
+    'hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("systemctl --user start desktop-shell.service"))'
+  assert_route_mutation_detected direct-shell-try-restart Linux/hypr/bindings/utilities.lua \
+    'hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("systemctl --user try-restart desktop-shell.service"))'
+  assert_route_mutation_detected direct-shell-now Linux/hypr/bindings/utilities.lua \
+    'hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("systemctl --user enable --now desktop-shell.service"))'
+}
+
 assert_round2_route_mutations() {
   assert_route_mutation_detected post--wrapper Linux/hypr/route-variants.lua \
     'uwsm-app -- env -- /usr/bin/mako'
@@ -255,6 +266,7 @@ assert_mutation_fixtures() {
   local fixture="$TEST_ROOT/mutation-repository"
   local hits expected_path allowed_path
 
+  assert_round1_route_mutations
   assert_round2_route_mutations
   assert_round3_route_mutations
   assert_round4_route_mutations
@@ -378,6 +390,7 @@ is_non_runtime_file() {
 
 readonly UWSM_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?uwsm-app[[:space:]]+--([^;&|]*[[:space:]/\"'])(mako|swayosd-server)([^[:alnum:]_.-]|$)"
 readonly DIRECT_ROUTE_RE="(^|[^[:alnum:]_.-])([^[:space:];|&()\"']+/)?(polkit-gnome-authentication-agent-1|makoctl|swayosd-client|swayosd-brightness|swayosd-kbd-brightness)([^[:alnum:]_.-]|$)"
+readonly DIRECT_SHELL_ROUTE_RE="(^|[^[:alnum:]_.-])systemctl[[:space:]]+--user[[:space:]]+(start|restart|try-restart)[[:space:]]+desktop-shell[.]service([^[:alnum:]_.-]|$)|(^|[^[:alnum:]_.-])systemctl[[:space:]]+--user[^;&|]*--now[^;&|]*desktop-shell[.]service([^[:alnum:]_.-]|$)"
 
 collect_tracked_text_paths() {
   local root="$1"
@@ -422,7 +435,8 @@ collect_inventory_hits() {
     done
   fi
 
-  awk -v root="$root" -v mode="$mode" -v uwsm="$UWSM_ROUTE_RE" -v direct="$DIRECT_ROUTE_RE" '
+  awk -v root="$root" -v mode="$mode" -v uwsm="$UWSM_ROUTE_RE" -v direct="$DIRECT_ROUTE_RE" \
+    -v direct_shell="$DIRECT_SHELL_ROUTE_RE" '
     function is_whole_line_comment(path, value) {
       if (value ~ /^[[:space:]]*$/) {
         return 1
@@ -539,7 +553,7 @@ collect_inventory_hits() {
       if (is_whole_line_comment(path, value) || package_declaration(path, value)) {
         return
       }
-      if (mode == "route" && (value ~ uwsm || value ~ direct)) {
+      if (mode == "route" && (value ~ uwsm || value ~ direct || value ~ direct_shell)) {
         print path ":" start ":" value
       }
       if (mode == "adapter" && index(value, "desktop-shell-mako-route") &&
@@ -774,8 +788,8 @@ assert_service_repair() {
     fail 'desktop-shell repair does not require enabled state'
   grep -Fq 'systemctl --user show desktop-shell.service --property=NeedDaemonReload --value' <<< "$block" ||
     fail 'desktop-shell repair does not check daemon reload state'
-  grep -Fq 'systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' <<< "$block" ||
-    fail 'desktop-shell repair is not enable-only'
+  grep -Fq 'systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' <<< "$block" ||
+    fail 'desktop-shell repair does not stop before reloading and enabling'
   if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service|--now desktop-shell\.service' <<< "$block"; then
     fail 'desktop-shell repair starts or restarts the service'
   fi
