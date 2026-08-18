@@ -2,7 +2,9 @@
 set -Eeuo pipefail
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
+readonly ROUTE_DIR="$XDG_RUNTIME_DIR/desktop-shell"
 readonly ROUTE_FILE="$XDG_RUNTIME_DIR/desktop-shell/notification-route.json"
+readonly LEASE_FILE="$XDG_RUNTIME_DIR/desktop-shell/notification-route-lease.json"
 readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
 readonly HIDDEN_MODE="rustdesk-route-hidden"
 readonly CUE_MODE="rustdesk-cue"
@@ -63,47 +65,83 @@ write_cue() {
   fi
 }
 
+route_dir_is_secure() {
+  local owner mode
+
+  [[ -d $ROUTE_DIR && ! -L $ROUTE_DIR ]] || return 1
+  if ! read -r owner mode < <(stat -c '%u %a' -- "$ROUTE_DIR"); then
+    return 1
+  fi
+  [[ $owner == "$UID" && $mode == 700 ]]
+}
+
+route_file_is_secure() {
+  local path=$1
+  local owner mode
+
+  [[ -f $path && ! -L $path ]] || return 1
+  if ! read -r owner mode < <(stat -c '%u %a' -- "$path"); then
+    return 1
+  fi
+  [[ $owner == "$UID" && $mode == 600 ]]
+}
+
 read_route() {
   local now
   local route_values
 
-  [[ -f $ROUTE_FILE && ! -L $ROUTE_FILE ]] || return 1
+  route_dir_is_secure || return 1
+  route_file_is_secure "$ROUTE_FILE" || return 1
+  route_file_is_secure "$LEASE_FILE" || return 1
   now=$(date +%s)
   [[ $now =~ ^[0-9]+$ ]] || return 1
 
-  if ! route_values=$(jq -er --argjson now "$now" '
-    def valid_output:
-      . == null or (type == "string" and test("^[A-Za-z0-9_.-]+$"));
+  if ! route_values=$(jq -ner --argjson now "$now" --slurpfile route "$ROUTE_FILE" --slurpfile lease "$LEASE_FILE" '
+    def non_negative_integer($label):
+      if (type != "number") or (floor != .) or . < 0 then error($label + " is invalid") else . end;
     def supported_output:
       . == "DVI-D-1" or . == "HDMI-A-1" or . == "DP-2";
 
-    if (type != "object") or (type == "array") then error("route must be an object") end
-    | if .version != 1 then error("unsupported route version") end
-    | if (.visible | type) != "boolean" then error("route visibility is invalid") end
-    | if (.updatedAt | type) != "number" then error("route timestamp is invalid") end
-    | if (.updatedAt | floor) != .updatedAt or .updatedAt < 0 then error("route timestamp is invalid") end
-    | if .updatedAt > $now then error("route timestamp is from the future") end
-    | if ($now - .updatedAt) > 45 then error("route is stale") end
-    | if (.output | valid_output | not) then error("route output is invalid") end
-    | if (.cueOutput | valid_output | not) then error("route cue output is invalid") end
-    | if (.direction != null and (.direction | type) != "string") then error("route direction is invalid") end
-    | if (.direction != null and (.direction | test("^(left|right|up|down)$") | not)) then error("route direction is invalid") end
-    | if (.visible and .output == null) then error("visible route has no output") end
-    | if (.visible and (.output | supported_output | not)) then error("unsupported route output") end
-    | if (.cueOutput != null and (.cueOutput | supported_output | not)) then error("unsupported route cue output") end
-    | (if .visible then
-         if .output == "DVI-D-1" then "rustdesk-route-DVI-D-1"
-         elif .output == "HDMI-A-1" then "rustdesk-route-HDMI-A-1"
-         else "rustdesk-route-DP-2"
+    if ($route | length) != 1 then error("missing route") else . end
+    | if ($lease | length) != 1 then error("missing lease") else . end
+    | $route[0] as $route_json
+    | $lease[0] as $lease_json
+    | if ($route_json | type) != "object" or ($route_json | type) == "array" then error("route must be an object") else . end
+    | if ($lease_json | type) != "object" or ($lease_json | type) == "array" then error("lease must be an object") else . end
+    | if $route_json.version != 1 then error("unsupported route version") else . end
+    | if $lease_json.version != 1 then error("unsupported lease version") else . end
+    | if ($route_json.visible | type) != "boolean" then error("route visibility is invalid") else . end
+    | ($route_json.updatedAt | non_negative_integer("route timestamp")) as $route_updated_at
+    | ($lease_json.refreshedAt | non_negative_integer("lease refresh time")) as $lease_refreshed_at
+    | ($lease_json.expiresAt | non_negative_integer("lease expiration time")) as $lease_expires_at
+    | ($lease_json.routeUpdatedAt | non_negative_integer("lease route timestamp")) as $lease_route_updated_at
+    | if $route_updated_at > $now then error("route timestamp is from the future") else . end
+    | if ($now - $route_updated_at) > 45 then error("route is stale") else . end
+    | if $lease_refreshed_at > $now then error("lease refresh time is from the future") else . end
+    | if $lease_expires_at < $now then error("lease is stale") else . end
+    | if $lease_expires_at < $lease_refreshed_at then error("lease lifetime is invalid") else . end
+    | if ($lease_expires_at - $lease_refreshed_at) > 2 then error("lease lifetime is too long") else . end
+    | if $lease_route_updated_at != $route_updated_at then error("lease route timestamp does not match") else . end
+    | if ($route_json.output != null and (($route_json.output | type) != "string" or ($route_json.output | supported_output | not))) then error("unsupported route output") else . end
+    | if ($route_json.cueOutput != null and (($route_json.cueOutput | type) != "string" or ($route_json.cueOutput | supported_output | not))) then error("unsupported route cue output") else . end
+    | if ($route_json.direction != null and (($route_json.direction | type) != "string" or ($route_json.direction | test("^(left|right|up|down)$") | not))) then error("route direction is invalid") else . end
+    | if ($route_json.visible and $route_json.output == null) then error("visible route has no output") else . end
+    | if (($route_json.visible | not) and $route_json.cueOutput != null) then error("hidden route has cue output") else . end
+    | if ($route_json.cueOutput == null and $route_json.direction != null) then error("route direction requires cue output") else . end
+    | (if $route_json.visible then
+         if $route_json.output == "DVI-D-1" then "rustdesk-route-DVI-D-1"
+         elif $route_json.output == "HDMI-A-1" then "rustdesk-route-HDMI-A-1"
+         elif $route_json.output == "DP-2" then "rustdesk-route-DP-2"
+         else error("unsupported route output")
          end
        else "rustdesk-route-hidden"
        end) as $route_mode
-    | (if .cueOutput == null then ""
-       else .cueOutput + "|" + (if .direction == null then "none" else .direction end)
+    | (if $route_json.cueOutput == null then ""
+       else $route_json.cueOutput + "|" + (if $route_json.direction == null then "none" else $route_json.direction end)
        end) as $cue_text
     | [$route_mode, $cue_text]
     | @tsv
-  ' "$ROUTE_FILE" 2>/dev/null); then
+  ' 2>/dev/null); then
     return 1
   fi
 
@@ -163,19 +201,25 @@ cleanup() {
   remove_cue || true
 }
 
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
-trap cleanup EXIT
+run_adapter() {
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap cleanup EXIT
 
-if apply_modes "$HIDDEN_MODE" ""; then
-  LAST_SIGNATURE="$HIDDEN_MODE|"
-else
-  LAST_SIGNATURE=""
+  if apply_modes "$HIDDEN_MODE" ""; then
+    LAST_SIGNATURE="$HIDDEN_MODE|"
+  else
+    LAST_SIGNATURE=""
+  fi
+  remove_cue || true
+
+  while :; do
+    reconcile_route || true
+    sleep "${POLL_INTERVAL:-1}"
+  done
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  run_adapter
 fi
-remove_cue || true
-
-while :; do
-  reconcile_route || true
-  sleep "${POLL_INTERVAL:-1}"
-done
