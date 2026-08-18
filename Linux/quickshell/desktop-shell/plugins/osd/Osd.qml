@@ -19,6 +19,7 @@ Item {
   property bool hasProgress: false
   property int duration: 1200
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
+  readonly property bool surfaceVisible: panel.visible
   property var screenList: Quickshell.screens
   readonly property var targetScreen: OsdModel.screenForMonitor(root.screenList, root.focusedMonitorName)
   property var displayedState: ({

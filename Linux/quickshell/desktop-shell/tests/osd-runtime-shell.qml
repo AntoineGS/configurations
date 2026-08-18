@@ -36,10 +36,19 @@ ShellRoot {
     return root.screenState()
   }
 
+  function surfaceState() {
+    return JSON.stringify({
+      suppressed: osd.testSurfaceSuppressed,
+      visible: osd.surfaceVisible,
+      opened: osd.opened
+    })
+  }
+
   IpcHandler {
     target: "desktop.osd-test"
 
     function screenState(): string { return root.screenState() }
     function setScreenFixture(mode: string): string { return root.setScreenFixture(mode) }
+    function surfaceState(): string { return root.surfaceState() }
   }
 }

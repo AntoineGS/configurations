@@ -22,6 +22,7 @@ for (const raw of ["", "{", "[]", '{"value":"loud"}', '{"max":0}', '{"duration":
 assert.equal(model.iconFor("volume-muted", 0), "")
 assert.equal(model.iconFor("microphone-muted", 0), "󰍭")
 assert.equal(model.iconFor("brightness", 50), "󰍹")
+assert.equal(model.iconFor("media-stop", 0), "󰓛")
 
 assert.deepEqual(model.normalizePayload('{"icon":"volume","message":"","value":12.5,"max":25.5,"progressText":"49%","duration":0.5}'), {
   valid: true,
@@ -118,4 +119,5 @@ assert.doesNotMatch(qml, /onFocusedMonitorNameChanged/)
 assert.match(qml, /WlrLayer\.Overlay/)
 assert.match(qml, /KeyboardFocus\.None/)
 assert.match(qml, /Region \{\s*\}/)
+assert.match(qml, /readonly property bool surfaceVisible:\s*panel\.visible/)
 assert.doesNotMatch(qml, /omarchy|OMARCHY/)

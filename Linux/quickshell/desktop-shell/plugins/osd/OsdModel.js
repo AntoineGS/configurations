@@ -45,6 +45,7 @@ function iconFor(name, percent) {
   if (normalizedName === "media-source" || normalizedName === "player-source") return "󰝚"
   if (normalizedName === "media-play" || normalizedName === "player-play") return "󰐊"
   if (normalizedName === "media-pause" || normalizedName === "player-pause") return "󰏤"
+  if (normalizedName === "media-stop" || normalizedName === "player-stop") return "󰓛"
   if (normalizedName === "media-next" || normalizedName === "player-next") return "󰒭"
   if (normalizedName === "media-previous" || normalizedName === "player-previous") return "󰒮"
   if (normalizedName.length > 0) return name
