@@ -50,7 +50,19 @@ assert_file_mode() {
   assert_equal "${expected#0}" "${actual#0}" "mode for $path"
 }
 
+assert_file_owner() {
+  local expected=$1
+  local path=$2
+  local actual
+
+  if ! actual=$(stat -c '%u' -- "$path"); then
+    fail "could not inspect owner for $path"
+  fi
+  assert_equal "$expected" "$actual" "owner for $path"
+}
+
 assert_lease_contract() {
+  assert_file_owner "$UID" "$NOTIFICATION_LEASE_FILE"
   assert_file_mode 0600 "$NOTIFICATION_LEASE_FILE"
   [[ ! -L $NOTIFICATION_LEASE_FILE ]] || fail 'notification lease is a symlink'
   if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route-lease.json.*" >/dev/null; then
@@ -70,8 +82,11 @@ epoch_seconds() {
 }
 
 assert_route_contract() {
+  assert_file_owner "$UID" "$NOTIFICATION_ROUTE_DIR"
+  assert_file_owner "$UID" "$NOTIFICATION_ROUTE_FILE"
   assert_file_mode 0700 "$NOTIFICATION_ROUTE_DIR"
   assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
+  [[ ! -L $NOTIFICATION_ROUTE_FILE ]] || fail 'notification route file is a symlink'
   if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
     fail 'temporary notification route file was not removed after rename'
   fi
@@ -165,6 +180,10 @@ NOTIFICATION_LEASE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"
 ROUTE_RENAME_FAIL=false
 ROUTE_INTERRUPT=false
 LEASE_RENAME_FAIL=false
+ROUTE_POST_RENAME_CHMOD=''
+LEASE_POST_RENAME_CHMOD=''
+ROUTE_POST_RENAME_SYMLINK=false
+LEASE_POST_RENAME_SYMLINK=false
 HYPR_LOG="$TEST_RUNTIME_DIR/hyprctl.log"
 HYPR_FAIL=false
 HYPR_MONITORS_JSON='[]'
@@ -182,6 +201,25 @@ mv() {
     return 1
   fi
   command mv "$@"
+  if [[ $target == "$NOTIFICATION_ROUTE_FILE" ]]; then
+    if [[ -n $ROUTE_POST_RENAME_CHMOD ]]; then
+      command chmod "$ROUTE_POST_RENAME_CHMOD" -- "$target"
+    fi
+    if [[ $ROUTE_POST_RENAME_SYMLINK == true ]]; then
+      local symlink_target="$TEST_RUNTIME_DIR/post-route-symlink-target"
+      command mv -- "$target" "$symlink_target"
+      command ln -s -- "$symlink_target" "$target"
+    fi
+  elif [[ $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    if [[ -n $LEASE_POST_RENAME_CHMOD ]]; then
+      command chmod "$LEASE_POST_RENAME_CHMOD" -- "$target"
+    fi
+    if [[ $LEASE_POST_RENAME_SYMLINK == true ]]; then
+      local symlink_target="$TEST_RUNTIME_DIR/post-lease-symlink-target"
+      command mv -- "$target" "$symlink_target"
+      command ln -s -- "$symlink_target" "$target"
+    fi
+  fi
 }
 
 hyprctl() {
@@ -440,6 +478,33 @@ LEASE_RENAME_FAIL=false
 assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
 [[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed lease write left a lease file behind'
 
+# Post-rename route verification rejects insecure metadata and invalidates the lease.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+ROUTE_POST_RENAME_CHMOD=0644
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename insecure route metadata returned success'
+fi
+ROUTE_POST_RENAME_CHMOD=''
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'insecure post-rename route metadata left a lease file behind'
+
+# Post-rename lease verification rejects insecure metadata.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+LEASE_POST_RENAME_CHMOD=0644
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename insecure lease metadata returned success'
+fi
+LEASE_POST_RENAME_CHMOD=''
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'insecure post-rename lease metadata left a lease file behind'
+
+# Post-rename route verification rejects symlink replacement and invalidates the lease.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+ROUTE_POST_RENAME_SYMLINK=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename route symlink returned success'
+fi
+ROUTE_POST_RENAME_SYMLINK=false
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'post-rename route symlink left a lease file behind'
+
 # A symlinked route directory is rejected before publication.
 reset_route_state
 mkdir -p -- "$TEST_RUNTIME_DIR/lease-target"
@@ -456,13 +521,35 @@ write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
 cleanup_notification_route_state
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
 [[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup recreated the lease'
-assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
-[[ ! -L $NOTIFICATION_ROUTE_FILE ]] || fail 'cleanup route is a symlink'
+assert_route_contract
 if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
   fail 'cleanup left a temporary notification route file behind'
 fi
 
+# Cleanup still removes the lease when the route directory is insecure.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+visible_route_before_cleanup=$(<"$NOTIFICATION_ROUTE_FILE")
+chmod 0755 -- "$NOTIFICATION_ROUTE_DIR"
+cleanup_notification_route_state
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup through insecure directory recreated the lease'
+assert_equal "$visible_route_before_cleanup" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'cleanup through insecure directory should not republish the route'
+
+# Cleanup still removes the lease when the route directory is symlinked.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+visible_route_before_cleanup=$(<"$NOTIFICATION_ROUTE_FILE")
+mv -- "$NOTIFICATION_ROUTE_DIR" "$TEST_RUNTIME_DIR/cleanup-route-target"
+ln -s -- "$TEST_RUNTIME_DIR/cleanup-route-target" "$NOTIFICATION_ROUTE_DIR"
+cleanup_notification_route_state
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup through symlink directory recreated the lease'
+assert_equal "$visible_route_before_cleanup" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'cleanup through symlink directory should not republish the route'
+
 # An interruption after mktemp must clean only the publisher's temporary file.
+reset_route_state
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
 prior_interrupted_route=$(<"$NOTIFICATION_ROUTE_FILE")
 set +e
 (
@@ -522,6 +609,7 @@ if reconcile_notification_routing 2>/dev/null; then
   fail 'failed Hyprland state reconciliation returned success'
 fi
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed Hyprland state reconciliation refreshed the lease'
 HYPR_FAIL=false
 
 reset_route_state
@@ -531,6 +619,7 @@ if reconcile_notification_routing 2>/dev/null; then
   fail 'malformed Hyprland state reconciliation returned success'
 fi
 assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'malformed Hyprland state reconciliation refreshed the lease'
 HYPR_MONITORS_JSON='[]'
 
 # Handler state is explicit, persists across events, and does not affect movement.
