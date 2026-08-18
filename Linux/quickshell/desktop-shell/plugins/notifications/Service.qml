@@ -45,6 +45,15 @@ Item {
   property int routeMetadataGeneration: 0
   property int routeMetadataCheckGeneration: -1
   property bool routeMetadataCheckScheduled: false
+  property int routeAcceptedGeneration: -1
+  property bool routeCandidatePending: false
+  property bool routeCandidateMetadataPending: false
+  property string routeCandidateError: "notification route candidate unavailable"
+  property var acceptedRoute: null
+  property var acceptedLease: null
+  property int routeTransitionCount: 0
+  property int routeInvalidationCount: 0
+  property var routeTransitionLog: []
   property var route: ({
     valid: false,
     visible: false,
@@ -1130,7 +1139,7 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: service.applyRoute(text())
-    onLoadFailed: service.invalidateRoute("notification route unavailable")
+    onLoadFailed: service.markRouteUnavailable("notification route unavailable")
     onFileChanged: {
       service.invalidateRouteMetadata()
       service.scheduleRouteMetadataCheck()
@@ -1144,7 +1153,7 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: service.applyLease(text())
-    onLoadFailed: service.invalidateLease("notification route lease unavailable")
+    onLoadFailed: service.markLeaseUnavailable("notification route lease unavailable")
     onFileChanged: {
       service.invalidateRouteMetadata()
       service.scheduleRouteMetadataCheck()
@@ -1168,9 +1177,11 @@ Item {
         service.scheduleRouteMetadataCheck()
         return
       }
-      service.routeMetadataValid = Number(exitCode) === 0
-      service.routeMetadataError = service.routeMetadataValid ? "" : "notification route metadata is insecure or unavailable"
-      service.refreshRoute()
+      if (Number(exitCode) !== 0) {
+        service.failClosedRoute("notification route metadata is insecure or unavailable")
+        return
+      }
+      service.promoteRouteCandidate()
     }
   }
 
@@ -1182,7 +1193,17 @@ Item {
     onTriggered: {
       routeFile.reload()
       leaseFile.reload()
-      service.refreshRoute()
+      service.scheduleRouteMetadataCheck()
+    }
+  }
+
+  Timer {
+    id: routeCandidateSettleTimer
+    interval: 100
+    repeat: false
+    running: false
+    onTriggered: {
+      service.routeMetadataCheckScheduled = false
       service.checkRouteMetadata()
     }
   }
@@ -1196,14 +1217,39 @@ Item {
       service.invalidateLease("notification route lease expired")
       routeFile.reload()
       leaseFile.reload()
-      service.checkRouteMetadata()
+      service.scheduleRouteMetadataCheck()
     }
   }
 
-  function invalidateRoute(error) {
+  function recordRouteTransition(nextValid, reason) {
+    var next = nextValid === true
+    var previous = service.routeValid
+    if (previous === next) return
+
+    var log = Array.isArray(service.routeTransitionLog) ? service.routeTransitionLog.slice() : []
+    log.push({
+      from: previous,
+      to: next,
+      generation: service.routeAcceptedGeneration,
+      atMs: Date.now(),
+      reason: String(reason || "")
+    })
+    while (log.length > 32) log.shift()
+    service.routeTransitionLog = log
+    service.routeTransitionCount++
+    if (previous && !next) service.routeInvalidationCount++
+    service.routeValid = next
+  }
+
+  function failClosedRoute(error) {
     var message = String(error || "invalid route")
     routeLeaseExpiryTimer.stop()
-    service.routeRaw = ""
+    service.routeMetadataValid = false
+    service.routeMetadataError = message
+    service.leaseValid = false
+    service.leaseError = message
+    service.acceptedRoute = null
+    service.acceptedLease = null
     service.route = {
       valid: false,
       visible: false,
@@ -1212,90 +1258,159 @@ Item {
       direction: null,
       error: message
     }
-    service.routeValid = false
     service.routeError = message
+    service.routeCandidateError = message
+    service.routeCandidatePending = false
+    service.routeCandidateMetadataPending = false
+    service.recordRouteTransition(false, message)
+    service.routeAcceptedGeneration = -1
+  }
+
+  function markRouteUnavailable(error) {
+    var message = String(error || "notification route unavailable")
+    service.routeRaw = ""
+    service.routeCandidateError = message
+    service.routeCandidatePending = true
+    service.invalidateRouteMetadata()
+    service.scheduleRouteMetadataCheck()
+    if (!service.routeValid) service.routeError = message
+  }
+
+  function markLeaseUnavailable(error) {
+    var message = String(error || "notification route lease unavailable")
+    service.leaseRaw = ""
+    service.routeCandidateError = message
+    service.routeCandidatePending = true
+    service.invalidateRouteMetadata()
+    service.scheduleRouteMetadataCheck()
+    if (!service.routeValid) service.routeError = message
+  }
+
+  function invalidateRoute(error) {
+    service.markRouteUnavailable(error)
   }
 
   function invalidateLease(error) {
-    var message = String(error || "invalid route lease")
-    routeLeaseExpiryTimer.stop()
-    service.leaseRaw = ""
-    service.leaseValid = false
-    service.leaseError = message
-    service.refreshRoute()
+    service.failClosedRoute(error || "invalid route lease")
   }
 
   function applyRoute(raw) {
     var value = String(raw || "")
     if (!value) {
-      service.invalidateRoute("notification route unavailable")
+      service.markRouteUnavailable("notification route unavailable")
       return
     }
     service.routeRaw = value
+    service.routeCandidateError = ""
+    service.routeCandidatePending = true
     service.refreshRoute()
   }
 
   function applyLease(raw) {
     var value = String(raw || "")
     if (!value) {
-      service.invalidateLease("notification route lease unavailable")
+      service.markLeaseUnavailable("notification route lease unavailable")
       return
     }
     service.leaseRaw = value
+    service.routeCandidateError = ""
+    service.routeCandidatePending = true
     service.refreshRoute()
+  }
+
+  function normalizedRouteCandidate() {
+    var now = Date.now()
+    var next = NotificationLogic.normalizeRoute(service.routeRaw, now)
+    var nextLease = NotificationLogic.normalizeLease(service.leaseRaw, now, next.updatedAt)
+    return {
+      route: next,
+      lease: nextLease,
+      valid: next.valid === true && nextLease.valid === true
+    }
+  }
+
+  function candidateWaitsForLease(candidate) {
+    return candidate.route.valid === true && candidate.lease.valid !== true
+      && /route timestamp/.test(candidate.lease.error || "")
   }
 
   function checkRouteMetadata() {
     if (routeMetadata.running) return
-    service.invalidateRouteMetadata(false)
+    if (!service.routeRaw || !service.leaseRaw) {
+      service.routeCandidatePending = true
+      return
+    }
+
+    var candidate = service.normalizedRouteCandidate()
+    if (!candidate.valid) {
+      if (service.routeAcceptedGeneration >= 0 && service.candidateWaitsForLease(candidate)) {
+        service.routeCandidatePending = true
+        return
+      }
+      service.failClosedRoute(candidate.route.valid ? candidate.lease.error : candidate.route.error)
+      return
+    }
+    if (service.routeAcceptedGeneration === service.routeMetadataGeneration && service.routeMetadataValid) {
+      service.routeCandidatePending = false
+      return
+    }
+
+    service.routeCandidatePending = false
+    service.routeCandidateMetadataPending = true
     service.routeMetadataCheckGeneration = service.routeMetadataGeneration
     routeMetadata.running = true
   }
 
+  function promoteRouteCandidate() {
+    var candidate = service.normalizedRouteCandidate()
+    if (!candidate.valid) {
+      if (service.routeAcceptedGeneration >= 0 && service.candidateWaitsForLease(candidate)) {
+        service.routeCandidatePending = true
+        service.routeCandidateMetadataPending = false
+        return
+      }
+      service.failClosedRoute(candidate.route.valid ? candidate.lease.error : candidate.route.error)
+      return
+    }
+    if (candidate.lease.expiresAtMs <= Date.now()) {
+      service.failClosedRoute("notification route lease expired")
+      return
+    }
+
+    service.route = candidate.route
+    service.acceptedRoute = candidate.route
+    service.acceptedLease = candidate.lease
+    service.leaseValid = true
+    service.leaseError = ""
+    service.routeMetadataValid = true
+    service.routeMetadataError = ""
+    service.routeCandidateError = ""
+    service.routeCandidatePending = false
+    service.routeCandidateMetadataPending = false
+    service.routeAcceptedGeneration = service.routeMetadataGeneration
+    service.routeError = ""
+    service.recordRouteTransition(true, "accepted route generation")
+
+    var expiresAtMs = Number(candidate.lease.expiresAtMs)
+    var remaining = expiresAtMs - Date.now()
+    routeLeaseExpiryTimer.interval = Math.max(1, Math.ceil(remaining))
+    routeLeaseExpiryTimer.restart()
+  }
+
   function scheduleRouteMetadataCheck() {
-    if (service.routeMetadataCheckScheduled) return
     service.routeMetadataCheckScheduled = true
-    Qt.callLater(function() {
-      service.routeMetadataCheckScheduled = false
-      service.checkRouteMetadata()
-    })
+    routeCandidateSettleTimer.restart()
   }
 
   function invalidateRouteMetadata(incrementGeneration) {
     if (incrementGeneration !== false) service.routeMetadataGeneration++
-    service.routeMetadataValid = false
-    service.routeMetadataError = "notification route metadata check pending"
-    service.refreshRoute()
+    service.routeCandidatePending = true
+    service.routeCandidateMetadataPending = true
+    if (!service.routeValid) service.routeMetadataError = "notification route metadata check pending"
   }
 
   function refreshRoute() {
-    if (!service.routeRaw) {
-      routeLeaseExpiryTimer.stop()
-      service.routeValid = false
-      service.routeError = "notification route unavailable"
-      return
-    }
-    if (!service.leaseRaw) {
-      routeLeaseExpiryTimer.stop()
-      service.routeValid = false
-      service.routeError = "notification route lease unavailable"
-      return
-    }
-    var next = NotificationLogic.normalizeRoute(service.routeRaw, Date.now())
-    var nextLease = NotificationLogic.normalizeLease(service.leaseRaw, Date.now(), next.updatedAt)
-    service.route = next
-    service.leaseValid = nextLease.valid === true
-    service.leaseError = nextLease.error || ""
-    service.routeValid = next.valid === true && service.leaseValid && service.routeMetadataValid
-    service.routeError = next.error || service.leaseError || service.routeMetadataError || ""
-    if (nextLease.valid === true) {
-      var expiresAtMs = Number(nextLease.expiresAtMs)
-      var remaining = expiresAtMs - Date.now()
-      routeLeaseExpiryTimer.interval = Math.max(1, Math.ceil(remaining))
-      routeLeaseExpiryTimer.restart()
-    } else {
-      routeLeaseExpiryTimer.stop()
-    }
+    service.scheduleRouteMetadataCheck()
   }
 
   function screenName(screen) {
@@ -1453,7 +1568,12 @@ Item {
       routeDirection: service.route.direction,
       routeCueGlyph: service.routeValid && service.route.cueOutput !== null
         ? NotificationLogic.cueGlyph(service.route.direction) : null,
-      routeError: service.routeError
+      routeError: service.routeError,
+      routeAcceptedGeneration: service.routeAcceptedGeneration,
+      routeCandidateGeneration: service.routeMetadataGeneration,
+      routeTransitionCount: service.routeTransitionCount,
+      routeInvalidationCount: service.routeInvalidationCount,
+      routeTransitionLog: service.routeTransitionLog
     })
   }
 

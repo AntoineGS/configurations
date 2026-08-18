@@ -3,6 +3,15 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
+PUBLISHER_HELPER="$SHELL_ROOT/tests/notification-route-publisher.sh"
+
+[[ -r $PUBLISHER_HELPER ]] || {
+  printf 'FAIL: notification publisher helper is missing: %s\n' "$PUBLISHER_HELPER" >&2
+  exit 1
+}
+# The helper path is validated above and is resolved from the feature worktree.
+# shellcheck disable=SC1090
+source "$PUBLISHER_HELPER"
 
 select_local_wayland_display() {
   local requested=${1-}
@@ -142,10 +151,13 @@ shell_generation=0
 shell_log=''
 runtime_shell_root="$SHELL_ROOT"
 route_lease_enabled=0
-lease_publisher_pid=''
-lease_publisher_stop=''
-lease_publisher_ready=''
-lease_publisher_count=''
+watcher_publisher_pid=''
+watcher_publisher_start_time=''
+watcher_publisher_executable=''
+watcher_socket_pid=''
+watcher_socket_start_time=''
+watcher_socket_executable=''
+watcher_publisher_log=''
 
 cleanup_process() {
   local pid=${1-}
@@ -167,7 +179,11 @@ cleanup() {
   cleanup_process "$shell_pid"
   cleanup_process "$owner_pid"
   cleanup_process "$action_pid"
-  stop_route_lease_publisher
+  if [[ -n ${watcher_publisher_pid:-} ]]; then
+    notification_publisher_cleanup \
+      "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" \
+      "$watcher_socket_pid" "$watcher_socket_start_time" "$watcher_socket_executable"
+  fi
   if ((status != 0)); then
     if [[ -n $shell_log && -s $shell_log ]]; then
       printf '%s\n' '--- notification runtime shell log ---' >&2
@@ -238,56 +254,40 @@ refresh_route_lease() {
   write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + 1500))" "$updated_at"
 }
 
-start_route_lease_publisher() {
-  local interval=${1:-0.75}
-
-  stop_route_lease_publisher
-  lease_publisher_stop="$fixture/lease-publisher-stop"
-  lease_publisher_ready="$fixture/lease-publisher-ready"
-  lease_publisher_count="$fixture/lease-publisher-count"
-  rm -f -- "$lease_publisher_stop" "$lease_publisher_ready" "$lease_publisher_count"
-  (
-    local count=0
-    while [[ ! -e $lease_publisher_stop ]]; do
-      if refresh_route_lease; then
-        count=$((count + 1))
-        printf '%s\n' "$count" >"$lease_publisher_count"
-        ((count >= 1)) && : >"$lease_publisher_ready"
-      fi
-      sleep "$interval"
-    done
-  ) &
-  lease_publisher_pid=$!
+start_watcher_publisher() {
+  watcher_publisher_log="$fixture/watcher-publisher.log"
+  notification_publisher_start \
+    "$runtime_dir" "$route_dir" "$watcher_publisher_log" \
+    watcher_publisher_pid watcher_publisher_start_time watcher_publisher_executable \
+    watcher_socket_pid watcher_socket_start_time watcher_socket_executable
 }
 
-stop_route_lease_publisher() {
-  [[ -n ${lease_publisher_pid:-} ]] || return 0
-  : >"${lease_publisher_stop:?}"
-  wait "$lease_publisher_pid" 2>/dev/null || true
-  lease_publisher_pid=''
-}
-
-wait_for_lease_renewals() {
+wait_for_watcher_renewals() {
   local expected=$1
-  local count=0
-  local deadline=$((SECONDS + 10))
+  local last_refreshed_at_ms=''
+  local renewal_count=0
+  local refreshed_at_ms=''
   local status_json=''
+  local deadline=$((SECONDS + 15))
 
   while ((SECONDS < deadline)); do
-    if [[ -f ${lease_publisher_count:-} ]]; then
-      count=$(<"$lease_publisher_count")
+    if [[ -f $lease_path ]] && refreshed_at_ms=$(jq -er '.refreshedAtMs' "$lease_path" 2>/dev/null); then
+      if [[ -n $last_refreshed_at_ms && $refreshed_at_ms != "$last_refreshed_at_ms" ]]; then
+        renewal_count=$((renewal_count + 1))
+      fi
+      last_refreshed_at_ms=$refreshed_at_ms
     fi
-    if ((count > 0)) && status_json=$(read_status 2>/dev/null); then
-      jq -e '.routeValid == true and .routeVisible == true and .routeError == ""' \
+    if status_json=$(read_status 2>/dev/null); then
+      jq -e '.routeValid == true and .routeVisible == true and .routeInvalidationCount == 0' \
         <<<"$status_json" >/dev/null || {
-        printf 'FAIL: route became invalid during lease renewal %s\n' "$count" >&2
+        printf 'FAIL: accepted route invalidated during watcher renewal %s\n' "$renewal_count" >&2
         return 1
       }
     fi
-    ((count >= expected)) && return 0
+    ((renewal_count >= expected)) && return 0
     sleep 0.1
   done
-  printf 'FAIL: lease publisher completed only %s renewals, expected %s\n' "$count" "$expected" >&2
+  printf 'FAIL: watcher completed only %s renewals, expected %s\n' "$renewal_count" "$expected" >&2
   return 1
 }
 
@@ -665,25 +665,30 @@ wait_for_status '.routeValid == false and .routeVisible == false'
   exit 1
 }
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
-start_route_lease_publisher
-wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
-wait_for_file "$lease_publisher_ready"
-wait_for_lease_renewals 4
+# Start the real watcher before the consumer so healthy renewals exercise the
+# production one-second reconciliation path rather than a test-side writer.
+stop_shell
+rm -f -- "$route_path" "$lease_path"
+start_watcher_publisher
+wait_for_file "$route_path"
+wait_for_file "$lease_path"
+route_lease_enabled=0
+start_shell
+wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
+wait_for_watcher_renewals 4
 
-# Stopping the publisher naturally must fail closed without relying on cleanup
-# traps or a process kill, then a fresh publisher must recover the same route.
-stop_route_lease_publisher
-natural_stop_started=$SECONDS
-wait_for_status '.routeValid == false and .routeVisible == false'
-((SECONDS - natural_stop_started <= 3)) || {
-  printf 'FAIL: natural lease stop was observed after %s seconds\n' \
-    "$((SECONDS - natural_stop_started))" >&2
-  exit 1
-}
+# SIGKILL the publisher, not the consumer. No manual refresh or reconciliation
+# is allowed before the accepted generation reaches its natural deadline.
+notification_publisher_kill \
+  "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" KILL
+wait_for_status '.routeValid == false and .routeVisible == false and .routeInvalidationCount >= 1'
+notification_publisher_cleanup \
+  "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" \
+  "$watcher_socket_pid" "$watcher_socket_start_time" "$watcher_socket_executable"
+watcher_publisher_pid=''
+route_lease_enabled=1
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
-start_route_lease_publisher
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
-stop_route_lease_publisher
 
 wait_for_path "$state_home/desktop-shell"
 assert_mode 700 "$state_home/desktop-shell"
@@ -761,7 +766,7 @@ wait_for_health '.notificationRouteValid == false and .notificationRouteVisible 
 
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
-start_route_lease_publisher
+start_watcher_publisher
 
 [[ $(call_notification dismissLast) == ok ]]
 wait_for_status '.popupCount == 0 and .historyCount == 1'

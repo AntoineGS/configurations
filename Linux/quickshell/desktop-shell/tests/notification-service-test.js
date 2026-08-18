@@ -7,6 +7,7 @@ const servicePath = path.join(root, "plugins/notifications/Service.qml")
 const cardPath = path.join(root, "plugins/notifications/components/NotificationCard.qml")
 const logicPath = path.join(root, "plugins/notifications/NotificationLogic.js")
 const runtimeTestPath = path.join(root, "tests/notification-runtime-test.sh")
+const publisherHelperPath = path.join(root, "tests/notification-route-publisher.sh")
 const manifestPath = path.join(root, "plugins/notifications/manifest.json")
 const sourcePath = path.join(root, "SOURCE")
 const selectedPluginsPath = path.join(root, "SELECTED_PLUGINS")
@@ -20,6 +21,7 @@ const service = readRequired(servicePath)
 const card = readRequired(cardPath)
 const logic = readRequired(logicPath)
 const runtimeTest = readRequired(runtimeTestPath)
+const publisherHelper = readRequired(publisherHelperPath)
 const manifest = JSON.parse(readRequired(manifestPath))
 const source = readRequired(sourcePath)
 const selected = readRequired(selectedPluginsPath)
@@ -52,11 +54,32 @@ assert.match(service, /routeMetadataCheckGeneration !== service\.routeMetadataGe
 assert.match(service, /function scheduleRouteMetadataCheck\(\)/,
   "watched replacements have a coalesced metadata scheduling path")
 assert.match(service, /onFileChanged:\s*\{[\s\S]*invalidateRouteMetadata\(\)[\s\S]*scheduleRouteMetadataCheck\(\)[\s\S]*reload\(\)/,
-  "watched replacements invalidate route validity and schedule metadata revalidation immediately")
-assert.match(service, /if \(service\.routeMetadataCheckGeneration !== service\.routeMetadataGeneration\)[\s\S]*return[\s\S]*routeMetadataValid = Number\(exitCode\) === 0/,
-  "stale metadata process results are discarded before they can validate a newer generation")
+  "watched replacements retain the accepted generation while scheduling metadata revalidation")
+assert.match(service, /if \(service\.routeMetadataCheckGeneration !== service\.routeMetadataGeneration\)[\s\S]*return[\s\S]*promoteRouteCandidate\(\)/,
+  "stale metadata process results are discarded before they can promote a newer generation")
 assert.match(service, /LC_ALL=C[\s\S]*stat -c/,
   "metadata type comparisons run in the C locale")
+assert.match(service, /property int routeAcceptedGeneration/,
+  "accepted route generation is retained independently from candidate events")
+assert.match(service, /property var acceptedRoute/)
+assert.match(service, /property var acceptedLease/)
+assert.match(service, /routeCandidateSettleTimer/,
+  "route and lease publication events have a coalesced candidate settle timer")
+assert.match(service, /function promoteRouteCandidate\(/,
+  "only a fully validated candidate can promote the accepted generation")
+assert.match(service, /routeTransitionCount/,
+  "route validity transitions are observable through the service IPC")
+assert.match(service, /routeInvalidationCount/,
+  "valid-to-invalid transitions are counted for steady-state assertions")
+assert.match(service, /routeTransitionLog/,
+  "route validity transitions retain a bounded diagnostic log")
+const invalidateMetadataStart = service.indexOf("function invalidateRouteMetadata(")
+const invalidateMetadataEnd = service.indexOf("\n  }", invalidateMetadataStart)
+assert.ok(invalidateMetadataStart >= 0 && invalidateMetadataEnd > invalidateMetadataStart)
+assert.doesNotMatch(service.slice(invalidateMetadataStart, invalidateMetadataEnd), /routeMetadataValid\s*=\s*false/,
+  "candidate metadata invalidation does not discard accepted metadata")
+assert.doesNotMatch(service.slice(invalidateMetadataStart, invalidateMetadataEnd), /routeValid\s*=\s*false/,
+  "candidate metadata invalidation does not discard accepted route validity")
 for (const fileViewId of ["routeFile", "leaseFile"]) {
   const start = service.indexOf(`id: ${fileViewId}`)
   const end = service.indexOf("\n  }", start)
@@ -69,6 +92,14 @@ assert.match(runtimeTest,
   "route-pair fixtures derive both millisecond lease endpoints from one timestamp")
 assert.doesNotMatch(runtimeTest, /write_lease_payload "\$\(date \+%s%3N\)"/,
   "route-pair fixtures do not sample the lease endpoints independently")
+assert.match(publisherHelper, /NOTIFICATION_RECONCILE_INTERVAL=1/,
+  "hermetic lease integration runs the real one-second watcher reconciliation path")
+assert.match(publisherHelper, /notification_publisher_kill\(/,
+  "hermetic lease integration has identity-checked publisher termination")
+assert.match(runtimeTest, /routeInvalidationCount/,
+  "runtime lease renewal asserts the accepted-generation invalidation counter")
+assert.match(runtimeTest, /notification_publisher_kill[\s\S]*KILL/,
+  "runtime lease renewal kills the publisher rather than the consumer")
 assert.match(service, /desktop-shell\/notifications/)
 assert.match(service, /property bool notificationsOwned/)
 assert.match(service, /property string ownershipError/)
@@ -155,7 +186,7 @@ assert.match(service, /parsePopupFiles\(raw, NotificationUrgency\.Normal, servic
 assert.match(service, /property string routeRaw/)
 assert.match(service, /readonly property bool routeVisible/)
 assert.match(service, /function refreshRoute\(\)/)
-assert.match(service, /normalizeRoute\(service\.routeRaw,\s*Date\.now\(\)\)/)
+assert.match(service, /function normalizedRouteCandidate\(\)[\s\S]*normalizeRoute\(service\.routeRaw,\s*now\)/)
 assert.match(service, /routeExpiryTimer/)
 const leaseExpiryTimerStart = service.indexOf("id: routeLeaseExpiryTimer")
 const leaseExpiryTimerEnd = service.indexOf("\n  }", leaseExpiryTimerStart)
@@ -237,6 +268,10 @@ assert.match(service, /liveCount:\s*service\.liveReferenceCount\(\)/,
   "status reports live notification references")
 assert.match(service, /silencedRefreshCount:/)
 assert.match(service, /silencedDirtyCount:/)
+assert.match(service, /routeAcceptedGeneration:\s*service\.routeAcceptedGeneration/)
+assert.match(service, /routeTransitionCount:\s*service\.routeTransitionCount/)
+assert.match(service, /routeInvalidationCount:\s*service\.routeInvalidationCount/)
+assert.match(service, /routeTransitionLog:\s*service\.routeTransitionLog/)
 
 assert.match(card, /^BorderSurface\s*\{/m)
 assert.match(card, /Color\.notifications\.[A-Za-z]+/)
