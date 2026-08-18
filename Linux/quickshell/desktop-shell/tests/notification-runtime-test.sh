@@ -158,6 +158,9 @@ watcher_socket_pid=''
 watcher_socket_start_time=''
 watcher_socket_executable=''
 watcher_publisher_log=''
+watcher_final_refreshed_at_ms=''
+route_metadata_delay_bin="$fixture/route-metadata-delay-bin"
+route_metadata_delay_marker="$fixture/route-metadata-delay"
 
 cleanup_process() {
   local pid=${1-}
@@ -209,6 +212,22 @@ chmod 755 "$runtime_dir" "$state_home" "$home"
 chmod 700 "$route_dir"
 ln -s -- "$original_wayland_socket" "$runtime_dir/$fixture_wayland_display"
 export XDG_RUNTIME_DIR="$runtime_dir" WAYLAND_DISPLAY="$fixture_wayland_display"
+
+mkdir -p "$route_metadata_delay_bin"
+real_bash="$(type -P bash)"
+cat >"$route_metadata_delay_bin/bash" <<FAKE_ROUTE_METADATA_BASH
+#!$real_bash
+set -Eeuo pipefail
+if [[ \${1-} == -c && \${2-} == *max_payload_bytes* &&
+  -e \${DESKTOP_SHELL_TEST_ROUTE_METADATA_DELAY_MARKER:-} ]]; then
+  rm -f -- "\${DESKTOP_SHELL_TEST_ROUTE_METADATA_DELAY_MARKER}"
+  sleep 0.35
+fi
+exec "$real_bash" "\$@"
+FAKE_ROUTE_METADATA_BASH
+chmod 700 "$route_metadata_delay_bin/bash"
+export DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN="$route_metadata_delay_bin"
+export DESKTOP_SHELL_TEST_ROUTE_METADATA_DELAY_MARKER="$route_metadata_delay_marker"
 
 printf '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":%s}\n' \
   "$(date +%s)" >"$route_path"
@@ -268,8 +287,10 @@ wait_for_watcher_renewals() {
   local renewal_count=0
   local refreshed_at_ms=''
   local status_json=''
+  local last_status=''
   local deadline=$((SECONDS + 15))
 
+  watcher_final_refreshed_at_ms=''
   while ((SECONDS < deadline)); do
     if [[ -f $lease_path ]] && refreshed_at_ms=$(jq -er '.refreshedAtMs' "$lease_path" 2>/dev/null); then
       if [[ -n $last_refreshed_at_ms && $refreshed_at_ms != "$last_refreshed_at_ms" ]]; then
@@ -278,16 +299,26 @@ wait_for_watcher_renewals() {
       last_refreshed_at_ms=$refreshed_at_ms
     fi
     if status_json=$(read_status 2>/dev/null); then
+      last_status=$status_json
       jq -e '.routeValid == true and .routeVisible == true and .routeInvalidationCount == 0' \
         <<<"$status_json" >/dev/null || {
         printf 'FAIL: accepted route invalidated during watcher renewal %s\n' "$renewal_count" >&2
         return 1
       }
+      if ((renewal_count >= expected)) &&
+        jq -e --argjson refreshed "$refreshed_at_ms" \
+          '.routeAcceptedRefreshedAtMs == $refreshed and
+           .routeAcceptedRevision == .routeCandidateRevision and
+           .routeValid == true and .routeCandidatePending == false' \
+          <<<"$status_json" >/dev/null; then
+        watcher_final_refreshed_at_ms=$refreshed_at_ms
+        return 0
+      fi
     fi
-    ((renewal_count >= expected)) && return 0
     sleep 0.1
   done
-  printf 'FAIL: watcher completed only %s renewals, expected %s\n' "$renewal_count" "$expected" >&2
+  printf 'FAIL: watcher completed only %s promoted renewals, expected %s\n' "$renewal_count" "$expected" >&2
+  [[ -z $last_status ]] || printf 'last status: %s\n' "$last_status" >&2
   return 1
 }
 
@@ -504,6 +535,9 @@ start_shell() {
   if [[ -n ${DESKTOP_SHELL_TEST_PERSISTENCE_BIN:-} ]]; then
     shell_path="$DESKTOP_SHELL_TEST_PERSISTENCE_BIN:$shell_path"
   fi
+  if [[ -n ${DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN:-} ]]; then
+    shell_path="$DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN:$shell_path"
+  fi
   DESKTOP_SHELL_PREVIEW=0 \
   DESKTOP_SHELL_POLKIT_REGISTER=0 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1 \
@@ -677,11 +711,81 @@ start_shell
 wait_for_status '.notificationsOwned == true and .routeValid == true and .routeVisible == true and .routeError == ""'
 wait_for_watcher_renewals 4
 
+# Hold the accepted fourth-or-later renewal through a complete consumer cycle
+# before attributing any later invalidation to publisher expiry.
+healthy_invalidation_count=$(jq -er '.routeInvalidationCount' <<<"$(read_status)")
+healthy_hold_deadline=$((SECONDS + 2))
+while ((SECONDS < healthy_hold_deadline)); do
+  status_json=$(read_status) || {
+    printf 'FAIL: notification status disappeared during healthy hold\n' >&2
+    exit 1
+  }
+  now_ms=$(date +%s%3N)
+  jq -e --argjson invalidations "$healthy_invalidation_count" \
+    --argjson refreshed "$watcher_final_refreshed_at_ms" --argjson now "$now_ms" \
+    '.routeValid == true and .routeVisible == true and
+    .routeInvalidationCount == $invalidations and
+    .routeAcceptedRefreshedAtMs >= $refreshed and
+    .routeAcceptedExpiresAtMs > $now and
+    .routeAcceptedRevision <= .routeCandidateRevision and
+    (.routeAcceptedRevision == .routeCandidateRevision or
+     .routeCandidatePending == true or
+     .routeCandidateMetadataPending == true or
+     .routeMetadataRunning == true)' \
+    <<<"$status_json" >/dev/null || {
+    printf 'FAIL: accepted route was not stable during the healthy hold: %s\n' "$status_json" >&2
+    exit 1
+  }
+  sleep 0.1
+done
+status_json=$(read_status)
+accepted_expires_at_ms=$(jq -er '.routeAcceptedExpiresAtMs' <<<"$status_json")
+accepted_refreshed_at_ms=$(jq -er '.routeAcceptedRefreshedAtMs' <<<"$status_json")
+accepted_revision=$(jq -er '.routeAcceptedRevision' <<<"$status_json")
+current_time_ms=$(date +%s%3N)
+((accepted_expires_at_ms > current_time_ms)) || {
+  printf 'FAIL: accepted lease deadline is not in the future: %s\n' "$status_json" >&2
+  exit 1
+}
+[[ $accepted_refreshed_at_ms =~ ^[0-9]+$ && $accepted_revision =~ ^[0-9]+$ ]] || {
+  printf 'FAIL: accepted lease timestamp/revision were not exposed: %s\n' "$status_json" >&2
+  exit 1
+}
+
 # SIGKILL the publisher, not the consumer. No manual refresh or reconciliation
 # is allowed before the accepted generation reaches its natural deadline.
 notification_publisher_kill \
   "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" KILL
-wait_for_status '.routeValid == false and .routeVisible == false and .routeInvalidationCount >= 1'
+expiry_observed=false
+expiry_deadline=$((SECONDS + 5))
+while ((SECONDS < expiry_deadline)); do
+  status_json=$(read_status) || true
+  if [[ -n $status_json ]] && ! jq -e '.routeValid == true' <<<"$status_json" >/dev/null; then
+    jq -e --argjson expected "$((healthy_invalidation_count + 1))" \
+      --argjson deadline "$accepted_expires_at_ms" \
+      '.routeValid == false and .routeVisible == false and
+       .routeInvalidationCount == $expected and
+       .routeLastTransitionReason == "notification route lease expired" and
+       (.routeTransitionLog[-1].atMs >= $deadline)' \
+      <<<"$status_json" >/dev/null || {
+      printf 'FAIL: invalidation was not the sole deadline expiry: %s\n' "$status_json" >&2
+      exit 1
+    }
+    expiry_observed=true
+    break
+  fi
+  [[ -z $status_json ]] || jq -e --argjson invalidations "$healthy_invalidation_count" \
+    '.routeValid == true and .routeInvalidationCount == $invalidations' \
+    <<<"$status_json" >/dev/null || {
+    printf 'FAIL: route invalidated before its captured lease deadline: %s\n' "$status_json" >&2
+    exit 1
+  }
+  sleep 0.05
+done
+[[ $expiry_observed == true ]] || {
+  printf 'FAIL: publisher SIGKILL did not produce a deadline-bound route expiry\n' >&2
+  exit 1
+}
 notification_publisher_cleanup \
   "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" \
   "$watcher_socket_pid" "$watcher_socket_start_time" "$watcher_socket_executable"
@@ -689,6 +793,67 @@ watcher_publisher_pid=''
 route_lease_enabled=1
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+
+# A delayed metadata callback for generation A must not promote its pair after
+# generation B has already changed the watched files.
+race_base_updated_at=$(date +%s)
+race_lease_ttl_ms=1450
+race_base_payload='{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$race_base_updated_at"'}'
+write_route_payload "$race_base_payload"
+race_base_refreshed_at_ms=$(date +%s%3N)
+write_lease_payload "$race_base_refreshed_at_ms" "$((race_base_refreshed_at_ms + race_lease_ttl_ms))" "$race_base_updated_at"
+wait_for_status ".routeValid == true and .routeAcceptedRefreshedAtMs == $race_base_refreshed_at_ms and .routeMetadataRunning == false"
+race_base_status=$(read_status)
+race_base_revision=$(jq -er '.routeCandidateRevision' <<<"$race_base_status")
+race_base_invalidations=$(jq -er '.routeInvalidationCount' <<<"$race_base_status")
+: >"$route_metadata_delay_marker"
+
+race_a_updated_at=$race_base_updated_at
+race_a_payload='{"version":1,"visible":true,"output":"HDMI-A-1","cueOutput":null,"direction":null,"updatedAt":'"$race_a_updated_at"'}'
+race_a_refreshed_at_ms=$(date +%s%3N)
+write_route_payload "$race_a_payload"
+write_lease_payload "$race_a_refreshed_at_ms" "$((race_a_refreshed_at_ms + race_lease_ttl_ms))" "$race_a_updated_at"
+wait_for_status ".routeMetadataRunning == true and .routeCandidateRevision > $race_base_revision"
+
+race_b_updated_at=$race_base_updated_at
+race_b_payload='{"version":1,"visible":true,"output":"DP-2","cueOutput":null,"direction":null,"updatedAt":'"$race_b_updated_at"'}'
+race_b_refreshed_at_ms=$(date +%s%3N)
+write_route_payload "$race_b_payload"
+write_lease_payload "$race_b_refreshed_at_ms" "$((race_b_refreshed_at_ms + race_lease_ttl_ms))" "$race_b_updated_at"
+
+race_observed=false
+race_deadline=$((SECONDS + 10))
+while ((SECONDS < race_deadline)); do
+  status_json=$(read_status) || true
+  if [[ -n $status_json ]]; then
+    accepted_refreshed_at_ms=$(jq -er '.routeAcceptedRefreshedAtMs' <<<"$status_json")
+    [[ $accepted_refreshed_at_ms != "$race_a_refreshed_at_ms" ]] || {
+      printf 'FAIL: stale delayed route generation was promoted: %s\n' "$status_json" >&2
+      exit 1
+    }
+    jq -e --argjson invalidations "$race_base_invalidations" \
+      '.routeValid == true and .routeInvalidationCount == $invalidations' \
+      <<<"$status_json" >/dev/null || {
+      printf 'FAIL: delayed route generation invalidated the accepted route: %s\n' "$status_json" >&2
+      exit 1
+    }
+    if jq -e --argjson refreshed "$race_b_refreshed_at_ms" \
+      '.routeAcceptedRefreshedAtMs == $refreshed and
+       .routeAcceptedRevision == .routeCandidateRevision and
+       .routeCandidatePending == false and
+       .routeCandidateMetadataPending == false' \
+      <<<"$status_json" >/dev/null; then
+      race_observed=true
+      break
+    fi
+  fi
+  sleep 0.05
+done
+rm -f -- "$route_metadata_delay_marker"
+[[ $race_observed == true ]] || {
+  printf 'FAIL: delayed route generations did not converge on generation B\n' >&2
+  exit 1
+}
 
 wait_for_path "$state_home/desktop-shell"
 assert_mode 700 "$state_home/desktop-shell"
@@ -751,12 +916,12 @@ wait_for_status '.routeValid == true and .routeVisible == false and .routeError 
 wait_for_health '.notificationRouteValid == true and .notificationRouteVisible == false and .notificationRouteError == ""'
 
 rm -f -- "$route_path"
-wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable"))'
+wait_for_status '.routeValid == false and .routeVisible == false and .routeError == "notification route lease expired"'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
 
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 chmod 000 "$route_path"
-wait_for_status '.routeValid == false and .routeVisible == false and (.routeError | test("unavailable|invalid"))'
+wait_for_status '.routeValid == false and .routeVisible == false and .routeError == "notification route lease expired"'
 wait_for_health '.notificationRouteValid == false and .notificationRouteVisible == false'
 
 stale_route=$(( $(date +%s) - 46 ))
