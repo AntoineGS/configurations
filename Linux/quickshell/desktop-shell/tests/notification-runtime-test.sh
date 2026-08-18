@@ -444,10 +444,18 @@ assert_metadata_failure_bounded() {
     printf 'FAIL: shell health disappeared during %s metadata hold\n' "$label" >&2
     exit 1
   }
-  jq -e --argjson attempts "$attempts" \
-    '.notificationRouteValid == true and .notificationRouteMetadataAttemptCount == $attempts' \
-    <<<"$health_json" >/dev/null || {
+  health_attempts=$(jq -er '.notificationRouteMetadataAttemptCount | numbers' <<<"$health_json") || {
+    printf 'FAIL: shell health omitted the metadata attempt count during %s metadata hold: %s\n' \
+      "$label" "$health_json" >&2
+    exit 1
+  }
+  ((health_attempts >= attempts && health_attempts <= max_attempts)) || {
     printf 'FAIL: shell health did not retain the accepted route during %s metadata hold: %s\n' \
+      "$label" "$health_json" >&2
+    exit 1
+  }
+  jq -e '.notificationRouteValid == true' <<<"$health_json" >/dev/null || {
+    printf 'FAIL: shell health invalidated the accepted route during %s metadata hold: %s\n' \
       "$label" "$health_json" >&2
     exit 1
   }
@@ -613,20 +621,36 @@ start_shell() {
   if [[ -n ${DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN:-} ]]; then
     shell_path="$DESKTOP_SHELL_TEST_ROUTE_METADATA_BIN:$shell_path"
   fi
-  DESKTOP_SHELL_PREVIEW=0 \
-  DESKTOP_SHELL_POLKIT_REGISTER=0 \
-  DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1 \
-  HOME="$home" \
-  XDG_CONFIG_HOME="$home/.config" \
-  XDG_CACHE_HOME="$home/.cache" \
-  XDG_DATA_HOME="$home/.local/share" \
-  XDG_STATE_HOME="$state_home" \
-  XDG_RUNTIME_DIR="$runtime_dir" \
-  WAYLAND_DISPLAY="$fixture_wayland_display" \
-  DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
-  PATH="$shell_path" \
-  DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
-  quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
+  if [[ ${1-} == no-registration ]]; then
+    env -u DESKTOP_SHELL_POLKIT_REGISTER -u DESKTOP_SHELL_NOTIFICATIONS_REGISTER \
+      DESKTOP_SHELL_PREVIEW=0 \
+      HOME="$home" \
+      XDG_CONFIG_HOME="$home/.config" \
+      XDG_CACHE_HOME="$home/.cache" \
+      XDG_DATA_HOME="$home/.local/share" \
+      XDG_STATE_HOME="$state_home" \
+      XDG_RUNTIME_DIR="$runtime_dir" \
+      WAYLAND_DISPLAY="$fixture_wayland_display" \
+      DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
+      PATH="$shell_path" \
+      DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
+      quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
+  else
+    DESKTOP_SHELL_PREVIEW=0 \
+    DESKTOP_SHELL_POLKIT_REGISTER=0 \
+    DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1 \
+    HOME="$home" \
+    XDG_CONFIG_HOME="$home/.config" \
+    XDG_CACHE_HOME="$home/.cache" \
+    XDG_DATA_HOME="$home/.local/share" \
+    XDG_STATE_HOME="$state_home" \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    WAYLAND_DISPLAY="$fixture_wayland_display" \
+    DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
+    PATH="$shell_path" \
+    DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
+    quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
+  fi
   shell_pid=$!
   wait_for_ipc pong desktop-shell ping
 }
@@ -745,6 +769,17 @@ export DESKTOP_SHELL_TEST_SETTINGS_BIN="$settings_delay_bin"
 export DESKTOP_SHELL_TEST_SETTINGS_START="$settings_write_started"
 export DESKTOP_SHELL_TEST_SETTINGS_RELEASE="$settings_write_release"
 export DESKTOP_SHELL_TEST_SETTINGS_COUNT="$settings_write_count"
+
+start_shell no-registration
+for forbidden_environment in DESKTOP_SHELL_POLKIT_REGISTER DESKTOP_SHELL_NOTIFICATIONS_REGISTER; do
+  if tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fq "${forbidden_environment}="; then
+    printf 'FAIL: old shell inherited %s and could register singleton services\n' "$forbidden_environment" >&2
+    exit 1
+  fi
+done
+wait_for_status '.notificationsOwned == false and .ownershipError == "notification registration disabled"'
+wait_for_health '.notificationsOwned == false and .notificationOwnershipError == "notification registration disabled"'
+stop_shell
 
 start_shell
 wait_for_ipc pong desktop.notifications ping

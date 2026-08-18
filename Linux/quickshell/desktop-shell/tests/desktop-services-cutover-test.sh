@@ -772,12 +772,13 @@ assert_service_repair() {
     fail 'rollback unit is not mapped'
   grep -Fq 'systemctl --user is-enabled --quiet desktop-shell.service &&' <<< "$block" ||
     fail 'desktop-shell repair does not require enabled state'
-  grep -Fq 'systemctl --user is-active --quiet desktop-shell.service &&' <<< "$block" ||
-    fail 'desktop-shell repair does not require active state'
   grep -Fq 'systemctl --user show desktop-shell.service --property=NeedDaemonReload --value' <<< "$block" ||
     fail 'desktop-shell repair does not check daemon reload state'
-  grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' <<< "$block" ||
-    fail 'desktop-shell repair command changed'
+  grep -Fq 'systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' <<< "$block" ||
+    fail 'desktop-shell repair is not enable-only'
+  if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service|--now desktop-shell\.service' <<< "$block"; then
+    fail 'desktop-shell repair starts or restarts the service'
+  fi
   if grep -Fq 'is-enabled --quiet desktop-shell-mako-route.service' <<< "$block" ||
     grep -Fq 'enable --now desktop-shell-mako-route.service' <<< "$block"; then
     fail 'rollback unit is enabled by default'

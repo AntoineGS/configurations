@@ -328,6 +328,20 @@ start_shell() {
   shell_pid=$!
 }
 
+start_shell_without_registration_env() {
+  env -u DESKTOP_SHELL_POLKIT_REGISTER -u DESKTOP_SHELL_NOTIFICATIONS_REGISTER \
+    DESKTOP_SHELL_PREVIEW=0 \
+    DESKTOP_SHELL_TEST_NO_SURFACES=1 \
+    HOME="$home" \
+    XDG_CONFIG_HOME="$home/.config" \
+    XDG_CACHE_HOME="$home/.cache" \
+    XDG_DATA_HOME="$home/.local/share" \
+    XDG_RUNTIME_DIR="$runtime_dir" \
+    WAYLAND_DISPLAY="$fixture_wayland_display" \
+    quickshell --no-color -p "$SHELL_ROOT" >"$shell_log" 2>&1 &
+  shell_pid=$!
+}
+
 call_ipc() {
   timeout --kill-after=1s 3s quickshell ipc --pid "$shell_pid" call -- "$@" 2>/dev/null
 }
@@ -383,18 +397,32 @@ wait_for_health() {
   return 1
 }
 
-start_shell
+start_shell_without_registration_env
 wait_for_ipc pong desktop-shell ping
+
+for forbidden_environment in DESKTOP_SHELL_POLKIT_REGISTER DESKTOP_SHELL_NOTIFICATIONS_REGISTER; do
+  if tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fq "${forbidden_environment}="; then
+    printf 'FAIL: old shell inherited %s and could register singleton services\n' "$forbidden_environment" >&2
+    exit 1
+  fi
+done
+wait_for_health '.polkitRegistered == false and .polkitError == "registration disabled"'
+cleanup_process "$shell_pid"
+shell_pid=''
+
+start_shell
 
 for expected_environment in \
   'DESKTOP_SHELL_TEST_NO_SURFACES=1' \
   'DESKTOP_SHELL_POLKIT_REGISTER=0' \
   'DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0'; do
-  tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fxq "$expected_environment" || {
+  tr '\0' '\n' <"/proc/$shell_pid/environ" | grep -Fx "$expected_environment" >/dev/null || {
     printf 'FAIL: shell did not receive %s\n' "$expected_environment" >&2
     exit 1
   }
 done
+
+wait_for_ipc pong desktop-shell ping
 
 plugins=$(call_ipc desktop-shell listPlugins | normalize_json)
 jq -e 'has("desktop.polkit")' <<<"$plugins" >/dev/null || {

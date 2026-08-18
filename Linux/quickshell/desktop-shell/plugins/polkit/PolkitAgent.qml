@@ -11,7 +11,7 @@ import "PolkitModel.js" as PolkitModel
 Item {
   id: root
 
-  property bool registrationEnabled: Quickshell.env("DESKTOP_SHELL_POLKIT_REGISTER") !== "0"
+  property bool registrationEnabled: Quickshell.env("DESKTOP_SHELL_POLKIT_REGISTER") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   property string objectPath: "/org/desktop_shell/PolkitAgent"
   property bool polkitRegistered: false
