@@ -75,3 +75,19 @@
   - `aa1b64e` `fix(mako): restore route lease regressions`
 - Concerns:
   - The original report section above is now stale about hidden cue-only routes; this fix round restores the prior behavior and keeps valid hidden cues active under the hidden route mode.
+
+## Task 3 Second Fix Round
+
+- Changed files:
+  - `Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- What changed:
+  - Replaced the adapter cleanup descendant walk with identity-aware child cleanup in the test harness, so every `TERM` path revalidates parent PID, process start time, and executable before signaling.
+  - Removed the fake-Mako empty-identity registration window by tracking pending children immediately, waiting for the final `/usr/bin/sleep` executable before registration, and cleaning pending children on abnormal exit.
+  - Added valid-lease regression coverage for metacharacter route output `DVI-D-1;touch`.
+  - Added hidden cue-only coverage for the legacy null-direction cue text `DP-2|none` in both direct reconciliation and executable polling paths.
+- Tests:
+  - `bash Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `bash -n Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+  - `shellcheck Linux/os/helpers/desktop-shell-mako-route Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh`
+- Concerns:
+  - None.
