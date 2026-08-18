@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 CONFIG="$ROOT/tidydots.yaml"
+ROLLBACK="$ROOT/Linux/os/helpers/desktop-shell-rollback"
 TEST_ROOT="$(mktemp -d)"
 BIN="$TEST_ROOT/bin"
 MOCK_LOG="$TEST_ROOT/mock.log"
@@ -241,5 +242,19 @@ assert_log_not_contains 'restart-on-failure|desktop-shell.service' \
   'failed cutover launched Restart=on-failure'
 assert_log_not_contains 'systemctl|--user|enable|desktop-shell.service' \
   'failed cutover enabled the service after reload failure'
+
+[[ -x "$ROLLBACK" ]] || fail 'desktop-shell rollback helper is absent or not executable'
+rollback_source=$(<"$ROLLBACK")
+grep -Fq -- "readonly MAKO_INPUT=\"\${DESKTOP_SHELL_MAKO:-/usr/bin/mako}\"" <<<"$rollback_source" || \
+  fail 'rollback Mako default or test override changed'
+grep -Fq -- "readonly SWAYOSD_SERVER_INPUT=\"\${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}\"" <<<"$rollback_source" || \
+  fail 'rollback SwayOSD default or test override changed'
+grep -Fq -- 'pkcheck -a org.freedesktop.policykit.exec' <<<"$rollback_source" || \
+  fail 'rollback does not use the functional polkit probe'
+grep -Fq -- 'timeout --signal=TERM --kill-after=1s' <<<"$rollback_source" || \
+  fail 'rollback polkit probe is not bounded'
+if grep -Fq -- 'pkill' <<<"$rollback_source"; then
+  fail 'rollback uses broad process termination'
+fi
 
 printf '%s\n' 'PASS: tidydots desktop service setup lifecycle contract'

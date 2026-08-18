@@ -10,6 +10,7 @@ AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
 BINDINGS="$ROOT/Linux/hypr/bindings/utilities.lua"
 VICINAE_TOGGLE="$ROOT/Linux/vicinae/scripts/toggle-top-bar.sh"
 WAYBAR_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-waybar"
+ROLLBACK_HELPER="$ROOT/Linux/os/helpers/desktop-shell-rollback"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
 
@@ -181,6 +182,18 @@ if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service
   fail 'tidydots setup starts or restarts desktop-shell.service'
 fi
 assert_launcher_mapping
+
+[[ -x "$ROLLBACK_HELPER" ]] || fail 'desktop-shell rollback helper is absent or not executable'
+rollback_source=$(<"$ROLLBACK_HELPER")
+grep -Fq -- "readonly MAKO_INPUT=\"\${DESKTOP_SHELL_MAKO:-/usr/bin/mako}\"" <<<"$rollback_source" || \
+  fail 'rollback Mako default path changed'
+grep -Fq -- "readonly SWAYOSD_SERVER_INPUT=\"\${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}\"" <<<"$rollback_source" || \
+  fail 'rollback SwayOSD default path changed'
+grep -Fq -- 'query_exact_pids' <<<"$rollback_source" || \
+  fail 'rollback does not use exact process identity lookup'
+if grep -Fq -- 'pkill' <<<"$rollback_source"; then
+  fail 'rollback contains broad process termination'
+fi
 
 for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
   [[ -f $active_route ]] || fail "active route is absent: $active_route"

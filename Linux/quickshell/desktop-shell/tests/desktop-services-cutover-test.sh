@@ -631,10 +631,13 @@ collect_inventory_hits() {
         return 1
       }
       if (path == "Linux/os/helpers/desktop-shell-rollback" &&
-          (value == "adapter_active=(systemctl --user is-active --quiet desktop-shell-mako-route.service)" ||
+          (value == "local -a command=(systemctl --user stop desktop-shell-mako-route.service)" ||
+           value == "adapter_active=(systemctl --user is-active --quiet desktop-shell-mako-route.service)" ||
            value == "stop_adapter=(systemctl --user stop desktop-shell-mako-route.service)" ||
            value == "start_adapter=(systemctl --user start desktop-shell-mako-route.service)" ||
            value == ("wait_for_unit_active desktop-shell-mako-route.service || die " quote "rollback adapter is not active" quote) ||
+           value == ("\"${start_adapter[@]}\" || fail_before_adapter " quote "could not start desktop-shell-mako-route.service" quote) ||
+           value == ("wait_for_unit_active desktop-shell-mako-route.service || fail_before_adapter " quote "rollback adapter is not active" quote) ||
            value == ("\"${stop_adapter[@]}\" || die " quote "could not isolate desktop-shell-mako-route.service" quote) ||
            value == ("\"${start_adapter[@]}\" || die " quote "could not start desktop-shell-mako-route.service" quote))) {
         return 1
