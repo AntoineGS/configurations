@@ -133,6 +133,23 @@ expected_args=$(printf '%s\n' 'ipc' '--any-display' '-p' "$SHELL_DIR" 'call' 'de
 }
 
 rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid 4242 ping || fail 'PID-bound helper failed'
+[[ -e $EXECUTED_FILE ]] || fail 'PID-bound helper did not execute quickshell'
+expected_args=$(printf '%s\n' 'ipc' '--pid' '4242' '-p' "$SHELL_DIR" 'call' '--' 'desktop-shell' 'ping')
+[[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
+  printf 'expected PID-bound argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
+  exit 1
+}
+
+for invalid_pid in 0 -1 01 abc; do
+  rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+  invalid_status=0
+  run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid "$invalid_pid" ping >/dev/null 2>&1 || invalid_status=$?
+  ((invalid_status == 2)) || fail "invalid PID was accepted: $invalid_pid"
+  [[ ! -e $EXECUTED_FILE ]] || fail "invalid PID executed quickshell: $invalid_pid"
+done
+
+rm -f "$ARGS_FILE" "$EXECUTED_FILE"
 toggle_status=0
 run_launcher "$TOGGLE_HELPER" unexpected >/dev/null 2>&1 || toggle_status=$?
 ((toggle_status != 0)) || fail 'toggle helper accepted an argument'
@@ -145,6 +162,10 @@ grep -Fqx 'PartOf=graphical-session.target' "$UNIT" || fail 'unit is not part of
 if grep -Fqx 'After=graphical-session.target' "$UNIT"; then
   fail 'unit orders after graphical-session.target and may create a cycle'
 fi
+grep -Fqx 'Environment=DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1' "$UNIT" || \
+  fail 'unit does not explicitly enable notification registration'
+grep -Fqx 'Environment=DESKTOP_SHELL_POLKIT_REGISTER=1' "$UNIT" || \
+  fail 'unit does not explicitly enable polkit registration'
 grep -Fqx 'Restart=on-failure' "$UNIT" || fail 'unit does not restart on failure'
 grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
   fail 'unit is not wanted by graphical-session.target'
@@ -152,12 +173,13 @@ grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
 [[ -f $CONFIG ]] || fail 'tidydots.yaml is absent'
 grep -Fq 'systemctl --user is-enabled --quiet desktop-shell.service &&' "$CONFIG" || \
   fail 'tidydots check does not require the service to be enabled'
-grep -Fq 'systemctl --user is-active --quiet desktop-shell.service &&' "$CONFIG" || \
-  fail 'tidydots check does not require the service to be active'
 grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)\" = no" "$CONFIG" || \
   fail 'tidydots check does not require NeedDaemonReload=no'
-grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' "$CONFIG" || \
-  fail 'tidydots repair command changed'
+grep -Fq 'systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' "$CONFIG" || \
+  fail 'tidydots repair command is not enable-only'
+if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service|--now desktop-shell\.service' "$CONFIG"; then
+  fail 'tidydots setup starts or restarts desktop-shell.service'
+fi
 assert_launcher_mapping
 
 for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do

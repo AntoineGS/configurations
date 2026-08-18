@@ -2,8 +2,18 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: desktop-shell <ping|health|list-plugins|reload-config|toggle-bar|summon|hide|call> ...\n' >&2
+  printf 'usage: desktop-shell [--pid PID] <ping|health|list-plugins|reload-config|toggle-bar|summon|hide|call> ...\n' >&2
 }
+
+target_pid=""
+if [[ ${1-} == --pid ]]; then
+  if (($# < 2)) || [[ ! ${2-} =~ ^[1-9][0-9]*$ ]]; then
+    usage
+    exit 2
+  fi
+  target_pid=$2
+  shift 2
+fi
 
 command_name="${1-}"
 if (($# > 0)); then
@@ -56,4 +66,10 @@ case "$command_name" in
     ;;
 esac
 
-quickshell ipc --any-display -p "$HOME/.config/quickshell/desktop-shell" call -- "$target" "$method" "${args[@]}"
+ipc_scope=(--any-display)
+if [[ -n $target_pid ]]; then
+  ipc_scope=(--pid "$target_pid")
+fi
+
+exec quickshell ipc "${ipc_scope[@]}" -p "$HOME/.config/quickshell/desktop-shell" \
+  call -- "$target" "$method" "${args[@]}"

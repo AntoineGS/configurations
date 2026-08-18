@@ -235,6 +235,12 @@ assert.match(shell, /disabledPlugins: \["desktop\.battery"\]/,
 assert.match(shell, /function toggleBar\(\): string \{\s*shell\.barVisible = !shell\.barVisible\s*return shell\.barVisible \? "visible" : "hidden"\s*\}/)
 assert.match(shell, /readonly property var notificationService:\s*shell\.serviceFor\("desktop\.notifications"\)/,
   "shell health reads the shared notification service")
+assert.match(notifications,
+  /property bool ownershipEnabled: Quickshell\.env\("DESKTOP_SHELL_NOTIFICATIONS_REGISTER"\) === "1"/,
+  "notification registration defaults to disabled")
+assert.match(polkit,
+  /property bool registrationEnabled: Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) === "1"/,
+  "polkit registration defaults to disabled")
 for (const [field, expected] of [
   ["notificationsOwned", "notificationService ? notificationService.notificationsOwned : false"],
   ["notificationOwnershipError", 'notificationService ? notificationService.ownershipError : "notification service unavailable"'],
@@ -412,7 +418,10 @@ assert.match(registry, /if \(isDisabled\(config, key\)\) return false/,
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
-assert.match(helper, /quickshell ipc --any-display -p \"\$HOME\/\.config\/quickshell\/desktop-shell\" call -- \"\$target\" \"\$method\" \"\$\{args\[@\]\}\"/)
+assert.match(helper, /ipc_scope=\(--any-display\)/,
+  "interactive helper calls keep any-display routing")
+assert.match(helper, /ipc_scope=\(--pid \"\$target_pid\"\)/,
+  "helper exposes PID-bound routing")
 assert.match(helper, /toggle-bar\)\s+\(\(\$# == 0\)\) \|\| \{ usage; exit 2; \}\s+method="toggleBar"/)
 assert.doesNotMatch(helper, /\beval\b/)
 assert.ok(fs.existsSync(toggleHelperPath), "bar visibility helper exists")

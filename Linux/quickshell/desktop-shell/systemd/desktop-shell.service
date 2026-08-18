@@ -5,6 +5,8 @@ Conflicts=desktop-shell-mako-route.service
 
 [Service]
 Type=simple
+Environment=DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1
+Environment=DESKTOP_SHELL_POLKIT_REGISTER=1
 ExecStart=%h/.local/share/helpers/desktop-shell-launch
 Restart=on-failure
 RestartSec=2

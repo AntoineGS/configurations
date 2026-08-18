@@ -29,7 +29,7 @@ assert.match(qml, /Color\.polkit/)
 assert.match(qml, /BorderSurface/)
 assert.doesNotMatch(qml, /omarchy|OMARCHY|laptop-closed/)
 
-assert.match(qml, /property bool registrationEnabled\s*:\s*Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) !== "0"/)
+assert.match(qml, /property bool registrationEnabled\s*:\s*Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) === "1"/)
 assert.match(qml, /Loader\s*\{[\s\S]*active:\s*root\.registrationEnabled[\s\S]*sourceComponent:[\s\S]*PolkitAgent\s*\{/)
 assert.match(qml, /Hyprland\.focusedMonitor/)
 assert.match(qml, /PolkitModel\.screenForMonitor/)

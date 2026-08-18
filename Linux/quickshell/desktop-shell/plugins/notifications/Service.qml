@@ -31,7 +31,7 @@ Item {
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   readonly property int cornerRadius: Style.cornerRadius
 
-  property bool ownershipEnabled: Quickshell.env("DESKTOP_SHELL_NOTIFICATIONS_REGISTER") !== "0"
+  property bool ownershipEnabled: Quickshell.env("DESKTOP_SHELL_NOTIFICATIONS_REGISTER") === "1"
   property bool notificationsOwned: false
   property string ownershipError: "notification owner probe pending"
   property bool routeValid: false

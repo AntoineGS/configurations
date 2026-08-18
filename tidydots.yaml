@@ -802,10 +802,9 @@ applications:
       - check:
           linux: >-
             systemctl --user is-enabled --quiet desktop-shell.service &&
-            systemctl --user is-active --quiet desktop-shell.service &&
             test "$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)" = no
         run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service
+          linux: systemctl --user daemon-reload && systemctl --user enable desktop-shell.service
         name: enable-service
   - package:
       managers:

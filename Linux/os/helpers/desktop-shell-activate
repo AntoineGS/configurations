@@ -243,11 +243,12 @@ read_shell_pid() {
 }
 
 verify_shell_health() {
+  local shell_pid=$1
   local raw_health
   local health
   local route_error
   local polkit_registered
-  local -a command=(desktop-shell health)
+  local -a command=(desktop-shell --pid "$shell_pid" health)
 
   if ! raw_health=$("${command[@]}" 2>/dev/null); then
     return 1
@@ -293,11 +294,11 @@ wait_for_unit_active desktop-shell.service || die 'desktop-shell.service is not 
 shell_pid=$(read_shell_pid) || die 'could not read desktop-shell.service MainPID'
 verify_notification_owner "$shell_pid" quickshell || die 'Quickshell does not own notifications'
 
-ping_command=(desktop-shell ping)
+ping_command=(desktop-shell --pid "$shell_pid" ping)
 ping_result=$("${ping_command[@]}" 2>/dev/null) || die 'desktop-shell ping failed'
 [[ $ping_result == pong ]] || die "desktop-shell ping returned: $ping_result"
 
-polkit_registered=$(verify_shell_health) || die 'desktop-shell health rejected activation'
+polkit_registered=$(verify_shell_health "$shell_pid") || die 'desktop-shell health rejected activation'
 
 printf '%s\n' \
   'desktop-shell activation status' \

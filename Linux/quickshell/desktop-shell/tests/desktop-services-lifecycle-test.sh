@@ -95,6 +95,7 @@ PGREP_ERROR_NAME="$TEST_ROOT/pgrep-error-name"
 PGREP_ERROR_STATUS="$TEST_ROOT/pgrep-error-status"
 SIGNAL_READD_DECOY=false
 INJECT_UNEXPECTED_LIFECYCLE=false
+FORGED_ANY_DISPLAY_RESPONDER=false
 READLINK_CALLS_FILE="$TEST_ROOT/readlink-calls"
 READLINK_FLIP_PID="$TEST_ROOT/readlink-flip-pid"
 READLINK_FLIP_AFTER="$TEST_ROOT/readlink-flip-after"
@@ -406,6 +407,30 @@ cat >"$BIN/desktop-shell" <<'EOF'
 set -Eeuo pipefail
 
 printf 'desktop-shell|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
+target_pid=''
+if [[ ${1:-} == --pid ]]; then
+  [[ $# == 3 ]] || exit 125
+  target_pid=$2
+  shift 2
+fi
+
+if [[ ${FORGED_ANY_DISPLAY_RESPONDER:-false} == true && -z $target_pid ]]; then
+  case ${1:-} in
+    ping)
+      [[ $# == 1 ]] || exit 125
+      printf '%s\n' pong
+      ;;
+    health)
+      [[ $# == 1 ]] || exit 125
+      jq -R -s . "${HEALTH_FILE:?}"
+      ;;
+    *) exit 125 ;;
+  esac
+  exit 0
+fi
+
+[[ ${FORGED_ANY_DISPLAY_RESPONDER:-false} != true ]] || exit 1
+[[ $target_pid == 5001 ]] || exit 1
 case ${1:-} in
   ping)
     [[ $# == 1 ]] || exit 125
@@ -440,6 +465,7 @@ chmod 0700 "$BIN"/*
 
 export MOCK_LOG FALLTHROUGH_LOG SIGNAL_LOG PROCESS_STATE SERVICE_STATE SERVICE_PID_STATE BUS_OWNER_STATE
 export BUS_OWNER_RESPONSE PGREP_ERROR_NAME PGREP_ERROR_STATUS SIGNAL_READD_DECOY INJECT_UNEXPECTED_LIFECYCLE
+export FORGED_ANY_DISPLAY_RESPONDER
 export READLINK_CALLS_FILE
 export READLINK_FLIP_PID READLINK_FLIP_AFTER SIGNAL_COMMAND
 export MAKO_MODE_ATTEMPTS_FILE MAKO_MODE_RESPONDS_FILE MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0 MAKO_MODE_ERROR_STATUS
@@ -477,6 +503,7 @@ reset_log() {
   printf '%s\n' 2 >"$PGREP_ERROR_STATUS"
   SIGNAL_READD_DECOY=false
   INJECT_UNEXPECTED_LIFECYCLE=false
+  FORGED_ANY_DISPLAY_RESPONDER=false
   : >"$READLINK_CALLS_FILE"
   : >"$READLINK_FLIP_PID"
   printf '%s\n' 2 >"$READLINK_FLIP_AFTER"
@@ -510,6 +537,7 @@ run_helper() {
     PGREP_ERROR_STATUS="$PGREP_ERROR_STATUS" \
     SIGNAL_READD_DECOY="$SIGNAL_READD_DECOY" \
     INJECT_UNEXPECTED_LIFECYCLE="$INJECT_UNEXPECTED_LIFECYCLE" \
+    FORGED_ANY_DISPLAY_RESPONDER="$FORGED_ANY_DISPLAY_RESPONDER" \
     READLINK_CALLS_FILE="$READLINK_CALLS_FILE" \
     READLINK_FLIP_PID="$READLINK_FLIP_PID" \
     READLINK_FLIP_AFTER="$READLINK_FLIP_AFTER" \
@@ -557,7 +585,8 @@ normalize_lifecycle_trace() {
       $5 == "/org/freedesktop/DBus" && $6 == "org.freedesktop.DBus" &&
       $7 == "GetConnectionUnixProcessID" && $8 == "s" && $9 == "org.freedesktop.Notifications" { next }
     $1 == "makoctl" && $2 == "mode" { next }
-    $1 == "desktop-shell" && ($2 == "ping" || $2 == "health") { next }
+    $1 == "desktop-shell" && ($2 == "ping" || $2 == "health" ||
+      ($2 == "--pid" && ($4 == "ping" || $4 == "health"))) { next }
     $1 == "systemctl" && $2 == "--user" && ($3 == "is-active" || $3 == "show") { next }
     $1 == "systemctl" || $1 == "kill" || $1 == "uwsm-app" || $1 == "polkit-agent" || $1 == "rm" {
       print
@@ -687,8 +716,8 @@ assert_log_order \
   'systemctl-shell-start-cue=absent' \
   'systemctl|--user|is-active|--quiet|desktop-shell.service' \
   'busctl|--user|call|org.freedesktop.DBus' \
-  'desktop-shell|ping' \
-  'desktop-shell|health'
+  'desktop-shell|--pid|5001|ping' \
+  'desktop-shell|--pid|5001|health'
 assert_exact_trace activation \
   'systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service' \
   'kill|-TERM|1001' 'kill|-TERM|1002' 'kill|-TERM|1003' \
@@ -717,6 +746,22 @@ assert_contains "$(<"$activation_output")" 'desktop-shell.service: active' 'acti
 assert_contains "$(<"$activation_output")" 'desktop-shell.pid: 5001' 'activation process status'
 assert_contains "$(<"$activation_output")" 'notification-owner: desktop-shell' 'activation notification owner'
 assert_contains "$(<"$activation_output")" 'polkit-registered: true' 'activation polkit status'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
+FORGED_ANY_DISPLAY_RESPONDER=true
+forged_activation_output="$TEST_ROOT/forged-activation.out"
+forged_activation_error="$TEST_ROOT/forged-activation.err"
+status=0
+run_helper "$ACTIVATE" >"$forged_activation_output" 2>"$forged_activation_error" || status=$?
+((status != 0)) || fail 'activation accepted an any-display forged responder'
+assert_log_contains 'desktop-shell|--pid|5001|ping' \
+  'activation did not bind ping to the verified MainPID'
+assert_log_not_contains 'desktop-shell|ping' \
+  'activation used an any-display responder for ping'
 assert_no_fallthrough
 
 reset_log
@@ -759,7 +804,7 @@ write_health '{"notificationsOwned":false,"polkitRegistered":true,"osdAvailable"
 status=0
 run_helper "$ACTIVATE" >"$activation_output" 2>"$activation_error" || status=$?
 ((status != 0)) || fail 'activation accepted failed notification ownership health'
-assert_log_contains 'desktop-shell|health' 'failed activation did not inspect health'
+assert_log_contains 'desktop-shell|--pid|5001|health' 'failed activation did not inspect health'
 assert_process_present quickshell
 assert_no_fallthrough
 
