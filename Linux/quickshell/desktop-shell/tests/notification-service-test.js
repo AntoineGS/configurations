@@ -65,7 +65,7 @@ for (const fileViewId of ["routeFile", "leaseFile"]) {
     `${fileViewId} invalidates metadata before reloading a replacement`)
 }
 assert.match(runtimeTest,
-  /refreshed_at=\$\(date \+%s\)\n\s*write_lease_payload "\$refreshed_at" "\$\(\(refreshed_at \+ 2\)\)"/,
+  /refreshed_at=\$\(date \+%s\)[\s\S]*write_lease_payload "\$refreshed_at" "\$\(\(refreshed_at \+ 1\)\)" "\$updated_at"/,
   "route-pair fixtures derive both lease endpoints from one timestamp")
 assert.doesNotMatch(runtimeTest, /write_lease_payload "\$\(date \+%s\)"/,
   "route-pair fixtures do not sample the lease endpoints independently")
@@ -157,6 +157,16 @@ assert.match(service, /readonly property bool routeVisible/)
 assert.match(service, /function refreshRoute\(\)/)
 assert.match(service, /normalizeRoute\(service\.routeRaw,\s*Date\.now\(\)\)/)
 assert.match(service, /routeExpiryTimer/)
+const leaseExpiryTimerStart = service.indexOf("id: routeLeaseExpiryTimer")
+const leaseExpiryTimerEnd = service.indexOf("\n  }", leaseExpiryTimerStart)
+assert.ok(leaseExpiryTimerStart >= 0 && leaseExpiryTimerEnd > leaseExpiryTimerStart,
+  "one-shot lease expiry timer exists")
+const leaseExpiryTimer = service.slice(leaseExpiryTimerStart, leaseExpiryTimerEnd)
+assert.match(leaseExpiryTimer, /repeat:\s*false/)
+assert.match(leaseExpiryTimer, /onTriggered:[\s\S]*invalidateLease\(/,
+  "lease expiry invalidates the route at the normalized deadline")
+assert.match(service, /expiresAt\s*\*\s*1000/,
+  "lease expiry scheduling uses the normalized absolute expiry")
 assert.match(service, /return service\.routeVisible[\s\S]*service\.route\.output !== null/)
 assert.match(service, /routeVisible:\s*service\.routeVisible/)
 

@@ -119,8 +119,9 @@ read_route() {
     | if ($now - $route_updated_at) > 45 then error("route is stale") else . end
     | if $lease_refreshed_at > $now then error("lease refresh time is from the future") else . end
     | if $lease_expires_at <= $now then error("lease is stale") else . end
+    | if $lease_expires_at > ($now + 1) then error("lease expires too far in the future") else . end
     | if $lease_expires_at < $lease_refreshed_at then error("lease lifetime is invalid") else . end
-    | if ($lease_expires_at - $lease_refreshed_at) > 2 then error("lease lifetime is too long") else . end
+    | if ($lease_expires_at - $lease_refreshed_at) > 1 then error("lease lifetime is too long") else . end
     | if $lease_route_updated_at != $route_updated_at then error("lease route timestamp does not match") else . end
     | if ($route_json.output != null and (($route_json.output | type) != "string" or ($route_json.output | supported_output | not))) then error("unsupported route output") else . end
     | if ($route_json.cueOutput != null and (($route_json.cueOutput | type) != "string" or ($route_json.cueOutput | supported_output | not))) then error("unsupported route cue output") else . end
@@ -201,6 +202,13 @@ cleanup() {
 }
 
 run_adapter() {
+  local poll_interval=${POLL_INTERVAL:-1}
+
+  if [[ ! $poll_interval =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+    ! awk -v value="$poll_interval" 'BEGIN { exit !(value > 0 && value <= 1) }'; then
+    poll_interval=1
+  fi
+
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -215,7 +223,7 @@ run_adapter() {
 
   while :; do
     reconcile_route || true
-    sleep "${POLL_INTERVAL:-1}"
+    sleep "$poll_interval"
   done
 }
 

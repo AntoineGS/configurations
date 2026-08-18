@@ -6,7 +6,7 @@ set -Eeuo pipefail
 
 readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
-readonly NOTIFICATION_LEASE_MAX_AGE=2
+readonly NOTIFICATION_LEASE_MAX_AGE=1
 NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-1}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
 NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
@@ -272,20 +272,31 @@ write_notification_route_lease() {
 invalidate_notification_route_lease() {
   local route_file=$1
 
-  rm -f -- "$route_file"
+  rm -f -- "$route_file" || return 1
+  [[ ! -e $route_file && ! -L $route_file ]]
 }
 
 publish_hidden_notification_route_state() {
   local route_dir=$1
   local route_file=$2
+  local lease_file=${3:-"$NOTIFICATION_LEASE_FILE"}
   local route_json
 
-  ensure_notification_route_dir "$route_dir" || return 1
-  if ! route_json=$(build_notification_route_json false "" "none" "none" "$(epoch_seconds)"); then
+  if ! ensure_notification_route_dir "$route_dir"; then
+    invalidate_notification_route_lease "$lease_file" || true
     return 1
   fi
+  if ! route_json=$(build_notification_route_json false "" "none" "none" "$(epoch_seconds)"); then
+    invalidate_notification_route_lease "$lease_file" || true
+    return 1
+  fi
+  invalidate_notification_route_lease "$lease_file" || return 1
 
-  publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"
+  if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
+    return 0
+  fi
+  invalidate_notification_route_lease "$lease_file" || true
+  return 1
 }
 
 cleanup_notification_route_state() {
@@ -293,9 +304,10 @@ cleanup_notification_route_state() {
   local route_file=${2:-"$NOTIFICATION_ROUTE_FILE"}
   local lease_file=${3:-"$NOTIFICATION_LEASE_FILE"}
 
-  invalidate_notification_route_lease "$lease_file"
-  if notification_route_dir_is_secure "$route_dir"; then
-    publish_hidden_notification_route_state "$route_dir" "$route_file" || true
+  if invalidate_notification_route_lease "$lease_file"; then
+    if notification_route_dir_is_secure "$route_dir"; then
+      publish_hidden_notification_route_state "$route_dir" "$route_file" "$lease_file" || true
+    fi
   fi
 }
 
@@ -307,7 +319,10 @@ write_notification_route_state() {
   local monotonic_now route_write_age
   local route_rewritten=false
 
-  parse_notification_route_state "$state" route_mode cue_output direction || return 1
+  if ! parse_notification_route_state "$state" route_mode cue_output direction; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    return 1
+  fi
 
   case $route_mode in
     rustdesk-route-DVI-D-1) visible=true; output=DVI-D-1 ;;
@@ -319,7 +334,7 @@ write_notification_route_state() {
   route_dir=$NOTIFICATION_ROUTE_DIR
   route_file=$NOTIFICATION_ROUTE_FILE
   if ! ensure_notification_route_dir "$route_dir"; then
-    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     return 1
   fi
 
@@ -351,10 +366,12 @@ write_notification_route_state() {
 
   if ! route_json=$(build_notification_route_json \
     "$visible" "$output" "$cue_output" "$direction" "$updated_at"); then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     printf 'failed to build notification route JSON\n' >&2
     return 1
   fi
   if ! route_core=$(jq -c 'del(.updatedAt)' <<<"$route_json"); then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     printf 'failed to normalize notification route JSON\n' >&2
     return 1
   fi
@@ -368,20 +385,23 @@ write_notification_route_state() {
     local publish_status
     # Revoke the lease before replacing route content so a crash cannot make an
     # old same-second lease validate a newly published route.
-    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    if ! invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+      printf 'failed to revoke notification route lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
+      return 1
+    fi
     if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
       route_rewritten=true
       :
     else
       publish_status=$?
-      invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+      invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
       printf 'failed to publish notification route: %s\n' "$route_file" >&2
       return "$publish_status"
     fi
   fi
 
   if ! write_notification_route_lease "$route_dir" "$NOTIFICATION_LEASE_FILE" "$route_updated_at"; then
-    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     printf 'failed to publish notification lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
     return 1
   fi
@@ -396,12 +416,12 @@ reconcile_notification_routing() {
   local monitors_json clients_json state
 
   if ! monitors_json=$(hyprctl monitors -j) || ! clients_json=$(hyprctl clients -j); then
-    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
   if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
-    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
@@ -579,6 +599,11 @@ main() {
   local candidate
   local hypr_socket_path
 
+  trap cleanup_notification_route_state EXIT
+  trap 'cleanup_notification_route_state; exit 129' HUP
+  trap 'cleanup_notification_route_state; exit 130' INT
+  trap 'cleanup_notification_route_state; exit 143' TERM
+
   : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
   hypr_dir="$XDG_RUNTIME_DIR/hypr"
 
@@ -607,11 +632,6 @@ main() {
   export HYPRLAND_INSTANCE_SIGNATURE="$sig"
 
   hypr_socket_path="$hypr_dir/$sig/.socket2.sock"
-
-  trap cleanup_notification_route_state EXIT
-  trap 'cleanup_notification_route_state; exit 129' HUP
-  trap 'cleanup_notification_route_state; exit 130' INT
-  trap 'cleanup_notification_route_state; exit 143' TERM
 
   # Consume each connection in this shell so handler state persists. A read
   # timeout drives periodic recovery; EOF returns for a bounded reconnect.

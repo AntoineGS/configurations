@@ -348,6 +348,35 @@ force_visible_route() {
   assert_no_cue
 }
 
+assert_oversized_poll_interval_is_bounded() {
+  local reconcile_started
+
+  rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
+  : >"$MAKOCTL_LOG"
+  : >"$MV_LOG"
+  : >"$FAKE_ITERATION_COMPLETION_LOG"
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+    >"$MAKO_MODE_STATE"
+
+  POLL_INTERVAL=9
+  start_adapter || fail 'oversized poll interval adapter startup failed'
+  wait_for_log_count 1
+  write_route true DVI-D-1 null null "$FAKE_NOW"
+  write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
+  reconcile_started=$SECONDS
+  wait_for_log_count 2
+  ((SECONDS - reconcile_started <= 2)) || \
+    fail 'oversized poll interval exceeded the one-second reconciliation bound'
+  cleanup_adapter
+  POLL_INTERVAL=0.01
+  rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
+  : >"$MAKOCTL_LOG"
+  : >"$MV_LOG"
+  : >"$FAKE_ITERATION_COMPLETION_LOG"
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+    >"$MAKO_MODE_STATE"
+}
+
 expect_hidden_for_raw_route() {
   local content=$1
   local expected_count=$2
@@ -1184,19 +1213,19 @@ run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
 assert_cue 'HDMI-A-1|left'
 
 write_route false null DP-2 left "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|left'
@@ -1208,13 +1237,13 @@ assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$((FAKE_NOW - 45))"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 45))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$((FAKE_NOW - 45))"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
 write_raw_route '{'
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
@@ -1241,56 +1270,61 @@ run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 
 write_route true DVI-D-1 null null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 1))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+
+write_route true DVI-D-1 null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$((FAKE_NOW - 1))"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 
 write_raw_route '{"version":2,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":1786930000}'
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$((FAKE_NOW + 1))"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW + 1))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$((FAKE_NOW + 1))"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$((FAKE_NOW - 46))"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$((FAKE_NOW - 46))"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$((FAKE_NOW - 46))"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 sideways "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_raw_route '{"version":1,"visible":true,"output":null,"cueOutput":null,"direction":null,"updatedAt":1786930000}'
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 DP-1; do
   write_route true "$unsupported_output" null null "$FAKE_NOW"
-  write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+  write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
   run_reconcile_once
   assert_route_modes 'unrelated-mode rustdesk-route-hidden'
   assert_no_cue
 
   write_route true DVI-D-1 "$unsupported_output" left "$FAKE_NOW"
-  write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+  write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
   run_reconcile_once
   assert_route_modes 'unrelated-mode rustdesk-route-hidden'
   assert_no_cue
 done
 
 write_route true 'DVI-D-1;touch' null null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 rm -f -- "$TOUCH_SENTINEL"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
@@ -1298,13 +1332,13 @@ assert_no_cue
 [[ ! -e $TOUCH_SENTINEL ]] || fail 'metacharacter route output invoked touch'
 
 write_route false null DP-2 null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|none'
 
 write_route true DVI-D-1 null null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 chmod 0755 -- "$ROUTE_DIR"
 run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
@@ -1350,7 +1384,7 @@ run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 rm -f -- "$ROUTE_FILE"
 write_route true DVI-D-1 null null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 
 rm -rf -- "$ROUTE_DIR"
 ln -s "$TEST_RUNTIME_DIR" "$ROUTE_DIR"
@@ -1366,6 +1400,8 @@ chmod 0700 -- "$ROUTE_DIR"
 printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
   >"$MAKO_MODE_STATE"
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
+
+assert_oversized_poll_interval_is_bounded
 
 start_owned_fake_mako FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako startup'
@@ -1384,19 +1420,19 @@ assert_no_new_mako_call_after_iterations 1 "$((iteration_completions_after_write
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 2
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
 write_route true DVI-D-1 null null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 iteration_completions_after_write=$(iteration_completion_count)
 assert_no_new_mako_call_after_iterations 2 "$((iteration_completions_after_write + 2))"
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 3
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
@@ -1404,14 +1440,14 @@ assert_cue 'HDMI-A-1|left'
 assert_atomic_cue_rename
 
 write_route false null DP-2 left "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 4
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|left'
 
 write_route false null DP-2 null "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 5
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
@@ -1425,7 +1461,7 @@ assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
-write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 7
 assert_cue 'HDMI-A-1|left'
 assert_file_mode 0600 "$CUE_FILE"
