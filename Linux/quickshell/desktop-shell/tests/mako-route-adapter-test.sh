@@ -172,6 +172,21 @@ wait_for_file() {
   fail "timed out waiting for file: $path"
 }
 
+wait_for_process_executable() {
+  local pid=$1
+  local expected_executable=$2
+  local deadline=$((SECONDS + 3))
+  local actual_executable
+
+  while ((SECONDS < deadline)); do
+    actual_executable=$(process_executable "$pid" 2>/dev/null || true)
+    [[ $actual_executable == "$expected_executable" ]] && return 0
+    /usr/bin/sleep 0.01
+  done
+
+  fail "timed out waiting for $pid to exec $expected_executable"
+}
+
 iteration_completion_count() {
   [[ -f $FAKE_ITERATION_COMPLETION_LOG ]] || {
     printf '0\n'
@@ -305,18 +320,6 @@ expect_hidden_for_raw_route() {
   assert_no_cue
 }
 
-kill_descendants() {
-  local root=$1
-  local child
-  local children=()
-
-  mapfile -t children < <(pgrep -P "$root" 2>/dev/null || true)
-  for child in "${children[@]}"; do
-    kill_descendants "$child"
-    kill -TERM "$child" 2>/dev/null || true
-  done
-}
-
 register_owned_child() {
   local pid=$1
   local start_time=$2
@@ -325,26 +328,10 @@ register_owned_child() {
   OWNED_CHILDREN+=("$pid:$start_time:$executable")
 }
 
-update_owned_child_start_time() {
+register_pending_owned_child() {
   local pid=$1
-  local start_time=$2
-  local executable=${3:-}
-  local entry
-  local entry_pid
-  local entry_executable
-  local updated=()
 
-  for entry in "${OWNED_CHILDREN[@]}"; do
-    entry_pid=${entry%%:*}
-    entry_executable=${entry#*:*:}
-    if [[ $entry_pid == "$pid" ]]; then
-      [[ -n $executable ]] && entry_executable=$executable
-      updated+=("$pid:$start_time:$entry_executable")
-    else
-      updated+=("$entry")
-    fi
-  done
-  OWNED_CHILDREN=("${updated[@]}")
+  PENDING_OWNED_CHILDREN+=("$pid")
 }
 
 forget_owned_child() {
@@ -360,10 +347,42 @@ forget_owned_child() {
   OWNED_CHILDREN=("${retained[@]}")
 }
 
-cleanup_owned_child() {
+forget_pending_owned_child() {
   local pid=$1
-  local expected_start_time=$2
-  local expected_executable=$3
+  local entry
+  local retained=()
+
+  for entry in "${PENDING_OWNED_CHILDREN[@]}"; do
+    [[ $entry == "$pid" ]] || retained+=("$entry")
+  done
+  PENDING_OWNED_CHILDREN=("${retained[@]}")
+}
+
+start_owned_fake_mako() {
+  local child_pid
+  local child_start_time
+  local child_executable
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  "$TEST_BIN/fake-mako" &
+  child_pid=$!
+  register_pending_owned_child "$child_pid"
+  wait_for_file "$FAKE_MAKO_READY_FILE"
+  wait_for_process_executable "$child_pid" "$FAKE_MAKO_EXECUTABLE_PATH"
+  child_start_time=$(process_start_time "$child_pid") || fail 'fake Mako start identity is unavailable'
+  child_executable=$(process_executable "$child_pid") || fail 'fake Mako executable is unavailable'
+  register_owned_child "$child_pid" "$child_start_time" "$child_executable"
+  forget_pending_owned_child "$child_pid"
+  printf -v "$1" '%s' "$child_pid"
+  printf -v "$2" '%s' "$child_start_time"
+  printf -v "$3" '%s' "$child_executable"
+}
+
+cleanup_child_process() {
+  local expected_parent_pid=$1
+  local pid=$2
+  local expected_start_time=$3
+  local expected_executable=$4
   local parent_pid
   local current_start_time
   local current_executable
@@ -374,7 +393,7 @@ cleanup_owned_child() {
     wait "$pid" 2>/dev/null || true
     return 0
   fi
-  [[ $parent_pid == "$$" ]] || return 0
+  [[ $parent_pid == "$expected_parent_pid" ]] || return 0
   current_start_time=$(process_start_time "$pid" 2>/dev/null) || return 0
   [[ $current_start_time == "$expected_start_time" ]] || return 0
   current_executable=$(process_executable "$pid" 2>/dev/null) || return 0
@@ -382,6 +401,10 @@ cleanup_owned_child() {
 
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
+}
+
+cleanup_owned_child() {
+  cleanup_child_process "$$" "$1" "$2" "$3"
 }
 
 cleanup_owned_children() {
@@ -400,12 +423,52 @@ cleanup_owned_children() {
   OWNED_CHILDREN=()
 }
 
+cleanup_pending_owned_children() {
+  local pid
+  local parent_pid
+  local start_time
+  local executable
+
+  for pid in "${PENDING_OWNED_CHILDREN[@]}"; do
+    if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
+      wait "$pid" 2>/dev/null || true
+      continue
+    fi
+    [[ $parent_pid == "$$" ]] || continue
+    start_time=$(process_start_time "$pid" 2>/dev/null) || continue
+    executable=$(process_executable "$pid" 2>/dev/null) || continue
+    cleanup_owned_child "$pid" "$start_time" "$executable"
+  done
+  PENDING_OWNED_CHILDREN=()
+}
+
+cleanup_process_tree() {
+  local parent_pid=$1
+  local expected_parent_start_time=$2
+  local expected_parent_executable=$3
+  local child
+  local child_start_time
+  local child_executable
+  local children=()
+
+  [[ -n $expected_parent_start_time && -n $expected_parent_executable ]] || return 0
+  process_identity_is_live "$parent_pid" "$expected_parent_start_time" "$expected_parent_executable" || return 0
+
+  mapfile -t children < <(pgrep -P "$parent_pid" 2>/dev/null || true)
+  for child in "${children[@]}"; do
+    child_start_time=$(process_start_time "$child" 2>/dev/null) || continue
+    child_executable=$(process_executable "$child" 2>/dev/null) || continue
+    cleanup_process_tree "$child" "$child_start_time" "$child_executable"
+    cleanup_child_process "$parent_pid" "$child" "$child_start_time" "$child_executable"
+  done
+}
+
 cleanup_adapter() {
   local status=0
 
   if [[ -n ${adapter_pid:-} ]] && kill -0 "$adapter_pid" 2>/dev/null; then
-    kill_descendants "$adapter_pid"
-    kill -TERM "$adapter_pid" 2>/dev/null || true
+    cleanup_process_tree "$adapter_pid" "$ADAPTER_START_TIME" "$ADAPTER_EXECUTABLE"
+    cleanup_owned_child "$adapter_pid" "$ADAPTER_START_TIME" "$ADAPTER_EXECUTABLE"
     wait "$adapter_pid" || status=$?
     [[ $status -ne 0 ]] || true
   fi
@@ -414,6 +477,7 @@ cleanup_adapter() {
 
 cleanup() {
   cleanup_adapter
+  cleanup_pending_owned_children
   cleanup_owned_children
   rm -rf -- "$TEST_RUNTIME_DIR"
 }
@@ -423,19 +487,14 @@ assert_setup_failure_cleanup() {
   local setup_failure_start_time
   local setup_failure_executable
 
-  "$TEST_BIN/fake-mako" &
-  setup_failure_pid=$!
-  wait_for_file "$FAKE_MAKO_READY_FILE"
-  setup_failure_start_time=$(process_start_time "$setup_failure_pid") || fail 'setup-failure child start identity is unavailable'
-  setup_failure_executable=$(process_executable "$setup_failure_pid") || fail 'setup-failure child executable is unavailable'
-  register_owned_child "$setup_failure_pid" "$setup_failure_start_time" "$setup_failure_executable"
+  start_owned_fake_mako setup_failure_pid setup_failure_start_time setup_failure_executable
   cleanup_owned_child "$setup_failure_pid" "$setup_failure_start_time" "$setup_failure_executable"
   forget_owned_child "$setup_failure_pid"
   [[ ! -e /proc/$setup_failure_pid/status ]] || \
     fail 'setup-failure cleanup did not reap the owned fake Mako child'
 }
 
-assert_incomplete_identity_cleanup_skips_child() {
+assert_pending_owned_child_cleanup_reaps_started_child() {
   local pid
   local start_time
   local executable
@@ -443,10 +502,22 @@ assert_incomplete_identity_cleanup_skips_child() {
   rm -f -- "$FAKE_MAKO_READY_FILE"
   "$TEST_BIN/fake-mako" &
   pid=$!
+  register_pending_owned_child "$pid"
   wait_for_file "$FAKE_MAKO_READY_FILE"
-  start_time=$(process_start_time "$pid") || fail 'incomplete-identity child start identity is unavailable'
-  executable=$(process_executable "$pid") || fail 'incomplete-identity child executable is unavailable'
-  register_owned_child "$pid" "$start_time" "$executable"
+  wait_for_process_executable "$pid" "$FAKE_MAKO_EXECUTABLE_PATH"
+  start_time=$(process_start_time "$pid") || fail 'pending child start identity is unavailable'
+  executable=$(process_executable "$pid") || fail 'pending child executable is unavailable'
+  assert_process_identity "$pid" "$start_time" "$executable" 'pending child started'
+  cleanup_pending_owned_children
+  [[ ! -e /proc/$pid/status ]] || fail 'pending child cleanup did not reap the owned fake Mako child'
+}
+
+assert_incomplete_identity_cleanup_skips_child() {
+  local pid
+  local start_time
+  local executable
+
+  start_owned_fake_mako pid start_time executable
 
   cleanup_owned_child "$pid" '' "$executable"
   assert_process_identity "$pid" "$start_time" "$executable" 'empty start time must skip cleanup'
@@ -463,17 +534,41 @@ assert_mismatched_identity_cleanup_skips_child() {
   local mismatched_start_time
   local fake_mako_executable
 
-  rm -f -- "$FAKE_MAKO_READY_FILE"
-  "$TEST_BIN/fake-mako" &
-  mismatched_pid=$!
-  wait_for_file "$FAKE_MAKO_READY_FILE"
-  fake_mako_executable=$(process_executable "$mismatched_pid") || fail 'mismatched child executable is unavailable'
-  mismatched_start_time=$(process_start_time "$mismatched_pid") || fail 'mismatched child start identity is unavailable'
+  start_owned_fake_mako mismatched_pid mismatched_start_time fake_mako_executable
+  forget_owned_child "$mismatched_pid"
   register_owned_child "$mismatched_pid" "$mismatched_start_time" '/usr/bin/false'
   cleanup_owned_child "$mismatched_pid" "$mismatched_start_time" '/usr/bin/false'
   assert_process_identity "$mismatched_pid" "$mismatched_start_time" "$fake_mako_executable" 'mismatched child survived cleanup'
   forget_owned_child "$mismatched_pid"
   cleanup_owned_child "$mismatched_pid" "$mismatched_start_time" "$fake_mako_executable"
+}
+
+assert_descendant_cleanup_revalidates_identity() {
+  local parent_pid
+  local child_pid
+  local child_start_time
+  local child_executable
+  local children=()
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  bash -c 'child=""; trap '\''[[ -n $child ]] && kill -TERM "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit 0'\'' TERM; "$1" & child=$!; wait "$child"' _ "$TEST_BIN/fake-mako" &
+  parent_pid=$!
+  register_pending_owned_child "$parent_pid"
+  wait_for_file "$FAKE_MAKO_READY_FILE"
+  wait_for_process_executable "$parent_pid" '/usr/bin/bash'
+  mapfile -t children < <(pgrep -P "$parent_pid" 2>/dev/null || true)
+  [[ ${#children[@]} -eq 1 ]] || fail 'descendant child pid is unavailable'
+  child_pid=${children[0]}
+  wait_for_process_executable "$child_pid" "$FAKE_MAKO_EXECUTABLE_PATH"
+  child_start_time=$(process_start_time "$child_pid") || fail 'descendant child start identity is unavailable'
+  child_executable=$(process_executable "$child_pid") || fail 'descendant child executable is unavailable'
+
+  cleanup_child_process "$parent_pid" "$child_pid" "$child_start_time" '/usr/bin/false'
+  assert_process_identity "$child_pid" "$child_start_time" "$child_executable" 'mismatched descendant survived cleanup'
+
+  cleanup_child_process "$parent_pid" "$child_pid" "$child_start_time" "$child_executable"
+  forget_pending_owned_child "$parent_pid"
+  wait "$parent_pid" 2>/dev/null || true
 }
 
 [[ -f $ADAPTER ]] || fail "adapter helper is missing: $ADAPTER"
@@ -514,11 +609,16 @@ MV_LOG="$TEST_RUNTIME_DIR/mv.log"
 ADAPTER_STDOUT="$TEST_RUNTIME_DIR/adapter.stdout"
 ADAPTER_STDERR="$TEST_RUNTIME_DIR/adapter.stderr"
 FAKE_NOW=1786930000
+FAKE_MAKO_EXECUTABLE_PATH="/usr/bin/sleep"
 FAKE_ITERATION_COMPLETION_LOG="$TEST_RUNTIME_DIR/iteration-completions.log"
 FAKE_MAKO_PID=""
 FAKE_MAKO_START_TIME=""
+FAKE_MAKO_EXECUTABLE=""
 OWNED_CHILDREN=()
+PENDING_OWNED_CHILDREN=()
 adapter_pid=""
+ADAPTER_START_TIME=""
+ADAPTER_EXECUTABLE=""
 
 mkdir -p -- "$TEST_BIN" "$ROUTE_DIR"
 chmod 0700 -- "$ROUTE_DIR"
@@ -660,8 +760,10 @@ export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE
 trap cleanup EXIT
 
 assert_setup_failure_cleanup
+assert_pending_owned_child_cleanup_reaps_started_child
 assert_incomplete_identity_cleanup_skips_child
 assert_mismatched_identity_cleanup_skips_child
+assert_descendant_cleanup_revalidates_identity
 
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE"
 run_reconcile_once
@@ -779,6 +881,18 @@ for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 DP-1; do
   assert_no_cue
 done
 
+write_route true 'DVI-D-1;touch' null null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden'
+assert_no_cue
+
+write_route false null DP-2 null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+run_reconcile_once
+assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
+assert_cue 'DP-2|none'
+
 write_route true DVI-D-1 null null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
 chmod 0755 -- "$ROUTE_DIR"
@@ -843,19 +957,14 @@ printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rus
   >"$MAKO_MODE_STATE"
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
 
-"$TEST_BIN/fake-mako" &
-FAKE_MAKO_PID=$!
-register_owned_child "$FAKE_MAKO_PID" "" "$(process_executable "$FAKE_MAKO_PID")"
-wait_for_file "$FAKE_MAKO_READY_FILE"
-FAKE_MAKO_START_TIME=$(process_start_time "$FAKE_MAKO_PID") || fail 'fake Mako start identity is unavailable'
-update_owned_child_start_time "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME"
-FAKE_MAKO_EXECUTABLE=$(process_executable "$FAKE_MAKO_PID") || fail 'fake Mako executable is unavailable'
-update_owned_child_start_time "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE"
+start_owned_fake_mako FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako startup'
 export FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 
 bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
 adapter_pid=$!
+ADAPTER_START_TIME=$(process_start_time "$adapter_pid") || fail 'adapter start identity is unavailable'
+ADAPTER_EXECUTABLE=$(process_executable "$adapter_pid") || fail 'adapter executable is unavailable'
 
 wait_for_log_count 1
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
@@ -894,16 +1003,23 @@ assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|r
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|left'
 
+write_route false null DP-2 null "$FAKE_NOW"
+write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
+wait_for_log_count 5
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
+assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
+assert_cue 'DP-2|none'
+
 rm -f -- "$ROUTE_FILE"
 iteration_completions_after_write=$(iteration_completion_count)
-wait_for_log_count 5
+wait_for_log_count 6
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 2))" "$FAKE_NOW"
-wait_for_log_count 6
+wait_for_log_count 7
 assert_cue 'HDMI-A-1|left'
 assert_file_mode 0600 "$CUE_FILE"
 
