@@ -75,6 +75,12 @@ process_executable() {
   local pid=$1
 
   [[ $pid =~ ^[0-9]+$ ]] || return 1
+  if [[ (${PROCESS_EXECUTABLE_FAIL_PID:-} == "$pid" || ${PROCESS_EXECUTABLE_FAIL_PID:-} == '*') && -n ${PROCESS_EXECUTABLE_FAIL_FILE:-} ]]; then
+    if [[ -e $PROCESS_EXECUTABLE_FAIL_FILE ]]; then
+      rm -f -- "$PROCESS_EXECUTABLE_FAIL_FILE"
+      return 1
+    fi
+  fi
   [[ -L /proc/$pid/exe ]] || return 1
   readlink -f -- "/proc/$pid/exe"
 }
@@ -160,7 +166,7 @@ wait_for_log_count() {
   fail "timed out waiting for $expected Mako calls; got $(log_count)"
 }
 
-wait_for_file() {
+await_file() {
   local path=$1
   local deadline=$((SECONDS + 3))
 
@@ -169,10 +175,16 @@ wait_for_file() {
     /usr/bin/sleep 0.01
   done
 
-  fail "timed out waiting for file: $path"
+  return 1
 }
 
-wait_for_process_executable() {
+wait_for_file() {
+  local path=$1
+
+  await_file "$path" || fail "timed out waiting for file: $path"
+}
+
+await_process_executable() {
   local pid=$1
   local expected_executable=$2
   local deadline=$((SECONDS + 3))
@@ -184,7 +196,34 @@ wait_for_process_executable() {
     /usr/bin/sleep 0.01
   done
 
-  fail "timed out waiting for $pid to exec $expected_executable"
+  return 1
+}
+
+wait_for_process_executable() {
+  local pid=$1
+  local expected_executable=$2
+
+  await_process_executable "$pid" "$expected_executable" || fail "timed out waiting for $pid to exec $expected_executable"
+}
+
+capture_process_identity() {
+  local pid=$1
+  local deadline=$((SECONDS + 3))
+  local observed_start_time
+  local observed_executable
+
+  while ((SECONDS < deadline)); do
+    observed_start_time=$(process_start_time "$pid" 2>/dev/null || true)
+    observed_executable=$(process_executable "$pid" 2>/dev/null || true)
+    if [[ -n $observed_start_time && -n $observed_executable ]]; then
+      printf -v "$2" '%s' "$observed_start_time"
+      printf -v "$3" '%s' "$observed_executable"
+      return 0
+    fi
+    /usr/bin/sleep 0.01
+  done
+
+  return 1
 }
 
 iteration_completion_count() {
@@ -330,8 +369,107 @@ register_owned_child() {
 
 register_pending_owned_child() {
   local pid=$1
+  local start_time=$2
+  local executable=$3
+  local expected_parent_pid=$4
 
-  PENDING_OWNED_CHILDREN+=("$pid")
+  PENDING_OWNED_CHILDREN+=("$pid:$start_time:$executable:$expected_parent_pid")
+}
+
+pending_owned_child_entry() {
+  local pid=$1
+  local entry
+  local entry_pid
+
+  for entry in "${PENDING_OWNED_CHILDREN[@]}"; do
+    entry_pid=${entry%%:*}
+    [[ $entry_pid == "$pid" ]] && {
+      printf '%s\n' "$entry"
+      return 0
+    }
+  done
+
+  return 1
+}
+
+promote_pending_owned_child() {
+  local pid=$1
+  local entry
+  local remainder
+  local stored_start_time
+  local stored_executable
+  local stored_parent_pid
+  local parent_pid
+
+  entry=$(pending_owned_child_entry "$pid") || return 1
+  remainder=${entry#*:}
+  stored_start_time=${remainder%%:*}
+  remainder=${remainder#*:}
+  stored_executable=${remainder%%:*}
+  stored_parent_pid=${remainder##*:}
+  parent_pid=$(process_parent_pid "$pid") || return 1
+  [[ $parent_pid == "$stored_parent_pid" ]] || return 1
+  process_identity_is_live "$pid" "$stored_start_time" "$stored_executable" || return 1
+  register_owned_child "$pid" "$stored_start_time" "$stored_executable"
+  forget_pending_owned_child "$pid"
+}
+
+cleanup_spawn_failure() {
+  local pid=$1
+  local parent_pid
+  local current_start_time
+  local current_executable
+
+  [[ $pid =~ ^[0-9]+$ ]] || return 0
+  parent_pid=$(process_parent_pid "$pid" 2>/dev/null) || {
+    wait "$pid" 2>/dev/null || true
+    return 0
+  }
+  [[ $parent_pid == "$$" ]] || return 0
+  capture_process_identity "$pid" current_start_time current_executable || return 0
+  cleanup_owned_child "$pid" "$current_start_time" "$current_executable"
+}
+
+start_fake_mako_process() {
+  local process_pid
+  local process_start_time
+  local process_executable_path
+
+  rm -f -- "$FAKE_MAKO_READY_FILE"
+  "$TEST_BIN/fake-mako" &
+  process_pid=$!
+  await_file "$FAKE_MAKO_READY_FILE" || {
+    cleanup_spawn_failure "$process_pid"
+    fail 'fake Mako ready file did not appear'
+  }
+  await_process_executable "$process_pid" "$FAKE_MAKO_EXECUTABLE_PATH" || {
+    cleanup_spawn_failure "$process_pid"
+    fail 'fake Mako executable did not reach the expected path'
+  }
+  process_start_time=$(process_start_time "$process_pid") || {
+    cleanup_spawn_failure "$process_pid"
+    fail 'fake Mako start identity is unavailable'
+  }
+  process_executable_path=$(process_executable "$process_pid") || {
+    cleanup_spawn_failure "$process_pid"
+    fail 'fake Mako executable is unavailable'
+  }
+  printf -v "$1" '%s' "$process_pid"
+  printf -v "$2" '%s' "$process_start_time"
+  printf -v "$3" '%s' "$process_executable_path"
+}
+
+assert_pending_owned_child_registration_preserves_observed_identity() {
+  local pid=12345
+  local start_time=67890
+  local executable=/usr/bin/sleep
+  local expected_parent_pid=24680
+
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$pid" "$start_time" "$executable" "$expected_parent_pid"
+  assert_equal "$pid:$start_time:$executable:$expected_parent_pid" "${PENDING_OWNED_CHILDREN[0]-}" \
+    'pending child registration stored the originally observed identity'
+  PENDING_OWNED_CHILDREN=()
 }
 
 forget_owned_child() {
@@ -350,10 +488,12 @@ forget_owned_child() {
 forget_pending_owned_child() {
   local pid=$1
   local entry
+  local entry_pid
   local retained=()
 
   for entry in "${PENDING_OWNED_CHILDREN[@]}"; do
-    [[ $entry == "$pid" ]] || retained+=("$entry")
+    entry_pid=${entry%%:*}
+    [[ $entry_pid == "$pid" ]] || retained+=("$entry")
   done
   PENDING_OWNED_CHILDREN=("${retained[@]}")
 }
@@ -363,16 +503,10 @@ start_owned_fake_mako() {
   local child_start_time
   local child_executable
 
-  rm -f -- "$FAKE_MAKO_READY_FILE"
-  "$TEST_BIN/fake-mako" &
-  child_pid=$!
-  register_pending_owned_child "$child_pid"
-  wait_for_file "$FAKE_MAKO_READY_FILE"
-  wait_for_process_executable "$child_pid" "$FAKE_MAKO_EXECUTABLE_PATH"
-  child_start_time=$(process_start_time "$child_pid") || fail 'fake Mako start identity is unavailable'
-  child_executable=$(process_executable "$child_pid") || fail 'fake Mako executable is unavailable'
-  register_owned_child "$child_pid" "$child_start_time" "$child_executable"
-  forget_pending_owned_child "$child_pid"
+  start_fake_mako_process child_pid child_start_time child_executable
+  register_pending_owned_child "$child_pid" "$child_start_time" "$child_executable" "$$"
+  promote_pending_owned_child "$child_pid" "$child_start_time" "$child_executable" "$$" ||
+    fail 'fake Mako pending child promotion failed'
   printf -v "$1" '%s' "$child_pid"
   printf -v "$2" '%s' "$child_start_time"
   printf -v "$3" '%s' "$child_executable"
@@ -424,22 +558,51 @@ cleanup_owned_children() {
 }
 
 cleanup_pending_owned_children() {
+  local entry
   local pid
-  local parent_pid
+  local remainder
   local start_time
   local executable
+  local expected_parent_pid
 
-  for pid in "${PENDING_OWNED_CHILDREN[@]}"; do
-    if ! parent_pid=$(process_parent_pid "$pid" 2>/dev/null); then
+  for entry in "${PENDING_OWNED_CHILDREN[@]}"; do
+    pid=${entry%%:*}
+    remainder=${entry#*:}
+    start_time=${remainder%%:*}
+    remainder=${remainder#*:}
+    executable=${remainder%%:*}
+    expected_parent_pid=${remainder##*:}
+    if ! process_parent_pid "$pid" >/dev/null 2>&1; then
       wait "$pid" 2>/dev/null || true
       continue
     fi
-    [[ $parent_pid == "$$" ]] || continue
-    start_time=$(process_start_time "$pid" 2>/dev/null) || continue
-    executable=$(process_executable "$pid" 2>/dev/null) || continue
-    cleanup_owned_child "$pid" "$start_time" "$executable"
+    cleanup_child_process "$expected_parent_pid" "$pid" "$start_time" "$executable"
   done
   PENDING_OWNED_CHILDREN=()
+}
+
+start_adapter() {
+  local initial_start_time
+  local initial_executable
+
+  bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
+  adapter_pid=$!
+  initial_start_time=$(process_start_time "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    return 1
+  }
+  initial_executable=$(process_executable "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    return 1
+  }
+  register_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$"
+  promote_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$" || {
+    cleanup_pending_owned_children
+    adapter_pid=""
+    return 1
+  }
+  ADAPTER_START_TIME=$initial_start_time
+  ADAPTER_EXECUTABLE=$initial_executable
 }
 
 cleanup_process_tree() {
@@ -499,17 +662,126 @@ assert_pending_owned_child_cleanup_reaps_started_child() {
   local start_time
   local executable
 
-  rm -f -- "$FAKE_MAKO_READY_FILE"
-  "$TEST_BIN/fake-mako" &
-  pid=$!
-  register_pending_owned_child "$pid"
-  wait_for_file "$FAKE_MAKO_READY_FILE"
-  wait_for_process_executable "$pid" "$FAKE_MAKO_EXECUTABLE_PATH"
-  start_time=$(process_start_time "$pid") || fail 'pending child start identity is unavailable'
-  executable=$(process_executable "$pid") || fail 'pending child executable is unavailable'
+  start_fake_mako_process pid start_time executable
+  register_pending_owned_child "$pid" "$start_time" "$executable" "$$"
   assert_process_identity "$pid" "$start_time" "$executable" 'pending child started'
   cleanup_pending_owned_children
   [[ ! -e /proc/$pid/status ]] || fail 'pending child cleanup did not reap the owned fake Mako child'
+}
+
+assert_pending_cleanup_revalidates_stored_identity() {
+  local pid
+  local start_time
+  local executable
+
+  start_fake_mako_process pid start_time executable
+
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$pid" "$start_time" '/usr/bin/false' "$$"
+  cleanup_pending_owned_children
+  assert_process_identity "$pid" "$start_time" "$executable" 'pending cleanup must skip mismatched stored identity'
+
+  cleanup_owned_child "$pid" "$start_time" "$executable"
+}
+
+assert_pending_cleanup_revalidates_stored_parent() {
+  local pid
+  local start_time
+  local executable
+
+  start_fake_mako_process pid start_time executable
+
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$pid" "$start_time" "$executable" 999999
+  cleanup_pending_owned_children
+  assert_process_identity "$pid" "$start_time" "$executable" 'pending cleanup must skip mismatched stored parent'
+
+  cleanup_owned_child "$pid" "$start_time" "$executable"
+}
+
+assert_pending_promotion_reuses_stored_identity() {
+  local pid
+  local start_time
+  local executable
+
+  start_fake_mako_process pid start_time executable
+
+  OWNED_CHILDREN=()
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$pid" "$start_time" '/usr/bin/false' "$$"
+  promote_pending_owned_child "$pid" "$start_time" "$executable" "$$" &&
+    fail 'pending promotion accepted a caller-supplied identity instead of the stored pending identity'
+  [[ ${#OWNED_CHILDREN[@]} -eq 0 ]] || fail 'pending promotion incorrectly registered an owned child'
+  assert_process_identity "$pid" "$start_time" "$executable" 'pending promotion must leave mismatched stored identity alive'
+
+  PENDING_OWNED_CHILDREN=()
+  cleanup_owned_child "$pid" "$start_time" "$executable"
+
+  start_fake_mako_process pid start_time executable
+
+  OWNED_CHILDREN=()
+  PENDING_OWNED_CHILDREN=()
+  register_pending_owned_child "$pid" "$start_time" "$executable" "$$"
+  promote_pending_owned_child "$pid" 999999 '/usr/bin/false' "$$" ||
+    fail 'pending promotion rejected the stored pending identity in favor of caller-supplied identity'
+  assert_equal "$pid:$start_time:$executable" "${OWNED_CHILDREN[0]-}" \
+    'pending promotion registered the stored pending identity'
+
+  forget_owned_child "$pid"
+  cleanup_owned_child "$pid" "$start_time" "$executable"
+}
+
+assert_adapter_startup_cleans_up_initial_identity_failure() {
+  local failed_pid
+
+  PROCESS_EXECUTABLE_FAIL_PID="*"
+  PROCESS_EXECUTABLE_FAIL_FILE="$TEST_RUNTIME_DIR/process-executable-initial-fail"
+  : >"$PROCESS_EXECUTABLE_FAIL_FILE"
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  start_adapter && fail 'adapter startup unexpectedly succeeded during initial identity lookup failure'
+  failed_pid=$adapter_pid
+  PROCESS_EXECUTABLE_FAIL_PID=""
+  PROCESS_EXECUTABLE_FAIL_FILE=""
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  [[ -n $failed_pid ]] || fail 'initial adapter identity failure did not expose the failed pid'
+  [[ ! -e /proc/$failed_pid/status ]] || fail 'initial adapter identity failure left the adapter running'
+  adapter_pid=""
+}
+
+assert_adapter_pending_registration_cleans_up_on_identity_lookup_failure() {
+  local failed_pid
+  local initial_start_time
+  local initial_executable
+
+  PROCESS_EXECUTABLE_FAIL_PID=""
+  PROCESS_EXECUTABLE_FAIL_FILE=""
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
+  adapter_pid=$!
+  initial_start_time=$(process_start_time "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    fail 'adapter initial start identity is unavailable'
+  }
+  initial_executable=$(process_executable "$adapter_pid") || {
+    cleanup_spawn_failure "$adapter_pid"
+    fail 'adapter initial executable is unavailable'
+  }
+  register_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$"
+  PROCESS_EXECUTABLE_FAIL_PID=$adapter_pid
+  PROCESS_EXECUTABLE_FAIL_FILE="$TEST_RUNTIME_DIR/process-executable-fail"
+  : >"$PROCESS_EXECUTABLE_FAIL_FILE"
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  promote_pending_owned_child "$adapter_pid" "$initial_start_time" "$initial_executable" "$$" &&
+    fail 'adapter identity promotion unexpectedly succeeded during injected lookup failure'
+  failed_pid=$adapter_pid
+  cleanup_pending_owned_children
+  wait "$failed_pid" 2>/dev/null || true
+  PROCESS_EXECUTABLE_FAIL_PID=""
+  PROCESS_EXECUTABLE_FAIL_FILE=""
+  export PROCESS_EXECUTABLE_FAIL_PID PROCESS_EXECUTABLE_FAIL_FILE
+  adapter_pid=""
+  [[ ! -e /proc/$failed_pid/status ]] || fail 'failed adapter startup cleanup did not reap the pending adapter process'
+  [[ ! -n ${adapter_pid:-} ]] || fail 'failed adapter startup left an untracked adapter process behind'
 }
 
 assert_incomplete_identity_cleanup_skips_child() {
@@ -545,6 +817,8 @@ assert_mismatched_identity_cleanup_skips_child() {
 
 assert_descendant_cleanup_revalidates_identity() {
   local parent_pid
+  local parent_start_time
+  local parent_executable
   local child_pid
   local child_start_time
   local child_executable
@@ -553,9 +827,23 @@ assert_descendant_cleanup_revalidates_identity() {
   rm -f -- "$FAKE_MAKO_READY_FILE"
   bash -c 'child=""; trap '\''[[ -n $child ]] && kill -TERM "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; exit 0'\'' TERM; "$1" & child=$!; wait "$child"' _ "$TEST_BIN/fake-mako" &
   parent_pid=$!
-  register_pending_owned_child "$parent_pid"
-  wait_for_file "$FAKE_MAKO_READY_FILE"
-  wait_for_process_executable "$parent_pid" '/usr/bin/bash'
+  await_file "$FAKE_MAKO_READY_FILE" || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'descendant fake Mako ready file did not appear'
+  }
+  await_process_executable "$parent_pid" '/usr/bin/bash' || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'descendant parent executable did not reach /usr/bin/bash'
+  }
+  parent_start_time=$(process_start_time "$parent_pid") || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'descendant parent start identity is unavailable'
+  }
+  parent_executable=$(process_executable "$parent_pid") || {
+    cleanup_spawn_failure "$parent_pid"
+    fail 'descendant parent executable is unavailable'
+  }
+  register_pending_owned_child "$parent_pid" "$parent_start_time" "$parent_executable" "$$"
   mapfile -t children < <(pgrep -P "$parent_pid" 2>/dev/null || true)
   [[ ${#children[@]} -eq 1 ]] || fail 'descendant child pid is unavailable'
   child_pid=${children[0]}
@@ -759,11 +1047,17 @@ export MAKOCTL_LOG MAKO_MODE_STATE MV_LOG FAKE_NOW FAKE_ITERATION_COMPLETION_LOG
 export ROUTE_DIR ROUTE_FILE LEASE_FILE CUE_FILE
 trap cleanup EXIT
 
+assert_pending_owned_child_registration_preserves_observed_identity
 assert_setup_failure_cleanup
 assert_pending_owned_child_cleanup_reaps_started_child
+assert_pending_cleanup_revalidates_stored_identity
+assert_pending_cleanup_revalidates_stored_parent
+assert_pending_promotion_reuses_stored_identity
 assert_incomplete_identity_cleanup_skips_child
 assert_mismatched_identity_cleanup_skips_child
 assert_descendant_cleanup_revalidates_identity
+assert_adapter_startup_cleans_up_initial_identity_failure
+assert_adapter_pending_registration_cleans_up_on_identity_lookup_failure
 
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE"
 run_reconcile_once
@@ -961,10 +1255,7 @@ start_owned_fake_mako FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako startup'
 export FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 
-bash "$ADAPTER" >"$ADAPTER_STDOUT" 2>"$ADAPTER_STDERR" &
-adapter_pid=$!
-ADAPTER_START_TIME=$(process_start_time "$adapter_pid") || fail 'adapter start identity is unavailable'
-ADAPTER_EXECUTABLE=$(process_executable "$adapter_pid") || fail 'adapter executable is unavailable'
+start_adapter || fail 'adapter startup identity tracking failed'
 
 wait_for_log_count 1
 assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
