@@ -229,7 +229,18 @@ function invalidRoute(error) {
     output: null,
     cueOutput: null,
     direction: null,
+    updatedAt: null,
     error: String(error || "invalid route")
+  }
+}
+
+function invalidLease(error) {
+  return {
+    valid: false,
+    refreshedAt: null,
+    expiresAt: null,
+    routeUpdatedAt: null,
+    error: String(error || "invalid lease")
   }
 }
 
@@ -285,6 +296,50 @@ function normalizeRoute(raw, nowMs) {
     output: output,
     cueOutput: cueOutput,
     direction: direction,
+    updatedAt: parsed.updatedAt,
+    error: ""
+  }
+}
+
+function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
+  var parsed
+  try {
+    parsed = JSON.parse(String(raw || ""))
+  } catch (e) {
+    return invalidLease("invalid lease JSON")
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return invalidLease("lease must be an object")
+  if (parsed.version !== 1) return invalidLease("unsupported lease version")
+  if (typeof nowMs !== "number" || !isFinite(nowMs)) return invalidLease("current time is invalid")
+
+  var refreshedAt = parsed.refreshedAt
+  var expiresAt = parsed.expiresAt
+  var routeUpdatedAt = parsed.routeUpdatedAt
+  if (typeof refreshedAt !== "number" || !isFinite(refreshedAt) || Math.floor(refreshedAt) !== refreshedAt || refreshedAt < 0)
+    return invalidLease("lease refreshedAt is invalid")
+  if (typeof expiresAt !== "number" || !isFinite(expiresAt) || Math.floor(expiresAt) !== expiresAt || expiresAt < 0)
+    return invalidLease("lease expiresAt is invalid")
+  if (typeof routeUpdatedAt !== "number" || !isFinite(routeUpdatedAt) || Math.floor(routeUpdatedAt) !== routeUpdatedAt || routeUpdatedAt < 0)
+    return invalidLease("lease routeUpdatedAt is invalid")
+
+  var current = Math.floor(nowMs / 1000)
+  if (refreshedAt > current) return invalidLease("lease refreshedAt is from the future")
+  if (expiresAt <= current) return invalidLease("lease is stale")
+  if (expiresAt > current + 1) return invalidLease("lease expires too far in the future")
+  if (expiresAt - refreshedAt > 2) return invalidLease("lease expires too long after refresh")
+
+  var expected = Number(expectedRouteUpdatedAt)
+  if (!isFinite(expected) || Math.floor(expected) !== expected || expected < 0)
+    return invalidLease("expected route timestamp is invalid")
+  if (routeUpdatedAt !== expected) return invalidLease("lease route timestamp does not match route")
+
+  return {
+    valid: true,
+    refreshedAt: refreshedAt,
+    expiresAt: expiresAt,
+    routeUpdatedAt: routeUpdatedAt,
     error: ""
   }
 }
@@ -545,6 +600,7 @@ if (typeof module !== "undefined") {
     isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
     normalizeRoute: normalizeRoute,
+    normalizeLease: normalizeLease,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
