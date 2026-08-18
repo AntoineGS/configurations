@@ -1090,6 +1090,164 @@ stop_shell
 start_shell
 wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
 
+# A same-object DND replacement flood must coalesce to one hidden refresh gate,
+# then settle the exact hidden object instead of recursively persisting forever.
+dnd_refresh_bin="$fixture/dnd-refresh-bin"
+dnd_refresh_started="$fixture/dnd-refresh-started"
+dnd_refresh_release="$fixture/dnd-refresh-release"
+dnd_refresh_count="$fixture/dnd-refresh-count"
+dnd_refresh_real_mv="$(type -P mv)"
+mkdir -p "$dnd_refresh_bin"
+cat >"$dnd_refresh_bin/mv" <<'FAKE_DND_REFRESH_MV'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+args=("$@")
+last_index=$(( ${#args[@]} - 1 ))
+source_path=${args[$((last_index - 1))]}
+destination_path=${args[$last_index]}
+if [[ $source_path == "$DESKTOP_SHELL_TEST_HISTORY_DIR"/*.json.* &&
+      $destination_path == "$DESKTOP_SHELL_TEST_HISTORY_DIR"/*.json ]]; then
+  count=0
+  if [[ -f ${DESKTOP_SHELL_TEST_DND_REFRESH_COUNT:?} ]]; then
+    count=$(<"$DESKTOP_SHELL_TEST_DND_REFRESH_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$DESKTOP_SHELL_TEST_DND_REFRESH_COUNT"
+  if ((count == 1)); then
+    : >"$DESKTOP_SHELL_TEST_DND_REFRESH_STARTED"
+    while [[ ! -e ${DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE:?} ]]; do
+      sleep 0.05
+    done
+  fi
+fi
+exec "$DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV" "$@"
+FAKE_DND_REFRESH_MV
+chmod 700 "$dnd_refresh_bin/mv"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_refresh_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_REFRESH_STARTED="$dnd_refresh_started"
+export DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE="$dnd_refresh_release"
+export DESKTOP_SHELL_TEST_DND_REFRESH_COUNT="$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV="$dnd_refresh_real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+dnd_refresh_id=$(notify-send --app-name task4-dnd-refresh --print-id --urgency normal --expire-time 30000 \
+  'Task 4 DND refresh seed' 'refresh seed' 2>/dev/null)
+wait_for_path "$dnd_refresh_started"
+for index in $(seq 1 130); do
+  notify-send --app-name task4-dnd-refresh --replace-id "$dnd_refresh_id" --urgency normal --expire-time 30000 \
+    "Task 4 DND refresh $index" 'refresh flood contract' >/dev/null 2>&1
+done
+: >"$dnd_refresh_release"
+wait_for_status '.dnd == true and .popupCount == 0 and .pendingPersistenceCount == 0 and .liveCount == 0 and .admissionWindowCount == 2 and .admissionDropped == 0'
+dnd_refresh_file=''
+for file in "$history_dir"/*.json; do
+  [[ -f $file ]] || continue
+  [[ $(jq -r '.app' "$file" 2>/dev/null) == task4-dnd-refresh ]] || continue
+  dnd_refresh_file=$file
+done
+[[ -n $dnd_refresh_file ]] || {
+  printf 'FAIL: DND refresh history snapshot was not persisted\n' >&2
+  exit 1
+}
+[[ $(jq -r '.summary' "$dnd_refresh_file") == 'Task 4 DND refresh 130' ]] || {
+  printf 'FAIL: DND refresh history snapshot was not coalesced to the latest update\n' >&2
+  exit 1
+}
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_REFRESH_STARTED DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE \
+  DESKTOP_SHELL_TEST_DND_REFRESH_COUNT DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
+# Exhaust the admission window while the target history write is slow. Its
+# changed backend snapshot must be denied, leave the seed file intact, and
+# release the exact hidden target alongside the other settled senders.
+rm -f -- "$dnd_refresh_started" "$dnd_refresh_release" "$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_refresh_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_REFRESH_STARTED="$dnd_refresh_started"
+export DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE="$dnd_refresh_release"
+export DESKTOP_SHELL_TEST_DND_REFRESH_COUNT="$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV="$dnd_refresh_real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+denied_dnd_id=$(notify-send --app-name task4-dnd-refresh-denied --print-id --urgency normal --expire-time 30000 \
+  'Task 4 DND denied seed' 'denied seed' 2>/dev/null)
+wait_for_path "$dnd_refresh_started"
+for index in $(seq 1 119); do
+  notify-send --app-name task4-dnd-refresh-filler --urgency normal --expire-time 30000 \
+    --hint=boolean:transient:true \
+    "Task 4 DND denied filler $index" 'denied admission filler' >/dev/null 2>&1
+done
+notify-send --app-name task4-dnd-refresh-denied --replace-id "$denied_dnd_id" --urgency normal --expire-time 30000 \
+  'Task 4 DND denied update' 'denied update' >/dev/null 2>&1
+: >"$dnd_refresh_release"
+wait_for_status '.dnd == true and .popupCount == 0 and .pendingPersistenceCount == 0 and .liveCount == 0 and .admissionWindowCount == 120 and .admissionDropped == 1'
+denied_dnd_file=''
+for file in "$history_dir"/*.json; do
+  [[ -f $file ]] || continue
+  [[ $(jq -r '.app' "$file" 2>/dev/null) == task4-dnd-refresh-denied ]] || continue
+  denied_dnd_file=$file
+done
+[[ -n $denied_dnd_file ]] || {
+  printf 'FAIL: denied DND target history snapshot was removed\n' >&2
+  exit 1
+}
+[[ $(jq -r '.summary' "$denied_dnd_file") == 'Task 4 DND denied seed' ]] || {
+  printf 'FAIL: denied DND refresh replaced the last persisted snapshot\n' >&2
+  exit 1
+}
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_REFRESH_STARTED DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE \
+  DESKTOP_SHELL_TEST_DND_REFRESH_COUNT DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
+# The same hidden refresh is admitted after a deterministic service restart
+# resets the global window.
+rm -f -- "$dnd_refresh_started" "$dnd_refresh_release" "$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_refresh_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_REFRESH_STARTED="$dnd_refresh_started"
+export DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE="$dnd_refresh_release"
+export DESKTOP_SHELL_TEST_DND_REFRESH_COUNT="$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV="$dnd_refresh_real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+reset_dnd_id=$(notify-send --app-name task4-dnd-refresh-reset --print-id --urgency normal --expire-time 30000 \
+  'Task 4 DND reset seed' 'reset seed' 2>/dev/null)
+wait_for_path "$dnd_refresh_started"
+notify-send --app-name task4-dnd-refresh-reset --replace-id "$reset_dnd_id" --urgency normal --expire-time 30000 \
+  'Task 4 DND reset update' 'reset update' >/dev/null 2>&1
+: >"$dnd_refresh_release"
+wait_for_status '.dnd == true and .popupCount == 0 and .pendingPersistenceCount == 0 and .liveCount == 0 and .admissionWindowCount == 2 and .admissionDropped == 0'
+reset_dnd_file=''
+for file in "$history_dir"/*.json; do
+  [[ -f $file ]] || continue
+  [[ $(jq -r '.app' "$file" 2>/dev/null) == task4-dnd-refresh-reset ]] || continue
+  reset_dnd_file=$file
+done
+[[ -n $reset_dnd_file ]] || {
+  printf 'FAIL: reset DND refresh history snapshot was not persisted\n' >&2
+  exit 1
+}
+[[ $(jq -r '.summary' "$reset_dnd_file") == 'Task 4 DND reset update' ]] || {
+  printf 'FAIL: admitted DND refresh did not persist the latest snapshot\n' >&2
+  exit 1
+}
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_REFRESH_STARTED DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE \
+  DESKTOP_SHELL_TEST_DND_REFRESH_COUNT DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
 # The global admission window applies before DND persistence, even when the
 # active-popup cap is never reached.
 for index in $(seq 1 121); do

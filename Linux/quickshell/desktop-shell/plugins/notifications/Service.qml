@@ -59,6 +59,8 @@ Item {
   property var livePersistenceSources: ({})
   property var actionClosingGenerations: ({})
   property var pendingRefreshes: ({})
+  property var pendingSilencedRefreshes: ({})
+  property var silencedDirty: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
 
@@ -184,6 +186,8 @@ Item {
       delete liveGenerations[originalId]
       delete livePersistenceSources[originalId]
       delete pendingRefreshes[String(originalId)]
+      delete pendingSilencedRefreshes[String(originalId)]
+      delete silencedDirty[originalId]
     }
     try {
       if (dismiss && notification.tracked && typeof notification.dismiss === "function") notification.dismiss()
@@ -200,6 +204,12 @@ Item {
 
     notification.tracked = true
     var snapshot = snapshotOf(notification)
+    var previous = liveRefs[snapshot.originalId]
+    if (previous && previous !== notification) {
+      delete pendingSilencedRefreshes[String(snapshot.originalId)]
+      delete silencedDirty[snapshot.originalId]
+      try { previous.tracked = false } catch (error) {}
+    }
     liveRefs[snapshot.originalId] = notification
     liveGenerations[snapshot.originalId] = snapshot.timestamp
     livePersistenceSources[snapshot.originalId] = snapshot.transient ? "none"
@@ -210,6 +220,8 @@ Item {
 
     if (service.doNotDisturb && !shouldBypassDnd(notification)) {
       if (!isEphemeral(notification)) {
+        silencedDirty[snapshot.originalId] = false
+        watchForSilencedUpdates(notification, snapshot.originalId)
         writeSilenced(notification, snapshot)
         return
       }
@@ -241,25 +253,90 @@ Item {
   function writeSilenced(notification, written) {
     writeHistoryFile(written, function(success, exitCode, outcome) {
       if (outcome === "superseded") return
-      if (!success) {
-        service.persistenceError = "notification history persistence failed (exit " + String(exitCode) + ")"
-        service.releaseSilenced(notification, written.originalId)
-        return
-      }
-      var updated = null
-      try {
-        updated = NotificationLogic.replacementSnapshot(notification, written.originalId, written.timestamp)
-        updated.deadline = written.deadline === undefined ? 0 : written.deadline
-        updated.transient = written.transient === true
-      } catch (error) {
-        // The sender can disappear while the queued history write is running.
-      }
-      if (updated && NotificationLogic.popupRowChanged(written, updated)) {
-        service.writeSilenced(notification, updated)
-        return
-      }
-      service.releaseSilenced(notification, written.originalId)
+      service.finishSilencedWrite(notification, written, success, exitCode, outcome)
     })
+  }
+
+  function markSilencedDirty(notification, originalId) {
+    if (liveRefs[originalId] === notification) silencedDirty[originalId] = true
+  }
+
+  function watchForSilencedUpdates(notification, originalId) {
+    function markDirty() {
+      service.markSilencedDirty(notification, originalId)
+    }
+
+    for (var i = 0; i < updateSignals.length; i++) {
+      var signal = notification[updateSignals[i]]
+      if (signal && typeof signal.connect === "function") signal.connect(markDirty)
+    }
+
+    var actions = notification.actions || []
+    var actionLimit = Math.min(actions.length, 8)
+    for (var a = 0; a < actionLimit; a++) {
+      var actionSignal = actions[a] && actions[a].textChanged
+      if (actionSignal && typeof actionSignal.connect === "function") actionSignal.connect(markDirty)
+    }
+  }
+
+  function scheduleSilencedRefresh(notification, originalId, persisted) {
+    if (liveRefs[originalId] !== notification) return
+    var key = String(originalId)
+    var updated = NotificationLogic.refreshScheduleUpdate(
+      pendingSilencedRefreshes, key, {
+        notification: notification,
+        originalId: originalId,
+        persisted: persisted,
+      })
+    pendingSilencedRefreshes = updated.pending
+    if (!updated.scheduled) return
+
+    Qt.callLater(function() {
+      var request = service.pendingSilencedRefreshes[key]
+      if (!request) return
+      delete service.pendingSilencedRefreshes[key]
+      if (service.liveRefs[request.originalId] !== request.notification) return
+      if (service.livePersistenceSources[request.originalId] !== "history") {
+        service.releaseSilenced(request.notification, request.originalId)
+        return
+      }
+      if (!service.admitRefresh()) {
+        service.releaseSilenced(request.notification, request.originalId)
+        return
+      }
+
+      var latest
+      try {
+        latest = NotificationLogic.replacementSnapshot(
+          request.notification, request.originalId, request.persisted.timestamp)
+        latest.deadline = request.persisted.deadline === undefined ? 0 : request.persisted.deadline
+        latest.transient = request.persisted.transient === true
+      } catch (error) {
+        service.releaseSilenced(request.notification, request.originalId)
+        return
+      }
+      service.silencedDirty[request.originalId] = false
+      if (!NotificationLogic.popupRowChanged(request.persisted, latest)) {
+        service.releaseSilenced(request.notification, request.originalId)
+        return
+      }
+      service.writeSilenced(request.notification, latest)
+    })
+  }
+
+  function finishSilencedWrite(notification, written, success, exitCode, outcome) {
+    if (outcome === "superseded") return
+    if (!success) {
+      service.persistenceError = "notification history persistence failed (exit " + String(exitCode) + ")"
+      service.releaseSilenced(notification, written.originalId)
+      return
+    }
+    if (service.liveRefs[written.originalId] !== notification) return
+    if (service.silencedDirty[written.originalId] !== true) {
+      service.releaseSilenced(notification, written.originalId)
+      return
+    }
+    service.scheduleSilencedRefresh(notification, written.originalId, written)
   }
 
   function releaseSilenced(notification, originalId) {
@@ -268,6 +345,8 @@ Item {
       delete liveGenerations[originalId]
       delete livePersistenceSources[originalId]
       delete pendingRefreshes[String(originalId)]
+      delete pendingSilencedRefreshes[String(originalId)]
+      delete silencedDirty[originalId]
     }
     try {
       notification.tracked = false
@@ -287,6 +366,7 @@ Item {
   function handleClosedNotification(notification, originalId) {
     if (service.liveRefs[originalId] !== notification) return
     delete service.pendingRefreshes[String(originalId)]
+    delete service.pendingSilencedRefreshes[String(originalId)]
     var generation = Number(service.liveGenerations[originalId])
     if (Number(service.actionClosingGenerations[originalId]) === generation) return
     var source = service.livePersistenceSources[originalId] || "popup"

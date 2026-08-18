@@ -86,6 +86,9 @@ assert.match(service, /admissionWindowMs:\s*60000/)
 assert.match(service, /property int admissionDropped/)
 assert.match(service, /function admitNotification\(notification\)/)
 assert.match(service, /function admitRefresh\(\)/)
+assert.match(service, /property var pendingSilencedRefreshes/)
+assert.match(service, /function scheduleSilencedRefresh\(/)
+assert.match(service, /function finishSilencedWrite\(/)
 assert.match(service, /admissionUpdate\(/)
 assert.match(service, /admissionDropped:/)
 assert.match(service, /persistenceGenerationCount:/)
@@ -164,6 +167,13 @@ const writeSilencedBody = service.slice(writeSilencedStart, releaseSilencedStart
 assert.match(writeSilencedBody,
   /function\(success,\s*exitCode(?:,\s*(?:stale|outcome))?\)[\s\S]*if\s*\(!success\)\s*\{[\s\S]*releaseSilenced\(notification,\s*written\.originalId\)[\s\S]*return/,
   "failed DND persistence releases the live notification")
+assert.match(writeSilencedBody, /finishSilencedWrite\(notification, written, success, exitCode, outcome\)/)
+assert.doesNotMatch(writeSilencedBody, /service\.writeSilenced\(notification, updated\)/)
+const scheduleSilencedStart = service.indexOf("function scheduleSilencedRefresh(")
+const finishSilencedStart = service.indexOf("function finishSilencedWrite(")
+assert.ok(scheduleSilencedStart >= 0 && finishSilencedStart > scheduleSilencedStart)
+const scheduleSilencedBody = service.slice(scheduleSilencedStart, finishSilencedStart)
+assert.ok(scheduleSilencedBody.indexOf("admitRefresh()") < scheduleSilencedBody.indexOf("replacementSnapshot("))
 assert.match(service, /persistenceError:\s*service\.persistenceError/,
   "persistence failures are exposed through status")
 assert.match(service, /liveCount:\s*service\.liveReferenceCount\(\)/,
