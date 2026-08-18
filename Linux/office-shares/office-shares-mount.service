@@ -1,0 +1,8 @@
+[Unit]
+Description=Mount office network shares after domain authentication
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/office-shares/mount-office-shares
+TimeoutStartSec=90
