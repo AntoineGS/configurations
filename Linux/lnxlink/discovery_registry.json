@@ -6,6 +6,7 @@
       "homeassistant/sensor/lnxlink/main_pc_bluetooth_device_keyball44_e7165907dacf_battery_1/config",
       "homeassistant/switch/lnxlink/main_pc_bluetooth_device_keyball44_e7165907dacf/config",
       "homeassistant/switch/lnxlink/main_pc_bluetooth_device_m109_4142010b6918/config",
+      "homeassistant/switch/lnxlink/main_pc_bluetooth_device_prov_76bcf8d_a842e376bcfa/config",
       "homeassistant/switch/lnxlink/main_pc_bluetooth_device_wireless_controller_00016ce2b5c0/config",
       "homeassistant/switch/lnxlink/main_pc_bluetooth_power/config"
     ]
