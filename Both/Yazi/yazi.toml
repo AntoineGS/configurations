@@ -8,6 +8,7 @@ edit = [
   { run = 'nvim %*',   block = true, for = "windows" },
 ]
 launch = [
+  { run = 'xdg-open %s1', orphan = true, for = "linux" },
   { run = 'start "" %*', orphan = true, for = "windows" },
 ]
 admin = [
