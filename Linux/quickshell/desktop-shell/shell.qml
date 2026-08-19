@@ -908,6 +908,7 @@ ShellRoot {
   BarWidgetIpc { pluginId: "desktop.power" }
   BarWidgetIpc { pluginId: "desktop.monitor" }
   BarWidgetIpc { pluginId: "desktop.tailscale" }
+  BarWidgetIpc { pluginId: "desktop.agents" }
 
   // ---------------------------------------------------------- shell IPC
 

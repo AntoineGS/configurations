@@ -87,6 +87,12 @@ function commandClassHas(value, expected) {
   return String(value || "") === expected
 }
 
+function tooltipDisplayText(value) {
+  var text = String(value || "")
+  if (!/<[A-Za-z][^>]*>/.test(text)) return text
+  return text.replace(/\r\n?|\n/g, "<br>")
+}
+
 function commandModuleState(data, raw, settings) {
   var payload = isPlainObject(data) ? data : {}
   var config = isPlainObject(settings) ? settings : {}
@@ -176,6 +182,7 @@ if (typeof module !== "undefined") {
     customModuleSafeName: customModuleSafeName,
     customModuleType: customModuleType,
     customModulePath: customModulePath,
-    commandModuleState: commandModuleState
+    commandModuleState: commandModuleState,
+    tooltipDisplayText: tooltipDisplayText
   }
 }

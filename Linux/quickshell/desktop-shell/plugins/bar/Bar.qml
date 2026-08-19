@@ -461,7 +461,7 @@ Item {
         Text {
           id: tooltipLabel
           anchors.centerIn: parent
-          text: root.tooltipText
+          text: BarModel.tooltipDisplayText(root.tooltipText)
           color: Color.tooltip.text
           font.family: root.fontFamily
           font.pixelSize: Style.font.body

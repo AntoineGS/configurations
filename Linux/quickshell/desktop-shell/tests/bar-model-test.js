@@ -46,6 +46,14 @@ contract("muted command class reaches the widget", () => {
   ), { text: "6%/3d12h", tooltip: "Codex quota", active: false, muted: true })
 })
 
+contract("rich tooltip markup preserves line boundaries", () => {
+  assert.equal(
+    model.tooltipDisplayText("<span>Weekly</span>\r\n\r\n<span>Resets in 10h</span>"),
+    "<span>Weekly</span><br><br><span>Resets in 10h</span>"
+  )
+  assert.equal(model.tooltipDisplayText("Weekly\nResets in 10h"), "Weekly\nResets in 10h")
+})
+
 contract("empty workspaces dispatch through Hyprland", () => {
   assert.match(workspacesSource, /function focusWorkspace\(id\) \{[\s\S]*?var workspace = root\.workspaceById\(id\)[\s\S]*?workspace\.activate\(\)[\s\S]*?Hyprland\.dispatch\("workspace " \+ String\(id\)\)/)
   assert.doesNotMatch(workspacesSource, /root\.bar\.run|hyprctl/)

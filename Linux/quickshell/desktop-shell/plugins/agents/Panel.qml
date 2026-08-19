@@ -8,9 +8,6 @@ import qs.Ui
 Panel {
   id: root
   moduleName: "desktop.agents"
-  ipcTarget: "desktop.agents"
-  manageIpc: false
-  property var shell: null
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -19,7 +16,12 @@ Panel {
   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
+  property string compactText: ""
+  property string compactTooltip: ""
+  property bool compactMuted: false
+
   readonly property var providers: usage.enabledProviders
+  readonly property string displayText: compactText !== "" ? compactText : (providers.length > 0 ? "󱚣" : "")
   // The selection follows the provider, not the slot it happens to sit in: a
   // provider whose first scan lands while the panel is open would otherwise
   // shift the list underneath you and swap out what you were reading.
@@ -53,7 +55,27 @@ Panel {
 
   function refreshNow() {
     usage.refreshAll(true)
+    refreshCompactStatus()
   }
+
+  function compactClassHas(value, expected) {
+    if (Array.isArray(value)) return value.indexOf(expected) !== -1
+    return String(value || "") === expected
+  }
+
+  function applyCompactStatus(raw) {
+    var data = Util.parseModuleJson(raw)
+    if (!Util.isPlainObject(data) || typeof data.text !== "string" || typeof data.tooltip !== "string") return
+    compactText = data.text
+    compactTooltip = data.tooltip
+    compactMuted = compactClassHas(data.class !== undefined ? data.class : data.alt, "muted")
+  }
+
+  function refreshCompactStatus() {
+    if (!compactStatusProcess.running) compactStatusProcess.running = true
+  }
+
+  function refresh() { refreshNow() }
 
   // ---------------------------------------------------------------- limits
   //
@@ -262,16 +284,13 @@ Panel {
   }
 
   // Nothing to report, nothing in the bar: Bar.qml collapses an invisible slot.
-  visible: providers.length > 0
+  visible: displayText !== ""
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onProviderIndexChanged: if (panelFlick) panelFlick.contentY = 0
   onOpenedChanged: {
-    if (!opened) {
-      if (shell) shell.releasePanel(moduleName)
-      return
-    }
+    if (!opened) return
     cursorActive = false
     nowMs = Date.now()
     if (panelFlick) panelFlick.contentY = 0
@@ -285,23 +304,22 @@ Panel {
     loaded: root.opened
   }
 
-  // The compact command is not a bar slot, so provide a one-pixel anchor when
-  // the shell's on-demand panel loader opens this plugin directly.
-  PanelWindow {
-    id: standaloneAnchorWindow
-    visible: root.opened && !root.bar
-    screen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
-    color: "transparent"
-    width: 1
-    height: 1
-    anchors.top: true
-    anchors.left: true
+  Timer {
+    interval: 300000
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    onTriggered: root.refreshCompactStatus()
+  }
 
-    Item {
-      id: standaloneAnchor
-      width: 1
-      height: 1
+  Process {
+    id: compactStatusProcess
+    command: ["desktop-shell-status", "codex"]
+    stdout: StdioCollector {
+      id: compactStatusStdout
+      waitForEnd: true
     }
+    onExited: if (Number(exitCode) === 0) root.applyCompactStatus(compactStatusStdout.text || "")
   }
 
   // Cheap enough to keep running: it only re-evaluates text bindings, and a
@@ -313,32 +331,24 @@ Panel {
     onTriggered: root.nowMs = Date.now()
   }
 
-  IpcHandler {
-    target: root.ipcTarget
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function show(): void { root.open() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function refresh(): string { root.refreshNow(); return "ok" }
-    function next(): string { root.selectProvider(root.providerIndex + 1); return "ok" }
-  }
-
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󱚣"
-    active: root.alarming
+    text: root.displayText
+    tooltipText: root.compactTooltip
+    dimmed: root.compactMuted
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) root.selectProvider(root.providerIndex + 1)
-      else root.toggle()
+      else if (buttonCode === Qt.RightButton)
+        Quickshell.execDetached(["xdg-open", "https://chatgpt.com/codex/settings/usage"])
+      else if (buttonCode === Qt.LeftButton) root.toggle()
     }
   }
 
   KeyboardPanel {
     id: panel
-    anchorItem: root.bar ? button : standaloneAnchor
+    anchorItem: button
     owner: root
     bar: root.bar
     open: root.opened

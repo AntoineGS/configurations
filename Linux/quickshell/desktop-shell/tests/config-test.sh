@@ -143,14 +143,6 @@ const commandModules = {
     onClick: "voxtype-model",
     onRightClick: "voxtype-config"
   },
-  codex: {
-    id: "codex",
-    type: "command",
-    exec: "desktop-shell-status codex",
-    interval: 300,
-    onClick: "desktop-shell summon desktop.agents '{}'",
-    onRightClick: "xdg-open https://chatgpt.com/codex/settings/usage"
-  },
   disk: {
     id: "disk",
     type: "command",
@@ -178,7 +170,7 @@ const commandModules = {
 
 function expectedRight(includeHardware) {
   const right = [
-    commandModules.codex,
+    { id: "desktop.agents" },
     { id: "desktop.tray" },
     { id: "desktop.tailscale" },
     { id: "desktop.bluetooth" },
