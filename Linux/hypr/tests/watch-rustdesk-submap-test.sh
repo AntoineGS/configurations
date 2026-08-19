@@ -173,6 +173,8 @@ export PATH="$TEST_BIN:/usr/bin:/bin"
 # shellcheck source=../watch-rustdesk-submap.sh
 source "$WATCHER"
 assert_mako_sentinel_empty
+assert_equal '["DVI-D-1","HDMI-A-1","DP-2","DP-1","eDP-1"]' \
+  "$SUPPORTED_NOTIFICATION_OUTPUTS_JSON" 'exact notification output allowlist'
 fake_epoch_seconds=1786930000
 fake_epoch_milliseconds=1786930000000
 epoch_seconds() {
@@ -308,6 +310,16 @@ MONITORS_UNKNOWN=$(printf '%s\n' \
   "$(monitor 21 USB-C-77 0 0 true)" \
   "$(monitor 22 eDP-99 1920 0 false)" \
   "$(monitor 23 DP-UNKNOWN 3840 0 false false false)" | monitors)
+MONITORS_ALL_ALLOWED=$(printf '%s\n' \
+  "$(monitor 1 DVI-D-1 0 0 false)" \
+  "$(monitor 2 HDMI-A-1 1920 0 false)" \
+  "$(monitor 3 DP-2 3840 0 false)" \
+  "$(monitor 4 DP-1 5760 0 true)" \
+  "$(monitor 5 eDP-1 7680 0 false)" | monitors)
+MONITORS_SINGLE_EDP=$(printf '%s\n' "$(monitor 5 eDP-1 0 0 true)" | monitors)
+MONITORS_DP1_DP2=$(printf '%s\n' \
+  "$(monitor 1 DP-2 0 0 false)" \
+  "$(monitor 2 DP-1 1920 0 true)" | monitors)
 
 RUSTDESK_ON_HDMI=$(client 2 true true | clients)
 RUSTDESK_ON_DVI=$(client 1 true true | clients)
@@ -320,6 +332,14 @@ HIDDEN_RUSTDESK_ON_DP=$(client 3 true false | clients)
 UNMAPPED_RUSTDESK_ON_HDMI=$(client 2 false true | clients)
 NON_RUSTDESK_ON_HDMI=$(client 2 true true AnyDesk 'Remote Desktop' | clients)
 WRONG_TITLE_RUSTDESK_ON_HDMI=$(client 2 true true RustDesk 'File Transfer' | clients)
+RUSTDESK_ON_ALL_ALLOWED=$(printf '%s\n' \
+  "$(client 1 true true)" \
+  "$(client 2 true true)" \
+  "$(client 3 true true)" \
+  "$(client 4 true true)" \
+  "$(client 5 true true)" | clients)
+RUSTDESK_ON_EDP=$(client 5 true true | clients)
+RUSTDESK_ON_DP1=$(client 2 true true | clients)
 
 assert_equal 'rustdesk-route-HDMI-A-1|none|none' \
   "$(notification_route_state "$MONITORS_HDMI_FOCUSED" '[]')" \
@@ -356,6 +376,18 @@ assert_equal 'rustdesk-route-HDMI-A-1|DVI-D-1|up' \
 assert_equal 'rustdesk-route-hidden|DP-2|none' \
   "$(notification_route_state "$MONITORS_DP_FOCUSED" "$RUSTDESK_ON_ALL")" \
   'all occupied hides real notification'
+
+assert_equal 'rustdesk-route-hidden|eDP-1|none' \
+  "$(notification_route_state "$MONITORS_SINGLE_EDP" "$RUSTDESK_ON_EDP")" \
+  'single occupied eDP-1 hides real notification and keeps a bullet cue'
+
+assert_equal 'rustdesk-route-hidden|DP-1|none' \
+  "$(notification_route_state "$MONITORS_ALL_ALLOWED" "$RUSTDESK_ON_ALL_ALLOWED")" \
+  'all five occupied outputs hide real notification and keep a bullet cue'
+
+assert_equal 'rustdesk-route-DP-2|DP-1|left' \
+  "$(notification_route_state "$MONITORS_DP1_DP2" "$RUSTDESK_ON_DP1")" \
+  'DP-1 occupancy routes safely to DP-2 with a DP-1 direction cue'
 
 assert_equal 'rustdesk-route-DP-2|none|none' \
   "$(notification_route_state "$MONITORS_DP_FOCUSED" "$HIDDEN_RUSTDESK_ON_DP")" \

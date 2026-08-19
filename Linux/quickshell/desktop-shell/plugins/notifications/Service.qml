@@ -335,8 +335,13 @@ Item {
         latest = NotificationLogic.replacementSnapshot(
           request.notification, request.originalId, request.persisted.timestamp)
         latest.deadline = request.persisted.deadline === undefined ? 0 : request.persisted.deadline
-        latest.transient = request.persisted.transient === true
       } catch (error) {
+        service.releaseSilenced(request.notification, request.originalId)
+        return
+      }
+      if (latest.transient === true) {
+        service.deleteHistoryFileFor(request.persisted)
+        service.livePersistenceSources[request.originalId] = "none"
         service.releaseSilenced(request.notification, request.originalId)
         return
       }
@@ -482,7 +487,7 @@ Item {
     if (!row) return
     var oldFileName = NotificationLogic.popupFileName(row)
     var newFileName = NotificationLogic.popupFileName(updated)
-    if (oldFileName !== newFileName) deletePopupFileFor(row)
+    if (oldFileName !== newFileName || (!row.transient && updated.transient)) deletePopupFileFor(row)
     service.liveGenerations[originalId] = updated.timestamp
     service.livePersistenceSources[originalId] = updated.transient ? "none" : "popup"
     popupModel.setProperty(rowIndex, "timestamp", updated.timestamp)

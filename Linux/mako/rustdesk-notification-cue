@@ -17,7 +17,7 @@ IFS='|' read -r output direction extra <<<"$state"
 [[ -z ${extra:-} && $state == "$output|$direction" ]] || exit 0
 
 case $output in
-  DVI-D-1 | HDMI-A-1 | DP-2) ;;
+  DVI-D-1 | HDMI-A-1 | DP-2 | DP-1 | eDP-1) ;;
   *) exit 0 ;;
 esac
 

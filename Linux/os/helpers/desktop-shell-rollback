@@ -66,6 +66,8 @@ readonly -a MANAGED_MODES=(
   "rustdesk-route-DVI-D-1"
   "rustdesk-route-HDMI-A-1"
   "rustdesk-route-DP-2"
+  "rustdesk-route-DP-1"
+  "rustdesk-route-eDP-1"
   "rustdesk-route-hidden"
   "rustdesk-cue"
 )
@@ -378,7 +380,7 @@ verify_hidden_modes() {
       "$HIDDEN_MODE")
         ((hidden_count += 1))
         ;;
-      rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-cue)
+      rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-DP-1|rustdesk-route-eDP-1|rustdesk-cue)
         return 1
         ;;
     esac

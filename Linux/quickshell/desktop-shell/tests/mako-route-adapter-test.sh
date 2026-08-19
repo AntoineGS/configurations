@@ -364,7 +364,7 @@ assert_oversized_poll_interval_is_bounded() {
   : >"$MAKOCTL_LOG"
   : >"$MV_LOG"
   : >"$FAKE_ITERATION_COMPLETION_LOG"
-  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' \
     >"$MAKO_MODE_STATE"
 
   POLL_INTERVAL=9
@@ -382,7 +382,7 @@ assert_oversized_poll_interval_is_bounded() {
   : >"$MAKOCTL_LOG"
   : >"$MV_LOG"
   : >"$FAKE_ITERATION_COMPLETION_LOG"
-  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' \
     >"$MAKO_MODE_STATE"
 }
 
@@ -398,7 +398,7 @@ assert_exact_deadline_poll() {
   : >"$MAKOCTL_LOG"
   : >"$MV_LOG"
   : >"$FAKE_ITERATION_COMPLETION_LOG"
-  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' \
     >"$MAKO_MODE_STATE"
 
   write_route true DVI-D-1 null null "$FAKE_NOW"
@@ -1029,6 +1029,14 @@ assert_descendant_cleanup_revalidates_identity() {
 [[ -f $ADAPTER ]] || fail "adapter helper is missing: $ADAPTER"
 [[ -f $ADAPTER_UNIT ]] || fail "adapter unit is missing: $ADAPTER_UNIT"
 
+adapter_source=$(<"$ADAPTER")
+for output in DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1; do
+  assert_contains "$adapter_source" "rustdesk-route-$output" \
+    "Mako adapter managed route output $output"
+  assert_contains "$adapter_source" "\"$output\"" \
+    "Mako adapter schema output $output"
+done
+
 adapter_unit_text=$(<"$ADAPTER_UNIT")
 shell_unit_text=$(<"$SHELL_UNIT")
 tidydots_text=$(<"$TIDYDOTS")
@@ -1087,7 +1095,7 @@ chmod 0700 -- "$ROUTE_DIR"
 : >"$MAKOCTL_LOG"
 : >"$MV_LOG"
 : >"$FAKE_ITERATION_COMPLETION_LOG"
-printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' \
   >"$MAKO_MODE_STATE"
 
 cat >"$TEST_BIN/makoctl" <<'EOF'
@@ -1377,7 +1385,7 @@ run_reconcile_once
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
-for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 DP-1; do
+for unsupported_output in UNKNOWN-1 DVI-D-2 HDMI-A-2 eDP-99; do
   write_route true "$unsupported_output" null null "$FAKE_NOW"
   write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
   run_reconcile_once
@@ -1465,7 +1473,7 @@ chmod 0700 -- "$ROUTE_DIR"
 : >"$MAKOCTL_LOG"
 : >"$MV_LOG"
 : >"$FAKE_ITERATION_COMPLETION_LOG"
-printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' \
+printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' \
   >"$MAKO_MODE_STATE"
 rm -f -- "$ROUTE_FILE" "$LEASE_FILE" "$CUE_FILE"
 
@@ -1479,7 +1487,7 @@ export FAKE_MAKO_PID FAKE_MAKO_START_TIME FAKE_MAKO_EXECUTABLE
 start_adapter || fail 'adapter startup identity tracking failed'
 
 wait_for_log_count 1
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
@@ -1491,7 +1499,7 @@ assert_no_cue
 
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 2
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1'
 assert_no_cue
 
@@ -1503,7 +1511,7 @@ assert_no_new_mako_call_after_iterations 2 "$((iteration_completions_after_write
 write_route true DVI-D-1 HDMI-A-1 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 3
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1|-a|rustdesk-cue'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-DVI-D-1|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-cue'
 assert_cue 'HDMI-A-1|left'
 assert_atomic_cue_rename
@@ -1511,21 +1519,21 @@ assert_atomic_cue_rename
 write_route false null DP-2 left "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 4
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|left'
 
 write_route false null DP-2 null "$FAKE_NOW"
 write_lease "$FAKE_NOW" "$((FAKE_NOW + 1))" "$FAKE_NOW"
 wait_for_log_count 5
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden|-a|rustdesk-cue'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden rustdesk-cue'
 assert_cue 'DP-2|none'
 
 rm -f -- "$ROUTE_FILE"
 iteration_completions_after_write=$(iteration_completion_count)
 wait_for_log_count 6
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
 
@@ -1538,7 +1546,7 @@ assert_file_mode 0600 "$CUE_FILE"
 cleanup_adapter
 assert_route_modes 'unrelated-mode rustdesk-route-hidden'
 assert_no_cue
-assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
+assert_last_call 'mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden'
 assert_process_identity "$FAKE_MAKO_PID" "$FAKE_MAKO_START_TIME" "$FAKE_MAKO_EXECUTABLE" 'fake Mako survived adapter cleanup'
 
 iteration_completions_before_sigkill=$(iteration_completion_count)

@@ -228,7 +228,11 @@ assertConfig("omarchbook", true, {})
 assert.match(shell, /readonly property bool previewMode: Quickshell\.env\("DESKTOP_SHELL_PREVIEW"\) === "1"/)
 assert.match(shell, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
   "shell has a test-only no-surfaces gate")
+assert.match(shell, /readonly property string testPanelPlugin: String\(Quickshell\.env\("DESKTOP_SHELL_TEST_PANEL_PLUGIN"\)/,
+  "shell has an exact test-only panel fixture selector")
 assert.match(shell, /previewMode: shell\.previewMode/)
+assert.match(shell, /testSurfaceSuppressed: shell\.testSurfaceSuppressed/,
+  "health exposes the active test surface suppression state")
 assert.match(shell, /if \(shell\.previewMode\) return null/)
 assert.match(shell, /if \(shell\.previewMode\) \{[\s\S]*?unloadPluginServices\(\)/)
 assert.match(shell, /property bool barVisible: true/)
@@ -277,8 +281,10 @@ assert.match(shell, /active: !shell\.testSurfaceSuppressed && shell\.activeBarId
   "test runtime suppresses the default bar surface")
 assert.match(shell, /active: !shell\.testSurfaceSuppressed && !shell\.pluginReloading[\s\S]*?shell\.activeBarId !== shell\.defaultBarId/,
   "test runtime suppresses optional bar surfaces")
-assert.match(shell, /if \(shell\.testSurfaceSuppressed\) return \[\]/,
-  "test runtime suppresses panel loaders")
+assert.match(shell, /if \(shell\.testSurfaceSuppressed[\s\S]*desktop\.mixed[\s\S]*return \[\]/,
+  "test runtime suppresses panel loaders except the exact fixture")
+assert.match(shell, /shell\.testSurfaceSuppressed && id !== "desktop\.mixed"/,
+  "test runtime cannot load production panel entries under suppression")
 assert.match(bar, /readonly property bool testSurfaceSuppressed: Quickshell\.env\("DESKTOP_SHELL_TEST_NO_SURFACES"\) === "1"/,
   "bar has a test-only no-surfaces gate")
 assert.match(bar, /visible: !root\.testSurfaceSuppressed && root\.shell\.barVisible/,

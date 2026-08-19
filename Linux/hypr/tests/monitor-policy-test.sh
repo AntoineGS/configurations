@@ -6,6 +6,12 @@ ROOT=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
 MONITORS_LUA="$ROOT/Linux/hypr/monitors.lua"
 AUTOSTART_LUA="$ROOT/Linux/hypr/autostart.lua"
 WAYBAR_TEMPLATE="$ROOT/Linux/waybar/config.jsonc.tmpl"
+WATCHER="$ROOT/Linux/hypr/watch-rustdesk-submap.sh"
+NOTIFICATION_LOGIC="$ROOT/Linux/quickshell/desktop-shell/plugins/notifications/NotificationLogic.js"
+MAKO_ADAPTER="$ROOT/Linux/os/helpers/desktop-shell-mako-route"
+MAKO_ROLLBACK="$ROOT/Linux/os/helpers/desktop-shell-rollback"
+
+readonly -a NOTIFICATION_OUTPUTS=(DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1)
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -90,6 +96,9 @@ for _, command in ipairs(calls.execs) do
 end
 
 for _, monitor in ipairs(calls.monitors) do
+  if monitor.output ~= "" then
+    print("monitor_output=" .. monitor.output)
+  end
   if monitor.output == "eDP-1" then
     laptop_output = laptop_output + 1
   end
@@ -144,6 +153,33 @@ assert_host_policy DESKTOP-E07VTRN 4 10 7 1 1
 assert_host_policy omarchbook 2 0 0 0 0
 assert_host_policy antoinews-linux 3 7 4 1 1
 assert_host_policy unknown-host 1 0 0 0 0
+
+all_monitor_outputs=''
+for hostname in DESKTOP-E07VTRN omarchbook antoinews-linux unknown-host; do
+  host_output=$(run_lua_config "$hostname" "$MONITORS_LUA" monitors)
+  while IFS= read -r line; do
+    [[ $line == monitor_output=* ]] || continue
+    output=${line#monitor_output=}
+    case " ${NOTIFICATION_OUTPUTS[*]} " in
+      *" $output "*) ;;
+      *) fail "$hostname emitted an unallowlisted monitor output: $output" ;;
+    esac
+    all_monitor_outputs+=" $output"
+  done <<<"$host_output"
+done
+
+for output in "${NOTIFICATION_OUTPUTS[@]}"; do
+  [[ $all_monitor_outputs == *" $output"* ]] ||
+    fail "host-derived monitor audit did not observe $output"
+done
+
+for path in "$WATCHER" "$NOTIFICATION_LOGIC" "$MAKO_ADAPTER" "$MAKO_ROLLBACK"; do
+  source=$(<"$path")
+  for output in "${NOTIFICATION_OUTPUTS[@]}"; do
+    [[ $source == *"$output"* ]] ||
+      fail "notification output allowlist is incomplete in $path: $output"
+  done
+done
 
 laptop_output=$(run_lua_config omarchbook "$MONITORS_LUA" monitors)
 assert_contains "$laptop_output" 'laptop_output=1' 'laptop built-in output'
