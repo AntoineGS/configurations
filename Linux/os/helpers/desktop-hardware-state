@@ -667,6 +667,7 @@ state_bluetooth() {
   fi
 
   while IFS=$'\t' read -r path characteristic_path is_peripheral; do
+    [[ -n $path ]] || continue
     [[ -n ${included[$path]:-} ]] || continue
     if ! reply=$("$busctl_command" --system --json=short --timeout=2 call \
         org.bluez "$characteristic_path" org.bluez.GattCharacteristic1 ReadValue 'a{sv}' 0 \
