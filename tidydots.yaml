@@ -1275,6 +1275,14 @@ applications:
         files:
           - setup-networkd-iwd
         sudo: true
+      - targets:
+          linux: /etc/systemd/network
+        name: ethernet-network
+        method: copy
+        backup: ./Linux/network
+        files:
+          - 20-ethernet.network
+        sudo: true
       - check:
           linux: /usr/local/libexec/antoinews-linux/setup-networkd-iwd --check
         run:
