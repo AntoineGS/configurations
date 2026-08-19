@@ -1,4 +1,22 @@
-tools:
+tools: 
   approvalMode: write
-disabledProviders:
+disabledProviders: 
   - opencode
+modelRoles: 
+  default: openai-codex/gpt-5.6-sol
+symbolPreset: nerd
+theme: 
+  dark: dark-catppuccin
+setupVersion: 1
+edit: 
+  mode: hashline
+lsp: 
+  formatOnWrite: true
+task: 
+  eager: preferred
+  enableLsp: true
+tui: 
+  textSizing: true
+statusLine: 
+  separator: powerline-thin
+  preset: full
