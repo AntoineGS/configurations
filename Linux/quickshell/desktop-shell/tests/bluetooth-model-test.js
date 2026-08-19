@@ -5,6 +5,7 @@ const splitPath = "/org/bluez/hci0/dev_SPLIT"
 const fresh = JSON.stringify({
   available: true,
   stale: false,
+  updatedAt: 1724060000,
   error: null,
   data: { devices: { [splitPath]: { central: 43, peripheral: 56 } } }
 })
@@ -13,27 +14,47 @@ assert.deepEqual(Model.parseBatteryState(fresh), {
   [splitPath]: { central: 43, peripheral: 56 }
 })
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: true, stale: true, error: "timeout", data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+  available: true,
+  stale: false,
+  error: null,
+  data: { devices: { [splitPath]: { central: 43, peripheral: 56 } } }
 })), {})
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: true, error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+  available: true,
+  stale: false,
+  updatedAt: 1724060000,
+  error: null,
+  data: { devices: { [splitPath]: { central: 43.5, peripheral: 56.25 } } }
+})), {
+  [splitPath]: { central: null, peripheral: null }
+})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, stale: true, updatedAt: 1724060000, error: "timeout",
+  data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
 })), {})
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: true, stale: "false", error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+  available: true, updatedAt: 1724060000, error: null,
+  data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
 })), {})
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: true, stale: false, error: "timeout", data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+  available: true, stale: "false", updatedAt: 1724060000, error: null,
+  data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
 })), {})
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: false, stale: false, error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+  available: true, stale: false, updatedAt: 1724060000, error: "timeout",
+  data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
 })), {})
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
-  available: true, stale: false, error: null, data: { devices: "not-an-object" }
+  available: false, stale: false, updatedAt: 1724060000, error: null,
+  data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+})), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, stale: false, updatedAt: 1724060000, error: null, data: { devices: "not-an-object" }
 })), {})
 const malformedDevices = function() {}
 malformedDevices[splitPath] = { central: 1, peripheral: 2 }
 assert.deepEqual(Model.parseBatteryState({
-  available: true, stale: false, error: null, data: { devices: malformedDevices }
+  available: true, stale: false, updatedAt: 1724060000, error: null, data: { devices: malformedDevices }
 }), {})
 assert.deepEqual(Model.parseBatteryState("not-json"), {})
 
@@ -42,6 +63,27 @@ assert.deepEqual(Model.batteryValues(split, Model.parseBatteryState(fresh)), { c
 assert.deepEqual(Model.batteryValues({ dbusPath: "/native", batteryAvailable: true, battery: 0.72 }, {}), {
   central: 72, peripheral: null
 })
+assert.deepEqual(Model.batteryValues({ dbusPath: "/native-fraction", batteryAvailable: true, battery: 0.415 }, {
+  "/native-fraction": { central: 43.5, peripheral: 56.25 }
+}), {
+  central: 42, peripheral: null
+})
+
+const row = Model.deviceRow({
+  address: "AA:BB:CC:DD:EE:FF",
+  name: "keyball",
+  deviceName: "Keyball44-Blue",
+  connected: true,
+  paired: true,
+  state: 1,
+  batteryAvailable: true,
+  battery: 0.41,
+  pairing: false,
+  dbusPath: splitPath
+}, Model.parseBatteryState(fresh), "#fab387")
+assert.equal(row.dbusPath, splitPath)
+assert.deepEqual(row.batteryValues, { central: 43, peripheral: 56 })
+assert.equal(row.batteryStatus, "Central 43% · Peripheral 56%")
 
 assert.equal(Model.hasLowBattery([split], { [splitPath]: { central: 30, peripheral: 29 } }), true)
 assert.equal(Model.hasLowBattery([split], { [splitPath]: { central: 30, peripheral: 30 } }), false)

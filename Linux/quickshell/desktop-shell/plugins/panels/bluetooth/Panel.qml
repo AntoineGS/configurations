@@ -15,6 +15,9 @@ Panel {
   property var pluginRegistry: null
   property var batteryDevices: ({})
   property bool batteryCollectorLoaded: true
+  property bool batteryRefreshQueued: false
+  property int batteryRefreshGeneration: 0
+  property int batteryProcessGeneration: 0
 
   readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
@@ -50,7 +53,14 @@ Panel {
   }
 
   function refreshBatteries() {
-    if (!batteryProcess.running) batteryProcess.running = true
+    if (!batteryCollectorLoaded) return
+    batteryRefreshGeneration++
+    if (batteryProcess.running) {
+      batteryRefreshQueued = true
+      return
+    }
+    batteryProcessGeneration = batteryRefreshGeneration
+    batteryProcess.running = true
   }
 
   function applyBatteryState(raw) {
@@ -227,6 +237,7 @@ Panel {
   }
   Component.onDestruction: {
     batteryCollectorLoaded = false
+    batteryRefreshQueued = false
     batteryRefreshTimer.stop()
   }
 
@@ -261,8 +272,22 @@ Panel {
     id: batteryProcess
     command: ["desktop-hardware-state", "bluetooth"]
     stdout: StdioCollector {
+      id: batteryStdout
       waitForEnd: true
-      onStreamFinished: root.applyBatteryState(text)
+    }
+    stderr: StdioCollector {
+      id: batteryStderr
+      waitForEnd: true
+    }
+    onExited: {
+      var completedGeneration = root.batteryProcessGeneration
+      root.batteryProcessGeneration = 0
+      if (!root.batteryCollectorLoaded) return
+      if (completedGeneration === root.batteryRefreshGeneration)
+        root.applyBatteryState(batteryStdout.text || "")
+      if (!root.batteryRefreshQueued) return
+      root.batteryRefreshQueued = false
+      root.refreshBatteries()
     }
   }
 

@@ -599,6 +599,7 @@ state_vm() {
 
 state_bluetooth() {
   local busctl_command
+  local timeout_command
   local raw_objects
   local objects
   local path
@@ -608,9 +609,13 @@ state_bluetooth() {
   local reply
   local device_rows
   local characteristic_rows
+  local remaining
+  local gatt_deadline
   local devices='{}'
   local central_json
   local peripheral_json
+  # Two complete two-second reads fit within this supplemental collection window.
+  local -r gatt_budget_seconds=4
   declare -A included=()
   declare -A central=()
   declare -A peripheral=()
@@ -623,16 +628,47 @@ state_bluetooth() {
       org.bluez / org.freedesktop.DBus.ObjectManager GetManagedObjects 2>/dev/null); then
     emit_stale 'unable to query BlueZ objects' '{"devices":{}}'
   fi
-  if ! objects=$(jq -ce '.data[0] | if type == "object" then . else error("invalid objects") end' \
-      <<<"$raw_objects" 2>/dev/null); then
+  if ! objects=$(jq -ce '
+    if type != "object" then error("invalid ObjectManager response")
+    elif .type != "a{oa{sa{sv}}}" then error("invalid ObjectManager signature")
+    elif (.data | type) != "array" then error("invalid ObjectManager data")
+    elif (.data | length) != 1 then error("invalid ObjectManager return count")
+    elif (.data[0] | type) != "object" then error("invalid ObjectManager object map")
+    else .data[0]
+    end
+  ' <<<"$raw_objects" 2>/dev/null); then
     emit_stale 'BlueZ object response was malformed' '{"devices":{}}'
   fi
 
   if ! device_rows=$(jq -r '
+    def typed($value; $wanted):
+      if ($value | type) != "object" then null
+      elif ($value.type | type) != "string" then null
+      elif $value.type != $wanted then null
+      else $value
+      end;
+    def prop($object; $name; $wanted):
+      if ($object | type) != "object" then null
+      else typed($object[$name]; $wanted)
+      end;
+    def percent($property):
+      if ($property | type) != "object" then null
+      elif ($property.data | type) != "number" then null
+      elif $property.data < 0 or $property.data > 100 or (($property.data | floor) != $property.data) then null
+      else $property.data
+      end;
     to_entries[]
-    | select(.value["org.bluez.Device1"].Connected.data == true)
-    | select(.value["org.bluez.Device1"].ServicesResolved.data == true)
-    | [.key, (.value["org.bluez.Battery1"].Percentage.data // "")]
+    | select((.value | type) == "object")
+    | . as $entry
+    | ($entry.value["org.bluez.Device1"] // null) as $device
+    | (prop($device; "Connected"; "b")) as $connected
+    | select(($connected | type) == "object")
+    | select(($connected.data | type) == "boolean" and $connected.data == true)
+    | (prop($device; "ServicesResolved"; "b")) as $resolved
+    | select(($resolved | type) == "object")
+    | select(($resolved.data | type) == "boolean" and $resolved.data == true)
+    | (percent(prop($entry.value["org.bluez.Battery1"] // null; "Percentage"; "y")) // "") as $central
+    | [$entry.key, $central]
     | @tsv
   ' <<<"$objects" 2>/dev/null); then
     emit_stale 'BlueZ device response was malformed' '{"devices":{}}'
@@ -647,35 +683,93 @@ state_bluetooth() {
   done <<<"$device_rows"
 
   if ! characteristic_rows=$(jq -r '
+    def typed($value; $wanted):
+      if ($value | type) != "object" then null
+      elif ($value.type | type) != "string" then null
+      elif $value.type != $wanted then null
+      else $value
+      end;
+    def prop($object; $name; $wanted):
+      if ($object | type) != "object" then null
+      else typed($object[$name]; $wanted)
+      end;
+    def string_prop($object; $name; $wanted):
+      (prop($object; $name; $wanted)) as $property
+      | if ($property | type) != "object" then null
+        elif ($property.data | type) != "string" then null
+        else $property.data
+        end;
+    def descriptor_matches($value; $characteristic):
+      if ($value | type) != "object" then false
+      else ($value["org.bluez.GattDescriptor1"] // null) as $descriptor
+        | if ($descriptor | type) != "object" then false
+          else (string_prop($descriptor; "Characteristic"; "o")) as $parent
+            | if $parent != $characteristic then false
+              else ((string_prop($descriptor; "UUID"; "s") // "") | ascii_downcase)
+                == "00002901-0000-1000-8000-00805f9b34fb"
+              end
+          end
+        end;
     . as $objects
     | to_entries[]
-    | select((.value["org.bluez.GattCharacteristic1"].UUID.data // "" | ascii_downcase)
+    | select((.value | type) == "object")
+    | . as $entry
+    | ($entry.value["org.bluez.GattCharacteristic1"] // null) as $characteristic
+    | select(($characteristic | type) == "object")
+    | (string_prop($characteristic; "UUID"; "s") // "") as $characteristic_uuid
+    | select(($characteristic_uuid | ascii_downcase)
       == "00002a19-0000-1000-8000-00805f9b34fb")
-    | . as $characteristic
-    | $characteristic.value["org.bluez.GattCharacteristic1"].Service.data as $service
-    | $objects[$service]["org.bluez.GattService1"].Device.data as $device
-    | select(($objects[$service]["org.bluez.GattService1"].UUID.data // "" | ascii_downcase)
+    | (string_prop($characteristic; "Service"; "o") // "") as $service
+    | select($service != "")
+    | ($objects[$service] // null) as $service_object
+    | select(($service_object | type) == "object")
+    | ($service_object["org.bluez.GattService1"] // null) as $service_interface
+    | select(($service_interface | type) == "object")
+    | (string_prop($service_interface; "UUID"; "s") // "") as $service_uuid
+    | select(($service_uuid | ascii_downcase)
       == "0000180f-0000-1000-8000-00805f9b34fb")
-    | [$device, $characteristic.key,
-       (any($objects | to_entries[];
-         .value["org.bluez.GattDescriptor1"].Characteristic.data == $characteristic.key and
-         ((.value["org.bluez.GattDescriptor1"].UUID.data // "" | ascii_downcase)
-           == "00002901-0000-1000-8000-00805f9b34fb")))]
+    | (string_prop($service_interface; "Device"; "o") // "") as $device
+    | select($device != "")
+    | [$device, $entry.key, (any($objects | to_entries[];
+        descriptor_matches(.value; $entry.key)))]
     | @tsv
   ' <<<"$objects" 2>/dev/null); then
     emit_stale 'BlueZ GATT response was malformed' '{"devices":{}}'
   fi
 
+  timeout_command=$(resolve_command timeout || true)
+  gatt_deadline=$((SECONDS + gatt_budget_seconds))
   while IFS=$'\t' read -r path characteristic_path is_peripheral; do
     [[ -n $path ]] || continue
     [[ -n ${included[$path]:-} ]] || continue
-    if ! reply=$("$busctl_command" --system --json=short --timeout=2 call \
+    if [[ $is_peripheral != true && -n ${central[$path]:-} ]]; then
+      continue
+    fi
+    remaining=$((gatt_deadline - SECONDS))
+    (( remaining > 0 )) || break
+    if (( remaining > 2 )); then remaining=2; fi
+    [[ -n $timeout_command ]] || break
+    if ! reply=$("$timeout_command" --signal=TERM "${remaining}s" "$busctl_command" \
+        --system --json=short --timeout=2 call \
         org.bluez "$characteristic_path" org.bluez.GattCharacteristic1 ReadValue 'a{sv}' 0 \
         2>/dev/null); then
       continue
     fi
-    if ! percentage=$(jq -er '.data[0][0] | select(type == "number" and . >= 0 and . <= 100 and floor == .)' \
-        <<<"$reply" 2>/dev/null); then
+    if ! percentage=$(jq -er '
+      if (type != "object") then error("invalid GATT reply")
+      elif .type != "ay" then error("invalid GATT type")
+      elif (.data | type) != "array" then error("invalid GATT data")
+      elif (.data | length) != 1 then error("GATT reply had multiple return values")
+      elif (.data[0] | type) != "array" then error("invalid GATT byte array")
+      elif (.data[0] | length) != 1 then error("GATT reply did not contain one byte")
+      else .data[0][0] as $byte
+        | if ($byte | type) != "number"
+          or $byte < 0 or $byte > 100 or (($byte | floor) != $byte)
+          then error("invalid GATT battery byte")
+          else $byte
+          end
+      end
+    ' <<<"$reply" 2>/dev/null); then
       continue
     fi
     if [[ $is_peripheral == true ]]; then

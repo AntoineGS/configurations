@@ -17,17 +17,24 @@ function toArray(values) {
   return list
 }
 
-function batteryPercent(value) {
+function displayBatteryPercent(value) {
   if (typeof value !== "number" || !isFinite(value)) return null
   var rounded = Math.round(value)
   return rounded >= 0 && rounded <= 100 ? rounded : null
+}
+
+function supplementalBatteryPercent(value) {
+  if (typeof value !== "number" || !isFinite(value) || Math.floor(value) !== value) return null
+  return value >= 0 && value <= 100 ? value : null
 }
 
 function parseBatteryState(raw) {
   try {
     var envelope = typeof raw === "string" ? JSON.parse(raw) : raw
     if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)
-        || envelope.available !== true || envelope.stale !== false || envelope.error !== null
+        || envelope.available !== true || envelope.stale !== false
+        || typeof envelope.updatedAt !== "number" || !isFinite(envelope.updatedAt)
+        || envelope.error !== null
         || !envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)
         || !envelope.data.devices || typeof envelope.data.devices !== "object"
         || Array.isArray(envelope.data.devices)) return {}
@@ -36,8 +43,8 @@ function parseBatteryState(raw) {
       var source = envelope.data.devices[path]
       if (!source || typeof source !== "object" || Array.isArray(source)) continue
       devices[path] = {
-        central: batteryPercent(source.central),
-        peripheral: batteryPercent(source.peripheral)
+        central: supplementalBatteryPercent(source.central),
+        peripheral: supplementalBatteryPercent(source.peripheral)
       }
     }
     return devices
@@ -49,15 +56,15 @@ function parseBatteryState(raw) {
 function batteryValues(device, supplementalDevices) {
   var path = String(device && device.dbusPath || "")
   var supplemental = supplementalDevices && supplementalDevices[path] || {}
-  var central = batteryPercent(supplemental.central)
-  var peripheral = batteryPercent(supplemental.peripheral)
+  var central = supplementalBatteryPercent(supplemental.central)
+  var peripheral = supplementalBatteryPercent(supplemental.peripheral)
   if (central === null && device && device.batteryAvailable)
-    central = batteryPercent(Number(device.battery) * 100)
+    central = displayBatteryPercent(Number(device.battery) * 100)
   return { central: central, peripheral: peripheral }
 }
 
 function isLowBattery(value) {
-  var percent = batteryPercent(value)
+  var percent = displayBatteryPercent(value)
   return percent !== null && percent < LOW_BATTERY_THRESHOLD
 }
 
@@ -76,7 +83,7 @@ function escapeHtml(value) {
 }
 
 function formattedPercent(value, warningColor) {
-  var text = batteryPercent(value) + "%"
+  var text = displayBatteryPercent(value) + "%"
   return isLowBattery(value)
     ? '<span style="color: ' + escapeHtml(warningColor) + ';">' + text + "</span>"
     : text
