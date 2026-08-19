@@ -445,7 +445,7 @@ assert.match(registry, /if \(isDisabled\(config, key\)\) return false/,
 assert.ok(widgetRegistry.includes("/^desktop\\.[a-z0-9-]+$/"))
 
 const helper = fs.readFileSync(helperPath, "utf8")
-assert.match(helper, /ipc_scope=\(--any-display\)/,
+assert.match(helper, /ipc_scope=\(--any-display -p "\$HOME\/\.config\/quickshell\/desktop-shell"\)/,
   "interactive helper calls keep any-display routing")
 assert.match(helper, /ipc_scope=\(--pid \"\$target_pid\"\)/,
   "helper exposes PID-bound routing")

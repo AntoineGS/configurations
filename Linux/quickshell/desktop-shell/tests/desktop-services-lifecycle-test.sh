@@ -88,6 +88,8 @@ SERVICE_STATE="$TEST_ROOT/services"
 SERVICE_PID_STATE="$TEST_ROOT/service-pids"
 BUS_OWNER_STATE="$TEST_ROOT/bus-owner"
 BUS_OWNER_RESPONSE=''
+BUS_OWNER_ATTEMPTS_FILE="$TEST_ROOT/bus-owner-attempts"
+MAKO_MASKED_STATE="$TEST_ROOT/mako-masked"
 MAKO_MODE_ATTEMPTS_FILE="$TEST_ROOT/mako-mode-attempts"
 MAKO_MODE_RESPONDS_FILE="$TEST_ROOT/mako-mode-responds"
 MAKO_MODE_ERROR_STATUS=0
@@ -104,6 +106,10 @@ READLINK_CALLS_FILE="$TEST_ROOT/readlink-calls"
 READLINK_FLIP_PID="$TEST_ROOT/readlink-flip-pid"
 READLINK_FLIP_AFTER="$TEST_ROOT/readlink-flip-after"
 HEALTH_FILE="$TEST_ROOT/health.json"
+PING_ATTEMPTS_FILE="$TEST_ROOT/ping-attempts"
+PING_ATTEMPTS_BEFORE_SUCCESS=0
+HEALTH_ATTEMPTS_FILE="$TEST_ROOT/health-attempts"
+HEALTH_ATTEMPTS_BEFORE_SUCCESS=0
 HISTORY_FILE="$STATE_HOME/desktop-shell/notifications.json"
 CUE_FILE="$RUNTIME_DIR/rustdesk-notification-cue"
 MAKO_EXECUTABLE="$BIN/mako"
@@ -120,7 +126,10 @@ UWSM_SWAYOSD_STATUS=0
 POLKIT_AGENT_STATUS=0
 POLKIT_AGENT_REGISTER=true
 PKCHECK_STATUS=0
-TIMEOUT_STATUS=0
+POLKIT_TIMEOUT_STATUS=124
+IPC_TIMEOUT_STATUS=0
+ROLLBACK_CONTROL_TIMEOUT_STATUS=0
+FLOCK_STATUS=0
 DROP_MAKO_AFTER_HIDDEN=false
 DROP_MAKO_AFTER_ADAPTER=false
 DROP_MAKO_AFTER_SWAYOSD=false
@@ -189,6 +198,15 @@ printf 'rm|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
 exec /usr/bin/rm -f -- "$3"
 EOF
 
+cat >"$BIN/flock" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf 'flock|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
+[[ ${1:-} == -n && ${2:-} =~ ^[0-9]+$ && $# == 2 ]] || exit 125
+exit "${FLOCK_STATUS:?}"
+EOF
+
 cat >"$BIN/kill" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -242,6 +260,18 @@ if [[ ${INJECT_UNEXPECTED_LIFECYCLE:-false} == true && $action == stop ]]; then
   printf '%s\n' 'kill|-TERM|9999' >>"${MOCK_LOG:?}"
 fi
 case $action in
+  reset-failed)
+    [[ ${1:-} == desktop-shell-mako-route.service && $# == 1 ]] || exit 125
+    set_unit_state "$1" inactive
+    ;;
+  mask)
+    [[ ${1:-} == --runtime && ${2:-} == mako.service && $# == 2 ]] || exit 125
+    printf '%s\n' true >"${MAKO_MASKED_STATE:?}"
+    ;;
+  unmask)
+    [[ ${1:-} == --runtime && ${2:-} == mako.service && $# == 2 ]] || exit 125
+    printf '%s\n' false >"${MAKO_MASKED_STATE:?}"
+    ;;
   stop)
     (($# > 0)) || exit 125
     for unit in "$@"; do
@@ -268,7 +298,12 @@ case $action in
         awk -F'|' '$2 != 5001' "$PROCESS_STATE" >"$temporary_file"
         printf '%s\n' 'quickshell|5001|/usr/bin/quickshell|quickshell' >>"$temporary_file"
         mv -- "$temporary_file" "$PROCESS_STATE"
-        printf '%s\n' desktop-shell >"$BUS_OWNER_STATE"
+        if [[ $(<"${MAKO_MASKED_STATE:?}") == true ]]; then
+          printf '%s\n' desktop-shell >"$BUS_OWNER_STATE"
+        else
+          printf '%s\n' "mako|1101|${DESKTOP_SHELL_MAKO:?}|mako|11101|1000" >>"$PROCESS_STATE"
+          printf '%s\n' mako >"$BUS_OWNER_STATE"
+        fi
         if [[ -e ${CUE_FILE:?} ]]; then
           printf 'systemctl-shell-start-cue=present\n' >>"$MOCK_LOG"
         else
@@ -285,12 +320,23 @@ case $action in
           mv -- "$temporary_file" "${PROCESS_STATE:?}"
         fi
         ;;
+      mako.service)
+        ((UWSM_MAKO_STATUS == 0)) || exit "$UWSM_MAKO_STATUS"
+        [[ $(<"${MAKO_MASKED_STATE:?}") == false ]] || exit 1
+        printf '%s\n' "mako|1101|${DESKTOP_SHELL_MAKO:?}|mako|11101|1000" >>"$PROCESS_STATE"
+        printf '%s\n' mako >"$BUS_OWNER_STATE"
+        ;;
       *) exit 125 ;;
     esac
     ;;
+  restart)
+    [[ ${1:-} == watch-rustdesk-submap.service && $# == 1 ]] || exit 125
+    set_unit_state "$1" active
+    ;;
   is-active)
     [[ ${1:-} == --quiet ]] || exit 125
-    [[ ${2:-} == desktop-shell.service || ${2:-} == desktop-shell-mako-route.service ]] || exit 125
+    [[ ${2:-} == desktop-shell.service || ${2:-} == desktop-shell-mako-route.service ||
+      ${2:-} == watch-rustdesk-submap.service ]] || exit 125
     if [[ ${2:-} == desktop-shell-mako-route.service && $SYSTEMCTL_ADAPTER_ACTIVE_STATUS != 0 ]]; then
       exit "$SYSTEMCTL_ADAPTER_ACTIVE_STATUS"
     fi
@@ -359,20 +405,34 @@ cat >"$BIN/uwsm-app" <<'EOF'
 set -Eeuo pipefail
 
 printf 'uwsm-app|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
-[[ ${1:-} == -- ]] || exit 125
-shift
+[[ ${1:-} == -t && ${2:-} == service && ${3:-} == -u && -n ${4:-} && ${5:-} == -- ]] || exit 125
+unit=$4
+shift 5
 [[ $# == 1 ]] || exit 125
 
-case $1 in
-  mako|"${DESKTOP_SHELL_MAKO:?}")
+case $unit in
+  desktop-shell-rollback-mako.service)
+    [[ $1 == "${DESKTOP_SHELL_MAKO:?}" ]] || exit 125
     ((UWSM_MAKO_STATUS == 0)) || exit "$UWSM_MAKO_STATUS"
     printf '%s\n' "mako|1101|${DESKTOP_SHELL_MAKO:?}|mako|11101|1000" >>"${PROCESS_STATE:?}"
     printf '%s\n' mako >"${BUS_OWNER_STATE:?}"
     ;;
-  swayosd-server|"${DESKTOP_SHELL_SWAYOSD_SERVER:?}")
+  desktop-shell-rollback-swayosd.service)
+    [[ $1 == "${DESKTOP_SHELL_SWAYOSD_SERVER:?}" ]] || exit 125
     ((UWSM_SWAYOSD_STATUS == 0)) || exit "$UWSM_SWAYOSD_STATUS"
     printf '%s\n' "swayosd-server|1102|${DESKTOP_SHELL_SWAYOSD_SERVER:?}|swayosd-server|11102|1000" >>"${PROCESS_STATE:?}"
     if [[ ${DROP_MAKO_AFTER_SWAYOSD:?} == true ]]; then
+      temporary_file="${PROCESS_STATE}.tmp"
+      awk -F'|' '$2 != 1101' "${PROCESS_STATE:?}" >"$temporary_file"
+      mv -- "$temporary_file" "${PROCESS_STATE:?}"
+    fi
+    ;;
+  desktop-shell-rollback-polkit.service)
+    [[ $1 == "${DESKTOP_SHELL_POLKIT_AGENT:?}" ]] || exit 125
+    ((POLKIT_AGENT_STATUS == 0)) || exit "$POLKIT_AGENT_STATUS"
+    [[ ${POLKIT_AGENT_REGISTER:?} == true ]] || exit 0
+    printf '%s\n' "polkit-gnome-au|1103|${DESKTOP_SHELL_POLKIT_AGENT:?}|${DESKTOP_SHELL_POLKIT_AGENT:?}|11103|1000" >>"${PROCESS_STATE:?}"
+    if [[ ${DROP_MAKO_AFTER_POLKIT:?} == true ]]; then
       temporary_file="${PROCESS_STATE}.tmp"
       awk -F'|' '$2 != 1101' "${PROCESS_STATE:?}" >"$temporary_file"
       mv -- "$temporary_file" "${PROCESS_STATE:?}"
@@ -456,10 +516,14 @@ cat >"$BIN/timeout" <<'EOF'
 set -Eeuo pipefail
 
 printf 'timeout|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
-if ((TIMEOUT_STATUS != 0)); then
-  exit "$TIMEOUT_STATUS"
+if ((IPC_TIMEOUT_STATUS != 0)) &&
+  [[ " $* " == *' busctl '* || " $* " == *' desktop-shell '* ]]; then
+  exit "$IPC_TIMEOUT_STATUS"
 fi
-
+if ((ROLLBACK_CONTROL_TIMEOUT_STATUS != 0)) &&
+  [[ " $* " == *' makoctl '* || " $* " == *' busctl '* ]]; then
+  exit "$ROLLBACK_CONTROL_TIMEOUT_STATUS"
+fi
 while (($# > 0)); do
   case $1 in
     --signal=*|--kill-after=*) shift ;;
@@ -468,6 +532,13 @@ while (($# > 0)); do
   esac
 done
 [[ $# -gt 0 ]] || exit 125
+if [[ ${1:-} == pkcheck ]] && ((POLKIT_TIMEOUT_STATUS != 0)); then
+  if "$@"; then
+    exit "$POLKIT_TIMEOUT_STATUS"
+  else
+    exit $?
+  fi
+fi
 exec "$@"
 EOF
 
@@ -476,13 +547,15 @@ cat >"$BIN/pkcheck" <<'EOF'
 set -Eeuo pipefail
 
 printf 'pkcheck|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${MOCK_LOG:?}"
+if [[ ${1:-} == --revoke-temp && $# == 1 ]]; then
+  exit 0
+fi
 expected_pid=$(awk -F'|' -v executable="${DESKTOP_SHELL_POLKIT_AGENT:?}" '$3 == executable { print $2; exit }' "${PROCESS_STATE:?}")
 expected_start=$(awk -F'|' -v executable="${DESKTOP_SHELL_POLKIT_AGENT:?}" '$3 == executable { print $5; exit }' "${PROCESS_STATE:?}")
 expected_uid=$(awk -F'|' -v executable="${DESKTOP_SHELL_POLKIT_AGENT:?}" '$3 == executable { print $6; exit }' "${PROCESS_STATE:?}")
 [[ ${1:-} == -a && ${2:-} == org.freedesktop.policykit.exec &&
   ${3:-} == -p && ${4:-} == "$expected_pid,$expected_start,$expected_uid" &&
-  ${5:-} == -d && ${6:-} == program && ${7:-} == /usr/bin/true &&
-  ${8:-} == -u && $# == 8 ]] || exit 125
+  ${5:-} == -u && $# == 5 ]] || exit 125
 if ((PKCHECK_STATUS == 0)) && [[ ${DROP_MAKO_AFTER_PROBE:?} == true ]]; then
   temporary_file="${PROCESS_STATE}.tmp"
   awk -F'|' '$2 != 1101' "${PROCESS_STATE:?}" >"$temporary_file"
@@ -506,6 +579,16 @@ if [[ ${DROP_MAKO_BEFORE_OWNER:?} == true ]]; then
   mv -- "$temporary_file" "${PROCESS_STATE:?}"
 fi
 owner=${BUS_OWNER_RESPONSE:-}
+if [[ $owner == delayed ]]; then
+  attempts=$(<"${BUS_OWNER_ATTEMPTS_FILE:?}")
+  attempts=$((attempts + 1))
+  printf '%s\n' "$attempts" >"${BUS_OWNER_ATTEMPTS_FILE:?}"
+  if ((attempts == 1)); then
+    owner=other
+  else
+    owner=desktop-shell
+  fi
+fi
 if [[ -z $owner ]]; then
   owner=$(<"${BUS_OWNER_STATE:?}")
 fi
@@ -599,10 +682,18 @@ fi
 case ${1:-} in
   ping)
     [[ $# == 1 ]] || exit 125
+    attempts=$(<"${PING_ATTEMPTS_FILE:?}")
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"${PING_ATTEMPTS_FILE:?}"
+    ((attempts > PING_ATTEMPTS_BEFORE_SUCCESS)) || exit 1
     printf '%s\n' pong
     ;;
   health)
     [[ $# == 1 ]] || exit 125
+    attempts=$(<"${HEALTH_ATTEMPTS_FILE:?}")
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"${HEALTH_ATTEMPTS_FILE:?}"
+    ((attempts > HEALTH_ATTEMPTS_BEFORE_SUCCESS)) || exit 1
     jq -R -s . "${HEALTH_FILE:?}"
     ;;
   *) exit 125 ;;
@@ -636,6 +727,8 @@ EOF
 chmod 0700 "$BIN"/*
 
 export MOCK_LOG FALLTHROUGH_LOG SIGNAL_LOG PROCESS_STATE SERVICE_STATE SERVICE_PID_STATE BUS_OWNER_STATE
+export BUS_OWNER_ATTEMPTS_FILE
+export MAKO_MASKED_STATE
 export BUS_OWNER_RESPONSE PGREP_ERROR_NAME PGREP_ERROR_STATUS SIGNAL_READD_DECOY INJECT_UNEXPECTED_LIFECYCLE
 export FORGED_ANY_DISPLAY_RESPONDER
 export READLINK_CALLS_FILE
@@ -643,11 +736,15 @@ export READLINK_FLIP_PID READLINK_FLIP_AFTER SIGNAL_COMMAND
 export MAKO_MODE_ATTEMPTS_FILE MAKO_MODE_RESPONDS_FILE MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0 MAKO_MODE_ERROR_STATUS
 export MAKO_MODE_APPLY_ERROR_STATUS MAKO_MODE_READBACK_ERROR_STATUS MAKO_MODE_QUERY_COUNT_FILE MAKO_MODE_STATE
 export SYSTEMCTL_STOP_ADAPTER_STATUS SYSTEMCTL_STOP_SHELL_STATUS SYSTEMCTL_START_ADAPTER_STATUS
-export SYSTEMCTL_ADAPTER_ACTIVE_STATUS UWSM_MAKO_STATUS UWSM_SWAYOSD_STATUS PKCHECK_STATUS TIMEOUT_STATUS
+export SYSTEMCTL_ADAPTER_ACTIVE_STATUS UWSM_MAKO_STATUS UWSM_SWAYOSD_STATUS PKCHECK_STATUS POLKIT_TIMEOUT_STATUS
+export IPC_TIMEOUT_STATUS
+export ROLLBACK_CONTROL_TIMEOUT_STATUS
+export FLOCK_STATUS
 export POLKIT_AGENT_STATUS POLKIT_AGENT_REGISTER
 export DROP_MAKO_AFTER_HIDDEN DROP_MAKO_AFTER_ADAPTER DROP_MAKO_AFTER_SWAYOSD
 export DROP_MAKO_AFTER_POLKIT DROP_MAKO_AFTER_PROBE DROP_MAKO_BEFORE_OWNER
 export HEALTH_FILE CUE_FILE POLKIT_COMM DESKTOP_SHELL_POLKIT_AGENT="$POLKIT_AGENT"
+export PING_ATTEMPTS_FILE PING_ATTEMPTS_BEFORE_SUCCESS HEALTH_ATTEMPTS_FILE HEALTH_ATTEMPTS_BEFORE_SUCCESS
 export DESKTOP_SHELL_MAKO="$MAKO_EXECUTABLE" DESKTOP_SHELL_SWAYOSD_SERVER="$SWAYOSD_SERVER_EXECUTABLE"
 export XDG_RUNTIME_DIR="$RUNTIME_DIR" XDG_STATE_HOME="$STATE_HOME"
 
@@ -657,8 +754,10 @@ write_services() {
 
   printf '%s\n' \
     "desktop-shell.service=$shell_state" \
-    "desktop-shell-mako-route.service=$adapter_state" >"$SERVICE_STATE"
+    "desktop-shell-mako-route.service=$adapter_state" \
+    "watch-rustdesk-submap.service=active" >"$SERVICE_STATE"
   : >"$SERVICE_PID_STATE"
+  printf '%s\n' false >"$MAKO_MASKED_STATE"
 }
 
 write_processes() {
@@ -679,6 +778,7 @@ reset_log() {
   : >"$FALLTHROUGH_LOG"
   : >"$SIGNAL_LOG"
   BUS_OWNER_RESPONSE=''
+  printf '%s\n' 0 >"$BUS_OWNER_ATTEMPTS_FILE"
   : >"$PGREP_ERROR_NAME"
   printf '%s\n' 2 >"$PGREP_ERROR_STATUS"
   SIGNAL_READD_DECOY=false
@@ -688,6 +788,10 @@ reset_log() {
   : >"$READLINK_FLIP_PID"
   printf '%s\n' 2 >"$READLINK_FLIP_AFTER"
   printf '%s\n' 0 >"$MAKO_MODE_ATTEMPTS_FILE"
+  printf '%s\n' 0 >"$PING_ATTEMPTS_FILE"
+  PING_ATTEMPTS_BEFORE_SUCCESS=0
+  printf '%s\n' 0 >"$HEALTH_ATTEMPTS_FILE"
+  HEALTH_ATTEMPTS_BEFORE_SUCCESS=0
   printf '%s\n' 0 >"$MAKO_MODE_QUERY_COUNT_FILE"
   MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0
   printf '%s\n' true >"$MAKO_MODE_RESPONDS_FILE"
@@ -703,7 +807,10 @@ reset_log() {
   POLKIT_AGENT_STATUS=0
   POLKIT_AGENT_REGISTER=true
   PKCHECK_STATUS=0
-  TIMEOUT_STATUS=0
+  POLKIT_TIMEOUT_STATUS=124
+  IPC_TIMEOUT_STATUS=0
+  ROLLBACK_CONTROL_TIMEOUT_STATUS=0
+  FLOCK_STATUS=0
   DROP_MAKO_AFTER_HIDDEN=false
   DROP_MAKO_AFTER_ADAPTER=false
   DROP_MAKO_AFTER_SWAYOSD=false
@@ -729,6 +836,8 @@ run_helper() {
     SERVICE_STATE="$SERVICE_STATE" \
     SERVICE_PID_STATE="$SERVICE_PID_STATE" \
     BUS_OWNER_STATE="$BUS_OWNER_STATE" \
+    BUS_OWNER_ATTEMPTS_FILE="$BUS_OWNER_ATTEMPTS_FILE" \
+    MAKO_MASKED_STATE="$MAKO_MASKED_STATE" \
     BUS_OWNER_RESPONSE="$BUS_OWNER_RESPONSE" \
     MAKO_MODE_ATTEMPTS_FILE="$MAKO_MODE_ATTEMPTS_FILE" \
     MAKO_MODE_RESPONDS_FILE="$MAKO_MODE_RESPONDS_FILE" \
@@ -750,6 +859,10 @@ run_helper() {
     DESKTOP_SHELL_MAKO="$DESKTOP_SHELL_MAKO" \
     DESKTOP_SHELL_SWAYOSD_SERVER="$DESKTOP_SHELL_SWAYOSD_SERVER" \
     HEALTH_FILE="$HEALTH_FILE" \
+    PING_ATTEMPTS_FILE="$PING_ATTEMPTS_FILE" \
+    PING_ATTEMPTS_BEFORE_SUCCESS="$PING_ATTEMPTS_BEFORE_SUCCESS" \
+    HEALTH_ATTEMPTS_FILE="$HEALTH_ATTEMPTS_FILE" \
+    HEALTH_ATTEMPTS_BEFORE_SUCCESS="$HEALTH_ATTEMPTS_BEFORE_SUCCESS" \
     CUE_FILE="$CUE_FILE" \
     POLKIT_COMM="$POLKIT_COMM" \
     DESKTOP_SHELL_POLKIT_AGENT="$DESKTOP_SHELL_POLKIT_AGENT" \
@@ -762,7 +875,10 @@ run_helper() {
     POLKIT_AGENT_STATUS="$POLKIT_AGENT_STATUS" \
     POLKIT_AGENT_REGISTER="$POLKIT_AGENT_REGISTER" \
     PKCHECK_STATUS="$PKCHECK_STATUS" \
-    TIMEOUT_STATUS="$TIMEOUT_STATUS" \
+    POLKIT_TIMEOUT_STATUS="$POLKIT_TIMEOUT_STATUS" \
+    IPC_TIMEOUT_STATUS="$IPC_TIMEOUT_STATUS" \
+    ROLLBACK_CONTROL_TIMEOUT_STATUS="$ROLLBACK_CONTROL_TIMEOUT_STATUS" \
+    FLOCK_STATUS="$FLOCK_STATUS" \
     DROP_MAKO_AFTER_HIDDEN="$DROP_MAKO_AFTER_HIDDEN" \
     DROP_MAKO_AFTER_ADAPTER="$DROP_MAKO_AFTER_ADAPTER" \
     DROP_MAKO_AFTER_SWAYOSD="$DROP_MAKO_AFTER_SWAYOSD" \
@@ -801,7 +917,7 @@ assert_process_absent() {
 
 normalize_lifecycle_trace() {
   awk -F'|' '
-    $1 == "path" || index($1, "systemctl-shell-start-cue=") == 1 { next }
+    $1 == "path" || $1 == "flock" || index($1, "systemctl-shell-start-cue=") == 1 { next }
     $1 == "pgrep" && $2 == "-x" && $3 == "--" { next }
     $1 == "readlink" && ($2 == "--" || $2 == "-f") { next }
     $1 == "busctl" && $2 == "--user" && $3 == "call" && $4 == "org.freedesktop.DBus" &&
@@ -923,6 +1039,40 @@ assert_status 2 "$status" 'rollback argument rejection'
 assert_equal "$log_before" "$(wc -l <"$MOCK_LOG")" 'rollback argument rejection performed commands'
 
 reset_log
+write_services
+write_processes
+FLOCK_STATUS=7
+status=0
+run_helper "$ACTIVATE" >"$TEST_ROOT/lock-activation.out" 2>"$TEST_ROOT/lock-activation.err" || status=$?
+((status != 0)) || fail 'activation accepted a held lifecycle lock'
+assert_log_contains 'flock|-n|' 'activation did not acquire the lifecycle lock'
+assert_log_not_contains 'systemctl|' 'activation mutated services after lock failure'
+
+reset_log
+write_services
+write_processes
+FLOCK_STATUS=7
+status=0
+run_helper "$ROLLBACK" >"$TEST_ROOT/lock-rollback.out" 2>"$TEST_ROOT/lock-rollback.err" || status=$?
+((status != 0)) || fail 'rollback accepted a held lifecycle lock'
+assert_log_contains 'flock|-n|' 'rollback did not acquire the lifecycle lock'
+assert_log_not_contains 'systemctl|' 'rollback mutated services after lock failure'
+
+reset_log
+write_services
+write_processes
+ROLLBACK_CONTROL_TIMEOUT_STATUS=124
+status=0
+run_helper "$ROLLBACK" >"$TEST_ROOT/control-timeout.out" 2>"$TEST_ROOT/control-timeout.err" || status=$?
+((status != 0)) || fail 'rollback accepted a timed-out Mako control command'
+assert_log_contains '|makoctl|' 'rollback Mako control commands are not timeout-bounded'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":"stale route hidden"}'
+printf '%s\n' mako >"$BUS_OWNER_STATE"
 SIGNAL_READD_DECOY=true
 activation_output="$TEST_ROOT/activation.out"
 activation_error="$TEST_ROOT/activation.err"
@@ -932,10 +1082,14 @@ fi
 
 assert_log_order \
   'systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service' \
+  'systemctl|--user|reset-failed|desktop-shell-mako-route.service' \
+  'systemctl|--user|mask|--runtime|mako.service' \
   'kill|-TERM|1001' \
   'kill|-TERM|1002' \
   'kill|-TERM|1003' \
   'rm|-f|--|' \
+  'systemctl|--user|restart|watch-rustdesk-submap.service' \
+  'systemctl|--user|is-active|--quiet|watch-rustdesk-submap.service' \
   'systemctl|--user|start|desktop-shell.service' \
   'systemctl-shell-start-cue=absent' \
   'systemctl|--user|is-active|--quiet|desktop-shell.service' \
@@ -944,8 +1098,12 @@ assert_log_order \
   'desktop-shell|--pid|5001|health'
 assert_exact_trace activation \
   'systemctl|--user|stop|desktop-shell.service|desktop-shell-mako-route.service' \
+  'systemctl|--user|reset-failed|desktop-shell-mako-route.service' \
+  'systemctl|--user|mask|--runtime|mako.service' \
   'kill|-TERM|1001' 'kill|-TERM|1002' 'kill|-TERM|1003' \
-  "rm|-f|--|$CUE_FILE" 'systemctl|--user|start|desktop-shell.service'
+  "rm|-f|--|$CUE_FILE" \
+  'systemctl|--user|restart|watch-rustdesk-submap.service' \
+  'systemctl|--user|start|desktop-shell.service'
 assert_log_contains "pgrep|-x|--|$POLKIT_COMM" 'polkit comm lookup is truncated to Linux comm length'
 assert_log_contains 'readlink|' 'polkit executable was verified'
 assert_process_absent mako
@@ -970,6 +1128,43 @@ assert_contains "$(<"$activation_output")" 'desktop-shell.service: active' 'acti
 assert_contains "$(<"$activation_output")" 'desktop-shell.pid: 5001' 'activation process status'
 assert_contains "$(<"$activation_output")" 'notification-owner: desktop-shell' 'activation notification owner'
 assert_contains "$(<"$activation_output")" 'polkit-registered: true' 'activation polkit status'
+main_pid_reads=$(awk 'index($0, "systemctl|--user|show|desktop-shell.service|--property=MainPID|--value") { count++ } END { print count + 0 }' "$MOCK_LOG")
+assert_equal 2 "$main_pid_reads" 'activation did not revalidate MainPID after readiness checks'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
+BUS_OWNER_RESPONSE=delayed
+if ! run_helper "$ACTIVATE" >"$activation_output" 2>"$activation_error"; then
+  fail "activation did not wait for notification ownership: $(<"$activation_error")"
+fi
+assert_equal 3 "$(<"$BUS_OWNER_ATTEMPTS_FILE")" 'activation notification ownership attempts'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
+PING_ATTEMPTS_BEFORE_SUCCESS=1
+HEALTH_ATTEMPTS_BEFORE_SUCCESS=1
+if ! run_helper "$ACTIVATE" >"$activation_output" 2>"$activation_error"; then
+  fail "activation did not wait for shell IPC readiness: $(<"$activation_error")"
+fi
+assert_equal 2 "$(<"$PING_ATTEMPTS_FILE")" 'activation ping attempts'
+assert_equal 2 "$(<"$HEALTH_ATTEMPTS_FILE")" 'activation health attempts'
+assert_no_fallthrough
+
+reset_log
+write_services
+write_processes
+write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
+IPC_TIMEOUT_STATUS=124
+status=0
+run_helper "$ACTIVATE" >"$activation_output" 2>"$activation_error" || status=$?
+((status != 0)) || fail 'activation accepted a timed-out readiness command'
+assert_log_contains 'timeout|' 'activation readiness commands are not timeout-bounded'
 assert_no_fallthrough
 
 reset_log
@@ -1069,6 +1264,7 @@ sed -i '/mako|/d; /swayosd-server|/d; /polkit-gnome-au|/d' "$PROCESS_STATE"
 write_health '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}'
 printf '%s\n' 0 >"$MAKO_MODE_ATTEMPTS_FILE"
 export MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=1
+printf '%s\n' true >"$MAKO_MASKED_STATE"
 rollback_output="$TEST_ROOT/rollback.out"
 rollback_error="$TEST_ROOT/rollback.err"
 if ! run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error"; then
@@ -1078,18 +1274,22 @@ fi
 assert_log_order \
   'systemctl|--user|stop|desktop-shell-mako-route.service' \
   'systemctl|--user|stop|desktop-shell.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_MAKO" \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO" \
   'makoctl|mode' \
   'systemctl|--user|start|desktop-shell-mako-route.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
-  'polkit-agent|' \
+  'systemctl|--user|unmask|--runtime|mako.service' \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-swayosd.service|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-polkit.service|--|$DESKTOP_SHELL_POLKIT_AGENT" \
   'pkcheck|' \
   'busctl|--user|call|org.freedesktop.DBus'
 assert_exact_trace rollback \
   'systemctl|--user|stop|desktop-shell-mako-route.service' \
   'systemctl|--user|stop|desktop-shell.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_MAKO" 'systemctl|--user|start|desktop-shell-mako-route.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_SWAYOSD_SERVER" 'polkit-agent|'
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO" \
+  'systemctl|--user|start|desktop-shell-mako-route.service' \
+  'systemctl|--user|unmask|--runtime|mako.service' \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-swayosd.service|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-polkit.service|--|$DESKTOP_SHELL_POLKIT_AGENT"
 assert_log_contains "pgrep|-x|--|$POLKIT_COMM" 'rollback polkit comm lookup is truncated to Linux comm length'
 assert_log_contains 'readlink|' 'rollback polkit executable was verified'
 assert_process_present mako
@@ -1106,8 +1306,7 @@ assert_contains "$(<"$rollback_output")" 'polkit-process: present' 'rollback pol
 assert_equal preserved "$(<"$HISTORY_FILE")" 'rollback deleted notification history'
 assert_no_fallthrough
 
-uwsm_count_before=$(awk 'index($0, "uwsm-app|") { count++ } END { print count + 0 }' "$MOCK_LOG")
-polkit_start_count_before=$(awk 'index($0, "polkit-agent|") { count++ } END { print count + 0 }' "$MOCK_LOG")
+legacy_service_count_before=$(awk 'index($0, "uwsm-app|") { count++ } END { print count + 0 }' "$MOCK_LOG")
 adapter_start_count_before=$(awk 'index($0, "systemctl|--user|start|desktop-shell-mako-route.service") { count++ } END { print count + 0 }' "$MOCK_LOG")
 expect_rollback_owner_failure ppid
 expect_rollback_owner_failure prefix
@@ -1125,14 +1324,11 @@ export MAKO_MODE_ATTEMPTS_BEFORE_SUCCESS=0
 if ! run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error"; then
   fail "idempotent rollback unexpectedly failed: $(<"$rollback_error")"
 fi
-uwsm_count_after=$(awk 'index($0, "uwsm-app|") { count++ } END { print count + 0 }' "$MOCK_LOG")
-polkit_start_count_after=$(awk 'index($0, "polkit-agent|") { count++ } END { print count + 0 }' "$MOCK_LOG")
+legacy_service_count_after=$(awk 'index($0, "uwsm-app|") { count++ } END { print count + 0 }' "$MOCK_LOG")
 adapter_start_count_after=$(awk 'index($0, "systemctl|--user|start|desktop-shell-mako-route.service") { count++ } END { print count + 0 }' "$MOCK_LOG")
-assert_equal 0 "$uwsm_count_after" 'idempotent rollback restarted legacy processes'
-assert_equal 0 "$polkit_start_count_after" 'idempotent rollback restarted polkit'
+assert_equal 0 "$legacy_service_count_after" 'idempotent rollback restarted legacy processes'
 assert_equal 1 "$adapter_start_count_after" 'idempotent rollback did not restart the isolated adapter'
-assert_equal 2 "$uwsm_count_before" 'rollback did not start both missing legacy services once'
-assert_equal 1 "$polkit_start_count_before" 'rollback did not start polkit once'
+assert_equal 3 "$legacy_service_count_before" 'rollback did not start all missing legacy services once'
 assert_equal 1 "$adapter_start_count_before" 'rollback did not start the adapter once'
 assert_no_fallthrough
 
@@ -1146,7 +1342,7 @@ run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
 assert_log_order \
   'systemctl|--user|stop|desktop-shell-mako-route.service' \
   'systemctl|--user|stop|desktop-shell.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_MAKO"
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO"
 assert_log_not_contains 'systemctl|--user|start|desktop-shell-mako-route.service' \
   'rollback restarted the adapter after unresponsive Mako'
 if ! awk -F= '$1 == "desktop-shell-mako-route.service" && $2 == "inactive" { found = 1; exit } END { exit !found }' "$SERVICE_STATE"; then
@@ -1210,7 +1406,8 @@ printf '%s\n' mako >"$PGREP_ERROR_NAME"
 status=0
 run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
 ((status != 0)) || fail 'rollback accepted a pgrep error as process absence'
-assert_log_not_contains "uwsm-app|--|$DESKTOP_SHELL_MAKO" 'rollback launched Mako after a pgrep error'
+assert_log_not_contains "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO" \
+  'rollback launched Mako after a pgrep error'
 assert_no_fallthrough
 
 reset_log
@@ -1316,6 +1513,7 @@ expect_pre_adapter_failure() {
 
   run_helper "$ROLLBACK" >"$rollback_output" 2>"$rollback_error" || status=$?
   ((status != 0)) || fail "pre-adapter failure was accepted: $label"
+  assert_equal true "$(<"$MAKO_MASKED_STATE")" "pre-adapter failure left Mako D-Bus activatable: $label"
   assert_exact_process_path_absent "$DESKTOP_SHELL_MAKO"
   assert_service_state desktop-shell-mako-route.service inactive
   assert_not_contains "$(<"$PROCESS_STATE")" "$SWAYOSD_SERVER_EXECUTABLE" \
@@ -1338,7 +1536,7 @@ expect_post_adapter_failure() {
     swayosd-start) UWSM_SWAYOSD_STATUS=7 ;;
     polkit-start) POLKIT_AGENT_REGISTER=false ;;
     polkit-probe) PKCHECK_STATUS=7 ;;
-    polkit-timeout) TIMEOUT_STATUS=124 ;;
+    polkit-timeout) POLKIT_TIMEOUT_STATUS=125 ;;
     owner) BUS_OWNER_RESPONSE=other ;;
     *) fail "unknown post-adapter failure injection: $label" ;;
   esac
@@ -1430,22 +1628,26 @@ fi
 assert_log_order \
   'systemctl|--user|stop|desktop-shell-mako-route.service' \
   'systemctl|--user|stop|desktop-shell.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_MAKO" \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO" \
   'makoctl|mode|adapter=inactive' \
   'makoctl|mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden' \
   'systemctl|--user|start|desktop-shell-mako-route.service' \
-  "uwsm-app|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
-  'polkit-agent|' \
+  'systemctl|--user|unmask|--runtime|mako.service' \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-swayosd.service|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
+  "uwsm-app|-t|service|-u|desktop-shell-rollback-polkit.service|--|$DESKTOP_SHELL_POLKIT_AGENT" \
   'pkcheck|' \
   'busctl|--user|call|org.freedesktop.DBus'
 assert_safe_hidden_adapter
 assert_exact_process_path_present "$DESKTOP_SHELL_SWAYOSD_SERVER"
 assert_contains "$(<"$rollback_output")" 'swayosd-server.pid: 1102' 'rollback SwayOSD status is missing'
-assert_log_order 'polkit-agent|' 'pkcheck|'
-assert_log_contains 'pkcheck|-a|org.freedesktop.policykit.exec|-p|1103,11103,1000|-d|program|/usr/bin/true|-u' \
+assert_log_order "uwsm-app|-t|service|-u|desktop-shell-rollback-polkit.service|--|$DESKTOP_SHELL_POLKIT_AGENT" 'pkcheck|'
+assert_log_contains 'pkcheck|--revoke-temp' 'functional polkit probe revokes cached authorizations'
+assert_log_contains 'pkcheck|-a|org.freedesktop.policykit.exec|-p|1103,11103,1000|-u' \
   'functional polkit probe arguments'
-assert_log_contains "uwsm-app|--|$DESKTOP_SHELL_MAKO" 'rollback did not launch exact Mako path'
-assert_log_contains "uwsm-app|--|$DESKTOP_SHELL_SWAYOSD_SERVER" 'rollback did not launch exact SwayOSD path'
+assert_log_contains "uwsm-app|-t|service|-u|desktop-shell-rollback-mako.service|--|$DESKTOP_SHELL_MAKO" \
+  'rollback did not launch exact Mako path'
+assert_log_contains "uwsm-app|-t|service|-u|desktop-shell-rollback-swayosd.service|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
+  'rollback did not launch exact SwayOSD path'
 assert_log_not_contains 'kill|-TERM|1201' 'successful rollback signalled a Mako decoy'
 assert_log_not_contains 'kill|-TERM|1202' 'successful rollback signalled a SwayOSD decoy'
 assert_contains "$(<"$rollback_output")" 'desktop-shell rollback status' 'rollback success status is missing'

@@ -36,8 +36,13 @@ rollback_source=$(<"$ROLLBACK_HELPER")
 grep -Fq -- "readonly MAKO_INPUT=\"\${DESKTOP_SHELL_MAKO:-/usr/bin/mako}\"" <<<"$rollback_source"
 grep -Fq -- "readonly SWAYOSD_SERVER_INPUT=\"\${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}\"" <<<"$rollback_source"
 grep -Fq -- "readlink -f -- \"/proc/\$pid/exe\"" <<<"$rollback_source"
+grep -Fq -- 'local -a revoke_command=(pkcheck --revoke-temp)' <<<"$rollback_source"
 grep -Fq -- 'pkcheck -a org.freedesktop.policykit.exec' <<<"$rollback_source"
-grep -Fq -- '-d program /usr/bin/true -u' <<<"$rollback_source"
+grep -Fq -- '((probe_status == 124))' <<<"$rollback_source"
+if grep -Fq -- '-d program' <<<"$rollback_source"; then
+  printf '%s\n' 'rollback polkit probe must remain noninteractive' >&2
+  exit 1
+fi
 grep -Fq -- 'timeout --signal=TERM --kill-after=1s' <<<"$rollback_source"
 if grep -Fq -- 'query_named_pids' <<<"$rollback_source" ||
   grep -Fq -- "\${executable##*/}" <<<"$rollback_source" ||

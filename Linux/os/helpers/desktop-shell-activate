@@ -12,18 +12,25 @@ fi
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
+readonly LIFECYCLE_LOCK_FILE="$XDG_RUNTIME_DIR/desktop-shell-lifecycle.lock"
 readonly POLKIT_AGENT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
 readonly SIGNAL_COMMAND="${DESKTOP_SHELL_SIGNAL_COMMAND:-kill}"
 polkit_comm="${POLKIT_AGENT##*/}"
 polkit_comm="${polkit_comm:0:15}"
 readonly POLKIT_COMM="$polkit_comm"
 readonly MAX_WAIT_ATTEMPTS=50
+readonly READINESS_MAX_WAIT_ATTEMPTS=20
 readonly WAIT_INTERVAL=0.1
+readonly READINESS_CALL_TIMEOUT=0.5s
 
 die() {
   printf 'desktop-shell activation failed: %s\n' "$1" >&2
   exit 1
 }
+
+exec {lifecycle_lock_fd}>"$LIFECYCLE_LOCK_FILE"
+flock -n "$lifecycle_lock_fd" || die 'another desktop-shell lifecycle operation is running'
+readonly lifecycle_lock_fd
 
 query_named_pids() {
   local name=$1
@@ -208,6 +215,7 @@ query_notification_owner_pid() {
   local owner_pid=''
   local extra=''
   local -a command=(
+    timeout --signal=TERM --kill-after=0.5s "$READINESS_CALL_TIMEOUT"
     busctl --user call org.freedesktop.DBus /org/freedesktop/DBus
     org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.Notifications
   )
@@ -231,6 +239,20 @@ verify_notification_owner() {
   verify_named_process_pid "$owner_pid" "$process_name"
 }
 
+wait_for_notification_owner() {
+  local expected_pids=$1
+  local process_name=$2
+  local attempt
+
+  for ((attempt = 0; attempt < READINESS_MAX_WAIT_ATTEMPTS; attempt++)); do
+    verify_notification_owner "$expected_pids" "$process_name" && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'notification owner did not become ready\n' >&2
+  return 1
+}
+
 read_shell_pid() {
   local shell_pid
   local -a command=(systemctl --user show desktop-shell.service --property=MainPID --value)
@@ -248,7 +270,10 @@ verify_shell_health() {
   local health
   local route_error
   local polkit_registered
-  local -a command=(desktop-shell --pid "$shell_pid" health)
+  local -a command=(
+    timeout --signal=TERM --kill-after=0.5s "$READINESS_CALL_TIMEOUT"
+    desktop-shell --pid "$shell_pid" health
+  )
 
   if ! raw_health=$("${command[@]}" 2>/dev/null); then
     return 1
@@ -277,8 +302,51 @@ verify_shell_health() {
   printf '%s\n' "$polkit_registered"
 }
 
+wait_for_shell_ping() {
+  local shell_pid=$1
+  local attempt
+  local ping_result
+  local -a command=(
+    timeout --signal=TERM --kill-after=0.5s "$READINESS_CALL_TIMEOUT"
+    desktop-shell --pid "$shell_pid" ping
+  )
+
+  for ((attempt = 0; attempt < READINESS_MAX_WAIT_ATTEMPTS; attempt++)); do
+    if ping_result=$("${command[@]}" 2>/dev/null) && [[ $ping_result == pong ]]; then
+      return 0
+    fi
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'desktop-shell IPC did not become ready\n' >&2
+  return 1
+}
+
+wait_for_shell_health() {
+  local shell_pid=$1
+  local attempt
+  local polkit_registered
+
+  for ((attempt = 0; attempt < READINESS_MAX_WAIT_ATTEMPTS; attempt++)); do
+    if polkit_registered=$(verify_shell_health "$shell_pid"); then
+      printf '%s\n' "$polkit_registered"
+      return 0
+    fi
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'desktop-shell health did not become ready\n' >&2
+  return 1
+}
+
 stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)
 "${stop_units[@]}" || die 'could not stop desktop-shell services'
+
+reset_adapter=(systemctl --user reset-failed desktop-shell-mako-route.service)
+"${reset_adapter[@]}" || die 'could not clear rollback adapter failure state'
+
+mask_mako=(systemctl --user mask --runtime mako.service)
+"${mask_mako[@]}" || die 'could not runtime-mask mako.service'
 
 terminate_processes mako || die 'could not terminate exact Mako process'
 terminate_processes swayosd-server || die 'could not terminate exact SwayOSD process'
@@ -287,18 +355,23 @@ terminate_processes polkit || die 'could not terminate exact polkit-gnome proces
 remove_cue=(rm -f -- "$CUE_FILE")
 "${remove_cue[@]}" || die 'could not remove stale RustDesk cue state'
 
+restart_route_publisher=(systemctl --user restart watch-rustdesk-submap.service)
+"${restart_route_publisher[@]}" || die 'could not restart notification route publisher'
+wait_for_unit_active watch-rustdesk-submap.service || die 'notification route publisher is not active'
+
 start_shell=(systemctl --user start desktop-shell.service)
 "${start_shell[@]}" || die 'could not start desktop-shell.service'
 wait_for_unit_active desktop-shell.service || die 'desktop-shell.service is not active'
 
 shell_pid=$(read_shell_pid) || die 'could not read desktop-shell.service MainPID'
-verify_notification_owner "$shell_pid" quickshell || die 'Quickshell does not own notifications'
+wait_for_notification_owner "$shell_pid" quickshell || die 'Quickshell does not own notifications'
 
-ping_command=(desktop-shell --pid "$shell_pid" ping)
-ping_result=$("${ping_command[@]}" 2>/dev/null) || die 'desktop-shell ping failed'
-[[ $ping_result == pong ]] || die "desktop-shell ping returned: $ping_result"
+wait_for_shell_ping "$shell_pid" || die 'desktop-shell ping failed'
 
-polkit_registered=$(verify_shell_health "$shell_pid") || die 'desktop-shell health rejected activation'
+polkit_registered=$(wait_for_shell_health "$shell_pid") || die 'desktop-shell health rejected activation'
+final_shell_pid=$(read_shell_pid) || die 'could not revalidate desktop-shell.service MainPID'
+[[ $final_shell_pid == "$shell_pid" ]] || die 'desktop-shell.service MainPID changed during activation'
+verify_notification_owner "$final_shell_pid" quickshell || die 'Quickshell notification ownership changed during activation'
 
 printf '%s\n' \
   'desktop-shell activation status' \
