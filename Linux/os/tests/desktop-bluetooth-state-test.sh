@@ -36,9 +36,39 @@ if [[ $* == *GetManagedObjects* ]]; then
   elif [[ ${STUB_BLUEZ_MODE:-valid} == nested-malformed ]]; then
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[$objects[0] + {"/org/bluez/hci0/dev_MALFORMED":"not-an-interface-map"}]}'
+  elif [[ ${STUB_BLUEZ_MODE:-valid} == malformed-interface ]]; then
+    jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
+      '{type:"a{oa{sa{sv}}}",data:[$objects[0] + {
+        "/org/bluez/hci0/dev_BAD_INTERFACE":{"org.bluez.Device1":"not-an-interface-map"},
+        "/org/bluez/hci0/dev_SPLIT/serviceBAD":{"org.bluez.GattService1":"not-a-service"},
+        "/org/bluez/hci0/dev_SPLIT/serviceBAD/charBAD":{"org.bluez.GattCharacteristic1":{
+          "UUID":{"type":"s","data":"00002a19-0000-1000-8000-00805f9b34fb"},
+          "Service":{"type":"o","data":"/org/bluez/hci0/dev_SPLIT/serviceBAD"}
+        }},
+        "/org/bluez/hci0/dev_SPLIT/service0015/descBAD":{"org.bluez.GattDescriptor1":"not-a-descriptor"}
+      }]}'
+  elif [[ ${STUB_BLUEZ_MODE:-valid} == wrong-signature ]]; then
+    jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
+      '{type:"s",data:[$objects[0]]}'
   elif [[ ${STUB_BLUEZ_MODE:-valid} == no-gatt ]]; then
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[($objects[0] | with_entries(select(.value | has("org.bluez.Device1"))))]}'
+  elif [[ ${STUB_BLUEZ_MODE:-valid} == slow-gatt ]]; then
+    jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
+      '{type:"a{oa{sa{sv}}}",data:[($objects[0] + {
+        "/org/bluez/hci0/dev_GATT_ONLY/service0030/char0032":{"org.bluez.GattCharacteristic1":{
+          "UUID":{"type":"s","data":"00002a19-0000-1000-8000-00805f9b34fb"},
+          "Service":{"type":"o","data":"/org/bluez/hci0/dev_GATT_ONLY/service0030"}
+        }},
+        "/org/bluez/hci0/dev_GATT_ONLY/service0030/char0033":{"org.bluez.GattCharacteristic1":{
+          "UUID":{"type":"s","data":"00002a19-0000-1000-8000-00805f9b34fb"},
+          "Service":{"type":"o","data":"/org/bluez/hci0/dev_GATT_ONLY/service0030"}
+        }},
+        "/org/bluez/hci0/dev_GATT_ONLY/service0030/char0034":{"org.bluez.GattCharacteristic1":{
+          "UUID":{"type":"s","data":"00002a19-0000-1000-8000-00805f9b34fb"},
+          "Service":{"type":"o","data":"/org/bluez/hci0/dev_GATT_ONLY/service0030"}
+        }}
+      })]}'
   else
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[$objects[0]]}'
@@ -46,13 +76,23 @@ if [[ $* == *GetManagedObjects* ]]; then
   exit 0
 fi
 
+if [[ ${STUB_BLUEZ_MODE:-valid} == slow-gatt ]]; then
+  sleep 2.1
+fi
+
 case $* in
   *char0011*) printf '%s\n' '{"type":"ay","data":[[41]]}' ;;
   *char0016*)
     [[ ${STUB_BLUEZ_MODE:-valid} != peripheral-failure ]] || exit 1
-    printf '%s\n' '{"type":"ay","data":[[56]]}'
+    if [[ ${STUB_BLUEZ_MODE:-valid} == extra-gatt-byte ]]; then
+      printf '%s\n' '{"type":"ay","data":[[56,57]]}'
+    elif [[ ${STUB_BLUEZ_MODE:-valid} == wrong-gatt-type ]]; then
+      printf '%s\n' '{"type":"s","data":[[56]]}'
+    else
+      printf '%s\n' '{"type":"ay","data":[[56]]}'
+    fi
     ;;
-  *char0031*) printf '%s\n' '{"type":"ay","data":[[61]]}' ;;
+  *char0031*|*char0032*|*char0033*|*char0034*) printf '%s\n' '{"type":"ay","data":[[61]]}' ;;
   *) exit 2 ;;
 esac
 FAKE_BUSCTL
@@ -72,12 +112,24 @@ jq -e '
   (.data.devices | has("/org/bluez/hci0/dev_DISCONNECTED") | not)
 ' <<<"$state" >/dev/null || fail "split battery state was not collected"
 
+jq -e '.updatedAt | type == "number"' <<<"$state" >/dev/null \
+  || fail "available Bluetooth state omitted updatedAt"
+
 grep -Fq -- '--timeout=2 call org.bluez /org/bluez/hci0/dev_SPLIT/service0015/char0016' \
   "$call_log" || fail "peripheral GATT read did not use the two-second timeout"
+if grep -Fq -- '/org/bluez/hci0/dev_SPLIT/service0010/char0011 org.bluez.GattCharacteristic1 ReadValue' \
+    "$call_log"; then
+  fail "authoritative Battery1 central value still triggered a non-peripheral GATT read"
+fi
 
 state=$(STUB_BLUEZ_MODE=peripheral-failure PATH="$fake_bin:$PATH" \
   DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth)
-jq -e '.available == true and .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null}' \
+jq -e '
+  .available == true and .stale == false and
+  .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_GATT_ONLY"] == {central:61, peripheral:null}
+' \
   <<<"$state" >/dev/null || fail "partial GATT failure discarded the central battery"
 
 if ! state=$(STUB_BLUEZ_MODE=no-gatt PATH="$fake_bin:$PATH" \
@@ -93,12 +145,60 @@ jq -e '
   (.data.devices | has("/org/bluez/hci0/dev_DISCONNECTED") | not)
 ' <<<"$state" >/dev/null || fail "valid no-GATT BlueZ state was not collected"
 
-if state=$(STUB_BLUEZ_MODE=nested-malformed PATH="$fake_bin:$PATH" \
+if ! state=$(STUB_BLUEZ_MODE=nested-malformed PATH="$fake_bin:$PATH" \
     DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
-  fail "malformed nested BlueZ state unexpectedly succeeded"
+  fail "malformed individual BlueZ object discarded valid devices"
+fi
+jq -e '
+  .available == true and .stale == false and
+  .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:56} and
+  .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_GATT_ONLY"] == {central:61, peripheral:null} and
+  (.data.devices | has("/org/bluez/hci0/dev_MALFORMED") | not)
+' <<<"$state" >/dev/null || fail "valid devices did not survive malformed object"
+
+if ! state=$(STUB_BLUEZ_MODE=malformed-interface PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
+  fail "malformed individual BlueZ interfaces discarded valid devices"
+fi
+jq -e '
+  .available == true and .stale == false and
+  .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:56} and
+  .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_GATT_ONLY"] == {central:61, peripheral:null} and
+  (.data.devices | has("/org/bluez/hci0/dev_BAD_INTERFACE") | not)
+' <<<"$state" >/dev/null || fail "valid devices did not survive malformed interfaces"
+
+for invalid_mode in extra-gatt-byte wrong-gatt-type; do
+  state=$(STUB_BLUEZ_MODE="$invalid_mode" PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth)
+  jq -e '
+    .available == true and .stale == false and
+    .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null} and
+    .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null} and
+    .data.devices["/org/bluez/hci0/dev_GATT_ONLY"] == {central:61, peripheral:null}
+  ' <<<"$state" >/dev/null || fail "invalid GATT reply was accepted: $invalid_mode"
+done
+
+: >"$call_log"
+if ! state=$(STUB_BLUEZ_MODE=slow-gatt PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
+  fail "slow partial GATT collection failed"
+fi
+jq -e '
+  .available == true and .stale == false and
+  .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null}
+' <<<"$state" >/dev/null || fail "slow GATT collection discarded unaffected devices"
+slow_read_count=$(grep -c -- 'GattCharacteristic1 ReadValue' "$call_log" || true)
+(( slow_read_count <= 2 )) || fail "GATT collection exceeded its two full-call budget"
+
+if state=$(STUB_BLUEZ_MODE=wrong-signature PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
+  fail "malformed ObjectManager signature unexpectedly succeeded"
 fi
 jq -e '.stale == true and (.error | type == "string")' <<<"$state" >/dev/null \
-  || fail "malformed nested BlueZ state did not return a stale envelope"
+  || fail "malformed ObjectManager signature did not return a stale envelope"
 
 if state=$(STUB_BLUEZ_MODE=malformed PATH="$fake_bin:$PATH" \
     DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
