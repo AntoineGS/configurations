@@ -158,8 +158,8 @@ const hintedImageUri = logic.snapshotOf({
   hints: { "image-path": "/tmp/build-uri.png" },
   image: "image://icon/build-uri",
 }, 1786930001000)
-assert.equal(hintedImageUri.image, "image://icon/build-uri",
-  "a safe image source wins over an unsafe file-backed hint")
+assert.equal(hintedImageUri.image, "",
+  "an arbitrary image provider is rejected before the popup model")
 
 for (const source of [
   "http://example.test/icon.png",
@@ -170,12 +170,27 @@ for (const source of [
   "/tmp/icon.png",
   "relative/icon.png",
   "icon://provider/icon",
+  "image://notification",
+  "image://notification/",
+  "image://icon/build",
+  "image://other/build",
+  "image://notification/../build",
+  "image://notification/build/../../secret",
+  "image://notification/build%2Fsecret",
+  "image://notification/build%5Csecret",
+  "image://notification/build?size=large",
+  "image://notification/build#fragment",
+  "image://notification/build with-space",
+  "image://notification//build",
+  "image://notification/./build",
+  "image://notification/build/./icon",
+  "image://notification/build/../icon",
   "image://notification/" + "x".repeat(logic.limits().maxImageLength),
 ]) {
   assert.equal(logic.normalizeImageSource(source), "", `unsafe or oversized image source rejected: ${source}`)
 }
 assert.equal(logic.normalizeImageSource("image://notification/icon"), "image://notification/icon")
-assert.equal(logic.normalizeImageSource("image://notification/icon with spaces"), "")
+assert.equal(logic.normalizeImageSource("image://notification/icon/path"), "image://notification/icon/path")
 
 for (const source of [
   "http://example.test/icon.png",
@@ -186,12 +201,19 @@ for (const source of [
   "/tmp/icon.png",
   "relative/icon.png",
   "icon name",
+  "image://notification",
+  "image://icon/build",
+  "image://other/build",
+  "image://notification/../build",
+  "image://notification/build%2Fsecret",
+  "image://notification/build?size=large",
+  "image://notification/build#fragment",
   "image://" + "x".repeat(logic.limits().maxAppLength),
 ]) {
   assert.equal(logic.normalizeAppIconSource(source), "", `unsafe or oversized app icon rejected: ${source}`)
 }
 assert.equal(logic.normalizeAppIconSource("build-icon"), "build-icon")
-assert.equal(logic.normalizeAppIconSource("image://icon/build"), "image://icon/build")
+assert.equal(logic.normalizeAppIconSource("image://notification/build"), "image://notification/build")
 
 const notification = {
   id: 42,

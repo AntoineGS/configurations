@@ -28,9 +28,12 @@ function boundedSource(value, maxLength) {
   return source.length > maxLength ? "" : source
 }
 
+var NOTIFICATION_IMAGE_SOURCE_RE =
+  /^image:\/\/notification\/[A-Za-z0-9_-][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._~-]*)*$/
+
 function normalizeImageSource(value) {
   var source = boundedSource(value, NOTIFICATION_LIMITS.maxImageLength)
-  return /^image:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/.test(source) ? source : ""
+  return NOTIFICATION_IMAGE_SOURCE_RE.test(source) ? source : ""
 }
 
 function normalizeAppIconSource(value) {
