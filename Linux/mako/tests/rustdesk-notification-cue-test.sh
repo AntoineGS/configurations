@@ -101,7 +101,8 @@ assert_equal $'--app-name=notify-send\n--category=rustdesk-notification-cue-DP-2
   "$(<"$NOTIFY_LOG")" 'DP-2 left cue arguments'
 assert_no_private_content
 
-for case in 'DVI-D-1|right|→' 'HDMI-A-1|up|↑' 'HDMI-A-1|down|↓' 'DP-2|none|•'; do
+for case in 'DVI-D-1|right|→' 'HDMI-A-1|up|↑' 'HDMI-A-1|down|↓' \
+  'DP-2|none|•' 'DP-1|left|←' 'eDP-1|down|↓'; do
   IFS='|' read -r output direction symbol <<<"$case"
   reset_fixture
   write_state "$output|$direction"
@@ -116,7 +117,8 @@ rm -f -- "$RUSTDESK_NOTIFICATION_CUE_STATE"
 run_helper 42
 assert_empty_log
 
-for state in 'DP-2left' 'DP-2|left|extra' 'UNKNOWN-1|left' 'DP-2|diagonal' $'DP-2|left\nuntrusted'; do
+for state in 'DP-2left' 'DP-2|left|extra' 'UNKNOWN-1|left' 'DP-2|diagonal' \
+  $'DP-2|left\nuntrusted' 'DP-1|left|extra' 'eDP-1|diagonal'; do
   reset_fixture
   write_state "$state"
   run_helper 42

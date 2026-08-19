@@ -1,0 +1,527 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s\n' "${0##*/}" >&2
+}
+
+if (($# != 0)); then
+  usage
+  exit 2
+fi
+
+readonly MAX_WAIT_ATTEMPTS=50
+readonly WAIT_INTERVAL=0.1
+readonly PKCHECK_TIMEOUT=5s
+readonly POLKIT_AGENT_INPUT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
+readonly MAKO_INPUT="${DESKTOP_SHELL_MAKO:-/usr/bin/mako}"
+readonly SWAYOSD_SERVER_INPUT="${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}"
+readonly SIGNAL_COMMAND="${DESKTOP_SHELL_SIGNAL_COMMAND:-kill}"
+
+die() {
+  printf 'desktop-shell rollback failed: %s\n' "$1" >&2
+  exit 1
+}
+
+resolve_executable() {
+  local configured=$1
+  local label=$2
+  local canonical
+
+  [[ $configured == /* ]] || {
+    printf '%s executable must be an absolute path: %s\n' "$label" "$configured" >&2
+    return 1
+  }
+  canonical=$(readlink -f -- "$configured") || {
+    printf 'could not canonicalize %s executable: %s\n' "$label" "$configured" >&2
+    return 1
+  }
+  [[ $canonical == /* ]] || {
+    printf '%s executable did not resolve to an absolute path: %s\n' "$label" "$configured" >&2
+    return 1
+  }
+  printf '%s\n' "$canonical"
+}
+
+if ! MAKO_EXECUTABLE=$(resolve_executable "$MAKO_INPUT" Mako); then
+  exit 1
+fi
+if ! SWAYOSD_SERVER_EXECUTABLE=$(resolve_executable "$SWAYOSD_SERVER_INPUT" SwayOSD); then
+  exit 1
+fi
+if ! POLKIT_AGENT=$(resolve_executable "$POLKIT_AGENT_INPUT" polkit); then
+  exit 1
+fi
+readonly MAKO_EXECUTABLE SWAYOSD_SERVER_EXECUTABLE POLKIT_AGENT
+
+MAKO_COMM="${MAKO_EXECUTABLE##*/}"
+MAKO_COMM="${MAKO_COMM:0:15}"
+SWAYOSD_SERVER_COMM="${SWAYOSD_SERVER_EXECUTABLE##*/}"
+SWAYOSD_SERVER_COMM="${SWAYOSD_SERVER_COMM:0:15}"
+POLKIT_COMM="${POLKIT_AGENT##*/}"
+POLKIT_COMM="${POLKIT_COMM:0:15}"
+readonly MAKO_COMM SWAYOSD_SERVER_COMM POLKIT_COMM
+
+readonly -a MANAGED_MODES=(
+  "rustdesk-route-DVI-D-1"
+  "rustdesk-route-HDMI-A-1"
+  "rustdesk-route-DP-2"
+  "rustdesk-route-DP-1"
+  "rustdesk-route-eDP-1"
+  "rustdesk-route-hidden"
+  "rustdesk-cue"
+)
+readonly HIDDEN_MODE="rustdesk-route-hidden"
+
+query_exact_pids() {
+  local comm=$1
+  local expected_executable=$2
+  local candidates
+  local status
+  local pid
+  local executable
+
+  if candidates=$(pgrep -x -- "$comm" 2>/dev/null); then
+    :
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
+  fi
+
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 2
+    if ! executable=$(readlink -f -- "/proc/$pid/exe" 2>/dev/null); then
+      return 2
+    fi
+    [[ $executable == "$expected_executable" ]] || continue
+    printf '%s\n' "$pid"
+  done <<<"$candidates"
+}
+
+query_process_pids() {
+  case $1 in
+    mako) query_exact_pids "$MAKO_COMM" "$MAKO_EXECUTABLE" ;;
+    swayosd-server) query_exact_pids "$SWAYOSD_SERVER_COMM" "$SWAYOSD_SERVER_EXECUTABLE" ;;
+    polkit) query_exact_pids "$POLKIT_COMM" "$POLKIT_AGENT" ;;
+    *) return 2 ;;
+  esac
+}
+
+pid_in_set() {
+  local expected_pid=$1
+  local pids=$2
+  local pid
+
+  while IFS= read -r pid; do
+    [[ $pid == "$expected_pid" ]] && return 0
+  done <<<"$pids"
+  return 1
+}
+
+verify_exact_process_pid() {
+  local process=$1
+  local pid=$2
+  local pids
+  local expected_executable
+  local comm
+  local executable
+  local status
+
+  case $process in
+    mako)
+      comm=$MAKO_COMM
+      expected_executable=$MAKO_EXECUTABLE
+      ;;
+    swayosd-server)
+      comm=$SWAYOSD_SERVER_COMM
+      expected_executable=$SWAYOSD_SERVER_EXECUTABLE
+      ;;
+    polkit)
+      comm=$POLKIT_COMM
+      expected_executable=$POLKIT_AGENT
+      ;;
+    *) return 2 ;;
+  esac
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  if pids=$(query_exact_pids "$comm" "$expected_executable"); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  pid_in_set "$pid" "$pids" || return 1
+  if ! executable=$(readlink -f -- "/proc/$pid/exe" 2>/dev/null); then
+    return 2
+  fi
+  [[ $executable == "$expected_executable" ]]
+}
+
+wait_for_processes_present() {
+  local process=$1
+  local attempt
+  local pids
+  local status
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if pids=$(query_process_pids "$process"); then
+      :
+    else
+      status=$?
+      return "$status"
+    fi
+    [[ -n $pids ]] && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'process did not become available: %s\n' "$process" >&2
+  return 1
+}
+
+wait_for_processes_absent() {
+  local process=$1
+  local attempt
+  local pids
+  local status
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if pids=$(query_process_pids "$process"); then
+      :
+    else
+      status=$?
+      return "$status"
+    fi
+    [[ -z $pids ]] && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'process did not terminate: %s\n' "$process" >&2
+  return 1
+}
+
+first_pid() {
+  local pids=$1
+  local pid
+
+  while IFS= read -r pid; do
+    [[ $pid =~ ^[1-9][0-9]*$ ]] && {
+      printf '%s\n' "$pid"
+      return 0
+    }
+  done <<<"$pids"
+  return 1
+}
+
+signal_pid() {
+  local pid=$1
+  local status
+  local -a command=("$SIGNAL_COMMAND" -TERM "$pid")
+
+  if "${command[@]}"; then
+    return 0
+  else
+    status=$?
+    ((status == 1)) && return 0
+    return "$status"
+  fi
+}
+
+terminate_exact_mako() {
+  local pids
+  local pid
+  local status
+
+  if pids=$(query_process_pids mako); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  [[ -n $pids ]] || return 0
+
+  # Revalidate the executable immediately before signalling; numeric PID reuse
+  # remains a narrow race without pidfd, which is unnecessary for this helper.
+  while IFS= read -r pid; do
+    [[ -n $pid ]] || continue
+    if verify_exact_process_pid mako "$pid"; then
+      signal_pid "$pid" || return 1
+    else
+      status=$?
+      ((status == 1)) && continue
+      return "$status"
+    fi
+  done <<<"$pids"
+
+  wait_for_processes_absent mako
+}
+
+wait_for_unit_active() {
+  local unit=$1
+  local attempt
+  local -a command=(systemctl --user is-active --quiet "$unit")
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    "${command[@]}" && return 0
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'systemd user unit did not become active: %s\n' "$unit" >&2
+  return 1
+}
+
+start_mako_if_missing() {
+  local pids
+  local status
+  local -a command=(uwsm-app -- "$MAKO_EXECUTABLE")
+
+  if pids=$(query_process_pids mako); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" || return 1
+  fi
+  wait_for_processes_present mako
+}
+
+start_swaysod_if_missing() {
+  local pids
+  local status
+  local -a command=(uwsm-app -- "$SWAYOSD_SERVER_EXECUTABLE")
+
+  if pids=$(query_process_pids swayosd-server); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" || return 1
+  fi
+  wait_for_processes_present swayosd-server
+}
+
+start_polkit_if_missing() {
+  local pids
+  local status
+  local launch_pid
+  local -a command=("$POLKIT_AGENT")
+
+  if pids=$(query_process_pids polkit); then
+    :
+  else
+    status=$?
+    return "$status"
+  fi
+  if [[ -z $pids ]]; then
+    "${command[@]}" >/dev/null 2>&1 &
+    launch_pid=$!
+    disown "$launch_pid" 2>/dev/null || true
+  fi
+  wait_for_processes_present polkit
+}
+
+wait_for_mako_mode() {
+  local attempt
+  local pids
+  local status
+
+  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
+    if pids=$(query_process_pids mako); then
+      :
+    else
+      status=$?
+      return "$status"
+    fi
+    if [[ -n $pids ]] && makoctl mode >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$WAIT_INTERVAL"
+  done
+
+  printf 'Mako did not respond to mode query\n' >&2
+  return 1
+}
+
+require_mako_present() {
+  local pids
+
+  pids=$(query_process_pids mako) || return 1
+  [[ -n $pids ]]
+}
+
+apply_hidden_modes() {
+  local managed_mode
+  local -a command=(makoctl mode)
+
+  for managed_mode in "${MANAGED_MODES[@]}"; do
+    command+=(-r "$managed_mode")
+  done
+  command+=(-a "$HIDDEN_MODE")
+  "${command[@]}"
+}
+
+verify_hidden_modes() {
+  local output
+  local normalized
+  local mode
+  local hidden_count=0
+  local -a modes=()
+
+  output=$(makoctl mode) || return 1
+  normalized=${output//$'\n'/ }
+  normalized=${normalized//$'\t'/ }
+  read -r -a modes <<<"$normalized"
+  for mode in "${modes[@]}"; do
+    case $mode in
+      "$HIDDEN_MODE")
+        ((hidden_count += 1))
+        ;;
+      rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-DP-1|rustdesk-route-eDP-1|rustdesk-cue)
+        return 1
+        ;;
+    esac
+  done
+  ((hidden_count == 1))
+}
+
+stop_adapter_best_effort() {
+  local -a command=(systemctl --user stop desktop-shell-mako-route.service)
+
+  "${command[@]}"
+}
+
+fail_before_adapter() {
+  local reason=$1
+  local cleanup_status=0
+
+  stop_adapter_best_effort || cleanup_status=1
+  terminate_exact_mako || cleanup_status=1
+  if ((cleanup_status != 0)); then
+    die "$reason; exact Mako cleanup failed"
+  fi
+  die "$reason"
+}
+
+query_notification_owner_pid() {
+  local response
+  local type=''
+  local owner_pid=''
+  local extra=''
+  local -a command=(
+    busctl --user call org.freedesktop.DBus /org/freedesktop/DBus
+    org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.Notifications
+  )
+
+  if ! response=$("${command[@]}" 2>/dev/null); then
+    return 1
+  fi
+  [[ $response != *$'\n'* ]] || return 1
+  read -r type owner_pid extra <<<"$response"
+  [[ $type == u && $owner_pid =~ ^[1-9][0-9]*$ && -z $extra ]] || return 1
+  printf '%s\n' "$owner_pid"
+}
+
+verify_notification_owner() {
+  local expected_pids=$1
+  local owner_pid
+
+  owner_pid=$(query_notification_owner_pid) || return 1
+  pid_in_set "$owner_pid" "$expected_pids" || return 1
+  verify_exact_process_pid mako "$owner_pid"
+}
+
+read_process_start_time() {
+  local pid=$1
+  local start_time
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  start_time=$(awk '{print $22}' "/proc/$pid/stat") || return 1
+  [[ $start_time =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$start_time"
+}
+
+read_process_uid() {
+  local pid=$1
+  local uid
+
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  uid=$(awk '/^Uid:/ { print $2; exit }' "/proc/$pid/status") || return 1
+  [[ $uid =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$uid"
+}
+
+probe_polkit_agent() {
+  local pid=$1
+  local start_time
+  local uid
+  local -a command
+
+  verify_exact_process_pid polkit "$pid" || return 1
+  start_time=$(read_process_start_time "$pid") || return 1
+  uid=$(read_process_uid "$pid") || return 1
+
+  # This proves an external agent handled authorization, not its cryptographic identity.
+  # Exact process paths and the stopped shell narrow the candidate agent set.
+  command=(
+    timeout --signal=TERM --kill-after=1s "$PKCHECK_TIMEOUT"
+    pkcheck -a org.freedesktop.policykit.exec
+    -p "$pid,$start_time,$uid"
+    -d program /usr/bin/true -u
+  )
+  "${command[@]}" || return 1
+  verify_exact_process_pid polkit "$pid"
+}
+
+stop_adapter=(systemctl --user stop desktop-shell-mako-route.service)
+"${stop_adapter[@]}" || fail_before_adapter 'could not isolate desktop-shell-mako-route.service'
+
+stop_shell=(systemctl --user stop desktop-shell.service)
+"${stop_shell[@]}" || fail_before_adapter 'could not stop desktop-shell.service'
+
+start_mako_if_missing || fail_before_adapter 'could not start exact Mako process'
+wait_for_mako_mode || fail_before_adapter 'Mako did not respond before hidden routing'
+apply_hidden_modes || fail_before_adapter 'could not apply hidden Mako modes'
+verify_hidden_modes || fail_before_adapter 'Mako hidden mode verification failed'
+require_mako_present || fail_before_adapter 'Mako disappeared after hidden routing'
+
+start_adapter=(systemctl --user start desktop-shell-mako-route.service)
+"${start_adapter[@]}" || fail_before_adapter 'could not start desktop-shell-mako-route.service'
+wait_for_unit_active desktop-shell-mako-route.service || fail_before_adapter 'rollback adapter is not active'
+require_mako_present || fail_before_adapter 'Mako disappeared after adapter startup'
+
+start_swaysod_if_missing || die 'could not start exact SwayOSD process'
+require_mako_present || fail_before_adapter 'Mako disappeared before polkit startup'
+start_polkit_if_missing || die 'could not start exact polkit-gnome process'
+require_mako_present || fail_before_adapter 'Mako disappeared before polkit probe'
+
+mako_pids=$(query_process_pids mako) || die 'could not verify Mako process'
+swaysod_pids=$(query_process_pids swayosd-server) || die 'could not verify SwayOSD process'
+polkit_pids=$(query_process_pids polkit) || die 'could not verify polkit process'
+polkit_pid=$(first_pid "$polkit_pids") || die 'polkit PID is unavailable'
+probe_polkit_agent "$polkit_pid" || die 'functional polkit-agent probe failed'
+require_mako_present || fail_before_adapter 'Mako disappeared after polkit probe'
+
+mako_pids=$(query_process_pids mako) || die 'could not revalidate Mako process'
+mako_pid=$(first_pid "$mako_pids") || die 'Mako PID is unavailable'
+swaysod_pids=$(query_process_pids swayosd-server) || die 'could not revalidate SwayOSD process'
+swaysod_pid=$(first_pid "$swaysod_pids") || die 'SwayOSD PID is unavailable'
+polkit_pids=$(query_process_pids polkit) || die 'could not revalidate polkit process'
+polkit_pid=$(first_pid "$polkit_pids") || die 'polkit PID disappeared after probe'
+if ! verify_notification_owner "$mako_pids"; then
+  require_mako_present || fail_before_adapter 'Mako disappeared during owner verification'
+  die 'Mako does not own notifications'
+fi
+
+printf '%s\n' \
+  'desktop-shell rollback status' \
+  'desktop-shell.service: inactive' \
+  'desktop-shell-mako-route.service: active' \
+  "mako.pid: $mako_pid" \
+  "swayosd-server.pid: $swaysod_pid" \
+  "polkit.pid: $polkit_pid" \
+  'notification-owner: mako' \
+  'polkit-process: present'

@@ -22,6 +22,14 @@ invisible=false
 output=DP-2
 invisible=false
 
+[mode=rustdesk-route-DP-1]
+output=DP-1
+invisible=false
+
+[mode=rustdesk-route-eDP-1]
+output=eDP-1
+invisible=false
+
 [mode=rustdesk-route-hidden]
 invisible=true
 
@@ -45,6 +53,14 @@ invisible=false
 on-notify=exec ~/.config/mako/rustdesk-notification-cue "$id"
 
 [mode=rustdesk-route-DP-2 app-name=notify-send]
+invisible=false
+on-notify=exec ~/.config/mako/rustdesk-notification-cue "$id"
+
+[mode=rustdesk-route-DP-1 app-name=notify-send]
+invisible=false
+on-notify=exec ~/.config/mako/rustdesk-notification-cue "$id"
+
+[mode=rustdesk-route-eDP-1 app-name=notify-send]
 invisible=false
 on-notify=exec ~/.config/mako/rustdesk-notification-cue "$id"
 
@@ -79,6 +95,32 @@ layer=overlay
 
 [app-name=notify-send category=rustdesk-notification-cue-DP-2 summary~="^(←|→|↑|↓|•)$" body=""]
 output=DP-2
+invisible=false
+on-notify=none
+icons=0
+actions=0
+history=0
+format=%s
+text-alignment=center
+font=sans-serif 28px
+default-timeout=5000
+layer=overlay
+
+[app-name=notify-send category=rustdesk-notification-cue-DP-1 summary~="^(←|→|↑|↓|•)$" body=""]
+output=DP-1
+invisible=false
+on-notify=none
+icons=0
+actions=0
+history=0
+format=%s
+text-alignment=center
+font=sans-serif 28px
+default-timeout=5000
+layer=overlay
+
+[app-name=notify-send category=rustdesk-notification-cue-eDP-1 summary~="^(←|→|↑|↓|•)$" body=""]
+output=eDP-1
 invisible=false
 on-notify=none
 icons=0

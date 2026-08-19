@@ -7,6 +7,7 @@ import Quickshell.Io
 import qs.Commons
 
 import "plugins/bar"
+import "plugins/osd/OsdModel.js" as OsdModel
 import "services"
 
 ShellRoot {
@@ -26,6 +27,8 @@ ShellRoot {
   readonly property string configPath: shellPath + "/config/shell.json"
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
+  readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
   // Bundled fallback so the shell can start even when the default shell.json is
@@ -55,11 +58,25 @@ ShellRoot {
   property var shellConfig: builtinShellConfig
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
+  readonly property var notificationService: shell.serviceFor("desktop.notifications")
+  readonly property var polkitService: shell.serviceFor("desktop.polkit")
   readonly property var healthState: ({
     configValid: shell.configValid,
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
-    previewMode: shell.previewMode
+    previewMode: shell.previewMode,
+    testSurfaceSuppressed: shell.testSurfaceSuppressed,
+    osdAvailable: shell.osdAvailable,
+    notificationsOwned: notificationService ? notificationService.notificationsOwned : false,
+    notificationOwnershipError: notificationService ? notificationService.ownershipError : "notification service unavailable",
+    notificationRouteValid: notificationService ? notificationService.routeValid : false,
+    notificationRouteVisible: notificationService ? notificationService.routeVisible : false,
+    notificationRouteError: notificationService ? notificationService.routeError : "notification service unavailable",
+    notificationRouteMetadataAttemptCount: notificationService ? notificationService.routeMetadataAttemptCount : 0,
+    polkitRegistered: polkitService ? polkitService.polkitRegistered : false,
+    polkitError: polkitService ? polkitService.polkitError : "polkit service unavailable",
+    polkitPamError: polkitService ? polkitService.pamError : "polkit service unavailable",
+    polkitFingerprintConfigured: polkitService ? polkitService.fingerprintConfigured : false
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false
@@ -215,7 +232,7 @@ ShellRoot {
   Loader {
     id: defaultBarLoader
 
-    active: shell.activeBarId === shell.defaultBarId
+    active: !shell.testSurfaceSuppressed && shell.activeBarId === shell.defaultBarId
     sourceComponent: defaultBarComponent
     onLoaded: shell.configureBar(item, shell.barManifestFor(shell.defaultBarId))
     onActiveChanged: if (!active && shell.activeBarId !== shell.defaultBarId) shell.bar = null
@@ -224,7 +241,8 @@ ShellRoot {
   Loader {
     id: pluginBarLoader
 
-    active: !shell.pluginReloading && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
+    active: !shell.testSurfaceSuppressed && !shell.pluginReloading
+      && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
     onLoaded: shell.configureBar(item, shell.activeBarManifest)
@@ -440,6 +458,17 @@ ShellRoot {
       if (!summoned) console.warn("summon: no live bar widget for:", id)
       return summoned === true
     }
+    var panelAvailable = false
+    for (var entryIndex = 0; entryIndex < shell.panelEntries.length; entryIndex++) {
+      if (shell.panelEntries[entryIndex] && shell.panelEntries[entryIndex].id === id) {
+        panelAvailable = true
+        break
+      }
+    }
+    if (!panelAvailable) {
+      console.warn("summon: panel is not loaded:", id)
+      return false
+    }
     var next = ({})
     for (var k in openPanelIds) next[k] = openPanelIds[k]
     next[id] = true
@@ -501,6 +530,9 @@ ShellRoot {
   // Map of pluginId -> Loader, populated by the Instantiator delegate below.
   property var panelLoaders: ({})
 
+  readonly property bool osdAvailable: OsdModel.healthAvailable(
+    shell.previewMode, shell.panelLoaders["desktop.osd"], Loader.Error)
+
   function registerPanelLoader(pluginId, loader) {
     var next = ({})
     for (var k in panelLoaders) next[k] = panelLoaders[k]
@@ -552,6 +584,16 @@ ShellRoot {
 
   function callIfLoaded(pluginId, method, arg) {
     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
+    var service = shell.serviceFor(pluginId)
+    if (service && typeof service[method] === "function") {
+      try {
+        var serviceResult = service[method](arg)
+        return serviceResult === undefined || serviceResult === null ? "ok" : String(serviceResult)
+      } catch (e) {
+        console.warn("service " + id + " " + method + "() threw:", e)
+        return "error"
+      }
+    }
     var loader = panelLoaders[id]
     if (!loader || !loader.item) return "unknown"
     if (typeof loader.item[method] !== "function") return "unknown"
@@ -570,12 +612,14 @@ ShellRoot {
   property var panelEntries: []
 
   function computePanelEntries() {
+    if (shell.testSurfaceSuppressed && shell.testPanelPlugin !== "desktop.mixed") return []
     var out = []
     var plugins = shell.pluginRegistry.installedPlugins
     var panelKinds = ["panel", "overlay", "menu"]
     for (var id in plugins) {
       var m = plugins[id]
       if (!m || !Array.isArray(m.kinds)) continue
+      if (shell.testSurfaceSuppressed && id !== "desktop.mixed") continue
       var matched = false
       for (var i = 0; i < panelKinds.length; i++)
         if (m.kinds.indexOf(panelKinds[i]) !== -1) { matched = true; break }
@@ -655,6 +699,10 @@ ShellRoot {
   property var pluginWidgetComponents: ({})
 
   function syncPluginWidgets() {
+    if (shell.testSurfaceSuppressed) {
+      shell.unloadPluginWidgets()
+      return
+    }
     var plugins = shell.pluginRegistry.installedPlugins
     var seen = ({})
 

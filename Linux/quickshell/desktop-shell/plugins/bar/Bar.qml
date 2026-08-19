@@ -18,6 +18,7 @@ Item {
   property var manifest: null
 
   readonly property string home: Quickshell.env("HOME")
+  readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   readonly property string configDir: Quickshell.shellDir + "/config"
   readonly property var fallbackBarConfig: ({
     centerAnchor: "desktop.clock",
@@ -384,7 +385,7 @@ Item {
   component BarPanel: PanelWindow {
     id: barWindow
 
-    visible: root.shell.barVisible
+    visible: !root.testSurfaceSuppressed && root.shell.barVisible
     exclusionMode: ExclusionMode.Auto
     implicitWidth: 0
     implicitHeight: root.barSize

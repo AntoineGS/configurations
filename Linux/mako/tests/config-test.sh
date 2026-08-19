@@ -122,12 +122,16 @@ route_sections=(
   '[mode=rustdesk-route-DVI-D-1]'
   '[mode=rustdesk-route-HDMI-A-1]'
   '[mode=rustdesk-route-DP-2]'
+  '[mode=rustdesk-route-DP-1]'
+  '[mode=rustdesk-route-eDP-1]'
   '[mode=rustdesk-route-hidden]'
 )
 exception_sections=(
   '[mode=rustdesk-route-DVI-D-1 app-name=notify-send]'
   '[mode=rustdesk-route-HDMI-A-1 app-name=notify-send]'
   '[mode=rustdesk-route-DP-2 app-name=notify-send]'
+  '[mode=rustdesk-route-DP-1 app-name=notify-send]'
+  '[mode=rustdesk-route-eDP-1 app-name=notify-send]'
   '[mode=rustdesk-route-hidden app-name=notify-send]'
 )
 cue_sections=()
@@ -138,7 +142,7 @@ summary_sections=(
   '[summary~="Screenshot copied & saved"]'
 )
 
-for output in DVI-D-1 HDMI-A-1 DP-2; do
+for output in DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1; do
   section="[mode=rustdesk-route-$output]"
   require_section "$section"
   require_setting "$section" "output=$output"
@@ -174,7 +178,7 @@ if section_line '[mode=do-not-disturb app-name=notify-send]' >/dev/null; then
   fail 'broad do-not-disturb notify-send exception must not be present'
 fi
 
-for output in DVI-D-1 HDMI-A-1 DP-2; do
+for output in DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1; do
   section="[mode=rustdesk-route-$output app-name=notify-send]"
   require_section "$section"
   require_setting "$section" 'invisible=false'
@@ -192,7 +196,7 @@ done
 assert_after '[mode=rustdesk-route-DP-2 app-name=notify-send]' \
   '[mode=rustdesk-route-hidden app-name=notify-send]'
 
-for output in DVI-D-1 HDMI-A-1 DP-2; do
+for output in DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1; do
   printf -v section '[app-name=notify-send category=rustdesk-notification-cue-%s summary~="^(←|→|↑|↓|•)$" body=""]' "$output"
   cue_sections+=("$section")
   require_section "$section"

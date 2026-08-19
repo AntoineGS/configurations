@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.polkit",
+  "name": "Polkit Agent",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Graphical authorization agent with password and fingerprint support",
+  "kinds": ["service"],
+  "entryPoints": { "service": "PolkitAgent.qml" }
+}

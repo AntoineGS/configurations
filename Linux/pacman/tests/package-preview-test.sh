@@ -4,6 +4,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)"
 CONFIG_FILE="$REPO_DIR/tidydots.yaml"
+PROFILE_FIXTURE="$SCRIPT_DIR/graphical-profile-fixtures.tsv"
 TIDYDOTS_BIN="$(command -v tidydots || true)"
 
 fail() {
@@ -12,8 +13,50 @@ fail() {
 }
 
 [[ -r "$CONFIG_FILE" ]] || fail "cannot read $CONFIG_FILE"
+[[ -r "$PROFILE_FIXTURE" ]] || fail "cannot read $PROFILE_FIXTURE"
 [[ -x "$TIDYDOTS_BIN" ]] || fail "tidydots is not installed"
 command -v docker >/dev/null 2>&1 || fail "docker is required for controlled profile previews"
+
+load_profile_matrix() {
+  local rows row hostname display_mode key
+  declare -A seen_rows=()
+
+  if ! rows="$(awk -F '\t' '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+      next
+    }
+
+    NF != 2 {
+      printf "invalid profile fixture row %d\n", NR > "/dev/stderr"
+      invalid = 1
+      next
+    }
+
+    $2 != "graphical" && $2 != "headless" {
+      printf "unsupported display mode on profile fixture row %d\n", NR > "/dev/stderr"
+      invalid = 1
+      next
+    }
+
+    { print $1 "\t" $2 }
+
+    END {
+      exit invalid
+    }
+  ' "$PROFILE_FIXTURE")"; then
+    fail 'graphical profile fixture is malformed'
+  fi
+
+  [[ -n "$rows" ]] || fail 'graphical profile fixture has no profiles'
+  mapfile -t PROFILE_ROWS <<< "$rows"
+  for row in "${PROFILE_ROWS[@]}"; do
+    IFS=$'\t' read -r hostname display_mode <<< "$row"
+    [[ -n "$hostname" && -n "$display_mode" ]] || fail 'graphical profile fixture contains an empty field'
+    key="$hostname|$display_mode"
+    [[ -z "${seen_rows[$key]+set}" ]] || fail "graphical profile fixture repeats $key"
+    seen_rows["$key"]=1
+  done
+}
 
 extract_manifest_arch_declarations() {
   awk '
@@ -429,13 +472,12 @@ run_container_profile() {
 assert_no_arch_dependency_arrays
 assert_yazi_windows_dependencies
 load_manifest
+load_profile_matrix
 run_native_profile 'canonical native Linux host'
-run_container_profile 'DESKTOP-E07VTRN graphical' DESKTOP-E07VTRN graphical
-run_container_profile 'antoinews-linux graphical' antoinews-linux graphical
-run_container_profile 'antoinews-linux headless' antoinews-linux headless
-run_container_profile 'omarchbook graphical' omarchbook graphical
-run_container_profile 'omarchbook headless' omarchbook headless
-run_container_profile 'server headless' server headless
+for profile in "${PROFILE_ROWS[@]}"; do
+  IFS=$'\t' read -r hostname display_mode <<< "$profile"
+  run_container_profile "$hostname $display_mode" "$hostname" "$display_mode"
+done
 assert_focused_arch_preview posting yay posting
 assert_focused_arch_preview eza pacman eza
 assert_focused_arch_preview sd pacman sd

@@ -17,51 +17,94 @@ assert_equal() {
   [[ $actual == "$expected" ]] || fail "$message: expected '$expected', got '$actual'"
 }
 
-assert_log_contains() {
+assert_route_payload() {
   local expected=$1
-  local log
-  log=$(<"$MAKO_LOG")
-  [[ $log == *"$expected"* ]] || fail "makoctl log does not contain '$expected': $log"
-}
+  local actual
 
-assert_log_empty() {
-  [[ ! -s $MAKO_LOG ]] || fail "expected no makoctl mutation, got: $(<"$MAKO_LOG")"
-}
-
-reset_mako() {
-  MAKO_MODE_OUTPUT=${1:-$'default\ndo-not-disturb'}
-  MAKO_FAIL=false
-  MAKO_EXPECTED_CUE_STATE=""
-  MAKO_CUE_ORDER_CHECKED=false
-  : >"$MAKO_LOG"
-}
-
-makoctl() {
-  local index
-  local -a arguments=("$@")
-
-  if [[ $1 == mode && $# == 1 ]]; then
-    if [[ $MAKO_FAIL == read ]]; then
-      return 1
-    fi
-    printf '%s\n' "$MAKO_MODE_OUTPUT"
-    return 0
+  [[ -f $NOTIFICATION_ROUTE_FILE ]] || fail "notification route file is missing: $NOTIFICATION_ROUTE_FILE"
+  if ! actual=$(jq -c 'del(.updatedAt)' "$NOTIFICATION_ROUTE_FILE"); then
+    fail "notification route file is not valid JSON: $NOTIFICATION_ROUTE_FILE"
   fi
+  assert_equal "$expected" "$actual" 'notification route payload'
+}
 
-  printf '%s\n' "$*" >>"$MAKO_LOG"
-  for ((index = 1; index < $#; index += 2)); do
-    if [[ ${arguments[index]} == -a && ${arguments[index + 1]} == rustdesk-cue ]]; then
-      [[ -f $RUSTDESK_NOTIFICATION_CUE_STATE ]] || return 1
-      assert_equal "$MAKO_EXPECTED_CUE_STATE" "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-        'cue state exists before cue mode activation'
-      MAKO_CUE_ORDER_CHECKED=true
-    fi
-    if [[ $MAKO_FAIL == remove-cue && ${arguments[index]} == -r && \
-      ${arguments[index + 1]} == rustdesk-cue ]]; then
-      return 1
-    fi
-  done
-  [[ $MAKO_FAIL != apply ]]
+assert_lease_payload() {
+  local expected=$1
+  local actual
+
+  [[ -f $NOTIFICATION_LEASE_FILE ]] || fail "notification lease is missing: $NOTIFICATION_LEASE_FILE"
+  if ! actual=$(jq -c . "$NOTIFICATION_LEASE_FILE"); then
+    fail "notification lease is not valid JSON: $NOTIFICATION_LEASE_FILE"
+  fi
+  assert_equal "$expected" "$actual" 'notification lease payload'
+}
+
+assert_file_mode() {
+  local expected=$1
+  local path=$2
+  local actual
+
+  if ! actual=$(stat -c '%a' -- "$path"); then
+    fail "could not inspect mode for $path"
+  fi
+  assert_equal "${expected#0}" "${actual#0}" "mode for $path"
+}
+
+assert_file_owner() {
+  local expected=$1
+  local path=$2
+  local actual
+
+  if ! actual=$(stat -c '%u' -- "$path"); then
+    fail "could not inspect owner for $path"
+  fi
+  assert_equal "$expected" "$actual" "owner for $path"
+}
+
+assert_lease_contract() {
+  assert_file_owner "$UID" "$NOTIFICATION_LEASE_FILE"
+  assert_file_mode 0600 "$NOTIFICATION_LEASE_FILE"
+  [[ ! -L $NOTIFICATION_LEASE_FILE ]] || fail 'notification lease is a symlink'
+  if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route-lease.json.*" >/dev/null; then
+    fail 'temporary notification lease file was not removed after rename'
+  fi
+}
+
+route_updated_at() {
+  jq -er '.updatedAt | select(type == "number" and (floor == .) and (. >= 0))' \
+    "$NOTIFICATION_ROUTE_FILE"
+}
+
+fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
+
+epoch_seconds() {
+  printf '%s\n' "$fake_epoch_seconds"
+}
+
+epoch_milliseconds() {
+  printf '%s\n' "$fake_epoch_milliseconds"
+}
+
+assert_route_contract() {
+  assert_file_owner "$UID" "$NOTIFICATION_ROUTE_DIR"
+  assert_file_owner "$UID" "$NOTIFICATION_ROUTE_FILE"
+  assert_file_mode 0700 "$NOTIFICATION_ROUTE_DIR"
+  assert_file_mode 0600 "$NOTIFICATION_ROUTE_FILE"
+  [[ ! -L $NOTIFICATION_ROUTE_FILE ]] || fail 'notification route file is a symlink'
+  if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+    fail 'temporary notification route file was not removed after rename'
+  fi
+}
+
+reset_route_state() {
+  rm -rf -- "$NOTIFICATION_ROUTE_DIR"
+  NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
+}
+
+assert_mako_sentinel_empty() {
+  [[ ! -s $MAKO_SENTINEL_LOG ]] || \
+    fail "forbidden makoctl invocation: $(<"$MAKO_SENTINEL_LOG")"
 }
 
 monitor() {
@@ -109,19 +152,103 @@ clients() {
   jq -sc '.'
 }
 
-# The watcher must define functions but not enter its event loop when sourced.
-# shellcheck source=../watch-rustdesk-submap.sh
-source "$WATCHER"
-
 TEST_RUNTIME_DIR=$(mktemp -d)
 trap 'rm -rf -- "$TEST_RUNTIME_DIR"' EXIT
 export XDG_RUNTIME_DIR="$TEST_RUNTIME_DIR"
-export RUSTDESK_NOTIFICATION_CUE_STATE="$TEST_RUNTIME_DIR/rustdesk-notification-cue"
-MAKO_LOG="$TEST_RUNTIME_DIR/makoctl.log"
+TEST_BIN="$TEST_RUNTIME_DIR/bin"
+mkdir -p -- "$TEST_BIN"
+MAKO_SENTINEL_LOG="$TEST_RUNTIME_DIR/makoctl.log"
+export MAKO_SENTINEL_LOG
+cat >"$TEST_BIN/makoctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${MAKO_SENTINEL_LOG:?}"
+printf 'FAIL: forbidden makoctl invocation: %s\n' "$*" >&2
+exit 125
+EOF
+chmod 0700 -- "$TEST_BIN/makoctl"
+unset -f makoctl 2>/dev/null || true
+export PATH="$TEST_BIN:/usr/bin:/bin"
+
+# The watcher must define functions but not enter its event loop when sourced.
+# shellcheck source=../watch-rustdesk-submap.sh
+source "$WATCHER"
+assert_mako_sentinel_empty
+assert_equal '["DVI-D-1","HDMI-A-1","DP-2","DP-1","eDP-1"]' \
+  "$SUPPORTED_NOTIFICATION_OUTPUTS_JSON" 'exact notification output allowlist'
+fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
+epoch_seconds() {
+  printf '%s\n' "$fake_epoch_seconds"
+}
+epoch_milliseconds() {
+  printf '%s\n' "$fake_epoch_milliseconds"
+}
+NOTIFICATION_RECONCILE_INTERVAL=30
+
+NOTIFICATION_ROUTE_DIR="$TEST_RUNTIME_DIR/desktop-shell"
+NOTIFICATION_ROUTE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route.json"
+NOTIFICATION_LEASE_FILE="$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"
+ROUTE_RENAME_FAIL=false
+ROUTE_INTERRUPT=false
+ROUTE_SIGKILL_AFTER_RENAME=false
+LEASE_UNLINK_FAIL=false
+LEASE_UNLINK_STUCK=false
+LEASE_RENAME_FAIL=false
+ROUTE_POST_RENAME_CHMOD=''
+LEASE_POST_RENAME_CHMOD=''
+ROUTE_POST_RENAME_SYMLINK=false
+LEASE_POST_RENAME_SYMLINK=false
 HYPR_LOG="$TEST_RUNTIME_DIR/hyprctl.log"
 HYPR_FAIL=false
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
+
+mv() {
+  if [[ $ROUTE_INTERRUPT == true ]]; then
+    kill -TERM "$BASHPID"
+  fi
+  local target=${!#}
+  if [[ $ROUTE_RENAME_FAIL == true && $target == "$NOTIFICATION_ROUTE_FILE" ]]; then
+    return 1
+  fi
+  if [[ $LEASE_RENAME_FAIL == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 1
+  fi
+  command mv "$@"
+  if [[ $target == "$NOTIFICATION_ROUTE_FILE" ]]; then
+    if [[ -n $ROUTE_POST_RENAME_CHMOD ]]; then
+      command chmod "$ROUTE_POST_RENAME_CHMOD" -- "$target"
+    fi
+    if [[ $ROUTE_POST_RENAME_SYMLINK == true ]]; then
+      local symlink_target="$TEST_RUNTIME_DIR/post-route-symlink-target"
+      command mv -- "$target" "$symlink_target"
+      command ln -s -- "$symlink_target" "$target"
+    fi
+    if [[ $ROUTE_SIGKILL_AFTER_RENAME == true ]]; then
+      kill -KILL "$BASHPID"
+    fi
+  elif [[ $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    if [[ -n $LEASE_POST_RENAME_CHMOD ]]; then
+      command chmod "$LEASE_POST_RENAME_CHMOD" -- "$target"
+    fi
+    if [[ $LEASE_POST_RENAME_SYMLINK == true ]]; then
+      local symlink_target="$TEST_RUNTIME_DIR/post-lease-symlink-target"
+      command mv -- "$target" "$symlink_target"
+      command ln -s -- "$symlink_target" "$target"
+    fi
+  fi
+}
+
+rm() {
+  local target=${!#}
+  if [[ ${LEASE_UNLINK_FAIL:-false} == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 1
+  fi
+  if [[ ${LEASE_UNLINK_STUCK:-false} == true && $target == "$NOTIFICATION_LEASE_FILE" ]]; then
+    return 0
+  fi
+  command rm "$@"
+}
 
 hyprctl() {
   case "$1 ${2:-}" in
@@ -137,8 +264,6 @@ hyprctl() {
     *) fail "unexpected hyprctl invocation: $*" ;;
   esac
 }
-
-reset_mako
 
 MONITORS_HDMI_FOCUSED=$(printf '%s\n' \
   "$(monitor 1 DVI-D-1 0 0 false)" \
@@ -185,6 +310,16 @@ MONITORS_UNKNOWN=$(printf '%s\n' \
   "$(monitor 21 USB-C-77 0 0 true)" \
   "$(monitor 22 eDP-99 1920 0 false)" \
   "$(monitor 23 DP-UNKNOWN 3840 0 false false false)" | monitors)
+MONITORS_ALL_ALLOWED=$(printf '%s\n' \
+  "$(monitor 1 DVI-D-1 0 0 false)" \
+  "$(monitor 2 HDMI-A-1 1920 0 false)" \
+  "$(monitor 3 DP-2 3840 0 false)" \
+  "$(monitor 4 DP-1 5760 0 true)" \
+  "$(monitor 5 eDP-1 7680 0 false)" | monitors)
+MONITORS_SINGLE_EDP=$(printf '%s\n' "$(monitor 5 eDP-1 0 0 true)" | monitors)
+MONITORS_DP1_DP2=$(printf '%s\n' \
+  "$(monitor 1 DP-2 0 0 false)" \
+  "$(monitor 2 DP-1 1920 0 true)" | monitors)
 
 RUSTDESK_ON_HDMI=$(client 2 true true | clients)
 RUSTDESK_ON_DVI=$(client 1 true true | clients)
@@ -197,6 +332,14 @@ HIDDEN_RUSTDESK_ON_DP=$(client 3 true false | clients)
 UNMAPPED_RUSTDESK_ON_HDMI=$(client 2 false true | clients)
 NON_RUSTDESK_ON_HDMI=$(client 2 true true AnyDesk 'Remote Desktop' | clients)
 WRONG_TITLE_RUSTDESK_ON_HDMI=$(client 2 true true RustDesk 'File Transfer' | clients)
+RUSTDESK_ON_ALL_ALLOWED=$(printf '%s\n' \
+  "$(client 1 true true)" \
+  "$(client 2 true true)" \
+  "$(client 3 true true)" \
+  "$(client 4 true true)" \
+  "$(client 5 true true)" | clients)
+RUSTDESK_ON_EDP=$(client 5 true true | clients)
+RUSTDESK_ON_DP1=$(client 2 true true | clients)
 
 assert_equal 'rustdesk-route-HDMI-A-1|none|none' \
   "$(notification_route_state "$MONITORS_HDMI_FOCUSED" '[]')" \
@@ -234,6 +377,18 @@ assert_equal 'rustdesk-route-hidden|DP-2|none' \
   "$(notification_route_state "$MONITORS_DP_FOCUSED" "$RUSTDESK_ON_ALL")" \
   'all occupied hides real notification'
 
+assert_equal 'rustdesk-route-hidden|eDP-1|none' \
+  "$(notification_route_state "$MONITORS_SINGLE_EDP" "$RUSTDESK_ON_EDP")" \
+  'single occupied eDP-1 hides real notification and keeps a bullet cue'
+
+assert_equal 'rustdesk-route-hidden|DP-1|none' \
+  "$(notification_route_state "$MONITORS_ALL_ALLOWED" "$RUSTDESK_ON_ALL_ALLOWED")" \
+  'all five occupied outputs hide real notification and keep a bullet cue'
+
+assert_equal 'rustdesk-route-DP-2|DP-1|left' \
+  "$(notification_route_state "$MONITORS_DP1_DP2" "$RUSTDESK_ON_DP1")" \
+  'DP-1 occupancy routes safely to DP-2 with a DP-1 direction cue'
+
 assert_equal 'rustdesk-route-DP-2|none|none' \
   "$(notification_route_state "$MONITORS_DP_FOCUSED" "$HIDDEN_RUSTDESK_ON_DP")" \
   'hidden-workspace RustDesk does not exclude output'
@@ -266,87 +421,352 @@ assert_equal 'rustdesk-route-hidden|none|none' \
   "$(notification_route_state "$MONITORS_ANTOINEWS" "$RUSTDESK_ON_ARBITRARY")" \
   'unknown connector notification route is hidden'
 
-# Removing or adding a watcher-owned route must never remove unrelated Mako modes.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'cue state'
-assert_equal true "$MAKO_CUE_ORDER_CHECKED" 'cue state is written before cue activation'
-assert_log_contains '-r rustdesk-route-DVI-D-1'
-assert_log_contains '-r rustdesk-route-HDMI-A-1'
-assert_log_contains '-r rustdesk-route-DP-2'
-assert_log_contains '-r rustdesk-route-hidden'
-assert_log_contains '-r rustdesk-cue'
-assert_log_contains '-a rustdesk-route-DVI-D-1'
-assert_log_contains '-a rustdesk-cue'
-if [[ $(<"$MAKO_LOG") == *'-r default'* || $(<"$MAKO_LOG") == *'-r do-not-disturb'* ]]; then
-  fail 'unrelated Mako modes were removed'
+# A visible route with a directional cue publishes the exact route payload.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":"HDMI-A-1","direction":"left"}'
+assert_route_contract
+assert_lease_payload '{"version":2,"refreshedAtMs":1786930000000,"expiresAtMs":1786930001500,"routeUpdatedAt":1786930000}'
+assert_lease_contract
+
+# An unchanged route refreshes only the lease and leaves the route file in place.
+first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+first_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
+fake_epoch_seconds=1786930001
+fake_epoch_milliseconds=1786930001000
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+second_lease_inode=$(stat -c '%i' -- "$NOTIFICATION_LEASE_FILE")
+assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
+[[ $first_lease_inode != "$second_lease_inode" ]] || fail 'unchanged route did not refresh the lease'
+assert_lease_payload '{"version":2,"refreshedAtMs":1786930001000,"expiresAtMs":1786930002500,"routeUpdatedAt":1786930000}'
+assert_lease_contract
+fake_epoch_seconds=1786930000
+fake_epoch_milliseconds=1786930000000
+
+# An unchanged route is a no-op between reconciliation intervals.
+first_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+first_updated_at=$(route_updated_at)
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+second_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+second_updated_at=$(route_updated_at)
+assert_equal "$first_route_inode" "$second_route_inode" 'unchanged route keeps the existing file'
+assert_equal "$first_updated_at" "$second_updated_at" 'unchanged route keeps its timestamp'
+(( second_updated_at >= first_updated_at )) || fail 'route timestamp moved backwards'
+
+# A fresh same-state route with insecure permissions is not eligible for a no-op.
+chmod 0644 -- "$NOTIFICATION_ROUTE_FILE"
+insecure_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+secure_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $secure_route_inode != "$insecure_route_inode" ]] || \
+  fail 'insecure same-state route was not atomically replaced'
+assert_route_contract
+
+# A visible route without a cue uses null cue fields.
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+assert_route_contract
+changed_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $changed_route_inode != "$second_route_inode" ]] || fail 'changed route did not atomically replace the file'
+changed_updated_at=$(route_updated_at)
+(( changed_updated_at >= second_updated_at )) || fail 'changed route timestamp moved backwards'
+
+# Hidden routing keeps the cue output while hiding notification cards.
+reset_route_state
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
+
+# A stale unchanged route is rewritten so the service staleness gate stays healthy.
+stale_route=$(jq -c --argjson updated_at 1 '.updatedAt = $updated_at' "$NOTIFICATION_ROUTE_FILE")
+printf '%s\n' "$stale_route" >"$TEST_RUNTIME_DIR/stale-route"
+chmod 0600 "$TEST_RUNTIME_DIR/stale-route"
+mv "$TEST_RUNTIME_DIR/stale-route" "$NOTIFICATION_ROUTE_FILE"
+stale_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$((SECONDS - NOTIFICATION_ROUTE_REWRITE_INTERVAL - 1))
+stale_publish_before=$(epoch_seconds)
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+stale_publish_after=$(epoch_seconds)
+fresh_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+[[ $fresh_route_inode != "$stale_route_inode" ]] || fail 'stale route was not rewritten'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+assert_route_contract
+fresh_updated_at=$(route_updated_at)
+(( fresh_updated_at > 1 )) || fail 'rewritten route timestamp did not advance'
+(( fresh_updated_at >= stale_publish_before && fresh_updated_at <= stale_publish_after )) || \
+  fail "rewritten route timestamp is not current: $fresh_updated_at"
+
+# A future timestamp must not suppress an overdue rewrite or move backwards.
+future_timestamp=$((fresh_updated_at + 3600))
+future_route=$(jq -c --argjson updated_at "$future_timestamp" '.updatedAt = $updated_at' \
+  "$NOTIFICATION_ROUTE_FILE")
+printf '%s\n' "$future_route" >"$TEST_RUNTIME_DIR/future-route"
+chmod 0600 -- "$TEST_RUNTIME_DIR/future-route"
+mv "$TEST_RUNTIME_DIR/future-route" "$NOTIFICATION_ROUTE_FILE"
+future_route_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$((SECONDS - NOTIFICATION_ROUTE_REWRITE_INTERVAL - 1))
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+future_refreshed_inode=$(stat -c '%i' -- "$NOTIFICATION_ROUTE_FILE")
+future_refreshed=$(route_updated_at)
+[[ $future_refreshed_inode != "$future_route_inode" ]] || \
+  fail 'future timestamp suppressed an overdue route rewrite'
+(( future_refreshed >= future_timestamp )) || \
+  fail 'future route timestamp moved backwards'
+assert_route_contract
+
+# A failed atomic rename preserves the prior valid route file.
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+ROUTE_RENAME_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed route rename returned success'
+fi
+ROUTE_RENAME_FAIL=false
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'failed route write preserves the prior valid file'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed route write left a lease file behind'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":"DP-2","direction":null}'
+
+# A failed lease rename invalidates the lease while preserving the route file.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+LEASE_RENAME_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed lease rename returned success'
+fi
+LEASE_RENAME_FAIL=false
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed lease write left a lease file behind'
+
+# A failed lease revocation must prevent a replacement and preserve the old
+# route and its still-valid lease.
+reset_route_state
+fake_epoch_seconds=1786930000
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+prior_lease=$(<"$NOTIFICATION_LEASE_FILE")
+LEASE_UNLINK_FAIL=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'failed lease revocation returned success'
+fi
+LEASE_UNLINK_FAIL=false
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'failed lease revocation replaced the prior route'
+assert_equal "$prior_lease" "$(<"$NOTIFICATION_LEASE_FILE")" \
+  'failed lease revocation changed the prior lease'
+
+# A successful unlink command is not enough when the lease path still exists,
+# including when it remains a symlink.
+LEASE_UNLINK_STUCK=true
+if invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+  fail 'stuck lease revocation returned success'
+fi
+[[ -f $NOTIFICATION_LEASE_FILE ]] || fail 'stuck lease fixture lost its lease unexpectedly'
+LEASE_UNLINK_STUCK=false
+rm -f -- "$NOTIFICATION_LEASE_FILE"
+ln -s -- "$TEST_RUNTIME_DIR/stuck-lease-target" "$NOTIFICATION_LEASE_FILE"
+LEASE_UNLINK_STUCK=true
+if invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+  fail 'symlink lease revocation returned success'
+fi
+LEASE_UNLINK_STUCK=false
+rm -f -- "$NOTIFICATION_LEASE_FILE"
+
+# Parse and build failures revoke an existing lease even though the route file
+# itself is left untouched.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+if write_notification_route_state 'invalid-route-state' 2>/dev/null; then
+  fail 'parse failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE && ! -L $NOTIFICATION_LEASE_FILE ]] || \
+  fail 'parse failure left a valid lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'parse failure replaced the prior route'
+
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+if (
+  build_notification_route_json() { return 1; }
+  write_notification_route_state 'rustdesk-route-hidden|none|none'
+) 2>/dev/null; then
+  fail 'build failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE && ! -L $NOTIFICATION_LEASE_FILE ]] || \
+  fail 'build failure left a valid lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'build failure replaced the prior route'
+
+# A same-second SIGKILL after route replacement cannot leave the old matching
+# lease available for the new route.
+reset_route_state
+fake_epoch_seconds=1786930000
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+set +e
+(
+  ROUTE_SIGKILL_AFTER_RENAME=true
+  write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null
+)
+sigkill_status=$?
+set -e
+((sigkill_status == 137)) || fail "SIGKILL route publisher exited unexpectedly: $sigkill_status"
+assert_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'SIGKILL route replacement left the old lease behind'
+
+# Post-rename route verification rejects insecure metadata and invalidates the lease.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+ROUTE_POST_RENAME_CHMOD=0644
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename insecure route metadata returned success'
+fi
+ROUTE_POST_RENAME_CHMOD=''
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'insecure post-rename route metadata left a lease file behind'
+
+# Post-rename lease verification rejects insecure metadata.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+LEASE_POST_RENAME_CHMOD=0644
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename insecure lease metadata returned success'
+fi
+LEASE_POST_RENAME_CHMOD=''
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'insecure post-rename lease metadata left a lease file behind'
+
+# Post-rename route verification rejects symlink replacement and invalidates the lease.
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+ROUTE_POST_RENAME_SYMLINK=true
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'post-rename route symlink returned success'
+fi
+ROUTE_POST_RENAME_SYMLINK=false
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'post-rename route symlink left a lease file behind'
+
+# A symlinked route directory is rejected before publication.
+reset_route_state
+mkdir -p -- "$TEST_RUNTIME_DIR/lease-target"
+ln -s -- "$TEST_RUNTIME_DIR/lease-target" "$NOTIFICATION_ROUTE_DIR"
+if write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left' 2>/dev/null; then
+  fail 'symlinked route directory was accepted'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'symlinked route directory created a lease'
+[[ ! -e $NOTIFICATION_ROUTE_FILE ]] || fail 'symlinked route directory created a route file'
+
+# A pre-existing lease is invalidated when route-directory validation fails early.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+prior_route=$(<"$NOTIFICATION_ROUTE_FILE")
+mv -- "$NOTIFICATION_ROUTE_DIR" "$TEST_RUNTIME_DIR/failed-route-dir-target"
+ln -s -- "$TEST_RUNTIME_DIR/failed-route-dir-target" "$NOTIFICATION_ROUTE_DIR"
+if write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null; then
+  fail 'early route-directory validation failure returned success'
+fi
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'early route-directory validation failure left the lease behind'
+assert_equal "$prior_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'early route-directory validation failure should preserve the prior route'
+
+# Cleanup removes the lease and publishes hidden state without recreating the lease.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+cleanup_notification_route_state
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup recreated the lease'
+assert_route_contract
+if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+  fail 'cleanup left a temporary notification route file behind'
 fi
 
-# Hidden routing retains a cue but must not activate an output route.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|none'
-apply_notification_route_state 'rustdesk-route-hidden|DP-2|none'
-assert_equal 'DP-2|none' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'hidden cue state'
-assert_log_contains '-a rustdesk-route-hidden'
-assert_log_contains '-a rustdesk-cue'
-if [[ $(<"$MAKO_LOG") == *'-a rustdesk-route-DVI-D-1'* || \
-  $(<"$MAKO_LOG") == *'-a rustdesk-route-HDMI-A-1'* || \
-  $(<"$MAKO_LOG") == *'-a rustdesk-route-DP-2'* ]]; then
-  fail 'hidden routing activated a safe route'
+# Cleanup still removes the lease when the route directory is insecure.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+visible_route_before_cleanup=$(<"$NOTIFICATION_ROUTE_FILE")
+chmod 0755 -- "$NOTIFICATION_ROUTE_DIR"
+cleanup_notification_route_state
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup through insecure directory recreated the lease'
+assert_equal "$visible_route_before_cleanup" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'cleanup through insecure directory should not republish the route'
+
+# Cleanup still removes the lease when the route directory is symlinked.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+visible_route_before_cleanup=$(<"$NOTIFICATION_ROUTE_FILE")
+mv -- "$NOTIFICATION_ROUTE_DIR" "$TEST_RUNTIME_DIR/cleanup-route-target"
+ln -s -- "$TEST_RUNTIME_DIR/cleanup-route-target" "$NOTIFICATION_ROUTE_DIR"
+cleanup_notification_route_state
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'cleanup through symlink directory recreated the lease'
+assert_equal "$visible_route_before_cleanup" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'cleanup through symlink directory should not republish the route'
+
+# An interruption after mktemp must clean only the publisher's temporary file.
+reset_route_state
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+prior_interrupted_route=$(<"$NOTIFICATION_ROUTE_FILE")
+set +e
+(
+  ROUTE_INTERRUPT=true
+  write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' 2>/dev/null
+)
+interrupt_status=$?
+set -e
+((interrupt_status == 143)) || fail "interrupted route publisher exited unexpectedly: $interrupt_status"
+assert_equal "$prior_interrupted_route" "$(<"$NOTIFICATION_ROUTE_FILE")" \
+  'interrupted route publication preserves the prior valid file'
+if compgen -G "$NOTIFICATION_ROUTE_DIR/.notification-route.json.*" >/dev/null; then
+  fail 'interrupted route publication left a temporary file'
 fi
+write_notification_route_state 'rustdesk-route-hidden|DP-2|none'
+assert_route_contract
 
-# Cue removal follows a successful Mako update, so a failed update remains retryable.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'
-[[ ! -e $RUSTDESK_NOTIFICATION_CUE_STATE ]] || fail 'cue state survived successful removal'
-assert_log_contains '-r rustdesk-cue'
+# Main installs cleanup before discovery, so an early TERM still removes the
+# lease and publishes a hidden route through the secure route directory. The
+# child signals only its own BASHPID publisher, never this test process.
+reset_route_state
+write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+set +e
+(
+  HYPRLAND_INSTANCE_SIGNATURE=''
+  sleep() { kill -TERM "$BASHPID"; }
+  main
+)
+discovery_trap_status=$?
+set -e
+((discovery_trap_status == 143)) || \
+  fail "discovery TERM trap exited unexpectedly: $discovery_trap_status"
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'discovery TERM trap recreated the lease'
+assert_route_contract
 
-# A failed cue disable must retain the last usable cue state for retry.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-MAKO_FAIL=remove-cue
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'; then
-  fail 'failed cue disable returned success'
-fi
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-  'cue state survives failed cue disable'
-MAKO_FAIL=false
-
-# No Mako mutation is needed when live Mako modes and the cue file already agree.
-reset_mako $'default\ndo-not-disturb\nrustdesk-route-DVI-D-1\nrustdesk-cue'
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_log_empty
-
-# A Mako failure must return an error and leave the persisted cue state for retry.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-MAKO_FAIL=apply
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'; then
-  fail 'Mako application failure returned success'
-fi
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" 'cue state survives failed apply'
-MAKO_FAIL=false
-
-# A Mako mode-read failure cannot mutate either Mako modes or the cue state.
-reset_mako
-printf 'DP-2|left' >"$RUSTDESK_NOTIFICATION_CUE_STATE"
-MAKO_FAIL='read'
-if apply_notification_route_state 'rustdesk-route-DVI-D-1|none|none'; then
-  fail 'Mako mode-read failure returned success'
-fi
-assert_log_empty
-assert_equal 'DP-2|left' "$(<"$RUSTDESK_NOTIFICATION_CUE_STATE")" \
-  'cue state survives Mako mode-read failure'
-MAKO_FAIL=false
-
-# Live Mako state, rather than an in-memory cache, drives restart recovery.
-reset_mako
-MAKO_EXPECTED_CUE_STATE='DP-2|left'
-apply_notification_route_state 'rustdesk-route-DVI-D-1|DP-2|left'
-assert_log_contains '-a rustdesk-route-DVI-D-1'
+# Main handles TERM after discovery by removing the lease and publishing a
+# hidden route.
+reset_route_state
+MAIN_TRAP_SIG='main-trap-test'
+MAIN_TRAP_DIR="$TEST_RUNTIME_DIR/hypr/$MAIN_TRAP_SIG"
+MAIN_TRAP_SOCKET="$MAIN_TRAP_DIR/.socket2.sock"
+mkdir -p -- "$MAIN_TRAP_DIR"
+command socat -u "UNIX-LISTEN:$MAIN_TRAP_SOCKET,fork" - >/dev/null 2>&1 &
+MAIN_TRAP_SOCAT_PID=$!
+for _ in {1..200}; do
+  [[ -S $MAIN_TRAP_SOCKET ]] && break
+  sleep 0.01
+done
+[[ -S $MAIN_TRAP_SOCKET ]] || fail "failed to create test Hyprland socket: $MAIN_TRAP_SOCKET"
+set +e
+(
+  HYPRLAND_INSTANCE_SIGNATURE=$MAIN_TRAP_SIG
+  watch_hyprland_events() {
+    write_notification_route_state 'rustdesk-route-DVI-D-1|HDMI-A-1|left'
+    kill -TERM "$BASHPID"
+  }
+  main
+)
+main_trap_status=$?
+set -e
+kill "$MAIN_TRAP_SOCAT_PID" 2>/dev/null || true
+wait "$MAIN_TRAP_SOCAT_PID" 2>/dev/null || true
+((main_trap_status == 143)) || fail "main TERM trap exited unexpectedly: $main_trap_status"
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'main TERM trap recreated the lease'
+assert_route_contract
 
 for routing_event in \
   'openwindow>>abc' \
@@ -384,25 +804,27 @@ if is_notification_routing_event 'activelayout>>keyboard,us'; then
 fi
 
 # Unavailable or malformed Hyprland state must fail closed to the hidden route.
-reset_mako
+reset_route_state
 HYPR_FAIL=monitors
-if reconcile_notification_routing; then
+if reconcile_notification_routing 2>/dev/null; then
   fail 'failed Hyprland state reconciliation returned success'
 fi
-assert_log_contains '-a rustdesk-route-hidden'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'failed Hyprland state reconciliation refreshed the lease'
 HYPR_FAIL=false
 
-reset_mako
+reset_route_state
 HYPR_MONITORS_JSON='{malformed'
 HYPR_CLIENTS_JSON='[]'
-if reconcile_notification_routing; then
+if reconcile_notification_routing 2>/dev/null; then
   fail 'malformed Hyprland state reconciliation returned success'
 fi
-assert_log_contains '-a rustdesk-route-hidden'
+assert_route_payload '{"version":1,"visible":false,"output":null,"cueOutput":null,"direction":null}'
+[[ ! -e $NOTIFICATION_LEASE_FILE ]] || fail 'malformed Hyprland state reconciliation refreshed the lease'
 HYPR_MONITORS_JSON='[]'
 
 # Handler state is explicit, persists across events, and does not affect movement.
-reset_mako
+reset_route_state
 : >"$HYPR_LOG"
 handler_clean_state=false
 handle_hyprland_event 'activewindow>>RustDesk,Remote Desktop' handler_clean_state
@@ -484,6 +906,215 @@ set -e
 assert_equal $'connect\nsleep:2' "$(<"$STREAM_LOG")" \
   'terminated event stream uses the bounded reconnect delay'
 
+# Configured reconciliation intervals cannot exceed the lease renewal budget.
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
+: >"$STREAM_LOG"
+(
+  reconcile_notification_routing() {
+    printf 'reconcile\n' >>"$STREAM_LOG"
+  }
+  read() {
+    printf 'read-timeout:%s\n' "$3" >>"$STREAM_LOG"
+    return 1
+  }
+  bounded_clean_state=false
+  NOTIFICATION_RECONCILE_INTERVAL=120
+  consume_hyprland_event_stream bounded_clean_state </dev/null
+)
+assert_equal $'reconcile\nread-timeout:1' "$(<"$STREAM_LOG")" \
+  'long reconciliation interval is bounded to one second'
+
+# An off-cadence event write schedules the next refresh from its successful write.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
+  reconcile_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$fake_monotonic_seconds
+    ((reconcile_count += 1))
+    case $reconcile_count in
+      1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
+      *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
+    esac
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      fake_monotonic_seconds=1
+      return 0
+    fi
+    if ((read_count == 1)); then
+      read_count=2
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
+      return 142
+    fi
+    return 1
+  }
+  event_clean_state=false
+  consume_hyprland_event_stream event_clean_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:2:1' \
+  "$(<"$STREAM_LOG")" \
+  'off-cadence event write receives a one-second lease refresh'
+
+# Same-state routing events must not postpone an overdue route rewrite.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
+  reconcile_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$fake_monotonic_seconds
+    ((reconcile_count += 1))
+    write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none'
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      fake_monotonic_seconds=10
+      return 0
+    fi
+    if ((read_count == 1)); then
+      read_count=2
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
+      return 142
+    fi
+    return 1
+  }
+  busy_same_state=false
+  consume_hyprland_event_stream busy_same_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:10:0\nreconcile:3:10:0\nreconcile:4:11:0' \
+  "$(<"$STREAM_LOG")" \
+  'same-state routing events cannot postpone the one-second lease refresh'
+
+# A deadline-driven interval-29 no-op must retry at the actual route-write age 30.
+reset_route_state
+: >"$STREAM_LOG"
+(
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
+  reconcile_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$fake_monotonic_seconds
+    ((reconcile_count += 1))
+    case $reconcile_count in
+      1) write_notification_route_state 'rustdesk-route-HDMI-A-1|none|none' ;;
+      *) write_notification_route_state 'rustdesk-route-DVI-D-1|none|none' ;;
+    esac
+    printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+  }
+  read_count=0
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    if ((read_count == 0)); then
+      read_count=1
+      printf -v "$4" '%s' 'workspace>>1'
+      fake_monotonic_seconds=1
+      return 0
+    fi
+    if ((read_count == 1)); then
+      ((read_count += 1))
+      printf -v "$4" '%s' 'activelayout>>keyboard,us'
+      fake_monotonic_seconds=30
+      return 0
+    fi
+    if ((read_count == 2)); then
+      ((read_count += 1))
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
+      return 142
+    fi
+    return 1
+  }
+  event_clean_state=false
+  NOTIFICATION_RECONCILE_INTERVAL=29
+  consume_hyprland_event_stream event_clean_state </dev/null
+)
+assert_equal $'reconcile:1:0:0\nreconcile:2:1:1\nreconcile:3:30:1\nreconcile:4:31:31' \
+  "$(<"$STREAM_LOG")" \
+  'interval-29 deadline rechecks at the actual route age 30 seconds'
+
+# A persistent overdue reconciliation failure must wait for a bounded retry
+# instead of reusing the expired route deadline without reading from the stream.
+reset_route_state
+: >"$STREAM_LOG"
+set +e
+(
+  fake_monotonic_seconds=0
+  monotonic_seconds() {
+    printf '%s\n' "$fake_monotonic_seconds"
+  }
+  reconcile_count=0
+  read_count=0
+  reconcile_notification_routing() {
+    local reconcile_seconds=$fake_monotonic_seconds
+    ((reconcile_count += 1))
+    if ((reconcile_count == 1)); then
+      NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=0
+      printf 'reconcile:%s:%s:%s\n' "$reconcile_count" "$reconcile_seconds" \
+        "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+      return 0
+    fi
+    printf 'reconcile:%s:%s:%s:failed\n' "$reconcile_count" "$reconcile_seconds" \
+      "$NOTIFICATION_ROUTE_LAST_WRITE_SECONDS" >>"$STREAM_LOG"
+    if ((reconcile_count >= 3 && read_count == 1)); then
+      printf 'spin-detected\n' >>"$STREAM_LOG"
+      exit 99
+    fi
+    return 1
+  }
+  read() {
+    if [[ ${2:-} != -t ]]; then
+      builtin read -r "${@:2}"
+      return
+    fi
+    ((read_count += 1))
+    if ((read_count <= 2)); then
+      printf 'read-timeout:%s:%s\n' "$3" "$fake_monotonic_seconds" >>"$STREAM_LOG"
+      fake_monotonic_seconds=$((fake_monotonic_seconds + $3))
+      return 142
+    fi
+    return 1
+  }
+  failed_retry_clean_state=false
+  consume_hyprland_event_stream failed_retry_clean_state </dev/null
+)
+failed_retry_status=$?
+set -e
+((failed_retry_status == 0)) || fail 'overdue reconciliation failure retried without advancing the read/time'
+assert_equal $'reconcile:1:0:0\nread-timeout:1:0\nreconcile:2:1:0:failed\nread-timeout:1:1\nreconcile:3:2:0:failed' \
+  "$(<"$STREAM_LOG")" \
+  'failed lease renewal uses bounded one-second retries'
+
 # An idle connected stream periodically reconciles and exits normally on EOF.
 : >"$STREAM_LOG"
 (
@@ -518,13 +1149,13 @@ mapfile -t busy_stream_reconciliations <"$STREAM_LOG"
   fail 'busy event stream postponed periodic reconciliation indefinitely'
 
 # A failed startup/event reconciliation cannot stop the existing RustDesk handler.
-reset_mako
+reset_route_state
 : >"$HYPR_LOG"
-MAKO_FAIL=apply
+ROUTE_RENAME_FAIL=true
 HYPR_MONITORS_JSON='[]'
 HYPR_CLIENTS_JSON='[]'
 handler_clean_state=false
-consume_hyprland_event_stream handler_clean_state <<'EOF'
+consume_hyprland_event_stream handler_clean_state 2>/dev/null <<'EOF'
 workspace>>1
 activewindow>>RustDesk,Remote Desktop
 EOF
@@ -532,6 +1163,7 @@ assert_equal $'eval hl.dispatch(hl.dsp.submap("clean"))' "$(<"$HYPR_LOG")" \
   'RustDesk active-window handler continues after reconciliation failure'
 assert_equal true "$handler_clean_state" \
   'handler state survives reconciliation failures and event iterations'
-MAKO_FAIL=false
+ROUTE_RENAME_FAIL=false
+assert_mako_sentinel_empty
 
 printf 'PASS: watch-rustdesk-submap route and reconciliation tests\n'

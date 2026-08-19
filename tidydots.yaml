@@ -610,6 +610,12 @@ applications:
     entries: []
   - package:
       managers:
+        pacman: fprintd
+    name: fprintd
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: power-profiles-daemon
     name: power-profiles-daemon
     when: '{{ and (eq .OS "linux") .HasDisplay (not .IsWSL) (ne .Hostname "antoinews-linux") }}'
@@ -792,13 +798,13 @@ applications:
         backup: ./Linux/quickshell/desktop-shell/systemd
         files:
           - desktop-shell.service
+          - desktop-shell-mako-route.service
       - check:
           linux: >-
             systemctl --user is-enabled --quiet desktop-shell.service &&
-            systemctl --user is-active --quiet desktop-shell.service &&
             test "$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)" = no
         run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service
+          linux: systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service
         name: enable-service
   - package:
       managers:

@@ -1,66 +1,224 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# Switch between audio outputs while preserving the mute status. By default mapped to Super + Mute.
+export LC_ALL=C
 
-focused_monitor="$(hyprctl monitors -j | jq -r '.[] | select(.focused == true).name')"
+command -v jq >/dev/null 2>&1 || {
+  printf 'cmd-audio-switch: jq is required\n' >&2
+  exit 1
+}
 
-sinks=$(pactl -f json list sinks | jq '[.[] | select((.ports | length == 0) or ([.ports[]? | .availability != "not available"] | any))]')
-sinks_count=$(echo "$sinks" | jq '. | length')
+deliver_osd() {
+  local payload=$1
+  local response
 
-if (( sinks_count == 0 )); then
-  swayosd-client \
-    --monitor "$focused_monitor" \
-    --custom-message "No audio devices found"
+  if ! response=$(desktop-shell call desktop.osd show "$payload"); then
+    printf 'cmd-audio-switch: OSD delivery failed\n' >&2
+    return 3
+  fi
+  if [[ $response != ok ]]; then
+    printf 'cmd-audio-switch: OSD returned an invalid response\n' >&2
+    return 3
+  fi
+}
+
+read_sinks() {
+  local phase=${1:-initial}
+  local sinks_json
+
+  if ! sinks_json=$(pactl -f json list sinks 2>/dev/null); then
+    if [[ $phase == post-mutation ]]; then
+      printf 'cmd-audio-switch: failed to re-enumerate audio devices after mutation\n' >&2
+    else
+      printf 'cmd-audio-switch: failed to enumerate audio devices\n' >&2
+    fi
+    return 1
+  fi
+  if ! sinks=$(jq -c '
+    if type != "array" then error("audio device list is not an array")
+    else [.[] | select((.ports | length == 0) or ([.ports[]? | .availability != "not available"] | any))]
+    end
+  ' <<<"$sinks_json"); then
+    if [[ $phase == post-mutation ]]; then
+      printf 'cmd-audio-switch: malformed audio device list after mutation\n' >&2
+    else
+      printf 'cmd-audio-switch: malformed audio device list\n' >&2
+    fi
+    return 1
+  fi
+  if ! sinks_count=$(jq -er 'length' <<<"$sinks"); then
+    printf 'cmd-audio-switch: malformed audio device list\n' >&2
+    return 1
+  fi
+}
+
+description_missing() {
+  case "$1" in
+    ''|null|'(null)') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+lookup_wpctl_description() {
+  local id=$1
+  local status_text
+
+  [[ $id =~ ^[0-9]+$ ]] || return 0
+  if ! status_text=$(wpctl status 2>/dev/null); then
+    return 0
+  fi
+  awk -v id="$id" \
+    '$0 ~ ("(^|[[:space:]])" id "\\.") {
+       line = $0
+       sub(/^.*[0-9]+\.[[:space:]]+/, "", line)
+       sub(/[[:space:]]+\[.*$/, "", line)
+       print line
+       exit
+     }' <<<"$status_text"
+}
+
+read_sink_description() {
+  local sink=$1
+  local description
+  local device_id
+  local sink_id
+
+  if ! description=$(jq -er '.description // ""' <<<"$sink"); then
+    return 1
+  fi
+  if ! description_missing "$description"; then
+    printf '%s\n' "$description"
+    return 0
+  fi
+
+  if ! device_id=$(jq -er '.properties["device.id"] // ""' <<<"$sink"); then
+    return 1
+  fi
+  description=$(lookup_wpctl_description "$device_id")
+  if [[ -z $description ]]; then
+    if ! sink_id=$(jq -er '.properties["object.id"] // ""' <<<"$sink"); then
+      return 1
+    fi
+    description=$(lookup_wpctl_description "$sink_id")
+  fi
+  printf '%s\n' "$description"
+}
+
+read_sink_details() {
+  local sink=$1
+  local phase=${2:-selected}
+
+  if ! next_sink_name=$(jq -er '.name | strings' <<<"$sink"); then
+    printf 'cmd-audio-switch: failed to read %s sink details\n' "$phase" >&2
+    return 1
+  fi
+  if ! next_sink_description=$(read_sink_description "$sink"); then
+    printf 'cmd-audio-switch: failed to read %s sink details\n' "$phase" >&2
+    return 1
+  fi
+  if ! next_sink_volume=$(jq -er '.volume | to_entries[0].value.value_percent | tostring | sub("%$"; "") | tonumber' <<<"$sink"); then
+    printf 'cmd-audio-switch: failed to read %s sink details\n' "$phase" >&2
+    return 1
+  fi
+  if ! [[ $next_sink_volume =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    printf 'cmd-audio-switch: malformed %s sink volume\n' "$phase" >&2
+    return 1
+  fi
+  if ! next_sink_is_muted=$(jq -r 'if (.mute | type) == "boolean" then .mute else error("mute is not boolean") end' <<<"$sink"); then
+    printf 'cmd-audio-switch: failed to read %s sink details\n' "$phase" >&2
+    return 1
+  fi
+}
+
+select_icon_state() {
+  if [[ $next_sink_is_muted == true ]] || (( next_sink_volume == 0 )); then
+    icon_state=muted
+  elif (( next_sink_volume <= 33 )); then
+    icon_state=low
+  elif (( next_sink_volume <= 66 )); then
+    icon_state=medium
+  else
+    icon_state=high
+  fi
+}
+
+read_default_sink() {
+  local phase=$1
+
+  if ! current_sink_name=$(pactl get-default-sink 2>/dev/null); then
+    printf 'cmd-audio-switch: failed to read %s default sink\n' "$phase" >&2
+    return 1
+  fi
+  if [[ -z $current_sink_name || $current_sink_name == *$'\n'* ]]; then
+    printf 'cmd-audio-switch: malformed %s default sink\n' "$phase" >&2
+    return 1
+  fi
+}
+
+if ! read_sinks initial; then
   exit 1
 fi
 
-current_sink_name=$(pactl get-default-sink)
-current_sink_index=$(echo "$sinks" | jq -r --arg name "$current_sink_name" 'map(.name) | index($name)')
+if (( sinks_count == 0 )); then
+  payload=$(jq -cn \
+    --arg icon volume-muted \
+    --arg message 'No audio devices found' \
+    '{icon: $icon, message: $message}')
+  deliver_osd "$payload" || true
+  exit 1
+fi
 
-if [[ $current_sink_index != "null" ]]; then
+if ! read_default_sink current; then
+  exit 1
+fi
+if ! current_sink_index=$(jq -r --arg name "$current_sink_name" 'map(.name) | index($name)' <<<"$sinks"); then
+  printf 'cmd-audio-switch: failed to select next audio device\n' >&2
+  exit 1
+fi
+if [[ $current_sink_index != null ]]; then
   next_sink_index=$(((current_sink_index + 1) % sinks_count))
 else
   next_sink_index=0
 fi
 
-next_sink=$(echo "$sinks" | jq -r ".[$next_sink_index]")
-next_sink_name=$(echo "$next_sink" | jq -r '.name')
+if ! next_sink=$(jq -c --argjson index "$next_sink_index" '.[$index]' <<<"$sinks"); then
+  printf 'cmd-audio-switch: failed to select next audio device\n' >&2
+  exit 1
+fi
+if ! read_sink_details "$next_sink" next; then
+  exit 1
+fi
+select_icon_state
 
-next_sink_description=$(echo "$next_sink" | jq -r '.description')
-if [[ $next_sink_description == "(null)" ]] || [[ $next_sink_description == "null" ]] || [[ -z $next_sink_description ]]; then
-  # For Bluetooth devices, the friendly name is on the Device entry (device.id), not the Sink entry (object.id)
-  device_id=$(echo "$next_sink" | jq -r '.properties."device.id"')
-  if [[ $device_id != "null" ]] && [[ -n $device_id ]]; then
-    next_sink_description=$(wpctl status | grep -E "^\s*│?\s+${device_id}\." | sed -E 's/^.*[0-9]+\.\s+//' | sed -E 's/\s+\[.*$//')
+if [[ $next_sink_name != "$current_sink_name" ]]; then
+  if ! pactl set-default-sink "$next_sink_name" >/dev/null 2>&1; then
+    printf 'cmd-audio-switch: default sink mutation failed\n' >&2
+    exit 1
   fi
-  # Fall back to object.id lookup if device.id didn't yield a result
-  if [[ -z $next_sink_description ]]; then
-    sink_id=$(echo "$next_sink" | jq -r '.properties."object.id"')
-    next_sink_description=$(wpctl status | grep -E "\s+\*?\s+${sink_id}\." | sed -E 's/^.*[0-9]+\.\s+//' | sed -E 's/\s+\[.*$//')
+  if ! read_default_sink post-mutation; then
+    exit 1
   fi
+  if [[ $current_sink_name != "$next_sink_name" ]]; then
+    printf 'cmd-audio-switch: default sink readback did not match requested sink\n' >&2
+    exit 1
+  fi
+  if ! read_sinks post-mutation; then
+    exit 1
+  fi
+  if ! next_sink=$(jq -c --arg name "$current_sink_name" \
+    '[.[] | select(.name == $name)] | if length == 1 then .[0] else error("selected sink is unavailable") end' \
+    <<<"$sinks"); then
+    printf 'cmd-audio-switch: selected sink disappeared after mutation\n' >&2
+    exit 1
+  fi
+  if ! read_sink_details "$next_sink" post-mutation; then
+    exit 1
+  fi
+  select_icon_state
 fi
 
-next_sink_volume=$(echo "$next_sink" | jq -r \
-  '.volume | to_entries[0].value.value_percent | sub("%"; "")')
-next_sink_is_muted=$(echo "$next_sink" | jq -r '.mute')
-
-if [[ $next_sink_is_muted = "true" ]] || (( next_sink_volume == 0 )); then
-  icon_state="muted"
-elif (( next_sink_volume <= 33 )); then
-  icon_state="low"
-elif (( next_sink_volume <= 66 )); then
-  icon_state="medium"
-else
-  icon_state="high"
-fi
-
-next_sink_volume_icon="sink-volume-${icon_state}-symbolic"
-
-if [[ $next_sink_name != $current_sink_name ]]; then
-  pactl set-default-sink "$next_sink_name"
-fi
-
-swayosd-client \
-  --monitor "$focused_monitor" \
-  --custom-message "$next_sink_description" \
-  --custom-icon "$next_sink_volume_icon"
+payload=$(jq -cn \
+  --arg icon "volume-$icon_state" \
+  --arg message "$next_sink_description" \
+  '{icon: $icon, message: $message}')
+deliver_osd "$payload"
