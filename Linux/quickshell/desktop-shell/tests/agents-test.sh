@@ -166,10 +166,31 @@ compact_output=$(PATH="$fake_bin:$original_path" HOME="$home_root" XDG_CACHE_HOM
 jq -e '.text == "1%/4d7h" and (.text | contains("Codex") | not)' <<<"$compact_output" >/dev/null \
   || fail "compact Codex status changed"
 
-grep -Fq '"id": "desktop.agents"' "$AGENT_ROOT/manifest.json" \
-  || fail "agent manifest is not desktop.agents"
-grep -Fq '"panel": "Panel.qml"' "$AGENT_ROOT/manifest.json" \
-  || fail "agent manifest has no on-demand panel entry point"
+jq -e '
+  .id == "desktop.agents" and
+  (.kinds | index("bar-widget")) != null and
+  .entryPoints.barWidget == "Panel.qml" and
+  .barWidget.defaultSection == "right"
+' "$AGENT_ROOT/manifest.json" >/dev/null \
+  || fail "agent manifest has no native bar-widget entry point"
+grep -Fq 'command: ["desktop-shell-status", "codex"]' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent widget does not own compact Codex status"
+grep -Fq 'readonly property string displayText: compactText !== "" ? compactText : (providers.length > 0 ? "󱚣" : "")' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent widget has no provider display fallback"
+grep -Fq 'visible: displayText !== ""' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent widget visibility is not derived from display text"
+grep -Fq 'text: root.displayText' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent button does not use the derived display text"
+grep -Fq 'interval: 300000' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent compact status refresh cadence changed"
+grep -Fq 'anchorItem: button' "$AGENT_ROOT/Panel.qml" \
+  || fail "agent panel is not anchored to its native button"
+grep -Fq 'BarWidgetIpc { pluginId: "desktop.agents" }' "$SHELL_ROOT/shell.qml" \
+  || fail "agent widget has no shell-managed IPC route"
+if grep -Fq 'standaloneAnchor' "$AGENT_ROOT/Panel.qml" \
+    || grep -Fq 'IpcHandler {' "$AGENT_ROOT/Panel.qml"; then
+  fail "agent widget retains detached panel anchoring or direct IPC"
+fi
 grep -Fq 'desktop-agent-usage-update' "$AGENT_ROOT/Main.qml" \
   || fail "panel does not use the neutral updater"
 grep -Fq 'dailyUsage' "$AGENT_ROOT/Panel.qml" \
@@ -188,11 +209,10 @@ if grep -RInE 'omarchy|Fireworks|sync|cross-device|agent --pick|PersistentProper
 fi
 
 CONFIG="$SHELL_ROOT/config/shell.json.tmpl"
-grep -Fq '"exec": "desktop-shell-status codex"' "$CONFIG" \
-  || fail "compact Codex status command changed"
-grep -Fq '"onClick": "desktop-shell summon desktop.agents' "$CONFIG" \
-  || fail "compact Codex primary click route changed"
-grep -Fq '"onRightClick": "xdg-open https://chatgpt.com/codex/settings/usage"' "$CONFIG" \
-  || fail "compact Codex secondary click route changed"
+grep -Fq '{ "id": "desktop.agents" }' "$CONFIG" \
+  || fail "bar does not mount the native Agents widget"
+if grep -Fq '{ "id": "codex", "type": "command"' "$CONFIG"; then
+  fail "legacy generic Codex command widget remains configured"
+fi
 
 printf 'agents-test: collector records, auth omission, stale fallback, panel contract, and compact status verified\n'

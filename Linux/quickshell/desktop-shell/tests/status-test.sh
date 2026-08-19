@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell-status"
 CONFIG="$ROOT/Linux/quickshell/desktop-shell/config/shell.json.tmpl"
+AGENT_PANEL="$ROOT/Linux/quickshell/desktop-shell/plugins/agents/Panel.qml"
 
 command -v jq >/dev/null 2>&1 || {
   printf 'status-test: jq is required\n' >&2
@@ -409,7 +410,8 @@ grep -Fq '"onClick": "cmd-screenrecord"' "$CONFIG"
 grep -Fq '"exec": "desktop-shell-status voxtype"' "$CONFIG"
 grep -Fq '"onClick": "voxtype-model"' "$CONFIG"
 grep -Fq '"onRightClick": "voxtype-config"' "$CONFIG"
-grep -Fq '"onRightClick": "xdg-open https://chatgpt.com/codex/settings/usage"' "$CONFIG"
+grep -Fq 'command: ["desktop-shell-status", "codex"]' "$AGENT_PANEL"
+grep -Fq 'https://chatgpt.com/codex/settings/usage' "$AGENT_PANEL"
 if grep -Fq 'onClickRight' "$CONFIG"; then
   printf 'status-test: obsolete onClickRight key remains in the command config\n' >&2
   exit 1
