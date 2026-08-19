@@ -36,6 +36,9 @@ if [[ $* == *GetManagedObjects* ]]; then
   elif [[ ${STUB_BLUEZ_MODE:-valid} == nested-malformed ]]; then
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[$objects[0] + {"/org/bluez/hci0/dev_MALFORMED":"not-an-interface-map"}]}'
+  elif [[ ${STUB_BLUEZ_MODE:-valid} == no-gatt ]]; then
+    jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
+      '{type:"a{oa{sa{sv}}}",data:[($objects[0] | with_entries(select(.value | has("org.bluez.Device1"))))]}'
   else
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[$objects[0]]}'
@@ -76,6 +79,19 @@ state=$(STUB_BLUEZ_MODE=peripheral-failure PATH="$fake_bin:$PATH" \
   DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth)
 jq -e '.available == true and .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null}' \
   <<<"$state" >/dev/null || fail "partial GATT failure discarded the central battery"
+
+if ! state=$(STUB_BLUEZ_MODE=no-gatt PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
+  fail "valid BlueZ state without GATT characteristics failed"
+fi
+jq -e '
+  .available == true and .stale == false and
+  .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_NORMAL"] == {central:72, peripheral:null} and
+  .data.devices["/org/bluez/hci0/dev_GATT_ONLY"] == {central:null, peripheral:null} and
+  (.data.devices | has("/org/bluez/hci0/dev_UNRESOLVED") | not) and
+  (.data.devices | has("/org/bluez/hci0/dev_DISCONNECTED") | not)
+' <<<"$state" >/dev/null || fail "valid no-GATT BlueZ state was not collected"
 
 if state=$(STUB_BLUEZ_MODE=nested-malformed PATH="$fake_bin:$PATH" \
     DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
