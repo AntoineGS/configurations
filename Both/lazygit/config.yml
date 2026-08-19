@@ -32,12 +32,12 @@ gui:
   authorColors:
     "*": "#b4befe" # lavender
 git:
-  pagers:
+  diffRenderers:
     # lazygit (Windows pty) reports a fixed width to the pager, so side-by-side
     # can't auto-toggle by width here. Default to unified; press `|` to cycle to
     # side-by-side (pairs well with `+` to expand the diff panel).
-    - pager: delta --paging=never
-    - pager: delta --side-by-side --paging=never
+    - command: delta --paging=never
+    - command: delta --side-by-side --paging=never
 os:
   editPreset: "nvim"
 keybinding:
