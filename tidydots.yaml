@@ -778,6 +778,9 @@ applications:
   - package:
       managers:
         pacman: quickshell
+        yay:
+          deps:
+            - codexbar
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
