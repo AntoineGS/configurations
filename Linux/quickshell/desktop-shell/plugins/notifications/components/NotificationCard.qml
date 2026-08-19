@@ -16,7 +16,6 @@ BorderSurface {
   property int urgency: 1
   property double timestamp: 0
   property var actions: []
-  property bool defaultActionAvailable: false
   property int cornerRadius: 0
   property string fontFamily: Style.font.family
 
@@ -59,11 +58,11 @@ BorderSurface {
 
   MouseArea {
     anchors.fill: parent
-    cursorShape: root.defaultActionAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor
+    cursorShape: Qt.PointingHandCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     onClicked: function(mouse) {
       if (mouse.button === Qt.RightButton) root.closeRequested()
-      else if (root.defaultActionAvailable) root.cardClicked()
+      else root.cardClicked()
     }
   }
 
