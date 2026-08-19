@@ -627,7 +627,8 @@ collect_inventory_hits() {
         return 1
       }
       if (path == "Linux/os/helpers/desktop-shell-activate" &&
-          value == "stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)") {
+          (value == "stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)" ||
+           value == "reset_adapter=(systemctl --user reset-failed desktop-shell-mako-route.service)")) {
         return 1
       }
       if (path == "Linux/os/helpers/desktop-shell-rollback" &&

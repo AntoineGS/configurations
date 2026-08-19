@@ -10,9 +10,12 @@ if (($# != 0)); then
   exit 2
 fi
 
+: "${XDG_RUNTIME_DIR:=/run/user/$UID}"
+readonly LIFECYCLE_LOCK_FILE="$XDG_RUNTIME_DIR/desktop-shell-lifecycle.lock"
 readonly MAX_WAIT_ATTEMPTS=50
 readonly WAIT_INTERVAL=0.1
-readonly PKCHECK_TIMEOUT=5s
+readonly PKCHECK_TIMEOUT=1s
+readonly CONTROL_CALL_TIMEOUT=1s
 readonly POLKIT_AGENT_INPUT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
 readonly MAKO_INPUT="${DESKTOP_SHELL_MAKO:-/usr/bin/mako}"
 readonly SWAYOSD_SERVER_INPUT="${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}"
@@ -22,6 +25,10 @@ die() {
   printf 'desktop-shell rollback failed: %s\n' "$1" >&2
   exit 1
 }
+
+exec {lifecycle_lock_fd}>"$LIFECYCLE_LOCK_FILE"
+flock -n "$lifecycle_lock_fd" || die 'another desktop-shell lifecycle operation is running'
+readonly lifecycle_lock_fd
 
 resolve_executable() {
   local configured=$1
@@ -273,7 +280,10 @@ wait_for_unit_active() {
 start_mako_if_missing() {
   local pids
   local status
-  local -a command=(uwsm-app -- "$MAKO_EXECUTABLE")
+  local -a command=(
+    uwsm-app -t service -u desktop-shell-rollback-mako.service
+    -- "$MAKO_EXECUTABLE"
+  )
 
   if pids=$(query_process_pids mako); then
     :
@@ -290,7 +300,10 @@ start_mako_if_missing() {
 start_swaysod_if_missing() {
   local pids
   local status
-  local -a command=(uwsm-app -- "$SWAYOSD_SERVER_EXECUTABLE")
+  local -a command=(
+    uwsm-app -t service -u desktop-shell-rollback-swayosd.service
+    -- "$SWAYOSD_SERVER_EXECUTABLE"
+  )
 
   if pids=$(query_process_pids swayosd-server); then
     :
@@ -307,8 +320,10 @@ start_swaysod_if_missing() {
 start_polkit_if_missing() {
   local pids
   local status
-  local launch_pid
-  local -a command=("$POLKIT_AGENT")
+  local -a command=(
+    uwsm-app -t service -u desktop-shell-rollback-polkit.service
+    -- "$POLKIT_AGENT"
+  )
 
   if pids=$(query_process_pids polkit); then
     :
@@ -317,9 +332,7 @@ start_polkit_if_missing() {
     return "$status"
   fi
   if [[ -z $pids ]]; then
-    "${command[@]}" >/dev/null 2>&1 &
-    launch_pid=$!
-    disown "$launch_pid" 2>/dev/null || true
+    "${command[@]}" || return 1
   fi
   wait_for_processes_present polkit
 }
@@ -328,6 +341,10 @@ wait_for_mako_mode() {
   local attempt
   local pids
   local status
+  local -a command=(
+    timeout --signal=TERM --kill-after=1s "$CONTROL_CALL_TIMEOUT"
+    makoctl mode
+  )
 
   for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
     if pids=$(query_process_pids mako); then
@@ -336,7 +353,7 @@ wait_for_mako_mode() {
       status=$?
       return "$status"
     fi
-    if [[ -n $pids ]] && makoctl mode >/dev/null 2>&1; then
+    if [[ -n $pids ]] && "${command[@]}" >/dev/null 2>&1; then
       return 0
     fi
     sleep "$WAIT_INTERVAL"
@@ -355,7 +372,10 @@ require_mako_present() {
 
 apply_hidden_modes() {
   local managed_mode
-  local -a command=(makoctl mode)
+  local -a command=(
+    timeout --signal=TERM --kill-after=1s "$CONTROL_CALL_TIMEOUT"
+    makoctl mode
+  )
 
   for managed_mode in "${MANAGED_MODES[@]}"; do
     command+=(-r "$managed_mode")
@@ -370,8 +390,12 @@ verify_hidden_modes() {
   local mode
   local hidden_count=0
   local -a modes=()
+  local -a command=(
+    timeout --signal=TERM --kill-after=1s "$CONTROL_CALL_TIMEOUT"
+    makoctl mode
+  )
 
-  output=$(makoctl mode) || return 1
+  output=$("${command[@]}") || return 1
   normalized=${output//$'\n'/ }
   normalized=${normalized//$'\t'/ }
   read -r -a modes <<<"$normalized"
@@ -397,7 +421,9 @@ stop_adapter_best_effort() {
 fail_before_adapter() {
   local reason=$1
   local cleanup_status=0
+  local -a mask_mako=(systemctl --user mask --runtime mako.service)
 
+  "${mask_mako[@]}" || cleanup_status=1
   stop_adapter_best_effort || cleanup_status=1
   terminate_exact_mako || cleanup_status=1
   if ((cleanup_status != 0)); then
@@ -412,6 +438,7 @@ query_notification_owner_pid() {
   local owner_pid=''
   local extra=''
   local -a command=(
+    timeout --signal=TERM --kill-after=1s "$CONTROL_CALL_TIMEOUT"
     busctl --user call org.freedesktop.DBus /org/freedesktop/DBus
     org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.Notifications
   )
@@ -458,21 +485,29 @@ probe_polkit_agent() {
   local pid=$1
   local start_time
   local uid
+  local probe_status
   local -a command
+  local -a revoke_command=(pkcheck --revoke-temp)
 
   verify_exact_process_pid polkit "$pid" || return 1
   start_time=$(read_process_start_time "$pid") || return 1
   uid=$(read_process_uid "$pid") || return 1
 
-  # This proves an external agent handled authorization, not its cryptographic identity.
-  # Exact process paths and the stopped shell narrow the candidate agent set.
+  # A pending interactive challenge proves that an external agent accepted the
+  # request. Exact process-path checks and the stopped shell narrow its identity.
+  "${revoke_command[@]}" || return 1
   command=(
     timeout --signal=TERM --kill-after=1s "$PKCHECK_TIMEOUT"
     pkcheck -a org.freedesktop.policykit.exec
     -p "$pid,$start_time,$uid"
-    -d program /usr/bin/true -u
+    -u
   )
-  "${command[@]}" || return 1
+  if "${command[@]}"; then
+    return 1
+  else
+    probe_status=$?
+  fi
+  ((probe_status == 124)) || return 1
   verify_exact_process_pid polkit "$pid"
 }
 
@@ -492,6 +527,9 @@ start_adapter=(systemctl --user start desktop-shell-mako-route.service)
 "${start_adapter[@]}" || fail_before_adapter 'could not start desktop-shell-mako-route.service'
 wait_for_unit_active desktop-shell-mako-route.service || fail_before_adapter 'rollback adapter is not active'
 require_mako_present || fail_before_adapter 'Mako disappeared after adapter startup'
+
+unmask_mako=(systemctl --user unmask --runtime mako.service)
+"${unmask_mako[@]}" || die 'could not runtime-unmask mako.service'
 
 start_swaysod_if_missing || die 'could not start exact SwayOSD process'
 require_mako_present || fail_before_adapter 'Mako disappeared before polkit startup'

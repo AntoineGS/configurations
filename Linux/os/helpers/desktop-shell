@@ -66,10 +66,10 @@ case "$command_name" in
     ;;
 esac
 
-ipc_scope=(--any-display)
+ipc_scope=(--any-display -p "$HOME/.config/quickshell/desktop-shell")
 if [[ -n $target_pid ]]; then
+  unset QS_CONFIG_PATH QS_CONFIG_NAME QS_MANIFEST
   ipc_scope=(--pid "$target_pid")
 fi
 
-exec quickshell ipc "${ipc_scope[@]}" -p "$HOME/.config/quickshell/desktop-shell" \
-  call -- "$target" "$method" "${args[@]}"
+exec quickshell ipc "${ipc_scope[@]}" call -- "$target" "$method" "${args[@]}"

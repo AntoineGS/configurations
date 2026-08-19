@@ -27,6 +27,9 @@ cat >"$BIN/quickshell" <<'EOF'
 set -Eeuo pipefail
 
 printf '%s\n' "$@" >"$QUICKSHELL_ARGS_FILE"
+if [[ ${EXPECT_QS_CONFIG_UNSET:-false} == true ]]; then
+  [[ ! -v QS_CONFIG_PATH && ! -v QS_CONFIG_NAME && ! -v QS_MANIFEST ]] || exit 126
+fi
 : >"$QUICKSHELL_EXECUTED_FILE"
 EOF
 chmod +x "$BIN/quickshell"
@@ -134,9 +137,10 @@ expected_args=$(printf '%s\n' 'ipc' '--any-display' '-p' "$SHELL_DIR" 'call' 'de
 }
 
 rm -f "$ARGS_FILE" "$EXECUTED_FILE"
-run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid 4242 ping || fail 'PID-bound helper failed'
+EXPECT_QS_CONFIG_UNSET=true QS_CONFIG_PATH=/tmp/forged QS_CONFIG_NAME=forged QS_MANIFEST=/tmp/forged-manifest \
+  run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid 4242 ping || fail 'PID-bound helper failed'
 [[ -e $EXECUTED_FILE ]] || fail 'PID-bound helper did not execute quickshell'
-expected_args=$(printf '%s\n' 'ipc' '--pid' '4242' '-p' "$SHELL_DIR" 'call' '--' 'desktop-shell' 'ping')
+expected_args=$(printf '%s\n' 'ipc' '--pid' '4242' 'call' '--' 'desktop-shell' 'ping')
 [[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
   printf 'expected PID-bound argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
   exit 1
