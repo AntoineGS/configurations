@@ -160,6 +160,14 @@ assert.match(service, /boundedText\(notification\.appName,\s*128\)/)
 assert.match(logic, /function actionMetadata\(notification\)/)
 assert.match(logic, /maxActions:\s*8/)
 assert.match(logic, /maxActionLabelLength:\s*256/)
+assert.match(logic, /function normalizeImageSource\(value\)/,
+  "notification images have one pure allowlist normalizer")
+assert.match(logic, /function normalizeAppIconSource\(value\)/,
+  "app icons have one pure allowlist normalizer")
+assert.match(logic, /image:\s*normalizeImageSource\(/,
+  "snapshot and restored image values are normalized")
+assert.match(logic, /appIcon:\s*normalizeAppIconSource\(/,
+  "snapshot and restored app-icon values are normalized")
 assert.match(logic, /function actionOutcome\(actions, identifier, resident\)/)
 assert.match(logic, /function durationFor\(urgency, expireTimeout/)
 assert.match(logic, /function deadlineFor\(urgency, expireTimeout/)
@@ -180,6 +188,10 @@ assert.match(service, /actionsChanged/)
 assert.match(card, /property var actions/)
 assert.match(card, /signal actionClicked\(string identifier\)/)
 assert.match(card, /Repeater[\s\S]*root\.actionClicked/)
+assert.match(card, /NotificationLogic\.normalizeImageSource\(/,
+  "notification card revalidates image sources before Image.source")
+assert.match(card, /NotificationLogic\.normalizeAppIconSource\(/,
+  "notification card revalidates app icons before Image.source")
 assert.match(service, /onActionClicked:\s*function\(identifier\)/)
 assert.match(service, /defaultActionAvailable/)
 assert.match(service, /onExpireTimeoutChanged:/)
@@ -277,6 +289,9 @@ assert.match(service, /reason !== "closed"/)
 assert.match(service, /snapshot\.transient/)
 assert.match(service, /livePersistenceSources\[originalId\] = updated\.transient/)
 assert.match(service, /if \(!snapshot\.transient\) service\.persistPopupFile\(snapshot\)/)
+assert.match(refreshPopupBody,
+  /updated\.transient[\s\S]*deletePopupFileFor\(row\)/,
+  "visible persistent-to-transient refresh explicitly deletes the prior popup file")
 assert.match(service, /entry\.transient !== true/)
 assert.match(service, /done\(success/)
 assert.match(service, /onExited:\s*function\(exitCode/)
@@ -309,6 +324,15 @@ const finishSilencedStart = service.indexOf("function finishSilencedWrite(")
 assert.ok(scheduleSilencedStart >= 0 && finishSilencedStart > scheduleSilencedStart)
 const scheduleSilencedBody = service.slice(scheduleSilencedStart, finishSilencedStart)
 assert.ok(scheduleSilencedBody.indexOf("admitRefresh()") < scheduleSilencedBody.indexOf("replacementSnapshot("))
+assert.match(scheduleSilencedBody,
+  /if \(latest\.transient === true\)[\s\S]*deleteHistoryFileFor\(request\.persisted\)[\s\S]*livePersistenceSources\[request\.originalId\] = "none"[\s\S]*releaseSilenced\(request\.notification, request\.originalId\)/,
+  "DND persistent-to-transient refresh deletes the exact prior history generation")
+const transientRefreshStart = scheduleSilencedBody.indexOf("if (latest.transient === true)")
+const transientRefreshEnd = scheduleSilencedBody.indexOf("service.writeSilenced", transientRefreshStart)
+assert.ok(transientRefreshStart >= 0 && transientRefreshEnd > transientRefreshStart)
+assert.doesNotMatch(scheduleSilencedBody.slice(transientRefreshStart, transientRefreshEnd),
+  /writeSilenced\(/,
+  "DND transient refresh never writes replacement content")
 assert.match(service, /persistenceError:\s*service\.persistenceError/,
   "persistence failures are exposed through status")
 assert.match(service, /liveCount:\s*service\.liveReferenceCount\(\)/,

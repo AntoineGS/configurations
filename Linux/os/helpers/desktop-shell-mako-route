@@ -12,6 +12,8 @@ readonly -a MANAGED_MODES=(
   "rustdesk-route-DVI-D-1"
   "rustdesk-route-HDMI-A-1"
   "rustdesk-route-DP-2"
+  "rustdesk-route-DP-1"
+  "rustdesk-route-eDP-1"
   "$HIDDEN_MODE"
   "$CUE_MODE"
 )
@@ -104,7 +106,8 @@ read_route() {
     def non_negative_integer($label):
       if (type != "number") or (floor != .) or . < 0 then error($label + " is invalid") else . end;
     def supported_output:
-      . == "DVI-D-1" or . == "HDMI-A-1" or . == "DP-2";
+      . == "DVI-D-1" or . == "HDMI-A-1" or . == "DP-2" or
+      . == "DP-1" or . == "eDP-1";
 
     if ($route | length) != 1 then error("missing route") else . end
     | if ($lease | length) != 1 then error("missing lease") else . end
@@ -132,10 +135,12 @@ read_route() {
     | if ($route_json.visible and $route_json.output == null) then error("visible route has no output") else . end
     | if ($route_json.cueOutput == null and $route_json.direction != null) then error("route direction requires cue output") else . end
     | (if $route_json.visible then
-         if $route_json.output == "DVI-D-1" then "rustdesk-route-DVI-D-1"
-         elif $route_json.output == "HDMI-A-1" then "rustdesk-route-HDMI-A-1"
-         elif $route_json.output == "DP-2" then "rustdesk-route-DP-2"
-         else error("unsupported route output")
+          if $route_json.output == "DVI-D-1" then "rustdesk-route-DVI-D-1"
+          elif $route_json.output == "HDMI-A-1" then "rustdesk-route-HDMI-A-1"
+          elif $route_json.output == "DP-2" then "rustdesk-route-DP-2"
+          elif $route_json.output == "DP-1" then "rustdesk-route-DP-1"
+          elif $route_json.output == "eDP-1" then "rustdesk-route-eDP-1"
+          else error("unsupported route output")
          end
        else "rustdesk-route-hidden"
        end) as $route_mode

@@ -453,7 +453,7 @@ is_route_allowed_zone() {
 
 is_adapter_non_runtime_file() {
   case "$1" in
-    Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh|Linux/quickshell/desktop-shell/tests/desktop-services-lifecycle-test.sh|Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh)
+    Linux/hypr/tests/monitor-policy-test.sh|Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh|Linux/quickshell/desktop-shell/tests/desktop-services-lifecycle-test.sh|Linux/quickshell/desktop-shell/tests/mako-route-adapter-test.sh)
       return 0
       ;;
     *)

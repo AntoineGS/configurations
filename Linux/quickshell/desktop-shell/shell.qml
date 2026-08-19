@@ -28,6 +28,7 @@ ShellRoot {
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
+  readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
   // Bundled fallback so the shell can start even when the default shell.json is
@@ -64,6 +65,7 @@ ShellRoot {
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
+    testSurfaceSuppressed: shell.testSurfaceSuppressed,
     osdAvailable: shell.osdAvailable,
     notificationsOwned: notificationService ? notificationService.notificationsOwned : false,
     notificationOwnershipError: notificationService ? notificationService.ownershipError : "notification service unavailable",
@@ -456,6 +458,17 @@ ShellRoot {
       if (!summoned) console.warn("summon: no live bar widget for:", id)
       return summoned === true
     }
+    var panelAvailable = false
+    for (var entryIndex = 0; entryIndex < shell.panelEntries.length; entryIndex++) {
+      if (shell.panelEntries[entryIndex] && shell.panelEntries[entryIndex].id === id) {
+        panelAvailable = true
+        break
+      }
+    }
+    if (!panelAvailable) {
+      console.warn("summon: panel is not loaded:", id)
+      return false
+    }
     var next = ({})
     for (var k in openPanelIds) next[k] = openPanelIds[k]
     next[id] = true
@@ -599,13 +612,14 @@ ShellRoot {
   property var panelEntries: []
 
   function computePanelEntries() {
-    if (shell.testSurfaceSuppressed) return []
+    if (shell.testSurfaceSuppressed && shell.testPanelPlugin !== "desktop.mixed") return []
     var out = []
     var plugins = shell.pluginRegistry.installedPlugins
     var panelKinds = ["panel", "overlay", "menu"]
     for (var id in plugins) {
       var m = plugins[id]
       if (!m || !Array.isArray(m.kinds)) continue
+      if (shell.testSurfaceSuppressed && id !== "desktop.mixed") continue
       var matched = false
       for (var i = 0; i < panelKinds.length; i++)
         if (m.kinds.indexOf(panelKinds[i]) !== -1) { matched = true; break }

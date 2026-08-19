@@ -296,7 +296,9 @@ assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
 assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
   'active: !shell.testSurfaceSuppressed && shell.activeBarId === shell.defaultBarId'
 assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
-  'if (shell.testSurfaceSuppressed) return []'
+  'if (shell.testSurfaceSuppressed && shell.testPanelPlugin !== "desktop.mixed") return []'
+assert_surface_suppression_source "$SHELL_ROOT/shell.qml" \
+  'shell.testSurfaceSuppressed && id !== "desktop.mixed"'
 assert_surface_suppression_source "$SHELL_ROOT/plugins/bar/Bar.qml" \
   'visible: !root.testSurfaceSuppressed && root.shell.barVisible'
 assert_surface_suppression_source "$SHELL_ROOT/plugins/notifications/Service.qml" \

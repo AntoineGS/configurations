@@ -710,7 +710,7 @@ reset_log() {
   DROP_MAKO_AFTER_POLKIT=false
   DROP_MAKO_AFTER_PROBE=false
   DROP_MAKO_BEFORE_OWNER=false
-  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-hidden rustdesk-cue' >"$MAKO_MODE_STATE"
+  printf '%s\n' 'unrelated-mode rustdesk-route-DVI-D-1 rustdesk-route-HDMI-A-1 rustdesk-route-DP-2 rustdesk-route-DP-1 rustdesk-route-eDP-1 rustdesk-route-hidden rustdesk-cue' >"$MAKO_MODE_STATE"
 }
 
 run_helper() {
@@ -1432,7 +1432,7 @@ assert_log_order \
   'systemctl|--user|stop|desktop-shell.service' \
   "uwsm-app|--|$DESKTOP_SHELL_MAKO" \
   'makoctl|mode|adapter=inactive' \
-  'makoctl|mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden' \
+  'makoctl|mode|-r|rustdesk-route-DVI-D-1|-r|rustdesk-route-HDMI-A-1|-r|rustdesk-route-DP-2|-r|rustdesk-route-DP-1|-r|rustdesk-route-eDP-1|-r|rustdesk-route-hidden|-r|rustdesk-cue|-a|rustdesk-route-hidden' \
   'systemctl|--user|start|desktop-shell-mako-route.service' \
   "uwsm-app|--|$DESKTOP_SHELL_SWAYOSD_SERVER" \
   'polkit-agent|' \

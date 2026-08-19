@@ -21,7 +21,8 @@ BorderSurface {
   property string fontFamily: Style.font.family
 
   readonly property bool hovered: hoverTracker.hovered
-  readonly property string smallIconSource: image.length > 0 ? image : iconSource(appIcon)
+  readonly property string smallIconSource: image.length > 0
+    ? NotificationLogic.normalizeImageSource(image) : iconSource(appIcon)
   readonly property bool hasSmallIcon: smallIconSource.length > 0
   readonly property string sanitizedBody: sanitizeBody(body)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
@@ -41,10 +42,9 @@ BorderSurface {
   }
 
   function iconSource(icon) {
-    var value = String(icon || "")
+    var value = NotificationLogic.normalizeAppIconSource(icon)
     if (value.length === 0) return ""
-    if (value.indexOf("file://") === 0 || value.indexOf("image://") === 0) return value
-    if (value.charAt(0) === "/") return Util.fileUrl(value)
+    if (value.indexOf("image://") === 0) return value
     return Quickshell.iconPath(value, true)
   }
 

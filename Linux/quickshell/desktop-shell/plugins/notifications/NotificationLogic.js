@@ -23,6 +23,22 @@ function boundedText(value, maxLength) {
   return text.slice(0, maxLength)
 }
 
+function boundedSource(value, maxLength) {
+  var source = value === undefined || value === null ? "" : String(value)
+  return source.length > maxLength ? "" : source
+}
+
+function normalizeImageSource(value) {
+  var source = boundedSource(value, NOTIFICATION_LIMITS.maxImageLength)
+  return /^image:\/\/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]+$/.test(source) ? source : ""
+}
+
+function normalizeAppIconSource(value) {
+  var source = boundedSource(value, NOTIFICATION_LIMITS.maxAppLength)
+  if (normalizeImageSource(source)) return source
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(source) ? source : ""
+}
+
 function isChromiumDerived(app, appIcon) {
   var source = (String(app || "") + "\n" + String(appIcon || "")).toLowerCase()
   return source.indexOf("chrom") >= 0 || source.indexOf("brave") >= 0 ||
@@ -246,7 +262,8 @@ function invalidLease(error) {
 
 function validRouteOutput(value) {
   return value === null || value === undefined ||
-    value === "DVI-D-1" || value === "HDMI-A-1" || value === "DP-2"
+    value === "DVI-D-1" || value === "HDMI-A-1" || value === "DP-2" ||
+    value === "DP-1" || value === "eDP-1"
 }
 
 function validRouteDirection(value) {
@@ -349,15 +366,15 @@ function snapshotOf(notification, timestamp) {
   var n = notification || {}
   var id = n.id || 0
   var expireTimeout = normalizedExpireTimeout(n.expireTimeout)
-  var image = boundedText(n.image, NOTIFICATION_LIMITS.maxImageLength)
+  var image = normalizeImageSource(n.image)
   var hintedImage = imagePathHint(n)
-  if (!image || (image.indexOf("image://") === 0 && hintedImage)) image = hintedImage || image
+  if (!image && hintedImage) image = hintedImage
   var result = {
     // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
     id: id,
     originalId: id,
     app: boundedText(n.appName, NOTIFICATION_LIMITS.maxAppLength),
-    appIcon: boundedText(n.appIcon, NOTIFICATION_LIMITS.maxAppLength),
+    appIcon: normalizeAppIconSource(n.appIcon),
     summary: boundedText(n.summary, NOTIFICATION_LIMITS.maxSummaryLength),
     body: boundedText(n.body, NOTIFICATION_LIMITS.maxBodyLength),
     image: image,
@@ -405,7 +422,7 @@ function imagePathHint(notification) {
   try {
     var hints = notification && notification.hints
     var value = hints && hints["image-path"]
-    return value === undefined || value === null ? "" : boundedText(value, NOTIFICATION_LIMITS.maxImageLength)
+    return normalizeImageSource(value)
   } catch (e) {
     return ""
   }
@@ -424,10 +441,10 @@ function historyEntry(value, normalUrgency) {
     id: e.id || 0,
     originalId: e.originalId || e.id || 0,
     app: boundedText(e.app, NOTIFICATION_LIMITS.maxAppLength),
-    appIcon: boundedText(e.appIcon, NOTIFICATION_LIMITS.maxAppLength),
+    appIcon: normalizeAppIconSource(e.appIcon),
     summary: boundedText(e.summary, NOTIFICATION_LIMITS.maxSummaryLength),
     body: boundedText(e.body, NOTIFICATION_LIMITS.maxBodyLength),
-    image: boundedText(e.image, NOTIFICATION_LIMITS.maxImageLength),
+    image: normalizeImageSource(e.image),
     urgency: typeof e.urgency === "number" ? e.urgency : normalUrgency,
     expireTimeout: 0,
     timestamp: e.timestamp || 0,
@@ -475,12 +492,7 @@ function imageStem(entry) {
 }
 
 function localImageFile(value) {
-  var s = String(value || "")
-  if (s.indexOf("file://") === 0) {
-    s = s.slice(7)
-    try { s = decodeURIComponent(s) } catch (e) {}
-  }
-  return s.charAt(0) === "/" && s.length <= NOTIFICATION_LIMITS.maxImageLength ? s : ""
+  return ""
 }
 
 function persistablePopup(entry, imagesDir) {
@@ -490,17 +502,12 @@ function persistablePopup(entry, imagesDir) {
   var copies = []
   for (var i = 0; i < PERSISTED_IMAGE_ROLES.length; i++) {
     var role = PERSISTED_IMAGE_ROLES[i]
-    var value = boundedText(out[role], NOTIFICATION_LIMITS.maxImageLength)
+    var value = role === "appIcon"
+      ? normalizeAppIconSource(out[role])
+      : normalizeImageSource(out[role])
     out[role] = value
     if (!value) continue
-    var source = localImageFile(value)
-    if (source) {
-      var copy = String(imagesDir || "") + imageStem(e) + "-" + role
-      if (source !== copy) copies.push({ from: source, to: copy })
-      out[role] = "file://" + copy
-    } else if (value.indexOf("image://") === 0) {
-      out[role] = ""
-    }
+    if (value.indexOf("image://") === 0) out[role] = ""
   }
   if (Object.prototype.hasOwnProperty.call(out, "actions")) out.actions = []
   return { entry: out, copies: copies }
@@ -598,6 +605,8 @@ if (typeof module !== "undefined") {
   module.exports = {
     limits: limits,
     boundedText: boundedText,
+    normalizeImageSource: normalizeImageSource,
+    normalizeAppIconSource: normalizeAppIconSource,
     isChromiumDerived: isChromiumDerived,
     sanitizeBody: sanitizeBody,
     normalizeRoute: normalizeRoute,

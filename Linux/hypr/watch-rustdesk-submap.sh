@@ -4,7 +4,7 @@
 # Requirements: hyprctl, socat, jq
 set -Eeuo pipefail
 
-readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
+readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2","DP-1","eDP-1"]'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
 readonly NOTIFICATION_LEASE_MAX_AGE_MS=1500
 readonly NOTIFICATION_LEASE_RENEW_INTERVAL=1
@@ -124,7 +124,7 @@ parse_notification_route_state() {
   fi
 
   case $route_mode_ref in
-    rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-hidden) ;;
+    rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-DP-1|rustdesk-route-eDP-1|rustdesk-route-hidden) ;;
     *)
       printf 'invalid notification route mode: %s\n' "$route_mode_ref" >&2
       return 1
@@ -132,7 +132,7 @@ parse_notification_route_state() {
   esac
 
   case $cue_output_ref in
-    DVI-D-1|HDMI-A-1|DP-2|none) ;;
+    DVI-D-1|HDMI-A-1|DP-2|DP-1|eDP-1|none) ;;
     *)
       printf 'invalid notification cue output: %s\n' "$cue_output_ref" >&2
       return 1
@@ -333,6 +333,8 @@ write_notification_route_state() {
     rustdesk-route-DVI-D-1) visible=true; output=DVI-D-1 ;;
     rustdesk-route-HDMI-A-1) visible=true; output=HDMI-A-1 ;;
     rustdesk-route-DP-2) visible=true; output=DP-2 ;;
+    rustdesk-route-DP-1) visible=true; output=DP-1 ;;
+    rustdesk-route-eDP-1) visible=true; output=eDP-1 ;;
     rustdesk-route-hidden) visible=false; output="" ;;
   esac
 

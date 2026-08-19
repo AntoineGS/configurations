@@ -632,6 +632,7 @@ start_shell() {
       XDG_RUNTIME_DIR="$runtime_dir" \
       WAYLAND_DISPLAY="$fixture_wayland_display" \
       DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
+      DESKTOP_SHELL_TEST_PANEL_PLUGIN="${DESKTOP_SHELL_TEST_PANEL_PLUGIN:-}" \
       PATH="$shell_path" \
       DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
       quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
@@ -647,6 +648,7 @@ start_shell() {
     XDG_RUNTIME_DIR="$runtime_dir" \
     WAYLAND_DISPLAY="$fixture_wayland_display" \
     DESKTOP_SHELL_TEST_NO_SURFACES="${DESKTOP_SHELL_TEST_NO_SURFACES:-1}" \
+    DESKTOP_SHELL_TEST_PANEL_PLUGIN="${DESKTOP_SHELL_TEST_PANEL_PLUGIN:-}" \
     PATH="$shell_path" \
     DESKTOP_SHELL_TEST_BUSCTL_COUNT="${DESKTOP_SHELL_TEST_BUSCTL_COUNT-}" \
     quickshell --no-color -p "$runtime_shell_root" >"$shell_log" 2>&1 &
@@ -728,10 +730,14 @@ Item {
 QML
 
 runtime_shell_root="$mixed_shell_root"
-DESKTOP_SHELL_TEST_NO_SURFACES=0 start_shell
+DESKTOP_SHELL_TEST_NO_SURFACES=1 DESKTOP_SHELL_TEST_PANEL_PLUGIN=desktop.mixed start_shell
+wait_for_health '.testSurfaceSuppressed == true'
 [[ $(call_ipc desktop-shell summon desktop.mixed '{}') == ok ]]
 wait_for_ipc service-ok desktop-shell call desktop.mixed serviceOnly ''
 wait_for_ipc overlay-ok desktop-shell call desktop.mixed overlayOnly ''
+[[ $(call_ipc desktop-shell summon desktop.menu '{}') == unknown ]]
+[[ $(call_ipc desktop-shell summon desktop.agents '{}') == unknown ]]
+[[ $(call_ipc desktop-shell call desktop.audio ping '') == unknown ]]
 stop_shell
 runtime_shell_root="$SHELL_ROOT"
 
@@ -1010,7 +1016,7 @@ printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQU
 chmod 644 "$notification_image"
 
 notify-send --app-name task4-runtime --icon "$notification_image" \
-  --hint=string:image-path:"$notification_image" --urgency normal --expire-time 30000 \
+  --hint=string:image-path:image://notification/runtime --urgency normal --expire-time 30000 \
   'Task 4 notification' 'runtime popup/history contract'
 wait_for_status '.popupCount == 1 and .historyCount == 0'
 [[ $(count_json_files "$popup_dir") -eq 1 ]]
@@ -1022,8 +1028,13 @@ for image_file in "$popup_dir/images"/*; do
   image_count=$((image_count + 1))
   assert_mode 600 "$image_file"
 done
-((image_count > 0)) || {
-  printf 'FAIL: notification image was not persisted: %s\n' "$(<"$popup_file")" >&2
+((image_count == 0)) || {
+  printf 'FAIL: notification image source reached persistence: %s\n' "$(<"$popup_file")" >&2
+  exit 1
+}
+jq -e '.appIcon == "" and .image == ""' \
+  "$popup_file" >/dev/null || {
+  printf 'FAIL: unsafe notification image source reached persistence: %s\n' "$(<"$popup_file")" >&2
   exit 1
 }
 
@@ -1626,6 +1637,42 @@ unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
 stop_shell
 start_shell
 wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+
+# A blocked DND write followed by a persistent-to-transient replacement must
+# delete the exact old history generation and never publish the transient one.
+rm -f -- "$dnd_refresh_started" "$dnd_refresh_release" "$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_PERSISTENCE_BIN="$dnd_refresh_bin"
+export DESKTOP_SHELL_TEST_HISTORY_DIR="$history_dir"
+export DESKTOP_SHELL_TEST_DND_REFRESH_STARTED="$dnd_refresh_started"
+export DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE="$dnd_refresh_release"
+export DESKTOP_SHELL_TEST_DND_REFRESH_COUNT="$dnd_refresh_count"
+export DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV="$dnd_refresh_real_mv"
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .admissionDropped == 0 and .admissionWindowCount == 0'
+cutover_dnd_id=$(notify-send --app-name task4-dnd-transient-cutover --print-id \
+  --urgency normal --expire-time 30000 'Task 4 DND old content' 'blocked old write' 2>/dev/null)
+wait_for_path "$dnd_refresh_started"
+notify-send --app-name task4-dnd-transient-cutover --replace-id "$cutover_dnd_id" \
+  --hint=boolean:transient:true --urgency normal --expire-time 30000 \
+  'Task 4 DND new content' 'transient replacement' >/dev/null 2>&1
+: >"$dnd_refresh_release"
+wait_for_status '.dnd == true and .popupCount == 0 and .liveCount == 0 and .pendingPersistenceCount == 0'
+for directory in "$popup_dir" "$history_dir"; do
+  for file in "$directory"/*.json; do
+    [[ -f $file ]] || continue
+    if jq -e --arg app task4-dnd-transient-cutover '.app == $app' "$file" >/dev/null 2>&1; then
+      printf 'FAIL: blocked persistent-to-transient cutover left %s\n' "$file" >&2
+      exit 1
+    fi
+  done
+done
+unset DESKTOP_SHELL_TEST_PERSISTENCE_BIN DESKTOP_SHELL_TEST_HISTORY_DIR \
+  DESKTOP_SHELL_TEST_DND_REFRESH_STARTED DESKTOP_SHELL_TEST_DND_REFRESH_RELEASE \
+  DESKTOP_SHELL_TEST_DND_REFRESH_COUNT DESKTOP_SHELL_TEST_DND_REFRESH_REAL_MV
+stop_shell
+start_shell
+wait_for_status '.dnd == true and .popupCount == 0 and .liveCount == 0'
 
 # Exhaust the admission window while the target history write is slow. Its
 # changed backend snapshot must be denied, leave the seed file intact, and
