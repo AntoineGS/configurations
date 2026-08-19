@@ -572,14 +572,14 @@ Item {
     return null
   }
 
-  function invokePopupAction(index, identifier) {
+  function invokePopupAction(index, identifier, forceDismiss) {
     if (index < 0 || index >= popupModel.count) return false
     var entry = popupModel.get(index)
     var ref = entry && !isRestoredRow(entry) ? liveRefs[entry.originalId] : null
     var action = liveAction(ref, String(identifier || ""))
     if (!action) return false
 
-    var shouldDismiss = ref.resident !== true
+    var shouldDismiss = forceDismiss === true || ref.resident !== true
     if (shouldDismiss) actionClosingGenerations[entry.originalId] = entry.timestamp
     try {
       action.invoke()
@@ -594,6 +594,10 @@ Item {
       delete actionClosingGenerations[entry.originalId]
     }
     return true
+  }
+
+  function clickPopup(index) {
+    if (!invokePopupAction(index, "default", true)) dismissPopup(index)
   }
 
   function invokePopupDefault(index) {
@@ -1758,8 +1762,6 @@ Item {
             readonly property real lifetime: service.durationFor(cardSlot.urgency, cardSlot.expireTimeout)
             readonly property real deadlineLifetime:
               NotificationLogic.remainingLifetime(cardSlot, Date.now(), cardSlot.lifetime)
-            readonly property bool defaultActionAvailable:
-              NotificationLogic.actionOutcome(cardSlot.actions, "default", false).found
             property real remainingLifetime: cardSlot.deadlineLifetime
             readonly property bool ticking: cardSlot.lifetime > 0 && !card.hovered
 
@@ -1801,7 +1803,6 @@ Item {
               urgency: cardSlot.urgency
               timestamp: cardSlot.timestamp
               actions: cardSlot.actions
-              defaultActionAvailable: cardSlot.defaultActionAvailable
               cornerRadius: service.cornerRadius
               fontFamily: service.shell && service.shell.bar
                 ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
@@ -1810,7 +1811,7 @@ Item {
               onActionClicked: function(identifier) {
                 service.invokePopupAction(cardSlot.index, identifier)
               }
-              onCardClicked: service.invokePopupDefault(cardSlot.index)
+              onCardClicked: service.clickPopup(cardSlot.index)
             }
           }
         }
