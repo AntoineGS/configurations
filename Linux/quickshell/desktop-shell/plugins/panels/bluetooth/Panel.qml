@@ -13,6 +13,8 @@ Panel {
   ipcTarget: "desktop.bluetooth"
   manageIpc: false
   property var pluginRegistry: null
+  property var batteryDevices: ({})
+  property bool batteryCollectorLoaded: true
 
   readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
@@ -24,6 +26,9 @@ Panel {
   readonly property var knownDevices: deviceGroups.known || []
   readonly property var discoveredDevices: deviceGroups.discovered || []
   readonly property var visibleSections: Model.visibleSections(deviceGroups, adapter && adapter.discovering)
+  readonly property color warningColor: "#fab387"
+  readonly property bool lowBattery: Model.hasLowBattery(connectedDevices, batteryDevices)
+  readonly property string batteryTooltip: Model.batteryTooltip(connectedDevices, batteryDevices, warningColor)
   readonly property string icon: {
     if (!adapter) return ""
     if (!adapter.enabled) return "󰂲"
@@ -42,6 +47,14 @@ Panel {
     if (!registry) return
     if (capabilityAvailable) registry.clearPluginError(moduleName)
     else registry.recordPluginError(moduleName, "BlueZ capability unavailable")
+  }
+
+  function refreshBatteries() {
+    if (!batteryProcess.running) batteryProcess.running = true
+  }
+
+  function applyBatteryState(raw) {
+    batteryDevices = Model.parseBatteryState(raw)
   }
 
   property var pendingActions: ({})
@@ -105,7 +118,7 @@ Panel {
     var list = Model.sectionDevices(deviceGroups, section)
     var rows = []
     for (var i = 0; i < list.length; i++) {
-      var row = Model.deviceRow(list[i])
+      var row = Model.deviceRow(list[i], batteryDevices, warningColor)
       if (row) rows.push(row)
     }
     return rows
@@ -193,6 +206,7 @@ Panel {
       if (connectedDevices.length > 0) { focusSection = "connected"; selectedIndex = 0 }
       else if (knownDevices.length > 0) { focusSection = "known"; selectedIndex = 0 }
       else { focusSection = "header"; selectedIndex = 0 }
+      refreshBatteries()
       scan(true)
     } else {
       scan(false)
@@ -206,7 +220,15 @@ Panel {
   onPluginRegistryChanged: reportCapability()
   onBarChanged: reportCapability()
   onCapabilityAvailableChanged: reportCapability()
-  Component.onCompleted: reportCapability()
+  onConnectedDevicesChanged: refreshBatteries()
+  Component.onCompleted: {
+    reportCapability()
+    refreshBatteries()
+  }
+  Component.onDestruction: {
+    batteryCollectorLoaded = false
+    batteryRefreshTimer.stop()
+  }
 
   visible: adapter !== null
   implicitWidth: visible ? button.implicitWidth : 0
@@ -227,11 +249,31 @@ Panel {
     onTriggered: root.pendingActions = ({})
   }
 
+  Timer {
+    id: batteryRefreshTimer
+    interval: 60000
+    repeat: true
+    running: root.batteryCollectorLoaded
+    onTriggered: root.refreshBatteries()
+  }
+
+  Process {
+    id: batteryProcess
+    command: ["desktop-hardware-state", "bluetooth"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyBatteryState(text)
+    }
+  }
+
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: root.icon
+    active: root.lowBattery
+    activeColor: root.warningColor
+    tooltipText: root.batteryTooltip
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.RightButton) root.toggleBluetooth()
       else root.toggle()
@@ -435,6 +477,7 @@ Panel {
       Text {
         visible: deviceRow.statusText !== ""
         text: deviceRow.statusText
+        textFormat: Text.RichText
         color: Qt.darker(root.foreground, 1.4)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -445,8 +488,7 @@ Panel {
     readonly property string statusText: {
       if (!rowData) return ""
       if (pending !== "") return pending
-      if (connected && rowData.batteryAvailable) return Math.round(rowData.battery * 100) + "%"
-      if (connected) return "Connected"
+      if (connected) return rowData.batteryStatus || "Connected"
       return sectionName === "discovered" ? "Available" : ""
     }
     PanelActionButton {
