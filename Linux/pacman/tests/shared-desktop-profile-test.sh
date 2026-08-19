@@ -308,9 +308,8 @@ assert_hyprland_runtime_ownership() {
 assert_runtime_requirements() {
   assert_source_requires_package Linux/hypr/autostart.lua 'hl.exec_cmd("signal-desktop")' signal pacman signal-desktop
   assert_source_requires_package Linux/os/mimeapps.list image/png=imv.desktop imv pacman imv
-  assert_source_requires_package Linux/os/applications/imv.desktop 'Exec=imv %F' imv pacman imv
   assert_source_requires_package Linux/hypr/bindings/apps.lua 'launch-tui-large lazydocker' lazydocker pacman lazydocker
-  assert_source_requires_package Linux/os/applications/Docker.desktop '-e lazydocker' lazydocker pacman lazydocker
+  assert_source_requires_package Linux/os/applications/common/Docker.desktop '-e lazydocker' lazydocker pacman lazydocker
   assert_source_requires_package Linux/os/mimeapps.list application/pdf=org.gnome.Evince.desktop evince pacman evince
   assert_source_requires_package Linux/hypr/apps/system.lua org.gnome.Evince evince pacman evince
   assert_source_requires_package Linux/os/mimeapps.list inode/directory=org.gnome.Nautilus.desktop nautilus pacman nautilus

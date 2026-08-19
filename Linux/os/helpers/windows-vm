@@ -42,8 +42,8 @@ install_windows() {
 
   mkdir -p "$HOME/.windows"
   mkdir -p "$HOME/.config/windows"
-  mkdir -p "$HOME/.local/share/applications"
-  cat << EOF | tee "$HOME/.local/share/applications/windows-vm.desktop" > /dev/null
+  mkdir -p "$HOME/.local/share/applications/common"
+  cat << EOF | tee "$HOME/.local/share/applications/common/windows-vm.desktop" > /dev/null
 [Desktop Entry]
 Name=Windows
 Comment=Start Windows VM via Docker and connect with RDP
@@ -249,7 +249,7 @@ remove_windows() {
 
   docker rmi dockurr/windows 2>/dev/null || echo "Image already removed or not found"
 
-  rm -f "$HOME/.local/share/applications/windows-vm.desktop"
+  rm -f "$HOME/.local/share/applications/common/windows-vm.desktop"
   rm -rf "$HOME/.config/windows"
   rm -rf "$HOME/.windows"
 

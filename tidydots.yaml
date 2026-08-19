@@ -1246,9 +1246,30 @@ applications:
         name: disable-remmina-hostkey
         when: '{{ and (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
       - targets:
+          linux: ~/.local/share/applications/common
+        name: common .desktop files
+        backup: ./Linux/os/applications/common
+      - targets:
           linux: ~/.local/share/applications
-        name: .desktop files
-        backup: ./Linux/os/applications
+        name: fcitx desktop override
+        backup: ./Linux/os/application-overrides
+        files:
+          - fcitx5-wayland-launcher.desktop
+      - targets:
+          linux: ~/.local/share/applications/antoinews-linux
+        name: antoinews-linux .desktop files
+        backup: ./Linux/os/applications/antoinews-linux
+        when: '{{ eq .Hostname "antoinews-linux" }}'
+      - targets:
+          linux: ~/.local/share/applications/desktop-e07vtrn
+        name: desktop-e07vtrn .desktop files
+        backup: ./Linux/os/applications/desktop-e07vtrn
+        when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+      - targets:
+          linux: ~/.local/share/applications/omarchbook
+        name: omarchbook .desktop files
+        backup: ./Linux/os/applications/omarchbook
+        when: '{{ eq .Hostname "omarchbook" }}'
       - targets:
           linux: ~/.config/systemd/user
         name: battery-monitor-service
