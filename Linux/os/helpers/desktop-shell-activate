@@ -342,8 +342,11 @@ wait_for_shell_health() {
 stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)
 "${stop_units[@]}" || die 'could not stop desktop-shell services'
 
-reset_adapter=(systemctl --user reset-failed desktop-shell-mako-route.service)
-"${reset_adapter[@]}" || die 'could not clear rollback adapter failure state'
+adapter_failed=(systemctl --user is-failed --quiet desktop-shell-mako-route.service)
+if "${adapter_failed[@]}"; then
+  reset_adapter=(systemctl --user reset-failed desktop-shell-mako-route.service)
+  "${reset_adapter[@]}" || die 'could not clear rollback adapter failure state'
+fi
 
 mask_mako=(systemctl --user mask --runtime mako.service)
 "${mask_mako[@]}" || die 'could not runtime-mask mako.service'
