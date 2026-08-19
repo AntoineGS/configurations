@@ -646,6 +646,7 @@ watch_hyprland_events() {
 
 main() {
   local socat_command=${SOCAT:-socat}
+  local activated_clean_workspace=false
   local hypr_dir
   local sig=""
   local candidate
