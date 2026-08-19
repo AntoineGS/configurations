@@ -2,8 +2,8 @@
 
 set -e
 
-ICON_DIR="$HOME/.local/share/applications/icons"
-DESKTOP_DIR="$HOME/.local/share/applications/"
+DESKTOP_DIR="$HOME/.local/share/applications/common"
+ICON_DIR="$DESKTOP_DIR/icons"
 
 if (( $# == 0 )); then
   # Find all TUIs

@@ -2,7 +2,8 @@
 
 set -e
 
-ICON_DIR="$HOME/.local/share/applications/icons"
+DESKTOP_DIR="$HOME/.local/share/applications/common"
+ICON_DIR="$DESKTOP_DIR/icons"
 
 if (( $# < 3 )); then
   echo -e "\e[32mLet's create a new web app you can start with the app launcher.\n\e[0m"
@@ -63,7 +64,7 @@ fi
 EXEC_COMMAND="${CUSTOM_EXEC:-launch-webapp $APP_URL}"
 
 # Create application .desktop file
-DESKTOP_FILE="$HOME/.local/share/applications/$APP_NAME.desktop"
+DESKTOP_FILE="$DESKTOP_DIR/$APP_NAME.desktop"
 
 cat >"$DESKTOP_FILE" <<EOF
 [Desktop Entry]

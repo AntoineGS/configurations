@@ -5,8 +5,9 @@
 
 set -e
 
-APP_DIR="${1:-$HOME/.local/share/applications}"
-ICON_DIR="$HOME/.local/share/applications/icons"
+APPLICATIONS_ROOT="$HOME/.local/share/applications"
+APP_DIR="${1:-$APPLICATIONS_ROOT/common}"
+ICON_DIR="$APP_DIR/icons"
 
 echo "Scanning for TUIs in $APP_DIR..."
 
@@ -30,7 +31,7 @@ for file in "${tui_desktop_files[@]}"; do
 done
 
 if command -v update-desktop-database &>/dev/null; then
-  update-desktop-database "$APP_DIR" &>/dev/null || true
+  update-desktop-database "$APPLICATIONS_ROOT" &>/dev/null || true
 fi
 
 echo "TUIs removed successfully."

@@ -20,11 +20,14 @@ if [[ -z $APP_NAME || -z $APP_EXEC || -z $ICON_URL ]]; then
   exit 1
 fi
 
-ICON_DIR="$HOME/.local/share/applications/icons"
-DESKTOP_FILE="$HOME/.local/share/applications/$APP_NAME.desktop"
+DESKTOP_DIR="$HOME/.local/share/applications/common"
+ICON_DIR="$DESKTOP_DIR/icons"
+DESKTOP_FILE="$DESKTOP_DIR/$APP_NAME.desktop"
 
 if [[ ! $ICON_URL =~ ^https?:// ]] && [[ -f $ICON_URL ]]; then
-  ICON_PATH="$ICON_URL"
+  ICON_PATH="$ICON_DIR/$APP_NAME.png"
+  mkdir -p "$ICON_DIR"
+  cp -- "$ICON_URL" "$ICON_PATH"
 else
   ICON_PATH="$ICON_DIR/$APP_NAME.png"
   mkdir -p "$ICON_DIR"
