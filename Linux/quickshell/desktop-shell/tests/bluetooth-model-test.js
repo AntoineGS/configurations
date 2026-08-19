@@ -15,6 +15,26 @@ assert.deepEqual(Model.parseBatteryState(fresh), {
 assert.deepEqual(Model.parseBatteryState(JSON.stringify({
   available: true, stale: true, error: "timeout", data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
 })), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+})), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, stale: "false", error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+})), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, stale: false, error: "timeout", data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+})), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: false, stale: false, error: null, data: { devices: { [splitPath]: { central: 1, peripheral: 2 } } }
+})), {})
+assert.deepEqual(Model.parseBatteryState(JSON.stringify({
+  available: true, stale: false, error: null, data: { devices: "not-an-object" }
+})), {})
+const malformedDevices = function() {}
+malformedDevices[splitPath] = { central: 1, peripheral: 2 }
+assert.deepEqual(Model.parseBatteryState({
+  available: true, stale: false, error: null, data: { devices: malformedDevices }
+}), {})
 assert.deepEqual(Model.parseBatteryState("not-json"), {})
 
 const split = { dbusPath: splitPath, batteryAvailable: true, battery: 0.41 }
