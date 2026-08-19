@@ -33,6 +33,9 @@ printf '%s\n' "$*" >>"$CALL_LOG"
 if [[ $* == *GetManagedObjects* ]]; then
   if [[ ${STUB_BLUEZ_MODE:-valid} == malformed ]]; then
     printf '%s\n' 'not-json'
+  elif [[ ${STUB_BLUEZ_MODE:-valid} == nested-malformed ]]; then
+    jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
+      '{type:"a{oa{sa{sv}}}",data:[$objects[0] + {"/org/bluez/hci0/dev_MALFORMED":"not-an-interface-map"}]}'
   else
     jq -cn --slurpfile objects "$BLUEZ_FIXTURE" \
       '{type:"a{oa{sa{sv}}}",data:[$objects[0]]}'
@@ -73,6 +76,13 @@ state=$(STUB_BLUEZ_MODE=peripheral-failure PATH="$fake_bin:$PATH" \
   DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth)
 jq -e '.available == true and .data.devices["/org/bluez/hci0/dev_SPLIT"] == {central:43, peripheral:null}' \
   <<<"$state" >/dev/null || fail "partial GATT failure discarded the central battery"
+
+if state=$(STUB_BLUEZ_MODE=nested-malformed PATH="$fake_bin:$PATH" \
+    DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
+  fail "malformed nested BlueZ state unexpectedly succeeded"
+fi
+jq -e '.stale == true and (.error | type == "string")' <<<"$state" >/dev/null \
+  || fail "malformed nested BlueZ state did not return a stale envelope"
 
 if state=$(STUB_BLUEZ_MODE=malformed PATH="$fake_bin:$PATH" \
     DESKTOP_HARDWARE_STATE_DIR="$state_dir" "$STATE_HELPER" bluetooth); then
