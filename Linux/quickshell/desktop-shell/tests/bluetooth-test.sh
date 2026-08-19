@@ -6,6 +6,8 @@ PANEL="$ROOT/Linux/quickshell/desktop-shell/plugins/panels/bluetooth/Panel.qml"
 
 fail() { printf 'bluetooth-test: %s\n' "$1" >&2; exit 1; }
 
+node "$ROOT/Linux/quickshell/desktop-shell/tests/bluetooth-model-test.js"
+
 grep -Fq 'readonly property color warningColor: "#fab387"' "$PANEL" \
   || fail "Catppuccin Mocha Peach warning color is missing"
 grep -Fq 'interval: 60000' "$PANEL" || fail "battery refresh is not 60 seconds"

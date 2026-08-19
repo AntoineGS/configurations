@@ -26,6 +26,7 @@ run_shellcheck() {
     Linux/hypr/watch-rustdesk-submap.sh
     Linux/hypr/tests/monitor-policy-test.sh
     Linux/hypr/tests/watch-rustdesk-submap-test.sh
+    Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
     Linux/opencode/tests/test-setup-context-tokenizers.sh
     Linux/opencode/tests/test-setup-temp-cleanup.sh
     Linux/os/helpers/cmd-screenrecord
@@ -33,6 +34,7 @@ run_shellcheck() {
     Linux/os/helpers/powerprofiles-list
     Linux/os/helpers/setup-remmina-hostkey
     Linux/os/tests/cmd-screenrecord-test.sh
+    Linux/os/tests/desktop-bluetooth-state-test.sh
     Linux/os/tests/desktop-status-independence-test.sh
     Linux/os/tests/helper-independence-test.sh
     Linux/os/tests/setup-remmina-hostkey-test.sh
@@ -79,6 +81,8 @@ run bash Linux/os/tests/no-omarchy-runtime-error-test.sh
 run bash Both/ShellPicker/tests/test-setup-shell-picker.sh
 run bash Linux/hypr/tests/monitor-policy-test.sh
 run bash Linux/hypr/tests/watch-rustdesk-submap-test.sh
+run bash Linux/os/tests/desktop-bluetooth-state-test.sh
+run bash Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
 run bash Linux/quickshell/desktop-shell/tests/service-test.sh
 run bash Linux/quickshell/desktop-shell/tests/desktop-services-setup-test.sh
 run bash Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh
