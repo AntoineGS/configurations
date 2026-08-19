@@ -3,14 +3,14 @@ set -Eeuo pipefail
 shopt -s nullglob
 
 usage() {
-  printf 'usage: %s <power|monitor|tailscale|vm>\n' "${0##*/}" >&2
+  printf 'usage: %s <power|monitor|tailscale|vm|bluetooth>\n' "${0##*/}" >&2
   exit 2
 }
 
 (( $# == 1 )) || usage
 domain=$1
 case $domain in
-  power|monitor|tailscale|vm) ;;
+  power|monitor|tailscale|vm|bluetooth) ;;
   *) usage ;;
 esac
 
@@ -597,6 +597,94 @@ state_vm() {
   emit_available "$data"
 }
 
+state_bluetooth() {
+  local busctl_command
+  local raw_objects
+  local objects
+  local path
+  local percentage
+  local characteristic_path
+  local is_peripheral
+  local reply
+  local devices='{}'
+  local central_json
+  local peripheral_json
+  declare -A included=()
+  declare -A central=()
+  declare -A peripheral=()
+
+  if ! busctl_command=$(resolve_command busctl); then
+    emit_unavailable '{"devices":{}}'
+  fi
+
+  if ! raw_objects=$("$busctl_command" --system --json=short --timeout=2 call \
+      org.bluez / org.freedesktop.DBus.ObjectManager GetManagedObjects 2>/dev/null); then
+    emit_stale 'unable to query BlueZ objects' '{"devices":{}}'
+  fi
+  if ! objects=$(jq -ce '.data[0] | if type == "object" then . else error("invalid objects") end' \
+      <<<"$raw_objects" 2>/dev/null); then
+    emit_stale 'BlueZ object response was malformed' '{"devices":{}}'
+  fi
+
+  while IFS=$'\t' read -r path percentage; do
+    [[ -n $path ]] || continue
+    included["$path"]=1
+    if [[ $percentage =~ ^[0-9]+$ ]] && (( percentage <= 100 )); then
+      central["$path"]=$percentage
+    fi
+  done < <(jq -r '
+    to_entries[]
+    | select(.value["org.bluez.Device1"].Connected.data == true)
+    | select(.value["org.bluez.Device1"].ServicesResolved.data == true)
+    | [.key, (.value["org.bluez.Battery1"].Percentage.data // "")]
+    | @tsv
+  ' <<<"$objects")
+
+  while IFS=$'\t' read -r path characteristic_path is_peripheral; do
+    [[ -n ${included[$path]:-} ]] || continue
+    if ! reply=$("$busctl_command" --system --json=short --timeout=2 call \
+        org.bluez "$characteristic_path" org.bluez.GattCharacteristic1 ReadValue 'a{sv}' 0 \
+        2>/dev/null); then
+      continue
+    fi
+    if ! percentage=$(jq -er '.data[0][0] | select(type == "number" and . >= 0 and . <= 100 and floor == .)' \
+        <<<"$reply" 2>/dev/null); then
+      continue
+    fi
+    if [[ $is_peripheral == true ]]; then
+      peripheral["$path"]=$percentage
+    elif [[ -z ${central[$path]:-} ]]; then
+      central["$path"]=$percentage
+    fi
+  done < <(jq -r '
+    . as $objects
+    | to_entries[]
+    | select((.value["org.bluez.GattCharacteristic1"].UUID.data // "" | ascii_downcase)
+      == "00002a19-0000-1000-8000-00805f9b34fb")
+    | . as $characteristic
+    | $characteristic.value["org.bluez.GattCharacteristic1"].Service.data as $service
+    | $objects[$service]["org.bluez.GattService1"].Device.data as $device
+    | select(($objects[$service]["org.bluez.GattService1"].UUID.data // "" | ascii_downcase)
+      == "0000180f-0000-1000-8000-00805f9b34fb")
+    | [$device, $characteristic.key,
+       (any($objects | to_entries[];
+         .value["org.bluez.GattDescriptor1"].Characteristic.data == $characteristic.key and
+         ((.value["org.bluez.GattDescriptor1"].UUID.data // "" | ascii_downcase)
+           == "00002901-0000-1000-8000-00805f9b34fb")))]
+    | @tsv
+  ' <<<"$objects")
+
+  for path in "${!included[@]}"; do
+    central_json=${central[$path]:-null}
+    peripheral_json=${peripheral[$path]:-null}
+    devices=$(jq -c --arg path "$path" --argjson central "$central_json" \
+      --argjson peripheral "$peripheral_json" \
+      '. + {($path): {central: $central, peripheral: $peripheral}}' <<<"$devices")
+  done
+
+  emit_available "$(jq -cn --argjson devices "$devices" '{devices: $devices}')"
+}
+
 state_tailscale() {
   local tailscale_command
   local raw_status=''
@@ -666,4 +754,5 @@ case $domain in
   monitor) state_monitor ;;
   tailscale) state_tailscale ;;
   vm) state_vm ;;
+  bluetooth) state_bluetooth ;;
 esac
