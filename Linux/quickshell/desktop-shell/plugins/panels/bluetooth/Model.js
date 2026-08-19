@@ -26,8 +26,11 @@ function batteryPercent(value) {
 function parseBatteryState(raw) {
   try {
     var envelope = typeof raw === "string" ? JSON.parse(raw) : raw
-    if (!envelope || envelope.available !== true || envelope.stale === true
-        || !envelope.data || !envelope.data.devices || Array.isArray(envelope.data.devices)) return {}
+    if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)
+        || envelope.available !== true || envelope.stale !== false || envelope.error !== null
+        || !envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)
+        || !envelope.data.devices || typeof envelope.data.devices !== "object"
+        || Array.isArray(envelope.data.devices)) return {}
     var devices = {}
     for (var path in envelope.data.devices) {
       var source = envelope.data.devices[path]
