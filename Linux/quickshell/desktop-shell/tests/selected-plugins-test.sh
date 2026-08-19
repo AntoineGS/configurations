@@ -15,7 +15,7 @@ fail() {
 [[ -f $INVENTORY ]] || fail 'SELECTED_PLUGINS is absent'
 git -C "$UPSTREAM_REPO" cat-file -e "$COMMIT^{commit}" 2>/dev/null || fail 'pinned Omarchy commit is unavailable'
 
-expected_ids=(desktop.audio desktop.network desktop.bluetooth desktop.power desktop.monitor desktop.tailscale desktop.battery)
+expected_ids=(desktop.audio desktop.network desktop.bluetooth desktop.power desktop.monitor desktop.tailscale desktop.battery desktop.notifications desktop.osd desktop.polkit)
 declare -A upstream_ids=(
   [desktop.audio]=omarchy.audio
   [desktop.network]=omarchy.network
@@ -24,6 +24,9 @@ declare -A upstream_ids=(
   [desktop.monitor]=omarchy.monitor
   [desktop.tailscale]=omarchy.tailscale
   [desktop.battery]=omarchy.battery
+  [desktop.notifications]=omarchy.notifications
+  [desktop.osd]=omarchy.osd
+  [desktop.polkit]=omarchy.polkit
 )
 declare -A source_sets=(
   [desktop.audio]='shell/plugins/panels/audio/manifest.json shell/plugins/panels/audio/Panel.qml shell/plugins/panels/audio/Model.js'
@@ -33,6 +36,9 @@ declare -A source_sets=(
   [desktop.monitor]='shell/plugins/panels/monitor/manifest.json shell/plugins/panels/monitor/Panel.qml shell/plugins/panels/monitor/Model.js'
   [desktop.tailscale]='shell/plugins/panels/tailscale/manifest.json shell/plugins/panels/tailscale/Panel.qml shell/plugins/panels/tailscale/Model.js shell/plugins/panels/tailscale/Service.qml shell/plugins/panels/tailscale/TailscaleIcon.qml'
   [desktop.battery]='shell/plugins/services/battery/manifest.json shell/plugins/services/battery/Service.qml shell/plugins/services/battery/BatteryModel.js'
+  [desktop.notifications]='shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml'
+  [desktop.osd]='shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js'
+  [desktop.polkit]='shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js'
 )
 
 actual_ids=()
@@ -62,4 +68,4 @@ for name in "${excluded[@]}"; do
   fi
 done
 
-printf 'selected-plugins-test: seven pinned plugin source sets verified\n'
+printf 'selected-plugins-test: ten pinned plugin source sets verified\n'

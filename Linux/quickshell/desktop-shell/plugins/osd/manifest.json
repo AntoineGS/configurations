@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.osd",
+  "name": "On-screen display",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Volume, brightness, media, and status overlays",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": { "overlay": "Osd.qml" }
+}

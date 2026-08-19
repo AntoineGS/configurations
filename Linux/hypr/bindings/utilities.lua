@@ -14,11 +14,7 @@ hl.bind(
 	hl.dsp.exec_cmd("vicinae vicinae://extensions/vicinae/calculator/history"),
 	{ description = "Calculator" }
 )
-hl.bind(
-	"SUPER + CTRL + W",
-	hl.dsp.exec_cmd("systemctl --user restart desktop-shell.service"),
-	{ description = "Reload top bar" }
-)
+hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("desktop-shell-activate"), { description = "Reload top bar" })
 hl.bind("SUPER + CTRL + H", hl.dsp.exec_cmd("restart-hyprctl"), { description = "Reload Hyprland" })
 
 -- Aesthetics
@@ -42,7 +38,7 @@ hl.bind(
 -- Notifications
 hl.bind(
 	"SUPER + SHIFT + COMMA",
-	hl.dsp.exec_cmd("makoctl dismiss --all"),
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications dismissAll"),
 	{ description = "Dismiss all notifications" }
 )
 hl.bind(
@@ -50,10 +46,14 @@ hl.bind(
 	hl.dsp.exec_cmd("toggle-notification-silencing"),
 	{ description = "Toggle silencing notifications" }
 )
-hl.bind("SUPER + ALT + COMMA", hl.dsp.exec_cmd("makoctl invoke"), { description = "Invoke last notification" })
+hl.bind(
+	"SUPER + ALT + COMMA",
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications invokeLast"),
+	{ description = "Invoke last notification" }
+)
 hl.bind(
 	"SUPER + SHIFT + ALT + COMMA",
-	hl.dsp.exec_cmd("makoctl restore"),
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications restoreLast"),
 	{ description = "Restore last notification" }
 )
 

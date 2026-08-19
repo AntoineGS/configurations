@@ -1,21 +1,100 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s nullglob
 
-# Adjust brightness on the most likely display device.
-# Usage: brightness-display <step>
+export LC_ALL=C
 
 step="${1:-+5%}"
+sysfs_root=${BRIGHTNESS_DISPLAY_SYSFS_ROOT:-/sys}
+device=''
 
-# Start with the first possible output, then refine to the most likely given an order heuristic.
-device="$(ls -1 /sys/class/backlight 2>/dev/null | head -n1)"
-for candidate in amdgpu_bl* intel_backlight acpi_video*; do
-  if [[ -e /sys/class/backlight/$candidate ]]; then
-    device="$candidate"
-    break
-  fi
+for candidate in "$sysfs_root"/class/backlight/*; do
+  [[ -e $candidate ]] || continue
+  device=${candidate##*/}
+  break
+done
+for pattern in 'amdgpu_bl*' 'intel_backlight' 'acpi_video*'; do
+  # The pattern is deliberately expanded only below the selected sysfs root.
+  # shellcheck disable=SC2206
+  candidates=("$sysfs_root"/class/backlight/$pattern)
+  for candidate in "${candidates[@]}"; do
+    [[ -e $candidate ]] || continue
+    device=${candidate##*/}
+    break 2
+  done
 done
 
-# Set the actual brightness of the display device.
-brightnessctl -d "$device" set "$step" >/dev/null
+if [[ -z $device ]]; then
+  printf 'brightness-display: no display backlight device found\n' >&2
+  exit 1
+fi
+command -v jq >/dev/null 2>&1 || {
+  printf 'brightness-display: jq is required\n' >&2
+  exit 1
+}
 
-# Use SwayOSD to display the new brightness setting.
-swayosd-brightness "$(brightnessctl -d "$device" -m | cut -d',' -f4 | tr -d '%')"
+mutation=(brightnessctl -d "$device" set "$step")
+if ! "${mutation[@]}" >/dev/null; then
+  printf 'brightness-display: brightness mutation failed\n' >&2
+  exit 1
+fi
+
+if ! raw=$(brightnessctl -d "$device" -m 2>/dev/null); then
+  printf 'brightness-display: failed to read brightness state\n' >&2
+  exit 1
+fi
+[[ $raw != *$'\n'* ]] || {
+  printf 'brightness-display: malformed brightness state\n' >&2
+  exit 1
+}
+
+IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$raw"
+[[ -n $reported_device && -n $device_class && -z $extra ]] || {
+  printf 'brightness-display: malformed brightness state\n' >&2
+  exit 1
+}
+[[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ ]] || {
+  printf 'brightness-display: malformed brightness values\n' >&2
+  exit 1
+}
+[[ $reported_percent == *% ]] || {
+  printf 'brightness-display: malformed brightness percentage\n' >&2
+  exit 1
+}
+reported_percent=${reported_percent%\%}
+[[ $reported_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+  printf 'brightness-display: malformed brightness percentage\n' >&2
+  exit 1
+}
+
+if ! jq -n -e \
+  --argjson value "$value" \
+  --argjson maximum "$maximum" \
+  --arg percent "$reported_percent" \
+  '($percent | tonumber) as $reported
+   | ($value * 100 / $maximum) as $expected
+   | ($maximum > 0)
+     and ($value <= $maximum)
+     and ($reported >= 0 and $reported <= 100)
+     and (($reported == ($expected | floor)) or ($reported == ($expected | round)))' \
+  >/dev/null 2>&1; then
+  printf 'brightness-display: inconsistent brightness state\n' >&2
+  exit 1
+fi
+
+payload=$(jq -cn \
+  --arg icon brightness \
+  --arg message '' \
+  --argjson value "$value" \
+  --argjson max "$maximum" \
+  --arg progressText "${reported_percent}%" \
+  '{icon: $icon, message: $message, value: $value, max: $max, progressText: $progressText}')
+
+if ! response=$(desktop-shell call desktop.osd show "$payload"); then
+  printf 'brightness-display: OSD delivery failed\n' >&2
+  exit 3
+fi
+if [[ $response != ok ]]; then
+  printf 'brightness-display: OSD returned an invalid response\n' >&2
+  exit 3
+fi

@@ -10,6 +10,7 @@ AUTOSTART="$ROOT/Linux/hypr/autostart.lua"
 BINDINGS="$ROOT/Linux/hypr/bindings/utilities.lua"
 VICINAE_TOGGLE="$ROOT/Linux/vicinae/scripts/toggle-top-bar.sh"
 WAYBAR_TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-waybar"
+ROLLBACK_HELPER="$ROOT/Linux/os/helpers/desktop-shell-rollback"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
 
@@ -133,6 +134,23 @@ expected_args=$(printf '%s\n' 'ipc' '--any-display' '-p' "$SHELL_DIR" 'call' 'de
 }
 
 rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid 4242 ping || fail 'PID-bound helper failed'
+[[ -e $EXECUTED_FILE ]] || fail 'PID-bound helper did not execute quickshell'
+expected_args=$(printf '%s\n' 'ipc' '--pid' '4242' '-p' "$SHELL_DIR" 'call' '--' 'desktop-shell' 'ping')
+[[ $(<"$ARGS_FILE") == "$expected_args" ]] || {
+  printf 'expected PID-bound argv:\n%s\nactual argv:\n%s\n' "$expected_args" "$(<"$ARGS_FILE")" >&2
+  exit 1
+}
+
+for invalid_pid in 0 -1 01 abc; do
+  rm -f "$ARGS_FILE" "$EXECUTED_FILE"
+  invalid_status=0
+  run_launcher "$ROOT/Linux/os/helpers/desktop-shell" --pid "$invalid_pid" ping >/dev/null 2>&1 || invalid_status=$?
+  ((invalid_status == 2)) || fail "invalid PID was accepted: $invalid_pid"
+  [[ ! -e $EXECUTED_FILE ]] || fail "invalid PID executed quickshell: $invalid_pid"
+done
+
+rm -f "$ARGS_FILE" "$EXECUTED_FILE"
 toggle_status=0
 run_launcher "$TOGGLE_HELPER" unexpected >/dev/null 2>&1 || toggle_status=$?
 ((toggle_status != 0)) || fail 'toggle helper accepted an argument'
@@ -145,6 +163,10 @@ grep -Fqx 'PartOf=graphical-session.target' "$UNIT" || fail 'unit is not part of
 if grep -Fqx 'After=graphical-session.target' "$UNIT"; then
   fail 'unit orders after graphical-session.target and may create a cycle'
 fi
+grep -Fqx 'Environment=DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1' "$UNIT" || \
+  fail 'unit does not explicitly enable notification registration'
+grep -Fqx 'Environment=DESKTOP_SHELL_POLKIT_REGISTER=1' "$UNIT" || \
+  fail 'unit does not explicitly enable polkit registration'
 grep -Fqx 'Restart=on-failure' "$UNIT" || fail 'unit does not restart on failure'
 grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
   fail 'unit is not wanted by graphical-session.target'
@@ -152,13 +174,26 @@ grep -Fqx 'WantedBy=graphical-session.target' "$UNIT" || \
 [[ -f $CONFIG ]] || fail 'tidydots.yaml is absent'
 grep -Fq 'systemctl --user is-enabled --quiet desktop-shell.service &&' "$CONFIG" || \
   fail 'tidydots check does not require the service to be enabled'
-grep -Fq 'systemctl --user is-active --quiet desktop-shell.service &&' "$CONFIG" || \
-  fail 'tidydots check does not require the service to be active'
 grep -Fq "test \"\$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)\" = no" "$CONFIG" || \
   fail 'tidydots check does not require NeedDaemonReload=no'
-grep -Fq 'systemctl --user daemon-reload && systemctl --user enable --now desktop-shell.service' "$CONFIG" || \
-  fail 'tidydots repair command changed'
+grep -Fq 'systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service' "$CONFIG" || \
+  fail 'tidydots repair command does not stop before reloading and enabling'
+if grep -Eq 'systemctl --user (start|restart|try-restart) desktop-shell\.service|--now desktop-shell\.service' "$CONFIG"; then
+  fail 'tidydots setup starts or restarts desktop-shell.service'
+fi
 assert_launcher_mapping
+
+[[ -x "$ROLLBACK_HELPER" ]] || fail 'desktop-shell rollback helper is absent or not executable'
+rollback_source=$(<"$ROLLBACK_HELPER")
+grep -Fq -- "readonly MAKO_INPUT=\"\${DESKTOP_SHELL_MAKO:-/usr/bin/mako}\"" <<<"$rollback_source" || \
+  fail 'rollback Mako default path changed'
+grep -Fq -- "readonly SWAYOSD_SERVER_INPUT=\"\${DESKTOP_SHELL_SWAYOSD_SERVER:-/usr/bin/swayosd-server}\"" <<<"$rollback_source" || \
+  fail 'rollback SwayOSD default path changed'
+grep -Fq -- 'query_exact_pids' <<<"$rollback_source" || \
+  fail 'rollback does not use exact process identity lookup'
+if grep -Fq -- 'pkill' <<<"$rollback_source"; then
+  fail 'rollback contains broad process termination'
+fi
 
 for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
   [[ -f $active_route ]] || fail "active route is absent: $active_route"
@@ -170,12 +205,21 @@ for active_route in "$AUTOSTART" "$BINDINGS" "$VICINAE_TOGGLE"; do
 done
 
 grep -Fq 'hl.exec_cmd("uwsm-app -- hypridle")' "$AUTOSTART" || fail 'Hypridle autostart was removed'
-grep -Fq 'hl.exec_cmd("uwsm-app -- mako")' "$AUTOSTART" || fail 'Mako autostart was removed'
-grep -Fq 'hl.exec_cmd("uwsm-app -- swayosd-server")' "$AUTOSTART" || fail 'SwayOSD autostart was removed'
-grep -Fq 'hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")' "$AUTOSTART" || \
-  fail 'polkit-gnome autostart was removed'
-assert_binding 'SUPER + CTRL + W' 'systemctl --user restart desktop-shell.service' 'Reload top bar' \
-  'top bar reload binding does not restart desktop-shell.service'
+legacy_autostart_found=0
+for legacy_autostart in \
+  'hl.exec_cmd("uwsm-app -- mako")' \
+  'hl.exec_cmd("uwsm-app -- swayosd-server")' \
+  'hl.exec_cmd("/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")'; do
+  if grep -Fq -- "$legacy_autostart" "$AUTOSTART"; then
+    printf 'FAIL: legacy desktop-service autostart remains in %s: %s\n' "$AUTOSTART" "$legacy_autostart" >&2
+    legacy_autostart_found=1
+  fi
+done
+if ((legacy_autostart_found)); then
+  exit 1
+fi
+assert_binding 'SUPER + CTRL + W' 'desktop-shell-activate' 'Reload top bar' \
+  'top bar reload binding does not use desktop-shell-activate'
 assert_binding 'SUPER + SHIFT + SPACE' 'toggle-desktop-shell-bar' 'Toggle top bar' \
   'top bar toggle binding does not use toggle-desktop-shell-bar'
 grep -Fq 'toggle-desktop-shell-bar' "$VICINAE_TOGGLE" || fail 'Vicinae top bar action does not use toggle-desktop-shell-bar'

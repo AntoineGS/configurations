@@ -1,0 +1,126 @@
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+
+const pluginRoot = path.resolve(__dirname, "../plugins/polkit")
+const manifestPath = path.join(pluginRoot, "manifest.json")
+const qmlPath = path.join(pluginRoot, "PolkitAgent.qml")
+
+assert.ok(fs.existsSync(qmlPath), "PolkitAgent.qml must exist")
+assert.ok(fs.existsSync(manifestPath), "polkit manifest must exist")
+
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
+const qml = fs.readFileSync(qmlPath, "utf8")
+
+assert.equal(manifest.id, "desktop.polkit")
+assert.deepEqual(manifest.kinds, ["service"])
+assert.equal(manifest.entryPoints.service, "PolkitAgent.qml")
+assert.match(qml, /import Quickshell\.Services\.Polkit/)
+assert.match(qml, /import Quickshell\.Hyprland/)
+assert.match(qml, /objectPath:\s*"\/org\/desktop_shell\/PolkitAgent"/)
+assert.match(qml, /namespace:\s*"desktop-shell-polkit"/)
+assert.match(qml, /property bool polkitRegistered/)
+assert.match(qml, /property string polkitError/)
+assert.match(qml, /property string pamError/)
+assert.match(qml, /flow\.submit\(/)
+assert.match(qml, /flow\.cancelAuthenticationRequest\(\)/)
+assert.match(qml, /KeyboardFocus\.Exclusive/)
+assert.match(qml, /Color\.polkit/)
+assert.match(qml, /BorderSurface/)
+assert.doesNotMatch(qml, /omarchy|OMARCHY|laptop-closed/)
+
+assert.match(qml, /property bool registrationEnabled\s*:\s*Quickshell\.env\("DESKTOP_SHELL_POLKIT_REGISTER"\) === "1"/)
+assert.match(qml, /Loader\s*\{[\s\S]*active:\s*root\.registrationEnabled[\s\S]*sourceComponent:[\s\S]*PolkitAgent\s*\{/)
+assert.match(qml, /Hyprland\.focusedMonitor/)
+assert.match(qml, /PolkitModel\.screenForMonitor/)
+assert.doesNotMatch(qml, /root\.screenList\[0\]/)
+
+assert.match(qml, /return polkitLoader\.status === Loader\.Error \? "polkit backend failed to load" : ""/)
+assert.doesNotMatch(qml, /polkitLoader\.errorString\(\)/)
+
+assert.equal([...qml.matchAll(/passwordInput\.text\s*=\s*""/g)].length, 1,
+  "password erasure is centralized")
+assert.match(qml, /function clearPassword\(\)\s*\{[\s\S]*?if \(passwordInput\) passwordInput\.text = ""\s*\}/)
+assert.match(qml, /function finishRequest\(\)\s*\{[\s\S]*?root\.clearPassword\(\)[\s\S]*?root\.closing = true[\s\S]*?closeTimer\.restart\(\)/)
+assert.match(qml, /function handleBackendInactive\(\)\s*\{[\s\S]*?root\.clearPassword\(\)[\s\S]*?root\.resetSnapshot\(\)/)
+assert.match(qml, /function onAuthenticationSucceeded\(\)\s*\{\s*root\.finishRequest\(\)\s*\}/)
+assert.match(qml, /function onAuthenticationRequestCancelled\(\)\s*\{\s*root\.finishRequest\(\)\s*\}/)
+assert.match(qml, /function cancelRequest\(\)[\s\S]*?root\.finishRequest\(\)[\s\S]*?if \(flow\) flow\.cancelAuthenticationRequest\(\)/)
+assert.match(qml, /else root\.handleBackendInactive\(\)/)
+assert.match(qml, /onItemChanged:\s*if \(!item\) root\.handleBackendInactive\(\)/)
+assert.match(qml, /if \(status === Loader\.Error\)\s*\{[\s\S]*?root\.handleBackendInactive\(\)/)
+
+assert.match(qml, /property string currentActionId/)
+assert.match(qml, /PolkitModel\.snapshotAuthContext\(currentFlow\.message,\s*currentFlow\.actionId\)/,
+  "request context snapshots the supported AuthFlow action ID")
+assert.match(qml, /function syncFromFlow\(\)[\s\S]*?currentFlow\.inputPrompt[\s\S]*?currentFlow\.supplementaryMessage[\s\S]*?currentMessage\s*=/,
+  "dynamic prompt state remains separate from the request context")
+const syncStart = qml.indexOf("function syncFromFlow()")
+const beginStart = qml.indexOf("function beginFlow()")
+assert.notEqual(syncStart, -1, "flow synchronization function exists")
+assert.notEqual(beginStart, -1, "flow start function exists")
+assert.doesNotMatch(qml.slice(syncStart, beginStart), /currentFlow\.message|currentFlow\.actionId/,
+  "retries do not rebind the durable authorization context")
+const beginEnd = qml.indexOf("function refocus()", beginStart)
+assert.match(qml.slice(beginStart, beginEnd), /root\.resetSnapshot\(\)[\s\S]*?currentFlow\.message[\s\S]*?currentFlow\.actionId/,
+  "a replacement flow resets before taking its new trusted context")
+assert.match(qml, /function resetSnapshot\(\)[\s\S]*?currentMessage\s*=\s*""[\s\S]*?currentActionId\s*=\s*""/)
+assert.match(qml, /function finishRequest\(\)[\s\S]*?root\.resetSnapshot\(\)/,
+  "completion clears request context before the closing animation")
+assert.match(qml, /function handleBackendInactive\(\)[\s\S]*?root\.resetSnapshot\(\)/)
+assert.match(qml, /text:\s*"Request message: "\s*\+\s*root\.authorizationLabel\(root\.currentMessage\)/)
+assert.match(qml, /Column\s*\{[\s\S]*?root\.authorizationLabel\(root\.currentMessage\)[\s\S]*?root\.currentActionId/,
+  "authorization context is rendered as two compact lines")
+assert.match(qml, /requester PID|requester application|does not expose/i,
+  "requester identity residual is documented")
+assert.match(qml, /zeroiz/i, "QML string zeroization limitation is documented")
+assert.doesNotMatch(qml, /FileView\s*\{/, "PAM detection no longer parses a direct file in QML")
+assert.match(qml, /desktop-shell-polkit-pam/)
+assert.match(qml, /DESKTOP_SHELL_POLKIT_PAM_HELPER/)
+assert.match(qml, /property bool pamProbeQueued/)
+assert.match(qml, /function refreshPamProbe\(\)/)
+assert.match(qml, /fingerprintConfiguredFromProbeOutput/)
+assert.match(qml, /onPamProbeCommandChanged/)
+assert.match(qml, /Component\.onCompleted:[\s\S]*?refreshPamProbe\(\)/)
+assert.match(qml, /interval:\s*30000/)
+assert.match(qml, /id:\s*pamProbeTimeout/)
+assert.match(qml, /pamProbeTimeout\.restart\(\)/)
+assert.match(qml, /pamProbe\.signal\(15\)/, "a stalled probe is terminated locally")
+assert.match(qml, /var home = String\(Quickshell\.env\("HOME"\) \|\| ""\)/,
+  "the installed helper path is rooted in HOME")
+assert.match(qml, /home \+ "\/\.local\/share\/helpers\/desktop-shell-polkit-pam"/,
+  "the default PAM helper uses its absolute installed path")
+assert.match(qml, /property int pamProbeAttempt/)
+assert.match(qml, /property bool pamProbeAttemptStarted/)
+assert.match(qml, /property bool pamProbeAttemptExited/)
+assert.match(qml, /onStarted:/, "probe startup is part of the attempt lifecycle")
+assert.match(qml, /onRunningChanged:/, "probe startup failures observe runningChanged")
+assert.match(qml, /onExited:\s*function\(exitCode\)/, "probe completion is part of the attempt lifecycle")
+assert.match(qml, /pamProbeGraceTimer/)
+assert.match(qml, /pamProbe\.signal\(9\)/, "probe grace expiry escalates to SIGKILL")
+const timeoutStart = qml.indexOf("id: pamProbeTimeout")
+const graceStart = qml.indexOf("id: pamProbeGraceTimer")
+assert.ok(timeoutStart >= 0 && graceStart > timeoutStart, "probe timeout and grace timers are ordered")
+const timeoutBlock = qml.slice(timeoutStart, graceStart)
+const graceBlock = qml.slice(graceStart)
+assert.match(timeoutBlock, /var attempt = root\.pamProbeTimeoutAttempt/)
+assert.match(timeoutBlock, /attempt !== root\.pamProbeAttempt[\s\S]*?pamProbeAttemptActive/,
+  "probe timeout callbacks are tied to the exact attempt")
+assert.match(graceBlock, /var attempt = root\.pamProbeGraceAttempt/)
+assert.match(graceBlock, /attempt !== root\.pamProbeAttempt[\s\S]*?pamProbeAttemptActive/,
+  "probe grace callbacks are tied to the exact attempt")
+assert.match(qml, /fingerprintConfigured\s*=\s*false[\s\S]*?pamError\s*=/,
+  "probe start failures clear stale fingerprint state and report a bounded error")
+const contextStart = qml.indexOf("id: contextCard")
+assert.notEqual(contextStart, -1, "authorization context panel exists")
+const contextBlock = qml.slice(contextStart)
+assert.match(contextBlock, /text:\s*"Request message: "\s*\+\s*root\.authorizationLabel\(root\.currentMessage\)/)
+assert.match(contextBlock, /text:\s*"Trusted action ID: "\s*\+\s*root\.currentActionId/)
+assert.match(contextBlock, /wrapMode:\s*Text\.WrapAnywhere/,
+  "long trusted IDs wrap instead of disappearing")
+assert.match(contextBlock, /height:\s*contextColumn\.implicitHeight/,
+  "context panel height follows wrapped content")
+assert.doesNotMatch(contextBlock, /elide:/, "trusted context never elides an action ID")
+assert.doesNotMatch(contextBlock, /currentActionId\.slice|currentActionId\.substring/,
+  "the view renders the complete trusted action ID")
+assert.doesNotMatch(qml, /requesterPid|requesterApplication|applicationPid|processId/)

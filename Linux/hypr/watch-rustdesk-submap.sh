@@ -2,21 +2,33 @@
 # Event-driven Hyprland workspace -> submap watcher using socat for automatic reconnects
 # Also moves 2nd+ RustDesk Remote Desktop windows to the rightmost monitor
 # Requirements: hyprctl, socat, jq
-set -euo pipefail
+set -Eeuo pipefail
 
-readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2"]'
-readonly NOTIFICATION_CUE_MODE=rustdesk-cue
-readonly -a NOTIFICATION_ROUTE_MODES=(
-  rustdesk-route-DVI-D-1
-  rustdesk-route-HDMI-A-1
-  rustdesk-route-DP-2
-  rustdesk-route-hidden
-)
-NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-30}
+readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2","DP-1","eDP-1"]'
+readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
+readonly NOTIFICATION_LEASE_MAX_AGE_MS=1500
+readonly NOTIFICATION_LEASE_RENEW_INTERVAL=1
+NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-1}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
+NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
-RUSTDESK_NOTIFICATION_CUE_STATE=${RUSTDESK_NOTIFICATION_CUE_STATE:-"$XDG_RUNTIME_DIR/rustdesk-notification-cue"}
+
+NOTIFICATION_ROUTE_DIR=${NOTIFICATION_ROUTE_DIR:-"$XDG_RUNTIME_DIR/desktop-shell"}
+NOTIFICATION_ROUTE_FILE=${NOTIFICATION_ROUTE_FILE:-"$NOTIFICATION_ROUTE_DIR/notification-route.json"}
+NOTIFICATION_LEASE_FILE=${NOTIFICATION_LEASE_FILE:-"$NOTIFICATION_ROUTE_DIR/notification-route-lease.json"}
+
+monotonic_seconds() {
+  printf '%s\n' "$SECONDS"
+}
+
+epoch_seconds() {
+  printf '%(%s)T\n' -1
+}
+
+epoch_milliseconds() {
+  date +%s%3N
+}
 
 is_rustdesk_remote() {
   printf '%s\n' "$1" | grep -qi "rustdesk" &&
@@ -133,141 +145,332 @@ notification_route_state() {
     '
 }
 
-mode_is_active() {
-  local modes=$1
-  local expected=$2
-  local mode
-
-  while IFS= read -r mode; do
-    [[ $mode == "$expected" ]] && return 0
-  done <<<"$modes"
-
-  return 1
-}
-
-apply_notification_route_state() {
+parse_notification_route_state() {
   local state=$1
-  local route_mode cue_output direction
-  local modes cue_state="" mode route_count=0
-  local expected_cue=false modes_match=true cue_state_match=false
-  local state_dir state_name temporary_state
-  local -a mako_args=(mode)
+  local route_mode_name=$2
+  local cue_output_name=$3
+  local direction_name=$4
+  local -n route_mode_ref=$route_mode_name
+  local -n cue_output_ref=$cue_output_name
+  local -n direction_ref=$direction_name
 
-  IFS='|' read -r route_mode cue_output direction <<<"$state"
-  if [[ $state != "$route_mode|$cue_output|$direction" ]]; then
+  IFS='|' read -r route_mode_ref cue_output_ref direction_ref <<<"$state"
+  if [[ $state != "$route_mode_ref|$cue_output_ref|$direction_ref" ]]; then
     printf 'invalid notification route state: %s\n' "$state" >&2
     return 1
   fi
 
-  case $route_mode in
-    rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-hidden) ;;
+  case $route_mode_ref in
+    rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-DP-1|rustdesk-route-eDP-1|rustdesk-route-hidden) ;;
     *)
-      printf 'invalid notification route mode: %s\n' "$route_mode" >&2
+      printf 'invalid notification route mode: %s\n' "$route_mode_ref" >&2
       return 1
       ;;
   esac
-  case $cue_output in
-    DVI-D-1|HDMI-A-1|DP-2) expected_cue=true ;;
-    none) ;;
+
+  case $cue_output_ref in
+    DVI-D-1|HDMI-A-1|DP-2|DP-1|eDP-1|none) ;;
     *)
-      printf 'invalid notification cue output: %s\n' "$cue_output" >&2
+      printf 'invalid notification cue output: %s\n' "$cue_output_ref" >&2
       return 1
       ;;
   esac
-  case $direction in
+  case $direction_ref in
     left|right|up|down|none) ;;
     *)
-      printf 'invalid notification cue direction: %s\n' "$direction" >&2
+      printf 'invalid notification cue direction: %s\n' "$direction_ref" >&2
       return 1
       ;;
   esac
-  if [[ $cue_output == none && $direction != none ]]; then
+  if [[ $cue_output_ref == none && $direction_ref != none ]]; then
     printf 'notification route without cue has a direction: %s\n' "$state" >&2
     return 1
   fi
 
-  if ! modes=$(makoctl mode); then
-    printf 'failed to read Mako modes\n' >&2
+  return 0
+}
+
+build_notification_route_json() {
+  local visible=$1
+  local output=$2
+  local cue_output=$3
+  local direction=$4
+  local updated_at=$5
+
+  jq -cn \
+    --argjson visible "$visible" \
+    --arg output "$output" \
+    --arg cue_output "$cue_output" \
+    --arg direction "$direction" \
+    --argjson updated_at "$updated_at" \
+    '{version: 1, visible: $visible,
+      output: (if $visible then $output else null end),
+      cueOutput: (if $cue_output == "none" then null else $cue_output end),
+      direction: (if $direction == "none" then null else $direction end),
+      updatedAt: $updated_at}'
+}
+
+notification_route_dir_is_secure() {
+  local route_dir=$1
+  local owner mode
+
+  [[ -d $route_dir && ! -L $route_dir ]] || return 1
+  if ! read -r owner mode < <(stat -c '%u %a' -- "$route_dir"); then
+    return 1
+  fi
+  [[ $owner == "$UID" && $mode == 700 ]]
+}
+
+notification_route_file_is_secure() {
+  local route_file=$1
+  local owner mode
+
+  [[ -f $route_file && ! -L $route_file ]] || return 1
+  if ! read -r owner mode < <(stat -c '%u %a' -- "$route_file"); then
+    return 1
+  fi
+  [[ $owner == "$UID" && $mode == 600 ]]
+}
+
+ensure_notification_route_dir() {
+  local route_dir=$1
+
+  if [[ -e $route_dir && -L $route_dir ]]; then
+    printf 'notification route directory is a symlink: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! (umask 077 && mkdir -p -- "$route_dir"); then
+    printf 'failed to create notification route directory: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! chmod 0700 -- "$route_dir"; then
+    printf 'failed to secure notification route directory: %s\n' "$route_dir" >&2
+    return 1
+  fi
+  if ! notification_route_dir_is_secure "$route_dir"; then
+    printf 'notification route directory is not secure: %s\n' "$route_dir" >&2
+    return 1
+  fi
+}
+
+publish_notification_json() (
+  local route_dir=$1
+  local route_file=$2
+  local temp_prefix=$3
+  local route_json=$4
+  local temporary_file=""
+
+  # shellcheck disable=SC2329 # The EXIT trap invokes this function indirectly.
+  cleanup_temporary_route_file() {
+    [[ -z $temporary_file ]] || rm -f -- "$temporary_file"
+  }
+
+  trap cleanup_temporary_route_file EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  if ! notification_route_dir_is_secure "$route_dir"; then
+    return 1
+  fi
+  if ! temporary_file=$(umask 077 && mktemp "$route_dir/$temp_prefix.XXXXXX"); then
+    return 1
+  fi
+  if ! printf '%s\n' "$route_json" >"$temporary_file"; then
+    return 1
+  fi
+  if ! chmod 0600 -- "$temporary_file"; then
+    return 1
+  fi
+  if ! mv -f -- "$temporary_file" "$route_file"; then
+    return 1
+  fi
+  if ! notification_route_file_is_secure "$route_file"; then
+    return 1
+  fi
+  temporary_file=""
+)
+
+write_notification_route_lease() {
+  local route_dir=$1
+  local lease_file=$2
+  local route_updated_at=$3
+  local refreshed_at_ms expires_at_ms lease_json
+
+  refreshed_at_ms=$(epoch_milliseconds)
+  expires_at_ms=$((refreshed_at_ms + NOTIFICATION_LEASE_MAX_AGE_MS))
+  if ! lease_json=$(jq -cn \
+    --argjson refreshed_at_ms "$refreshed_at_ms" \
+    --argjson expires_at_ms "$expires_at_ms" \
+    --argjson route_updated_at "$route_updated_at" \
+    '{version: 2, refreshedAtMs: $refreshed_at_ms,
+      expiresAtMs: $expires_at_ms, routeUpdatedAt: $route_updated_at}'); then
     return 1
   fi
 
-  if [[ -e $RUSTDESK_NOTIFICATION_CUE_STATE ]]; then
-    if ! cue_state=$(<"$RUSTDESK_NOTIFICATION_CUE_STATE"); then
-      printf 'failed to read notification cue state: %s\n' "$RUSTDESK_NOTIFICATION_CUE_STATE" >&2
-      return 1
+  publish_notification_json "$route_dir" "$lease_file" '.notification-route-lease.json' "$lease_json"
+}
+
+invalidate_notification_route_lease() {
+  local route_file=$1
+
+  rm -f -- "$route_file" || return 1
+  [[ ! -e $route_file && ! -L $route_file ]]
+}
+
+publish_hidden_notification_route_state() {
+  local route_dir=$1
+  local route_file=$2
+  local lease_file=${3:-"$NOTIFICATION_LEASE_FILE"}
+  local route_json
+
+  if ! ensure_notification_route_dir "$route_dir"; then
+    invalidate_notification_route_lease "$lease_file" || true
+    return 1
+  fi
+  if ! route_json=$(build_notification_route_json false "" "none" "none" "$(epoch_seconds)"); then
+    invalidate_notification_route_lease "$lease_file" || true
+    return 1
+  fi
+  invalidate_notification_route_lease "$lease_file" || return 1
+
+  if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
+    return 0
+  fi
+  invalidate_notification_route_lease "$lease_file" || true
+  return 1
+}
+
+cleanup_notification_route_state() {
+  local route_dir=${1:-"$NOTIFICATION_ROUTE_DIR"}
+  local route_file=${2:-"$NOTIFICATION_ROUTE_FILE"}
+  local lease_file=${3:-"$NOTIFICATION_LEASE_FILE"}
+
+  if invalidate_notification_route_lease "$lease_file"; then
+    if notification_route_dir_is_secure "$route_dir"; then
+      publish_hidden_notification_route_state "$route_dir" "$route_file" "$lease_file" || true
     fi
   fi
+}
 
-  while IFS= read -r mode; do
-    case $mode in
-      rustdesk-route-DVI-D-1|rustdesk-route-HDMI-A-1|rustdesk-route-DP-2|rustdesk-route-hidden)
-        ((route_count += 1))
-        [[ $mode == "$route_mode" ]] || modes_match=false
-        ;;
-      rustdesk-cue)
-        [[ $expected_cue == true ]] || modes_match=false
-        ;;
-    esac
-  done <<<"$modes"
-  [[ $route_count == 1 ]] || modes_match=false
-  mode_is_active "$modes" "$route_mode" || modes_match=false
-  if [[ $expected_cue == true ]]; then
-    mode_is_active "$modes" "$NOTIFICATION_CUE_MODE" || modes_match=false
-    [[ $cue_state == "$cue_output|$direction" ]] && cue_state_match=true
+write_notification_route_state() {
+  local state=$1
+  local route_mode cue_output direction visible output
+  local route_dir route_file current_core current_updated_at updated_at
+  local route_json route_core route_updated_at
+  local monotonic_now route_write_age
+  local route_rewritten=false
+
+  if ! parse_notification_route_state "$state" route_mode cue_output direction; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    return 1
+  fi
+
+  case $route_mode in
+    rustdesk-route-DVI-D-1) visible=true; output=DVI-D-1 ;;
+    rustdesk-route-HDMI-A-1) visible=true; output=HDMI-A-1 ;;
+    rustdesk-route-DP-2) visible=true; output=DP-2 ;;
+    rustdesk-route-DP-1) visible=true; output=DP-1 ;;
+    rustdesk-route-eDP-1) visible=true; output=eDP-1 ;;
+    rustdesk-route-hidden) visible=false; output="" ;;
+  esac
+
+  route_dir=$NOTIFICATION_ROUTE_DIR
+  route_file=$NOTIFICATION_ROUTE_FILE
+  if ! ensure_notification_route_dir "$route_dir"; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    return 1
+  fi
+
+  monotonic_now=$(monotonic_seconds)
+  route_write_age=$NOTIFICATION_ROUTE_REWRITE_INTERVAL
+  if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]] &&
+    ((monotonic_now >= NOTIFICATION_ROUTE_LAST_WRITE_SECONDS)); then
+    route_write_age=$((monotonic_now - NOTIFICATION_ROUTE_LAST_WRITE_SECONDS))
+  fi
+
+  updated_at=$(epoch_seconds)
+  current_core=""
+  current_updated_at=""
+  if [[ -f $route_file ]] &&
+    current_core=$(jq -c 'del(.updatedAt)' "$route_file" 2>/dev/null) &&
+    current_updated_at=$(jq -er \
+      '.updatedAt | select(type == "number" and (floor == .) and (. >= 0))' \
+      "$route_file" 2>/dev/null) &&
+    [[ $current_updated_at =~ ^[0-9]+$ ]]; then
+    :
   else
-    mode_is_active "$modes" "$NOTIFICATION_CUE_MODE" && modes_match=false
-    [[ ! -e $RUSTDESK_NOTIFICATION_CUE_STATE ]] && cue_state_match=true
+    current_core=""
+    current_updated_at=""
   fi
 
-  if [[ $expected_cue == true && $cue_state_match == false ]]; then
-    state_dir=${RUSTDESK_NOTIFICATION_CUE_STATE%/*}
-    state_name=${RUSTDESK_NOTIFICATION_CUE_STATE##*/}
-    [[ $state_dir != "$RUSTDESK_NOTIFICATION_CUE_STATE" ]] || state_dir=.
-    if ! temporary_state=$(umask 077 && mktemp "$state_dir/.${state_name}.XXXXXX"); then
-      printf 'failed to create notification cue state file\n' >&2
+  if [[ $current_updated_at =~ ^[0-9]+$ ]] && ((updated_at < current_updated_at)); then
+    updated_at=$current_updated_at
+  fi
+
+  if ! route_json=$(build_notification_route_json \
+    "$visible" "$output" "$cue_output" "$direction" "$updated_at"); then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    printf 'failed to build notification route JSON\n' >&2
+    return 1
+  fi
+  if ! route_core=$(jq -c 'del(.updatedAt)' <<<"$route_json"); then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    printf 'failed to normalize notification route JSON\n' >&2
+    return 1
+  fi
+
+  route_updated_at=$updated_at
+  if notification_route_file_is_secure "$route_file" &&
+    [[ $route_core == "$current_core" && $current_updated_at =~ ^[0-9]+$ ]] &&
+    ((route_write_age < NOTIFICATION_ROUTE_REWRITE_INTERVAL)); then
+    route_updated_at=$current_updated_at
+  else
+    local publish_status
+    # Revoke the lease before replacing route content so a crash cannot make an
+    # old route-timestamp lease validate newly published route content.
+    if ! invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE"; then
+      printf 'failed to revoke notification route lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
       return 1
     fi
-    if ! printf '%s\n' "$cue_output|$direction" >"$temporary_state" ||
-      ! mv -f -- "$temporary_state" "$RUSTDESK_NOTIFICATION_CUE_STATE"; then
-      rm -f -- "$temporary_state"
-      printf 'failed to write notification cue state\n' >&2
-      return 1
+    if publish_notification_json "$route_dir" "$route_file" '.notification-route.json' "$route_json"; then
+      route_rewritten=true
+      :
+    else
+      publish_status=$?
+      invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+      printf 'failed to publish notification route: %s\n' "$route_file" >&2
+      return "$publish_status"
     fi
   fi
 
-  if [[ $modes_match == false ]]; then
-    for mode in "${NOTIFICATION_ROUTE_MODES[@]}" "$NOTIFICATION_CUE_MODE"; do
-      mako_args+=(-r "$mode")
-    done
-    mako_args+=(-a "$route_mode")
-    [[ $expected_cue == true ]] && mako_args+=(-a "$NOTIFICATION_CUE_MODE")
-    if ! makoctl "${mako_args[@]}"; then
-      printf 'failed to apply notification route state: %s\n' "$state" >&2
-      return 1
-    fi
+  if ! write_notification_route_lease "$route_dir" "$NOTIFICATION_LEASE_FILE" "$route_updated_at"; then
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    printf 'failed to publish notification lease: %s\n' "$NOTIFICATION_LEASE_FILE" >&2
+    return 1
   fi
 
-  if [[ $expected_cue == false && -e $RUSTDESK_NOTIFICATION_CUE_STATE ]]; then
-    if ! rm -f -- "$RUSTDESK_NOTIFICATION_CUE_STATE"; then
-      printf 'failed to remove notification cue state\n' >&2
-      return 1
-    fi
+  if [[ $route_rewritten == true ]]; then
+    NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
   fi
+  return 0
 }
 
 reconcile_notification_routing() {
   local monitors_json clients_json state
 
   if ! monitors_json=$(hyprctl monitors -j) || ! clients_json=$(hyprctl clients -j); then
-    apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
   hide_rustdesk_connection_managers "$clients_json" || true
   if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
-    apply_notification_route_state 'rustdesk-route-hidden|none|none' || true
+    invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+    publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
-  apply_notification_route_state "$state"
+  write_notification_route_state "$state"
 }
 
 is_notification_routing_event() {
@@ -339,33 +542,89 @@ handle_hyprland_event() {
 consume_hyprland_event_stream() {
   local clean_state_name=$1
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
-  local evline read_status
-  local next_reconciliation remaining
+  local evline read_status last_write_before_event monotonic_now
+  local last_write_before_reconciliation reconcile_status
+  local next_reconciliation remaining route_deadline
 
-  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
-    reconcile_interval=30
+  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]] ||
+    ((reconcile_interval > NOTIFICATION_LEASE_RENEW_INTERVAL)); then
+    reconcile_interval=$NOTIFICATION_LEASE_RENEW_INTERVAL
   fi
 
   reconcile_notification_routing || true
-  next_reconciliation=$((SECONDS + reconcile_interval))
+  monotonic_now=$(monotonic_seconds)
+  next_reconciliation=$((monotonic_now + reconcile_interval))
+  if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+    route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+    if ((route_deadline < next_reconciliation)); then
+      next_reconciliation=$route_deadline
+    fi
+  fi
+
   while :; do
-    remaining=$((next_reconciliation - SECONDS))
+    monotonic_now=$(monotonic_seconds)
+    remaining=$((next_reconciliation - monotonic_now))
     if ((remaining <= 0)); then
-      reconcile_notification_routing || true
-      next_reconciliation=$((SECONDS + reconcile_interval))
+      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
+      if reconcile_notification_routing; then
+        reconcile_status=0
+      else
+        reconcile_status=$?
+      fi
+      monotonic_now=$(monotonic_seconds)
+      next_reconciliation=$((monotonic_now + reconcile_interval))
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+        if ((route_deadline < next_reconciliation)); then
+          next_reconciliation=$route_deadline
+        fi
+      fi
+      if ((reconcile_status != 0)) &&
+        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + 1))
+      fi
       continue
     fi
 
     if IFS= read -r -t "$remaining" evline; then
+      last_write_before_event=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
       handle_hyprland_event "$evline" "$clean_state_name"
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} != "$last_write_before_event" ]]; then
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + reconcile_interval))
+        if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+          route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+          if ((route_deadline < next_reconciliation)); then
+            next_reconciliation=$route_deadline
+          fi
+        fi
+      fi
       continue
     else
       read_status=$?
     fi
 
     if ((read_status > 128)); then
-      reconcile_notification_routing || true
-      next_reconciliation=$((SECONDS + reconcile_interval))
+      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
+      if reconcile_notification_routing; then
+        reconcile_status=0
+      else
+        reconcile_status=$?
+      fi
+      monotonic_now=$(monotonic_seconds)
+      next_reconciliation=$((monotonic_now + reconcile_interval))
+      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
+        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
+        if ((route_deadline < next_reconciliation)); then
+          next_reconciliation=$route_deadline
+        fi
+      fi
+      if ((reconcile_status != 0)) &&
+        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+        monotonic_now=$(monotonic_seconds)
+        next_reconciliation=$((monotonic_now + 1))
+      fi
       continue
     fi
 
@@ -391,6 +650,11 @@ main() {
   local sig=""
   local candidate
   local hypr_socket_path
+
+  trap cleanup_notification_route_state EXIT
+  trap 'cleanup_notification_route_state; exit 129' HUP
+  trap 'cleanup_notification_route_state; exit 130' INT
+  trap 'cleanup_notification_route_state; exit 143' TERM
 
   : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
   hypr_dir="$XDG_RUNTIME_DIR/hypr"
