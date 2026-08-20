@@ -8,6 +8,9 @@ const barSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/Bar.qml"), "
 const workspacesSource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Workspaces.qml"), "utf8")
 const traySource = fs.readFileSync(path.join(shellRoot, "plugins/bar/widgets/Tray.qml"), "utf8")
 const clockSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/clock/BarWidget.qml"), "utf8")
+const opticalGlyphSource = fs.readFileSync(path.join(shellRoot, "Ui/OpticalGlyph.qml"), "utf8")
+const tailscalePanelSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/tailscale/Panel.qml"), "utf8")
+const tailscaleIconSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/tailscale/TailscaleIcon.qml"), "utf8")
 const widgetButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/WidgetButton.qml"), "utf8")
 const barIconButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/BarIconButton.qml"), "utf8")
 const centerSource = barSource.slice(barSource.indexOf("component CenterModules"), barSource.indexOf("component ModuleList"))
@@ -67,6 +70,22 @@ contract("tray menu-bearing items use native display", () => {
   assert.doesNotMatch(traySource, /PopupCard|QsMenuOpener/)
 })
 
+contract("tray items reuse shared hover states without tinting full-color icons", () => {
+  assert.match(traySource, /component TrayItem: BorderSurface/)
+  assert.match(traySource, /readonly property bool hot: mouseArea\.containsMouse/)
+  assert.match(traySource,
+    /Style\.hoverFillFor\(root\.foreground, Color\.accent\)/)
+  assert.match(traySource,
+    /Border\.controlSpec\("hover-cursor", root\.foreground, Color\.accent\)/)
+  assert.match(traySource,
+    /property color tint: root\.foreground[\s\S]*?colorizationColor: trayIconRoot\.tint/)
+  assert.match(traySource,
+    /tint: mouseArea\.pressed[\s\S]*?Style\.pressedStateColor\(root\.foreground, Color\.accent\)[\s\S]*?trayItemRoot\.hot[\s\S]*?Style\.hoverStateColor\(root\.foreground, Color\.accent\)[\s\S]*?: root\.foreground/)
+  assert.match(traySource, /visible: !trayIconRoot\.symbolic/)
+  assert.match(traySource,
+    /MultiEffect \{[\s\S]*?visible: trayIconRoot\.symbolic[\s\S]*?colorizationColor: trayIconRoot\.tint/)
+})
+
 contract("native tray display has QApplication shell mode", () => {
   assert.match(shellSource, /^\/\/\@ pragma UseQApplication\r?\n/)
   assert.match(traySource, /function openTrayMenu[\s\S]*?item\.display\(/)
@@ -74,6 +93,21 @@ contract("native tray display has QApplication shell mode", () => {
 
 contract("clock updates at seconds precision", () => {
   assert.match(clockSource, /precision: SystemClock\.Seconds/)
+})
+
+contract("custom glyph colors animate smoothly", () => {
+  assert.match(opticalGlyphSource, /Behavior on color \{\s*ColorAnimation \{ duration: 160 \}/)
+  assert.match(tailscaleIconSource, /Behavior on color \{\s*ColorAnimation \{ duration: 160 \}/)
+})
+
+contract("tailscale bar icon preserves idle dim and uses button content color", () => {
+  const barButtonSource = tailscalePanelSource.slice(
+    tailscalePanelSource.indexOf("BarIconButton {"),
+    tailscalePanelSource.indexOf("KeyboardPanel {")
+  )
+  assert.match(barButtonSource, /foreground: tailscale\.active \? root\.foreground : root\.dim/)
+  assert.match(barButtonSource, /TailscaleIcon \{[\s\S]*?color: button\.contentColor/)
+  assert.match(tailscalePanelSource, /iconSize: Style\.font\.display[\s\S]*?color: tailscale\.active \? root\.foreground : root\.dim/)
 })
 
 contract("center anchor boundaries use one module gap", () => {
@@ -109,6 +143,21 @@ contract("workspaces are monitor-local labeled buttons", () => {
   assert.match(workspacesSource, /text: displayName/)
   assert.match(workspacesSource, /active: focused/)
   assert.doesNotMatch(workspacesSource, /focused \? "\\uDB85\\uDCFB"/)
+})
+
+contract("bar buttons reuse shared hover states", () => {
+  assert.match(widgetButtonSource,
+    /readonly property bool hot: visible && interactive && !concealed && mouseArea\.containsMouse/)
+  assert.match(widgetButtonSource,
+    /readonly property color contentColor: mouseArea\.pressed[\s\S]*?Style\.pressedStateColor\(foreground, accent\)[\s\S]*?hot[\s\S]*?Style\.hoverStateColor\(foreground, accent\)[\s\S]*?active && useActiveColor/)
+  assert.match(widgetButtonSource,
+    /mouseArea\.pressed[\s\S]*?Style\.pressedFillFor\(root\.foreground, root\.accent\)/)
+  assert.match(widgetButtonSource,
+    /root\.hot[\s\S]*?Style\.hoverFillFor\(root\.foreground, root\.accent\)/)
+  assert.match(widgetButtonSource,
+    /Border\.controlSpec\("hover-cursor", root\.foreground, root\.accent\)/)
+  assert.match(barIconButtonSource, /color: root\.contentColor/)
+  assert.match(clockSource, /color: button\.contentColor/)
 })
 
 contract("fixed bar model has no drag or position helpers", () => {

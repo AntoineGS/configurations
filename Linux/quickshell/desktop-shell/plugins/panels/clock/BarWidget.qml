@@ -130,7 +130,7 @@ BarWidget {
           fontSize: modelData.length > 3
             ? button.fontSize * 0.9
             : button.fontSize
-          color: button.foreground
+          color: button.contentColor
         }
       }
     }

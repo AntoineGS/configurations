@@ -10,6 +10,10 @@ Item {
   property color color: Color.foreground
   property bool debugBounds: false
 
+  Behavior on color {
+    ColorAnimation { duration: 160 }
+  }
+
   readonly property int renderedFontSize: Math.max(1, Math.round(fontSize))
   readonly property real tightWidth: Math.max(1, glyphMetrics.tightBoundingRect.width)
   readonly property real horizontalCorrection: glyph.implicitWidth / 2 - (glyphMetrics.tightBoundingRect.x + tightWidth / 2)
