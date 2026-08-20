@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Asbru Connection Manager
+Comment=Organize remote terminal sessions
+Exec=env GDK_BACKEND=x11 GTK_THEME=catppuccin-mocha-mauve-standard+default ./asbru-cm --no-splash
+Path=/home/a.simard@multidev.local/gits/asbru-cm
+Icon=asbru-cm
+Terminal=false
+StartupNotify=true
+Categories=System;TerminalEmulator;GTK;

@@ -36,9 +36,9 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
     def test_current_inventory_and_package_ownership_are_exact(self) -> None:
         commands = audit_sources(self.manifest, self.active_sources)
 
-        self.assertEqual(len(commands), 26)
-        self.assertEqual(sum(command.source.name == "apps.lua" for command in commands), 12)
-        self.assertEqual(sum(command.source.name == "autostart.lua" for command in commands), 14)
+        self.assertEqual(len(commands), 27)
+        self.assertEqual(sum(command.source.name == "apps.lua" for command in commands), 15)
+        self.assertEqual(sum(command.source.name == "autostart.lua" for command in commands), 12)
 
     def test_unconsumed_exec_cmd_references_fail_closed(self) -> None:
         cases = (
@@ -152,7 +152,7 @@ class HyprlandRuntimeAuditTests(unittest.TestCase):
             if command.text.startswith("sleep ")
         ]
 
-        self.assertEqual(len(commands), 2)
+        self.assertEqual(len(commands), 4)
         audit_commands(commands, packages)
 
     def test_only_current_environment_assignment_is_allowed(self) -> None:
