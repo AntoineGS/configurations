@@ -1,10 +1,11 @@
 {
   "$schema": "https://opencode.ai/tui.json",
   "theme": "catppuccin",
+  "vim_enter_submit": true,
   "keybinds": {
     "app_exit": "ctrl+c,<leader>q",
-    "input_submit": "return,alt+return",
-    "input_newline": "shift+return,ctrl+return,ctrl+j",
+    "input_submit": "alt+return",
+    "input_newline": "return,shift+return,ctrl+return,ctrl+j",
     "messages_page_up": "ctrl+u",
     "messages_page_down": "ctrl+d"
   }
