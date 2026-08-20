@@ -4,7 +4,7 @@
   "mouse": false,
   "keybinds": {
     "app_exit": "ctrl+c,<leader>q",
-    "prompt_submit": "alt+return",
+    "input_submit": "return,alt+return",
     "input_newline": "shift+return,ctrl+return,ctrl+j",
     "messages_page_up": "ctrl+u",
     "messages_page_down": "ctrl+d",
