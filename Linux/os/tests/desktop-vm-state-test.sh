@@ -49,6 +49,10 @@ cat >"$FAKE_BIN/virsh" <<'FAKE_VIRSH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\0' "$@" >>"$VM_VIRSH_TRACE"
+if [[ ${1:-} == --connect ]]; then
+  [[ ${2:-} == qemu:///system ]] || exit 65
+  shift 2
+fi
 case ${1:-} in
   list)
     (( ${VM_LIST_FAIL:-0} == 0 )) || { printf 'mock list failed\n' >&2; exit 1; }
@@ -108,7 +112,7 @@ assert_json "$second" \
   'second VM sample did not compute the CPU delta'
 
 trace=$(tr '\0' '\n' <"$VM_VIRSH_TRACE")
-expected_trace=$'list\n--state-running\n--name\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\nlist\n--state-running\n--name\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\n'
+expected_trace=$'--connect\nqemu:///system\nlist\n--state-running\n--name\n--connect\nqemu:///system\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\n--connect\nqemu:///system\nlist\n--state-running\n--name\n--connect\nqemu:///system\ndomstats\n--domain\nwin11 gaming\n--state\n--cpu-total\n--balloon\n--vcpu\n--nowait\n'
 expected_trace=${expected_trace%$'\n'}
 [[ $trace == "$expected_trace" ]] || fail "virsh argv trace was unexpected: $(printf '%q' "$trace")"
 

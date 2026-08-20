@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 shopt -s nullglob
 
+readonly VM_LIBVIRT_URI=qemu:///system
+
 usage() {
   printf 'usage: %s <power|monitor|tailscale|vm|bluetooth>\n' "${0##*/}" >&2
   exit 2
@@ -452,7 +454,7 @@ state_vm() {
     emit_unavailable "$empty_data"
   fi
   if ! raw_domains=$(
-    "$virsh_command" list --state-running --name 2>&1
+    "$virsh_command" --connect "$VM_LIBVIRT_URI" list --state-running --name 2>&1
   ); then
     emit_stale "virsh list failed: ${raw_domains//$'\n'/ }" "$empty_data"
   fi
@@ -479,7 +481,7 @@ state_vm() {
   esac
 
   if ! raw_stats=$(
-    "$virsh_command" domstats --domain "$domain_name" \
+    "$virsh_command" --connect "$VM_LIBVIRT_URI" domstats --domain "$domain_name" \
       --state --cpu-total --balloon --vcpu --nowait 2>&1
   ); then
     emit_stale "virsh domstats failed: ${raw_stats//$'\n'/ }" "$empty_data"

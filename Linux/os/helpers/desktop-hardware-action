@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 # Keep user input below the signed 64-bit arithmetic range used for the limit check.
 readonly MAX_VM_MEMORY_GIB_DIGITS=18
+readonly VM_LIBVIRT_URI=qemu:///system
 
 usage() {
   printf 'usage: %s <power|monitor|tailscale|vm> <action> [args...]\n' "${0##*/}" >&2
@@ -82,7 +83,7 @@ set_vm_memory() {
     printf '%s\n' 'desktop-hardware-action: virsh is required' >&2
     exit 1
   }
-  if ! detail=$("$virsh_command" setmem --domain "$name" --size "${gib}GiB" --live --config 2>&1); then
+  if ! detail=$("$virsh_command" --connect "$VM_LIBVIRT_URI" setmem --domain "$name" --size "${gib}GiB" --live --config 2>&1); then
     printf 'desktop-hardware-action: memory resize failed: %s\n' "${detail//$'\n'/ }" >&2
     exit 1
   fi
