@@ -148,7 +148,8 @@ const commandModules = {
     type: "command",
     exec: "desktop-shell-status disk",
     interval: 30,
-    horizontalMargin: 2.5
+    horizontalMargin: 2.5,
+    onClick: "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'"
   },
   memory: {
     id: "memory",
