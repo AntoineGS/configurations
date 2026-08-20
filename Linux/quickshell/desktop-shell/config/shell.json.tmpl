@@ -32,7 +32,7 @@
         { "id": "desktop.monitor" },
         { "id": "desktop.power" },
 {{ end }}
-        { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 30, "horizontalMargin": 2.5 },
+        { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 30, "horizontalMargin": 2.5, "onClick": "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'" },
         { "id": "desktop.vm" },
         { "id": "memory", "type": "command", "exec": "desktop-shell-status memory", "interval": 5, "horizontalMargin": 2.5, "onClick": "launch-or-focus-tui btop" },
         { "id": "cpu", "type": "command", "exec": "desktop-shell-status cpu", "interval": 5, "horizontalMargin": 2.5, "onClick": "launch-or-focus-tui btop" }
