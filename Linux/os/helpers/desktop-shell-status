@@ -179,7 +179,7 @@ codex_status() {
   if ! result=$(codexbar --format '{weekly_pct}%/{weekly_reset}' \
     --color-low '#7f849c' --color-mid '#7f849c' \
     --color-high '#7f849c' --color-critical '#7f849c' \
-    2>"$ERROR_FILE" | jq -c '.text |= gsub("d "; "d") | .class = "muted"' 2>>"$ERROR_FILE"); then
+    2>"$ERROR_FILE" | jq -c '.text |= gsub("d "; "d") | .text |= gsub("h "; "h") | .class = "muted"' 2>>"$ERROR_FILE"); then
     adapter_error codex "$(error_message "Codex status query failed")"
     return $?
   fi

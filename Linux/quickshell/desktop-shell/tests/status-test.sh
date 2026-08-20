@@ -101,7 +101,7 @@ if [[ ${CODEX_FAIL:-0} == 1 ]]; then
 fi
 case ${CODEX_PAYLOAD:-valid} in
 valid)
-  printf '%s\n' '{"text":"1%/4d 7h","tooltip":"Codex quota","class":"source","extra":"preserve"}'
+  printf '%s\n' '{"text":"1%/4d 7h 03m","tooltip":"Codex quota","class":"source","extra":"preserve"}'
   ;;
 missing-tooltip)
   printf '%s\n' '{"text":"1%/4d 7h","class":"source"}'
@@ -269,7 +269,7 @@ done <"$voxtype_trace"
 
 invoke codex-success codex
 assert_status 0 codex-success
-assert_json_field '.text' '1%/4d7h' 'Codex reset normalization'
+assert_json_field '.text' '1%/4d7h03m' 'Codex reset normalization'
 assert_json_field '.tooltip' 'Codex quota' 'Codex tooltip preservation'
 assert_json_field '.class' 'muted' 'Codex muted class'
 assert_json_field '.extra' 'preserve' 'Codex top-level field preservation'
@@ -340,7 +340,7 @@ CODEX_PAYLOAD=valid
 CODEX_FAIL=1
 invoke codex-stale codex
 assert_status 0 codex-stale
-assert_json_field '.text' '1%/4d7h' 'stale Codex text fallback'
+assert_json_field '.text' '1%/4d7h03m' 'stale Codex text fallback'
 assert_json_field '.class' 'stale' 'stale Codex class'
 stale_tooltip=$(jq -er '.tooltip' <<<"$last_output")
 [[ $stale_tooltip == *'Codex quota'* && $stale_tooltip == *'codexbar fixture failure'* ]] || {

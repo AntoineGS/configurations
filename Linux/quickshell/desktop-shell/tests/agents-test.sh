@@ -159,11 +159,11 @@ temporary_records=("$usage_dir"/.[!.]*.tmp)
 cat >"$fake_bin/codexbar" <<'FAKE_CODEXBAR'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-printf '%s\n' '{"text":"1%/4d 7h","tooltip":"Codex quota","class":"source"}'
+printf '%s\n' '{"text":"1%/4d 7h 03m","tooltip":"Codex quota","class":"source"}'
 FAKE_CODEXBAR
 chmod +x "$fake_bin/codexbar"
 compact_output=$(PATH="$fake_bin:$original_path" HOME="$home_root" XDG_CACHE_HOME="$cache_home" "$STATUS" codex)
-jq -e '.text == "1%/4d7h" and (.text | contains("Codex") | not)' <<<"$compact_output" >/dev/null \
+jq -e '.text == "1%/4d7h03m" and (.text | contains("Codex") | not)' <<<"$compact_output" >/dev/null \
   || fail "compact Codex status changed"
 
 jq -e '
