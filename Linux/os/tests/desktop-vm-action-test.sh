@@ -126,6 +126,8 @@ printf -v VM_STATE_PAYLOAD '%s' '{"available":true,"stale":false,"updatedAt":1,"
 run_action vm set-memory 12
 assert_status 0 'successful memory resize'
 assert_trace 'successful memory resize' \
+  --connect \
+  qemu:///system \
   setmem \
   --domain \
   'vm; touch injected' \
@@ -139,6 +141,8 @@ assert_no_injection
 run_action vm set-memory 1
 assert_status 0 'minimum memory resize'
 assert_trace 'minimum memory resize' \
+  --connect \
+  qemu:///system \
   setmem \
   --domain \
   'vm; touch injected' \
@@ -151,6 +155,8 @@ assert_invocation_count 1 'minimum memory resize'
 run_action vm set-memory 24
 assert_status 0 'maximum memory resize'
 assert_trace 'maximum memory resize' \
+  --connect \
+  qemu:///system \
   setmem \
   --domain \
   'vm; touch injected' \
