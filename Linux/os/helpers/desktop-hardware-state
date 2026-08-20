@@ -433,6 +433,7 @@ state_vm() {
   local previous_cpu_time_ns=''
   local previous_sampled_at_ns=''
   local previous_vcpus=''
+  local previous_memory_usage_available=false
   local cpu_delta=''
   local wall_delta=''
   local cpu_available=false
@@ -547,6 +548,13 @@ state_vm() {
     previous_cpu_time_ns=$(jq -r '.data.cpuTimeNs // empty' <<<"$previous_cache")
     previous_sampled_at_ns=$(jq -r '.data.sampledAtNs // empty' <<<"$previous_cache")
     previous_vcpus=$(jq -r '.data.vcpus // empty' <<<"$previous_cache")
+    previous_memory_usage_available=$(jq -r '.data.memory.usageAvailable == true' <<<"$previous_cache")
+
+    if [[ $previous_name == "$domain_name" \
+      && $previous_memory_usage_available == true \
+      && $usage_available == false ]]; then
+      emit_stale 'virsh domstats omitted previously available memory usage' "$empty_data"
+    fi
 
     if [[ $previous_name == "$domain_name" ]] \
       && [[ $previous_cpu_time_ns =~ ^[0-9]+$ ]] \
