@@ -11,6 +11,7 @@ Item {
   property int fontWeight: bar && bar.fontWeight ? bar.fontWeight : Font.Normal
   property color foreground: bar ? bar.barForeground : Color.foreground
   property color activeColor: bar ? bar.activeColor : Color.bar.active
+  property color accent: Color.accent
   property bool active: false
   property real horizontalMargin: 8.5
   property real verticalPadding: 6
@@ -59,7 +60,13 @@ Item {
   readonly property int barSize: bar ? bar.barSize : Style.bar.sizeHorizontal
   readonly property real scaledHorizontalMargin: Style.spaceReal(horizontalMargin)
   readonly property real scaledVerticalPadding: Style.spaceReal(verticalPadding)
-  readonly property bool tooltipHovered: visible && interactive && !concealed && mouseArea.containsMouse
+  readonly property bool hot: visible && interactive && !concealed && mouseArea.containsMouse
+  readonly property bool tooltipHovered: hot
+  readonly property color contentColor: mouseArea.pressed
+    ? Style.pressedStateColor(foreground, accent)
+    : (hot
+      ? Style.hoverStateColor(foreground, accent)
+      : (active && useActiveColor ? activeColor : foreground))
   // Width of the painted label, for bar chrome that wants to line up with the
   // text rather than with the slot it sits in. Zero on icon-only buttons.
   readonly property real labelWidth: label.visible ? label.implicitWidth : 0
@@ -73,12 +80,27 @@ Item {
     NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
   }
 
+  BorderSurface {
+    anchors.fill: parent
+    color: mouseArea.pressed
+      ? Style.pressedFillFor(root.foreground, root.accent)
+      : (root.hot ? Style.hoverFillFor(root.foreground, root.accent) : "transparent")
+    borderSpec: root.hot
+      ? Border.controlSpec("hover-cursor", root.foreground, root.accent)
+      : Border.none()
+    radius: Style.cornerRadius
+
+    Behavior on color {
+      ColorAnimation { duration: 120 }
+    }
+  }
+
   Text {
     id: label
     visible: root.labelVisible
     anchors.centerIn: parent
     text: root.text
-    color: root.active && root.useActiveColor ? root.activeColor : root.foreground
+    color: root.contentColor
     font.family: root.fontFamily
     font.pixelSize: root.fontSize
     font.weight: root.fontWeight

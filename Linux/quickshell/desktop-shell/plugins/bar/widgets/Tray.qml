@@ -119,7 +119,12 @@ BarWidget {
   component TrayIcon: Item {
     id: trayIconRoot
     required property var icon
+    property color tint: root.foreground
     readonly property bool symbolic: root.iconIsSymbolic(icon)
+
+    Behavior on tint {
+      ColorAnimation { duration: 160 }
+    }
 
     Image {
       id: trayIconImage
@@ -137,13 +142,26 @@ BarWidget {
       source: trayIconImage
       visible: trayIconRoot.symbolic
       colorization: 1.0
-      colorizationColor: root.foreground
+      colorizationColor: trayIconRoot.tint
     }
   }
 
-  component TrayItem: Item {
+  component TrayItem: BorderSurface {
     id: trayItemRoot
     required property var modelData
+    readonly property bool hot: mouseArea.containsMouse
+
+    color: mouseArea.pressed
+      ? Style.pressedFillFor(root.foreground, Color.accent)
+      : (hot ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
+    borderSpec: hot
+      ? Border.controlSpec("hover-cursor", root.foreground, Color.accent)
+      : Border.none()
+    radius: Style.cornerRadius
+
+    Behavior on color {
+      ColorAnimation { duration: 120 }
+    }
 
     visible: modelData.status !== Status.Passive
     implicitWidth: visible ? root.trayItemExtent : 0
@@ -158,6 +176,11 @@ BarWidget {
       width: Style.space(16)
       height: Style.space(16)
       icon: trayItemRoot.modelData.icon
+      tint: mouseArea.pressed
+        ? Style.pressedStateColor(root.foreground, Color.accent)
+        : (trayItemRoot.hot
+          ? Style.hoverStateColor(root.foreground, Color.accent)
+          : root.foreground)
     }
 
     MouseArea {

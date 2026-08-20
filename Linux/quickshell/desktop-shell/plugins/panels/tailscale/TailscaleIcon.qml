@@ -11,6 +11,10 @@ Item {
   property bool crossed: false
   property bool warning: false
 
+  Behavior on color {
+    ColorAnimation { duration: 160 }
+  }
+
   width: iconSize
   height: iconSize
   implicitWidth: iconSize

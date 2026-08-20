@@ -67,6 +67,8 @@ for (const [role, value] of Object.entries(palette)) {
 
 assert.ok(fs.existsSync(themePath), "repository-owned shell.toml exists")
 const theme = fs.readFileSync(themePath, "utf8")
+assert.match(theme, /\[controls\][\s\S]*?hover-cursor-color\s*=\s*"accent"/,
+  "shared control hover color uses the accent token")
 const themeValues = {}
 let section = ""
 for (const rawLine of theme.split("\n")) {

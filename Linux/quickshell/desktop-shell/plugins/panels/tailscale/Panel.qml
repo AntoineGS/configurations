@@ -68,11 +68,12 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
+    foreground: tailscale.active ? root.foreground : root.dim
     iconComponent: Component {
       TailscaleIcon {
         anchors.centerIn: parent
         iconSize: Style.space(12)
-        color: tailscale.active ? root.foreground : root.dim
+        color: button.contentColor
         badgeColor: root.urgent
         crossed: !tailscale.active
         warning: tailscale.needsLogin
