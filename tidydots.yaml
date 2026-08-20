@@ -830,6 +830,12 @@ applications:
         backup: ./Linux/uwsm/default
   - package:
       managers:
+        pacman: gtk3
+    name: gtk3
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: sddm
     name: sddm
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -1255,6 +1261,13 @@ applications:
         backup: ./Linux/os/application-overrides
         files:
           - fcitx5-wayland-launcher.desktop
+      - targets:
+          linux: ~/.local/share/applications
+        name: asbru-cm desktop override
+        backup: ./Linux/os/application-overrides
+        files:
+          - asbru-cm.desktop
+        when: '{{ eq .Hostname "antoinews-linux" }}'
       - targets:
           linux: ~/.local/share/applications/antoinews-linux
         name: antoinews-linux .desktop files

@@ -57,7 +57,7 @@ def _spec(
 # This registry deliberately describes complete command forms, not just executable names.
 # Changes to active launcher commands should require an explicit audit update.
 EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
-    "1password": _spec("1password", "yay", "1password-beta"),
+    "1password": _spec("1password", "yay", "1password-beta", (), ("--quick-access",)),
     "brave": _spec(
         "brave",
         "yay",
@@ -71,6 +71,7 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
     ),
     "brave-browser": _spec("brave", "yay", "brave-bin"),
     "fcitx5": _spec("fcitx5", "pacman", "fcitx5", ("--disable", "notificationitem")),
+    "gtk-launch": _spec("gtk3", "pacman", "gtk3", ("asbru-cm",), ("org.remmina.Remmina",)),
     "hypridle": _spec("hypridle", "pacman", "hypridle"),
     "hyprpm": _spec("hyprland", "pacman", "hyprland", ("reload", "-n")),
     "launch-editor": _spec("neovim", "pacman", "neovim"),
