@@ -192,15 +192,26 @@ codex_status() {
   write_result codex "$result"
 }
 
+format_kib_gib() {
+  local kib=$1
+  local tenths=$(((kib * 10 + 524288) / 1048576))
+
+  printf '%d.%d' "$((tenths / 10))" "$((tenths % 10))"
+}
+
 disk_status() {
   local raw
   local line
+  local filesystem
+  local total
+  local used
   local capacity
   local percentage
+  local device
   local result
 
   : >"$ERROR_FILE"
-  if ! raw=$(df -P / 2>"$ERROR_FILE"); then
+  if ! raw=$(df -Pk / 2>"$ERROR_FILE"); then
     adapter_error disk "$(error_message "disk status query failed")"
     return $?
   fi
@@ -211,14 +222,16 @@ disk_status() {
     return $?
   fi
 
-  read -r _ _ _ _ capacity _ <<<"$line"
+  read -r filesystem total used _ capacity _ <<<"$line"
   percentage=${capacity%\%}
-  if [[ ! $percentage =~ ^[0-9]+$ ]]; then
-    adapter_error disk "df returned an invalid capacity: $capacity"
+  if [[ -z $filesystem || ! $total =~ ^[0-9]+$ || ! $used =~ ^[0-9]+$ || ! $percentage =~ ^[0-9]+$ ]]; then
+    adapter_error disk "df returned an invalid filesystem row"
     return $?
   fi
 
-  result=$(json_output $' '"$capacity" "Disk usage on /: $capacity" '')
+  device=${filesystem##*/}
+  result=$(json_output $' '"$capacity" \
+    "$device: $(format_kib_gib "$used") / $(format_kib_gib "$total") GiB" '')
   write_result disk "$result"
 }
 
@@ -226,7 +239,15 @@ memory_status() {
   local total=""
   local available=""
   local key value
-  local used
+  local used_kib
+  local percentage
+  local total_gib
+  local tmp_raw
+  local tmp_line
+  local tmp_total
+  local tmp_used
+  local tmp_capacity
+  local tmp_percentage
   local result
 
   : >"$ERROR_FILE"
@@ -247,14 +268,40 @@ memory_status() {
     return $?
   fi
 
-  used=$((100 - (available * 100 / total)))
-  if ((used < 0)); then
-    used=0
+  used_kib=$((total - available))
+  if ((used_kib < 0)); then
+    used_kib=0
   fi
-  if ((used > 100)); then
-    used=100
+  percentage=$((100 - (available * 100 / total)))
+  if ((percentage < 0)); then
+    percentage=0
   fi
-  result=$(json_percentage_output $'\uefc5 '"$used%" "Memory usage: $used%" '' "$used")
+  if ((percentage > 100)); then
+    percentage=100
+  fi
+
+  : >"$ERROR_FILE"
+  if ! tmp_raw=$(df -Pk /tmp 2>"$ERROR_FILE"); then
+    adapter_error memory "$(error_message "/tmp usage query failed")"
+    return $?
+  fi
+  tmp_line=${tmp_raw##*$'\n'}
+  if [[ $tmp_line == "$tmp_raw" || -z $tmp_line ]]; then
+    adapter_error memory "df returned no /tmp filesystem row"
+    return $?
+  fi
+  read -r _ tmp_total tmp_used _ tmp_capacity _ <<<"$tmp_line"
+  tmp_percentage=${tmp_capacity%\%}
+  if [[ ! $tmp_total =~ ^[0-9]+$ || ! $tmp_used =~ ^[0-9]+$ || ! $tmp_percentage =~ ^[0-9]+$ ]]; then
+    adapter_error memory "df returned an invalid /tmp filesystem row"
+    return $?
+  fi
+
+  total_gib=$(format_kib_gib "$total")
+  total_gib=${total_gib%.0}
+  result=$(json_percentage_output $'\uefc5 '"$percentage%" \
+    "$(format_kib_gib "$used_kib") / $total_gib GiB"$'\n'"/tmp: $(format_kib_gib "$tmp_used") GiB ($tmp_percentage%)" \
+    '' "$percentage")
   write_result memory "$result"
 }
 

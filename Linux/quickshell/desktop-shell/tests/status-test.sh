@@ -37,7 +37,7 @@ FAKE_MKTEMP
 chmod +x "$failing_bin/mktemp"
 
 printf '%s\n' 'cpu 100 0 100 800 0 0 0 0 0 0' >"$proc_root/stat"
-printf '%s\n' 'MemTotal:       100000 kB' 'MemAvailable:    25000 kB' >"$proc_root/meminfo"
+printf '%s\n' 'MemTotal:       134217728 kB' 'MemAvailable:    59244544 kB' >"$proc_root/meminfo"
 
 cat >"$fake_bin/sleep" <<'FAKE_SLEEP'
 #!/usr/bin/env bash
@@ -126,7 +126,24 @@ if [[ ${DF_FAIL:-0} == 1 ]]; then
   printf 'df fixture failure\n' >&2
   exit 1
 fi
-printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted on' '/dev/mock 1000 420 580 42% /'
+if [[ ${DF_TMP_FAIL:-0} == 1 && ${*: -1} == /tmp ]]; then
+  printf '/tmp df fixture failure\n' >&2
+  exit 1
+fi
+case $* in
+  '-Pk /')
+    printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted on' \
+      '/dev/sda 976014131 431174451 544839680 44% /'
+    ;;
+  '-Pk /tmp')
+    printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted on' \
+      'tmpfs 16777216 3145728 13631488 19% /tmp'
+    ;;
+  *)
+    printf 'unexpected df arguments: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
 FAKE_DF
 
 cat >"$fake_bin/cmd-screenrecord" <<'FAKE_SCREENRECORD'
@@ -150,6 +167,7 @@ export VOXTYPE_STATE=idle
 export CODEX_FAIL=0
 export CODEX_PAYLOAD=valid
 export DF_FAIL=0
+export DF_TMP_FAIL=0
 
 original_path="$PATH"
 last_output=""
@@ -287,12 +305,27 @@ done <"$codex_trace"
 
 invoke disk disk
 assert_status 0 disk
-assert_json_field '.text' $' 42%' 'disk glyph and percentage separation'
+assert_json_field '.text' $' 44%' 'disk glyph and percentage separation'
+assert_json_field '.tooltip' 'sda: 411.2 / 930.8 GiB' 'disk used and total tooltip'
 
 invoke memory memory
 assert_status 0 memory
-assert_json_field '.text' $'\uefc5 75%' 'Waybar memory glyph and percentage separation'
-assert_json_field '.percentage' '75' 'memory numeric percentage'
+assert_json_field '.text' $'\uefc5 56%' 'Waybar memory glyph and percentage separation'
+assert_json_field '.tooltip' $'71.5 / 128 GiB\n/tmp: 3.0 GiB (19%)' 'memory and tmp usage tooltip lines'
+assert_json_field '.percentage' '56' 'memory numeric percentage'
+
+DF_TMP_FAIL=1
+invoke memory-stale memory
+assert_status 0 memory-stale
+assert_json_field '.class' 'stale' 'memory uses cached status when /tmp query fails'
+stale_memory_tooltip=$(jq -er '.tooltip' <<<"$last_output")
+[[ $stale_memory_tooltip == *$'71.5 / 128 GiB\n/tmp: 3.0 GiB (19%)'* && \
+  $stale_memory_tooltip == *'/tmp df fixture failure'* ]] || {
+  printf 'status-test: stale memory tooltip did not preserve usage and append the /tmp error: %s\n' \
+    "$stale_memory_tooltip" >&2
+  exit 1
+}
+DF_TMP_FAIL=0
 
 invoke cpu cpu
 assert_status 0 cpu
