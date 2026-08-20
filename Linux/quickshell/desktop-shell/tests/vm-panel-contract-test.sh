@@ -28,6 +28,18 @@ assert.match(panel, /id: stateStderr/,
   "state stderr must be available when the process exits")
 assert.match(panel, /stateStdout\.text \|\| ""/,
   "state output must be applied after process completion")
+assert.match(panel, /function openFrom\(anchorItem\)/,
+  "VM metrics must be able to anchor the existing popup independently")
+assert.match(panel, /id: vmMemoryButton[\s\S]*root\.openFrom\(vmMemoryButton\)/,
+  "the bracketed VM memory value must open the popup")
+assert.match(panel, /id: vmCpuButton[\s\S]*root\.openFrom\(vmCpuButton\)/,
+  "the bracketed VM CPU value must open the popup")
+assert.match(panel, /anchorItem: root\.popupAnchorItem/,
+  "the existing popup must follow the clicked VM metric")
+assert.match(panel, /Model\.memoryCritical\(root\.hostMemoryState\.percent\)/,
+  "host RAM must use the shared critical threshold")
+assert.match(panel, /Model\.memoryCritical\(root\.vmState\.memoryPercent\)/,
+  "VM RAM must use the shared critical threshold")
 
-console.log("vm-panel-contract-test: malformed retention, popup closure, and preview contracts verified")
+console.log("vm-panel-contract-test: host/VM stat interaction and popup contracts verified")
 NODE

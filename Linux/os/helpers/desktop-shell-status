@@ -115,6 +115,11 @@ json_output() {
     '{text: $text, tooltip: $tooltip, class: $class}'
 }
 
+json_percentage_output() {
+  jq -cn --arg text "$1" --arg tooltip "$2" --arg class "$3" --argjson percentage "$4" \
+    '{text: $text, tooltip: $tooltip, class: $class, percentage: $percentage}'
+}
+
 recording_status() {
   local result
   local pgrep_status
@@ -249,7 +254,7 @@ memory_status() {
   if ((used > 100)); then
     used=100
   fi
-  result=$(json_output $'\uefc5 '"$used%" "Memory usage: $used%" '')
+  result=$(json_percentage_output $'\uefc5 '"$used%" "Memory usage: $used%" '' "$used")
   write_result memory "$result"
 }
 
@@ -321,7 +326,7 @@ cpu_status() {
   if ((usage > 100)); then
     usage=100
   fi
-  result=$(json_output $' '"$usage%" "CPU usage: $usage%" '')
+  result=$(json_percentage_output $' '"$usage%" "CPU usage: $usage%" '' "$usage")
   write_result cpu "$result"
 }
 

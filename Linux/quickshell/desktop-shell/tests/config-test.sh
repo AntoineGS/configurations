@@ -194,7 +194,7 @@ function expectedRight(includeHardware) {
   if (includeHardware) {
     right.push({ id: "desktop.monitor" }, { id: "desktop.power" })
   }
-  right.push(commandModules.disk, { id: "desktop.vm" }, commandModules.memory, commandModules.cpu)
+  right.push(commandModules.disk, { id: "desktop.vm" })
   return right
 }
 

@@ -61,6 +61,43 @@ function malformedState(error) {
   return state
 }
 
+function emptyHostStat() {
+  return {
+    available: false,
+    stale: false,
+    text: "",
+    tooltip: "",
+    percent: undefined
+  }
+}
+
+function normalizeHostStat(raw) {
+  try {
+    var payload = typeof raw === "string" ? JSON.parse(raw) : raw
+    if (!isPlainObject(payload)) throw new Error("host stat must be an object")
+    if (typeof payload.text !== "string") throw new Error("host stat text must be a string")
+    if (typeof payload.tooltip !== "string") throw new Error("host stat tooltip must be a string")
+    if (typeof payload.class !== "string") throw new Error("host stat class must be a string")
+    var percent = nonNegativeNumber(payload.percentage)
+    if (percent === null || percent > 100) throw new Error("host stat percentage must be between 0 and 100")
+    return {
+      available: true,
+      stale: payload.class === "stale",
+      text: payload.text,
+      tooltip: payload.tooltip,
+      percent: percent
+    }
+  } catch (_) {
+    return emptyHostStat()
+  }
+}
+
+function hostStateFromRaw(previous, raw) {
+  var parsed = normalizeHostStat(raw)
+  if (parsed.available) return parsed
+  return previous && previous.available === true ? previous : parsed
+}
+
 /**
  * Normalize a VM state envelope received as JSON or as an already parsed object.
  * Only scalar fields needed by the widget are copied out of the payload.
@@ -222,30 +259,29 @@ function currentGiB(state) {
   return memoryGiB(state, "currentKiB")
 }
 
-/**
- * Build the compact bar label for a visible VM state.
- *
- * @param {Object} state normalized VM state
- * @returns {string} bar label
- */
-function barText(state) {
-  if (!state || !state.visible) return ""
-  var parts = []
-  if (state.showMemoryUsage) parts.push(" " + formatPercent(state.memoryPercent))
-  parts.push(" " + formatPercent(state.cpuPercent))
-  return parts.join("  ")
+function vmMetricText(percent) {
+  return "(" + formatPercent(percent) + ")"
+}
+
+function memoryCritical(percent) {
+  var value = finiteNumber(percent)
+  return value !== null && value > 85
 }
 
 if (typeof module !== "undefined") {
   module.exports = {
     emptyState: emptyState,
+    emptyHostStat: emptyHostStat,
     normalizeState: normalizeState,
+    normalizeHostStat: normalizeHostStat,
     stateFromRaw: stateFromRaw,
+    hostStateFromRaw: hostStateFromRaw,
     formatPercent: formatPercent,
     formatGiB: formatGiB,
     minimumGiB: minimumGiB,
     maximumGiB: maximumGiB,
     currentGiB: currentGiB,
-    barText: barText
+    vmMetricText: vmMetricText,
+    memoryCritical: memoryCritical
   }
 }
