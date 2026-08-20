@@ -36,7 +36,8 @@ Item {
   property color foreground: themeForeground
   property color barForeground: themeForeground
   property color background: Color.bar.background
-  property color urgent: Color.bar.active
+  property color activeColor: Color.bar.active
+  property color urgent: Color.urgent
   property bool foregroundAnimationEnabled: true
   property string fontFamily: Style.font.family
   property real fontSize: 14
