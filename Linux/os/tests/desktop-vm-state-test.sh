@@ -147,6 +147,15 @@ assert_json "$VM_OUTPUT" \
    .data.memory.allocationAvailable == false' \
   'no running VM was not reported as unavailable'
 
+export VM_LIST_OUTPUT=$'cold partial\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 6500000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\n'
+export DESKTOP_HARDWARE_NOW_NS=7500000000
+run_vm 0
+assert_json "$VM_OUTPUT" \
+  '.available == true and .stale == false and
+   .data.name == "cold partial" and .data.memory.usageAvailable == false' \
+  'a VM without prior memory usage was incorrectly reported as stale'
+
 export VM_LIST_OUTPUT=$'win11 gaming\n'
 export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=8000000000
@@ -157,16 +166,17 @@ assert_json "$VM_OUTPUT" \
 
 export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 8000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\n'
 export DESKTOP_HARDWARE_NOW_NS=9000000000
-run_vm 0
+cache_before=$(<"$STATE_DIR/vm.json")
+run_vm 1
 assert_json "$VM_OUTPUT" \
-  '.data.memory.allocationAvailable == true and
-   .data.memory.usageAvailable == false and
-   .data.memory.currentKiB == 12582912 and
-   .data.memory.maximumKiB == 25165824 and
-   .data.memory.usedKiB == null and .data.memory.percent == null' \
-  'missing balloon.usable was not reflected in memory availability'
+  '.available == true and .stale == true and
+   .data.memory.usageAvailable == true and
+   .data.memory.usedKiB == 5242880 and .data.memory.percent == 42' \
+  'missing balloon.usable did not retain the previous memory KPI as stale'
+cache_after=$(<"$STATE_DIR/vm.json")
+[[ $cache_after == "$cache_before" ]] || fail 'missing balloon.usable mutated the complete VM cache'
 
-export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 7000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
+export VM_STATS_OUTPUT=$'state.state = 1\ncpu.time = 6000000000\nvcpu.current = 4\nballoon.current = 12582912\nballoon.maximum = 25165824\nballoon.usable = 7340032\n'
 export DESKTOP_HARDWARE_NOW_NS=10000000000
 run_vm 0
 assert_json "$VM_OUTPUT" \
