@@ -6,6 +6,7 @@ SHELL_ROOT="$ROOT/Linux/quickshell/desktop-shell"
 TEMPLATE="$SHELL_ROOT/config/shell.json.tmpl"
 THEME="$SHELL_ROOT/config/shell.toml"
 COLOR="$SHELL_ROOT/Commons/Color.qml"
+WIDGET_BUTTON="$SHELL_ROOT/Ui/WidgetButton.qml"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell"
 BAR="$SHELL_ROOT/plugins/bar/Bar.qml"
 TOGGLE_HELPER="$ROOT/Linux/os/helpers/toggle-desktop-shell-bar"
@@ -27,13 +28,14 @@ command -v node >/dev/null 2>&1 || {
 
 node - "$TEMPLATE" "$THEME" "$COLOR" "$SHELL_ROOT/shell.qml" "$SHELL_ROOT/services/PluginRegistry.qml" \
   "$SHELL_ROOT/services/BarWidgetRegistry.qml" "$HELPER" "$BAR" "$TOGGLE_HELPER" \
-  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$POLKIT" "$NOTIFICATIONS" "$OSD" "$CONFIG" "$PAM_HELPER" <<'NODE'
+  "$NOTIFICATION_TOGGLE_HELPER" "$UTILITIES" "$MEDIA" "$POLKIT" "$NOTIFICATIONS" "$OSD" "$CONFIG" "$PAM_HELPER" \
+  "$WIDGET_BUTTON" <<'NODE'
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 
 const [templatePath, themePath, colorPath, shellPath, registryPath, widgetRegistryPath, helperPath, barPath,
   toggleHelperPath, notificationToggleHelperPath, utilitiesPath, mediaPath, polkitPath, notificationsPath,
-  osdPath, tidydotsPath, pamHelperPath] = process.argv.slice(2)
+  osdPath, tidydotsPath, pamHelperPath, widgetButtonPath] = process.argv.slice(2)
 const template = fs.readFileSync(templatePath, "utf8")
 const color = fs.readFileSync(colorPath, "utf8")
 const shell = fs.readFileSync(shellPath, "utf8")
@@ -48,6 +50,7 @@ const notifications = fs.readFileSync(notificationsPath, "utf8")
 const osd = fs.readFileSync(osdPath, "utf8")
 const tidydots = fs.readFileSync(tidydotsPath, "utf8")
 const pamHelper = fs.readFileSync(pamHelperPath, "utf8")
+const widgetButton = fs.readFileSync(widgetButtonPath, "utf8")
 assert.doesNotMatch(template, /onClickRight/, "command modules use onRightClick")
 
 const palette = {
@@ -57,6 +60,7 @@ const palette = {
   urgent: "#f38ba8",
   muted: "#7f849c"
 }
+const active = "#f9e2af"
 for (const [role, value] of Object.entries(palette)) {
   assert.match(color, new RegExp(`property color ${role}: "${value}"`), `${role} uses the Catppuccin fallback`)
 }
@@ -80,7 +84,7 @@ for (const rawLine of theme.split("\n")) {
 const surfaceRoles = {
   "bar.background": palette.background,
   "bar.text": palette.foreground,
-  "bar.active": palette.urgent,
+  "bar.active": active,
   "popups.background": palette.background,
   "popups.text": palette.foreground,
   "popups.border": palette.accent,
@@ -114,6 +118,13 @@ const surfaceRoles = {
   "lock.border-error": palette.urgent,
   "lock.selection": palette.accent
 }
+
+assert.match(bar, /property color activeColor: Color\.bar\.active/,
+  "bar exposes the configured active color")
+assert.match(bar, /property color urgent: Color\.urgent/,
+  "bar keeps urgent states on the error color")
+assert.match(widgetButton, /property color activeColor: bar \? bar\.activeColor : Color\.bar\.active/,
+  "bar buttons use the semantic active color")
 for (const [role, value] of Object.entries(surfaceRoles)) {
   assert.equal(themeValues[role], value, `${role} uses the expected Catppuccin token`)
 }
