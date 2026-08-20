@@ -12,16 +12,38 @@ Panel {
   ipcTarget: "desktop.vm"
 
   property var vmState: Model.emptyState()
+  property var hostMemoryState: Model.emptyHostStat()
+  property var hostCpuState: Model.emptyHostStat()
+  property var popupAnchorItem: vmCpuButton
   property int previewGiB: 1
   property bool resizePending: false
   property string actionError: ""
   property bool refreshQueued: false
   readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color statForeground: bar ? bar.barForeground : Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool canResize: vmState.canResize && !resizePending
+  readonly property bool hostMemoryCritical: Model.memoryCritical(root.hostMemoryState.percent)
+  readonly property bool vmMemoryCritical: Model.memoryCritical(root.vmState.memoryPercent)
+  readonly property string vmTooltip: vmState.stale
+    ? vmState.name + " (stale): " + vmState.error
+    : vmState.name
 
   function refresh() {
     if (!stateProcess.running) stateProcess.running = true
+    if (!hostMemoryProcess.running) hostMemoryProcess.running = true
+    if (!hostCpuProcess.running) hostCpuProcess.running = true
+  }
+
+  function openFrom(anchorItem) {
+    if (!vmState.visible || !anchorItem) return
+    popupAnchorItem = anchorItem
+    root.open()
+  }
+
+  function openHostMonitor() {
+    Util.execDetached("launch-or-focus-tui btop")
   }
 
   function requestMemory(gib) {
@@ -49,9 +71,9 @@ Panel {
     if (!memorySlider.dragging && !resizePending) previewGiB = Model.currentGiB(vmState)
   }
 
-  visible: vmState.visible
-  implicitWidth: visible ? button.implicitWidth : 0
-  implicitHeight: visible ? button.implicitHeight : 0
+  visible: hostMemoryState.available || hostCpuState.available || vmState.visible
+  implicitWidth: visible ? statRow.implicitWidth : 0
+  implicitHeight: visible ? statRow.implicitHeight : 0
 
   onOpenedChanged: {
     if (opened) {
@@ -115,35 +137,85 @@ Panel {
     }
   }
 
-  BorderSurface {
-    anchors.fill: button
-    radius: Style.cornerRadius
-    color: root.opened ? Style.selectedFillFor(root.foreground, Color.accent)
-      : (pillHover.hovered ? Style.hoverFillFor(root.foreground, Color.accent)
-        : Style.normalFillFor(root.foreground, Color.accent))
-    borderSpec: root.opened
-      ? Border.controlSpec("selected", root.foreground, Color.accent)
-      : Border.controlSpec("normal", root.foreground, Color.accent)
+  Process {
+    id: hostMemoryProcess
+    command: ["desktop-shell-status", "memory"]
+    stdout: StdioCollector {
+      id: hostMemoryStdout
+      waitForEnd: true
+    }
+    onExited: root.hostMemoryState = Model.hostStateFromRaw(root.hostMemoryState, hostMemoryStdout.text || "")
   }
 
-  WidgetButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: Model.barText(root.vmState)
-    horizontalMargin: 8.5
-    tooltipText: root.vmState.stale
-      ? root.vmState.name + " (stale): " + root.vmState.error
-      : root.vmState.name
-    onPressed: function(mouseButton) {
-      if (mouseButton === Qt.LeftButton) root.toggle()
+  Process {
+    id: hostCpuProcess
+    command: ["desktop-shell-status", "cpu"]
+    stdout: StdioCollector {
+      id: hostCpuStdout
+      waitForEnd: true
     }
-    HoverHandler { id: pillHover }
+    onExited: root.hostCpuState = Model.hostStateFromRaw(root.hostCpuState, hostCpuStdout.text || "")
+  }
+
+  Row {
+    id: statRow
+    spacing: 0
+
+    WidgetButton {
+      id: hostMemoryButton
+      bar: root.bar
+      text: root.hostMemoryState.available ? root.hostMemoryState.text : ""
+      tooltipText: root.hostMemoryState.tooltip
+      horizontalMargin: 2.5
+      foreground: root.hostMemoryCritical ? root.urgent : root.statForeground
+      onPressed: function(mouseButton) {
+        if (mouseButton === Qt.LeftButton) root.openHostMonitor()
+      }
+    }
+
+    WidgetButton {
+      id: vmMemoryButton
+      bar: root.bar
+      text: root.vmState.visible && root.vmState.showMemoryUsage
+        ? Model.vmMetricText(root.vmState.memoryPercent) : ""
+      tooltipText: root.vmTooltip
+      horizontalMargin: 1
+      foreground: root.vmMemoryCritical ? root.urgent : root.statForeground
+      dimmed: !root.vmMemoryCritical
+      onPressed: function(mouseButton) {
+        if (mouseButton === Qt.LeftButton) root.openFrom(vmMemoryButton)
+      }
+    }
+
+    WidgetButton {
+      id: hostCpuButton
+      bar: root.bar
+      text: root.hostCpuState.available ? root.hostCpuState.text : ""
+      tooltipText: root.hostCpuState.tooltip
+      horizontalMargin: 2.5
+      foreground: root.statForeground
+      onPressed: function(mouseButton) {
+        if (mouseButton === Qt.LeftButton) root.openHostMonitor()
+      }
+    }
+
+    WidgetButton {
+      id: vmCpuButton
+      bar: root.bar
+      text: root.vmState.visible ? Model.vmMetricText(root.vmState.cpuPercent) : ""
+      tooltipText: root.vmTooltip
+      horizontalMargin: 1
+      foreground: root.statForeground
+      dimmed: true
+      onPressed: function(mouseButton) {
+        if (mouseButton === Qt.LeftButton) root.openFrom(vmCpuButton)
+      }
+    }
   }
 
   KeyboardPanel {
     id: popup
-    anchorItem: button
+    anchorItem: root.popupAnchorItem
     owner: root
     bar: root.bar
     open: root.opened && root.vmState.visible

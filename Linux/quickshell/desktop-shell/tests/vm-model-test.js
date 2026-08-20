@@ -31,14 +31,16 @@ assert.equal(full.memoryPercent, 41.7)
 assert.equal(full.currentKiB, 12582912)
 assert.equal(full.maximumKiB, 25165824)
 assert.equal(full.usedKiB, 5242880)
-assert.equal(Model.barText(full), " 42%   18%")
+assert.equal(Model.vmMetricText(full.memoryPercent), "(42%)")
+assert.equal(Model.vmMetricText(full.cpuPercent), "(18%)")
+assert.equal(Model.memoryCritical(full.memoryPercent), false)
 assert.equal(Model.currentGiB(full), 12)
 assert.equal(Model.maximumGiB(full), 24)
 assert.equal(Model.formatGiB(5242880), "5 GiB")
 
 const fullFromJson = Model.normalizeState(JSON.stringify(fullPayload))
 assert.equal(fullFromJson.visible, true)
-assert.equal(Model.barText(fullFromJson), " 42%   18%")
+assert.equal(Model.vmMetricText(fullFromJson.memoryPercent), "(42%)")
 
 const malformed = Model.normalizeState("{not-json")
 assert.equal(malformed.visible, false)
@@ -56,7 +58,6 @@ const unavailable = Model.normalizeState({
 assert.equal(unavailable.visible, false)
 assert.equal(unavailable.showMemoryUsage, false)
 assert.equal(unavailable.canResize, false)
-assert.equal(Model.barText(unavailable), "")
 
 const stale = Model.normalizeState({
   available: true,
@@ -68,7 +69,7 @@ assert.equal(stale.visible, true)
 assert.equal(stale.canResize, false)
 assert.equal(stale.name, "win11-gaming")
 assert.equal(stale.currentKiB, 12582912)
-assert.equal(Model.barText(stale), " 42%   18%")
+assert.equal(Model.vmMetricText(stale.memoryPercent), "(42%)")
 
 const firstCpuSample = Model.normalizeState({
   available: true,
@@ -82,7 +83,7 @@ const firstCpuSample = Model.normalizeState({
   },
 })
 assert.equal(firstCpuSample.cpuPercent, undefined)
-assert.equal(Model.barText(firstCpuSample), " --%")
+assert.equal(Model.vmMetricText(firstCpuSample.cpuPercent), "(--%)")
 
 const memoryOmitted = Model.normalizeState({
   available: true,
@@ -102,7 +103,6 @@ const memoryOmitted = Model.normalizeState({
 })
 assert.equal(memoryOmitted.showMemoryUsage, false)
 assert.equal(memoryOmitted.canResize, true)
-assert.equal(Model.barText(memoryOmitted), " 18%")
 
 const invalidNumbers = Model.normalizeState({
   available: true,
@@ -129,7 +129,7 @@ assert.equal(invalidNumbers.usedKiB, null)
 assert.equal(invalidNumbers.memoryPercent, undefined)
 assert.equal(invalidNumbers.showMemoryUsage, false)
 assert.equal(invalidNumbers.canResize, false)
-assert.doesNotMatch(Model.barText(invalidNumbers), /NaN/)
+assert.doesNotMatch(Model.vmMetricText(invalidNumbers.cpuPercent), /NaN/)
 
 const unavailableMetrics = Model.normalizeState({
   available: true,
@@ -149,7 +149,7 @@ const unavailableMetrics = Model.normalizeState({
 })
 assert.equal(unavailableMetrics.cpuPercent, undefined)
 assert.equal(unavailableMetrics.showMemoryUsage, false)
-assert.equal(Model.barText(unavailableMetrics), " --%")
+assert.equal(Model.vmMetricText(unavailableMetrics.cpuPercent), "(--%)")
 assert.equal(Model.currentGiB(), 1)
 assert.equal(Model.maximumGiB(), 1)
 
@@ -195,5 +195,32 @@ assert.equal(Model.currentGiB({ currentKiB: 12582911 }), 11)
 assert.equal(Model.maximumGiB({ maximumKiB: 25165823 }), 23)
 assert.equal(Model.formatGiB(6291455), "5 GiB")
 assert.equal(Model.formatGiB(null), "-- GiB")
+
+const hostMemory = Model.normalizeHostStat(JSON.stringify({
+  text: " 75%",
+  tooltip: "Memory usage: 75%",
+  class: "",
+  percentage: 75,
+}))
+assert.equal(hostMemory.available, true)
+assert.equal(hostMemory.text, " 75%")
+assert.equal(hostMemory.tooltip, "Memory usage: 75%")
+assert.equal(hostMemory.percent, 75)
+assert.equal(hostMemory.stale, false)
+
+const staleHostMemory = Model.normalizeHostStat({
+  text: " 86%",
+  tooltip: "Memory usage: 86% · error: stale sample",
+  class: "stale",
+  percentage: 86,
+})
+assert.equal(staleHostMemory.available, true)
+assert.equal(staleHostMemory.stale, true)
+assert.equal(Model.memoryCritical(staleHostMemory.percent), true)
+assert.equal(Model.memoryCritical(85), false)
+
+const malformedHostStat = Model.normalizeHostStat('{"percentage":"75"}')
+assert.equal(malformedHostStat.available, false)
+assert.equal(Model.hostStateFromRaw(hostMemory, ""), hostMemory)
 
 console.log("vm-model-test: normalization, metrics, stale retention, and GiB formatting verified")
