@@ -158,11 +158,11 @@ audit_activation_systemctl_line() {
           target = token[i]
           i++
           if (operation == "restart" && target == "watch-rustdesk-submap.service" && i > count) {
-            print "restart"
+            print "route-restart"
             continue
           }
-          if (operation == "start" && target == "desktop-shell.service" && i > count) {
-            print "start"
+          if (operation == "restart" && target == "desktop-shell.service" && i > count) {
+            print "shell-restart"
             continue
           }
           exit 1
@@ -190,7 +190,7 @@ audit_activation_systemctl_line() {
 
 audit_activation_source() {
   local file=$1
-  local command parsed_operations parsed_operation restart_count=0 start_count=0
+  local command parsed_operations parsed_operation route_restart_count=0 shell_restart_count=0
 
   LC_ALL=C grep -Iq . "$file" 2>/dev/null || return 1
   while IFS= read -r command; do
@@ -201,13 +201,13 @@ audit_activation_source() {
       parsed_operations=$(audit_activation_systemctl_line "$command") || return 1
       while IFS= read -r parsed_operation; do
         case $parsed_operation in
-          restart) ((restart_count += 1)) ;;
-          start) ((start_count += 1)) ;;
+          route-restart) ((route_restart_count += 1)) ;;
+          shell-restart) ((shell_restart_count += 1)) ;;
         esac
       done <<<"$parsed_operations"
     }
   done < <(logical_source_lines "$file")
-  ((restart_count == 1 && start_count == 1))
+  ((route_restart_count == 1 && shell_restart_count == 1))
 }
 
 audit_production_violations() {
@@ -256,14 +256,14 @@ mkdir -p "$AUDIT_FIXTURE/Linux/vicinae" "$AUDIT_FIXTURE/Linux/os/helpers" \
   "$AUDIT_FIXTURE/Linux/hypr" "$AUDIT_FIXTURE/Linux/quickshell"
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   'systemctl --user is-active --quiet desktop-shell.service' \
   'systemctl --user show desktop-shell.service --property=MainPID --value' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/desktop-shell-activate"
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/desktop-shell-activate-forbidden"
 printf '%s\n' 'systemctl --user restart desktop-shell.service' \
   >"$AUDIT_FIXTURE/Linux/vicinae/extra-desktop-mutation.sh"
@@ -283,22 +283,22 @@ grep -Fxq "$AUDIT_FIXTURE/Linux/os/helpers/desktop-shell-activate-forbidden" "$p
 
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   'systemctl --user --no-block start desktop-shell.service' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/option-duplicate-start"
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   'systemctl --user --no-block restart watch-rustdesk-submap.service' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/option-duplicate-restart"
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   '/usr/bin/systemctl --user stop desktop-shell.service' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/path-qualified-forbidden"
 printf '%s\n' \
   'systemctl --user restart watch-rustdesk-submap.service' \
-  'systemctl --user start desktop-shell.service' \
+  'systemctl --user restart desktop-shell.service' \
   'systemctl --user --no-block' \
   >"$AUDIT_FIXTURE/Linux/os/helpers/malformed-systemctl"
 
