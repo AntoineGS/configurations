@@ -5,7 +5,7 @@ asdcontrol
 brave-bin
 caffeine-ng-git
 carapace
-codexbar
+codexbar-cli
 critique
 elegoo-slicer-bin
 fstl-git

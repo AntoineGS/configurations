@@ -3,8 +3,7 @@
 asdcontrol
 brave-bin
 carapace-bin
-claudebar
-codexbar
+codexbar-cli
 elegoo-slicer-bin
 fzf-tab-completion-git
 golangci-lint-bin
