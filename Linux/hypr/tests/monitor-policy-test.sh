@@ -5,11 +5,14 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
 MONITORS_LUA="$ROOT/Linux/hypr/monitors.lua"
 AUTOSTART_LUA="$ROOT/Linux/hypr/autostart.lua"
-WAYBAR_TEMPLATE="$ROOT/Linux/waybar/config.jsonc.tmpl"
 WATCHER="$ROOT/Linux/hypr/watch-rustdesk-submap.sh"
 NOTIFICATION_LOGIC="$ROOT/Linux/quickshell/desktop-shell/plugins/notifications/NotificationLogic.js"
-MAKO_ADAPTER="$ROOT/Linux/os/helpers/desktop-shell-mako-route"
-MAKO_ROLLBACK="$ROOT/Linux/os/helpers/desktop-shell-rollback"
+
+if grep -Eiq 'waybar|restart-waybar|RTMIN\+[0-9]+' \
+  "$ROOT/Linux/hypr/scripts/toggle-external-takeover.sh"; then
+  printf '%s\n' 'monitor takeover still contains legacy desktop bar behavior' >&2
+  exit 1
+fi
 
 readonly -a NOTIFICATION_OUTPUTS=(DVI-D-1 HDMI-A-1 DP-2 DP-1 eDP-1)
 
@@ -173,7 +176,7 @@ for output in "${NOTIFICATION_OUTPUTS[@]}"; do
     fail "host-derived monitor audit did not observe $output"
 done
 
-for path in "$WATCHER" "$NOTIFICATION_LOGIC" "$MAKO_ADAPTER" "$MAKO_ROLLBACK"; do
+for path in "$WATCHER" "$NOTIFICATION_LOGIC"; do
   source=$(<"$path")
   for output in "${NOTIFICATION_OUTPUTS[@]}"; do
     [[ $source == *"$output"* ]] ||
@@ -187,10 +190,5 @@ assert_contains "$laptop_output" 'laptop_mirror=1' 'laptop external mirror'
 
 fallback_output=$(run_lua_config unknown-host "$MONITORS_LUA" monitors)
 assert_contains "$fallback_output" 'preferred_fallback=1' 'unknown-host preferred fallback'
-
-grep -Fq '{{- if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "antoinews-linux") }}' "$WAYBAR_TEMPLATE" || \
-  fail 'Waybar workspace icon format is not hostname-gated'
-grep -Fq '"ext/workspaces": {' "$WAYBAR_TEMPLATE" || \
-  fail 'Waybar workspace module is missing'
 
 printf 'PASS: host monitor policy tests\n'

@@ -163,6 +163,19 @@ assert_application_absent() {
   fi
 }
 
+assert_package_absent() {
+  local package="$1"
+
+  if extract_direct_manager_packages pacman | grep -Fxq -- "$package" ||
+    extract_direct_manager_packages yay | grep -Fxq -- "$package"; then
+    fail "legacy package $package remains declared"
+  fi
+
+  if grep -Eq -- "^(Package|Dependency): $package$" <<< "$tidydots_list"; then
+    fail "legacy package $package remains listed by tidydots"
+  fi
+}
+
 assert_source_requires_package() {
   local source_file="$1"
   local source_evidence="$2"
@@ -203,17 +216,14 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   imv
   lazydocker
   libnotify
-  mako
   mpv
   nautilus
   playerctl
-  polkit-gnome
   satty
   sddm
   slurp
   socat
   swaybg
-  swayosd
   uwsm
   v4l-utils
   waypipe
@@ -227,9 +237,7 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   pipewire-alsa
   pipewire-pulse
   wireplumber
-  pamixer
   wiremix
-  waybar
   codexbar-cli
   hyprland-preview-share-picker
   insync
@@ -237,6 +245,9 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   signal
   xdg-terminal-exec
 )
+
+LEGACY_APPLICATIONS=(waybar mako swayosd polkit-gnome pamixer)
+LEGACY_PACKAGES=(waybar waybar-git waybar-ai-usage-go-bin mako swayosd polkit-gnome pamixer)
 
 OPTIONAL_GRAPHICAL_APPLICATIONS=(
   localsend
@@ -384,6 +395,12 @@ fi
 
 assert_application_absent codexbar
 assert_application_absent claudebar
+for application in "${LEGACY_APPLICATIONS[@]}"; do
+  assert_application_absent "$application"
+done
+for package in "${LEGACY_PACKAGES[@]}"; do
+  assert_package_absent "$package"
+done
 
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages

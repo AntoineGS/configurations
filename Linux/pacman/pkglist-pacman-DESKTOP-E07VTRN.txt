@@ -54,7 +54,6 @@ libmspack
 libva-nvidia-driver
 luacheck
 luarocks
-mako
 mise
 mold
 mpv
@@ -64,11 +63,9 @@ ncdu
 nwg-hello
 obsidian
 openai-codex
-pamixer
 partitionmanager
 plymouth
 pnpm
-polkit-gnome
 power-profiles-daemon
 python-langchain
 python-pylint
@@ -87,7 +84,6 @@ steam
 stylua
 sushi
 swaybg
-swayosd
 system-config-printer
 tailscale
 texlive-doc

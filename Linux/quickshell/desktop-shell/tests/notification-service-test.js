@@ -8,7 +8,6 @@ const shellPath = path.join(root, "shell.qml")
 const cardPath = path.join(root, "plugins/notifications/components/NotificationCard.qml")
 const logicPath = path.join(root, "plugins/notifications/NotificationLogic.js")
 const runtimeTestPath = path.join(root, "tests/notification-runtime-test.sh")
-const makoTestPath = path.join(root, "tests/mako-route-adapter-test.sh")
 const publisherHelperPath = path.join(root, "tests/notification-route-publisher.sh")
 const manifestPath = path.join(root, "plugins/notifications/manifest.json")
 const sourcePath = path.join(root, "SOURCE")
@@ -24,7 +23,6 @@ const shell = readRequired(shellPath)
 const card = readRequired(cardPath)
 const logic = readRequired(logicPath)
 const runtimeTest = readRequired(runtimeTestPath)
-const makoTest = readRequired(makoTestPath)
 const publisherHelper = readRequired(publisherHelperPath)
 const manifest = JSON.parse(readRequired(manifestPath))
 const source = readRequired(sourcePath)
@@ -135,10 +133,6 @@ assert.match(runtimeTest, /assert_metadata_failure_bounded\(\)\s*\{/,
   "runtime coverage bounds same-revision metadata failures")
 assert.match(runtimeTest, /routeMetadataAttemptCount[\s\S]*event-driven recovery/,
   "runtime coverage exposes bounded attempts and event-driven recovery")
-assert.match(makoTest, /assert_exact_deadline_poll\(\)\s*\{/,
-  "Mako runtime coverage has an exact lease deadline poll")
-assert.match(makoTest, /before_deadline_ms[\s\S]*deadline_ms[\s\S]*wait_for_log_count 3[\s\S]*rustdesk-route-hidden/,
-  "Mako runtime coverage polls the valid-before and invalid-at deadline states")
 assert.match(publisherHelper, /NOTIFICATION_RECONCILE_INTERVAL=1/,
   "hermetic lease integration runs the real one-second watcher reconciliation path")
 assert.match(publisherHelper, /notification_publisher_kill\(/,

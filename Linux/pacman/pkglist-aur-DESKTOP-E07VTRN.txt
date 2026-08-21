@@ -41,7 +41,6 @@ ttf-ia-writer
 tzupdate
 ufw-docker
 vicinae-bin
-waybar-ai-usage-go-bin
 wol-systemd
 xdg-terminal-exec
 yaru-icon-theme

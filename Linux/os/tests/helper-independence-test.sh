@@ -37,6 +37,13 @@ deleted_helpers=(
   theme-set-templates
   theme-set-vscode
   theme-update
+  tzupdate-and-restart-waybar
+  restart-waybar
+  restart-mako
+  restart-swayosd
+  notification-dismiss
+  swayosd-brightness
+  swayosd-kbd-brightness
 )
 
 for helper in "${deleted_helpers[@]}"; do
@@ -61,6 +68,16 @@ fi
 
 for helper in font-current font-list font-set; do
   test -x "$ROOT/Linux/os/helpers/$helper"
+done
+
+for helper in \
+  cmd-tzupdate font-current font-set toggle-idle toggle-nightlight tz-select \
+  voxtype-install voxtype-model-setup cmd-screenrecord; do
+  if grep -Eiq 'waybar|makoctl|swayosd|polkit-gnome|restart-waybar|restart-swayosd' \
+    "$ROOT/Linux/os/helpers/$helper"; then
+    printf 'retained helper still contains a legacy desktop dependency: %s\n' "$helper" >&2
+    exit 1
+  fi
 done
 
 if grep -Eiq 'omarchy|screensaver|theme|background|channel|hybrid gpu|toggle-suspend|default config' \

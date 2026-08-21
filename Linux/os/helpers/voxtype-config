@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
 
-# Used by Voxtype waybar module to open config on right click
+# Used by the Quickshell Voxtype widget to open its config on right click
 
 exec launch-editor ~/.config/voxtype/config.toml

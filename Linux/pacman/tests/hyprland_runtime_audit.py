@@ -76,7 +76,6 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
     "hyprpm": _spec("hyprland", "pacman", "hyprland", ("reload", "-n")),
     "launch-editor": _spec("neovim", "pacman", "neovim"),
     "lazydocker": _spec("lazydocker", "pacman", "lazydocker"),
-    "mako": _spec("mako", "pacman", "mako"),
     "neovim": _spec("neovim", "pacman", "neovim"),
     "obsidian": _spec(
         "obsidian",
@@ -85,15 +84,9 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
         (),
         ("-disable-gpu", "--enable-wayland-ime"),
     ),
-    "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1": _spec(
-        "polkit-gnome",
-        "pacman",
-        "polkit-gnome",
-    ),
     "signal": _spec("signal", "pacman", "signal-desktop"),
     "signal-desktop": _spec("signal", "pacman", "signal-desktop"),
     "swaybg": _spec("swaybg", "pacman", "swaybg", ("-c", "#1e1e2e")),
-    "swayosd-server": _spec("swayosd", "pacman", "swayosd"),
     "teams-for-linux": _spec("teams-for-linux", "pacman", "teams-for-linux"),
     "uwsm": _spec("uwsm", "pacman", "uwsm"),
     "uwsm-app": _spec("uwsm", "pacman", "uwsm"),
@@ -103,7 +96,6 @@ EXECUTABLE_SPECS: dict[str, ExecutableSpec] = {
         "vicinae-bin",
         ("vicinae://extensions/vicinae/file/search",),
     ),
-    "waybar": _spec("waybar", "pacman", "waybar"),
     "xdg-terminal-exec": _spec("xdg-terminal-exec", "yay", "xdg-terminal-exec", (), ("herdr",)),
     "yazi": _spec("yazi", "pacman", "yazi"),
 }

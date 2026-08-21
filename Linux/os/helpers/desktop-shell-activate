@@ -13,11 +13,6 @@ fi
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 readonly CUE_FILE="$XDG_RUNTIME_DIR/rustdesk-notification-cue"
 readonly LIFECYCLE_LOCK_FILE="$XDG_RUNTIME_DIR/desktop-shell-lifecycle.lock"
-readonly POLKIT_AGENT="${DESKTOP_SHELL_POLKIT_AGENT:-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1}"
-readonly SIGNAL_COMMAND="${DESKTOP_SHELL_SIGNAL_COMMAND:-kill}"
-polkit_comm="${POLKIT_AGENT##*/}"
-polkit_comm="${polkit_comm:0:15}"
-readonly POLKIT_COMM="$polkit_comm"
 readonly MAX_WAIT_ATTEMPTS=50
 readonly READINESS_MAX_WAIT_ATTEMPTS=20
 readonly WAIT_INTERVAL=0.1
@@ -45,59 +40,6 @@ query_named_pids() {
     ((status == 1)) && return 0
     return "$status"
   fi
-}
-
-query_polkit_pids() {
-  local candidates
-  local status
-  local pid
-  local executable
-
-  if candidates=$(pgrep -x -- "$POLKIT_COMM" 2>/dev/null); then
-    :
-  else
-    status=$?
-    ((status == 1)) && return 0
-    return "$status"
-  fi
-
-  while IFS= read -r pid; do
-    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 2
-    if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
-      return 2
-    fi
-    [[ $executable == "$POLKIT_AGENT" ]] || continue
-    printf '%s\n' "$pid"
-  done <<<"$candidates"
-}
-
-query_process_pids() {
-  case $1 in
-    mako|swayosd-server) query_named_pids "$1" ;;
-    polkit) query_polkit_pids ;;
-    *) return 2 ;;
-  esac
-}
-
-wait_for_processes_absent() {
-  local process=$1
-  local attempt
-  local pids
-  local status
-
-  for ((attempt = 0; attempt < MAX_WAIT_ATTEMPTS; attempt++)); do
-    if pids=$(query_process_pids "$process"); then
-      :
-    else
-      status=$?
-      return "$status"
-    fi
-    [[ -z $pids ]] && return 0
-    sleep "$WAIT_INTERVAL"
-  done
-
-  printf 'process did not terminate: %s\n' "$process" >&2
-  return 1
 }
 
 pid_in_set() {
@@ -130,69 +72,6 @@ verify_named_process_pid() {
     return 2
   fi
   [[ ${executable##*/} == "$name" ]]
-}
-
-verify_polkit_pid() {
-  local pid=$1
-  local executable
-
-  [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-  if ! executable=$(readlink -- "/proc/$pid/exe" 2>/dev/null); then
-    return 2
-  fi
-  [[ $executable == "$POLKIT_AGENT" ]]
-}
-
-signal_pid() {
-  local pid=$1
-  local status
-  local -a command=("$SIGNAL_COMMAND" -TERM "$pid")
-
-  if "${command[@]}"; then
-    return 0
-  else
-    status=$?
-    ((status == 1)) && return 0
-    return "$status"
-  fi
-}
-
-terminate_processes() {
-  local process=$1
-  local pids
-  local pid
-  local status
-
-  if pids=$(query_process_pids "$process"); then
-    :
-  else
-    status=$?
-    return "$status"
-  fi
-  [[ -n $pids ]] || return 0
-
-  while IFS= read -r pid; do
-    [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
-    if [[ $process == polkit ]]; then
-      if verify_polkit_pid "$pid"; then
-        status=0
-      else
-        status=$?
-      fi
-    else
-      if verify_named_process_pid "$pid" "$process"; then
-        status=0
-      else
-        status=$?
-      fi
-    fi
-    if ((status == 0)); then
-      signal_pid "$pid" || return 1
-    elif ((status != 1)); then
-      return 1
-    fi
-  done <<<"$pids"
-  wait_for_processes_absent "$process"
 }
 
 wait_for_unit_active() {
@@ -339,22 +218,6 @@ wait_for_shell_health() {
   return 1
 }
 
-stop_units=(systemctl --user stop desktop-shell.service desktop-shell-mako-route.service)
-"${stop_units[@]}" || die 'could not stop desktop-shell services'
-
-adapter_failed=(systemctl --user is-failed --quiet desktop-shell-mako-route.service)
-if "${adapter_failed[@]}"; then
-  reset_adapter=(systemctl --user reset-failed desktop-shell-mako-route.service)
-  "${reset_adapter[@]}" || die 'could not clear rollback adapter failure state'
-fi
-
-mask_mako=(systemctl --user mask --runtime mako.service)
-"${mask_mako[@]}" || die 'could not runtime-mask mako.service'
-
-terminate_processes mako || die 'could not terminate exact Mako process'
-terminate_processes swayosd-server || die 'could not terminate exact SwayOSD process'
-terminate_processes polkit || die 'could not terminate exact polkit-gnome process'
-
 remove_cue=(rm -f -- "$CUE_FILE")
 "${remove_cue[@]}" || die 'could not remove stale RustDesk cue state'
 
@@ -379,10 +242,6 @@ verify_notification_owner "$final_shell_pid" quickshell || die 'Quickshell notif
 printf '%s\n' \
   'desktop-shell activation status' \
   'desktop-shell.service: active' \
-  'desktop-shell-mako-route.service: inactive' \
   "desktop-shell.pid: $shell_pid" \
-  'mako.pid: absent' \
-  'swayosd-server.pid: absent' \
-  'polkit.pid: absent' \
   'notification-owner: desktop-shell' \
   "polkit-registered: $polkit_registered"

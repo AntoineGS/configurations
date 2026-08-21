@@ -41,16 +41,13 @@ libmspack
 libreoffice-fresh
 luacheck
 luarocks
-mako
 mise
 mpv
 nautilus-python
 ncdu
 obsidian
 pacman-contrib
-pamixer
 plymouth
-polkit-gnome
 power-profiles-daemon
 python-poetry-core
 reflector
@@ -63,7 +60,6 @@ socat
 starship
 steam
 swaybg
-swayosd
 system-config-printer
 tailscale
 thermald

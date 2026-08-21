@@ -134,7 +134,7 @@ contract("command modules provide their loader component", () => {
   assert.match(barSource, /function injectProps\(\) \{[\s\S]*?if \(slot\.commandCustom\) return/)
 })
 
-contract("bar matches Waybar density", () => {
+contract("bar matches compact shell density", () => {
   assert.match(barSource, /readonly property int barSize: 32/)
   assert.match(barSource, /property real fontSize: 14/)
   assert.match(barSource, /property int fontWeight: Font\.Bold/)

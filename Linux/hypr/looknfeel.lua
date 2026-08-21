@@ -131,7 +131,7 @@ hl.animation({ leaf = "borderangle", enabled = true, speed = 30, bezier = "smoot
 hl.animation({ leaf = "workspaces", enabled = true, speed = 5, bezier = "overshot", style = "slidevert" })
 hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 5, bezier = "overshot", style = "slidevert" })
 
--- Layers (waybar, notifications, etc.)
+-- Layer animations
 hl.animation({ leaf = "layers", enabled = true, speed = 4, bezier = "softSnap", style = "fade" })
 hl.animation({ leaf = "fadeLayers", enabled = true, speed = 4, bezier = "gentleFade" })
 

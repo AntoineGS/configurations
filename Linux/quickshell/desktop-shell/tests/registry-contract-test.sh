@@ -8,6 +8,7 @@ scan_line="$(grep -F -- '-name manifest.json' "$REGISTRY")"
 grep -Fq '\\(' <<<"$scan_line"
 grep -Fq '\\)' <<<"$scan_line"
 
+# shellcheck disable=SC2016
 scan_script='scan_first_party() { local dir="$1"; while IFS= read -r manifest; do printf "%s\n" "$manifest"; done < <(find "$dir" -mindepth 2 -maxdepth 3 -type f \( -name manifest.json -o -name "*.manifest.json" \) | sort); }; scan_first_party "$0"'
 bash -n -c "$scan_script"
 
