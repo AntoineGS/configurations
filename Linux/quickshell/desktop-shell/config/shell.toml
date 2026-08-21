@@ -41,12 +41,14 @@ selected-border = "#cba6f7"
 selected-border-alpha = 0.25
 
 [notifications]
-background = "#1e1e2e"
+background = "#52476a"
 background-alpha = 1.0
 text = "#cdd6f4"
-border = "#cba6f7"
+border = "#52476a"
 border-alpha = 1.0
-countdown = "#cba6f7"
+countdown = "#cdd6f4"
+low = "#89b4fa"
+critical = "#f38ba8"
 
 [polkit]
 background = "#1e1e2e"
