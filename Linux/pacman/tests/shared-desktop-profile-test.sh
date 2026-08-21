@@ -154,6 +154,15 @@ assert_when() {
   [[ "$actual_when" == "$expected_when" ]] || fail "application $application does not use the expected Linux profile gate"
 }
 
+assert_application_absent() {
+  local application="$1"
+
+  [[ -z "$(extract_application "$application")" ]] || fail "legacy application $application remains declared"
+  if grep -Fqx -- "Application: $application" <<< "$tidydots_list"; then
+    fail "legacy application $application remains listed by tidydots"
+  fi
+}
+
 assert_source_requires_package() {
   local source_file="$1"
   local source_evidence="$2"
@@ -372,6 +381,9 @@ if ! tidydots_list="$(tidydots --dir "$REPO_DIR" list 2>&1)"; then
   printf '%s\n' "$tidydots_list" >&2
   fail "tidydots list could not parse the configuration"
 fi
+
+assert_application_absent codexbar
+assert_application_absent claudebar
 
 assert_no_arch_dependency_arrays
 assert_no_duplicate_arch_packages

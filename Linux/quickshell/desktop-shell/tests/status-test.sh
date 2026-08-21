@@ -110,14 +110,29 @@ case ${CODEX_PAYLOAD:-valid} in
   missing-weekly)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"extraRateWindows":[]}}]'
     ;;
+  missing-weekly-resets-at)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7},"extraRateWindows":[]}}]'
+    ;;
+  non-string-weekly-resets-at)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":42},"extraRateWindows":[]}}]'
+    ;;
+  unparseable-weekly-resets-at)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"not-a-timestamp"},"extraRateWindows":[]}}]'
+    ;;
   non-numeric-weekly)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":"7","resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[]}}]'
+    ;;
+  no-codex-provider)
+    printf '%s\n' '[{"provider":"claude","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[]}}]'
     ;;
   malformed-windows)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":42}}]'
     ;;
   malformed-window-entries)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[42,{"title":"Scalar window","window":7},{"title":7,"window":{"usedPercent":1,"resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Valid window","window":{"usedPercent":1,"resetsAt":"2026-08-21T17:30:00Z"}}]}}]'
+    ;;
+  malformed-optional-window-values)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[{"title":"String percentage","window":{"usedPercent":"1","resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Missing reset","window":{"usedPercent":1}},{"title":"Bad reset","window":{"usedPercent":1,"resetsAt":"not-a-timestamp"}},{"title":"Valid window","window":{"usedPercent":1,"resetsAt":"2026-08-21T17:30:00Z"}}]}}]'
     ;;
   two-codex)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{}},{"provider":"codex","source":"oauth","usage":{}}]'
@@ -319,7 +334,7 @@ assert_json_field '.text' '7%/4d14h' 'Codex object weekly reset countdown'
 assert_json_field '.tooltip' $'Weekly: 7% used, resets in 4d14h\nCodex Spark 5-hour: 0% used, resets in 5h30m\nCodex Spark Weekly: 0% used, resets in 6d23h' 'Codex object quota tooltip'
 assert_json_field '.class' 'muted' 'Codex object muted class'
 
-for optional_payload in malformed-windows malformed-window-entries; do
+for optional_payload in malformed-windows malformed-window-entries malformed-optional-window-values; do
   CODEX_PAYLOAD=$optional_payload
   invoke "codex-$optional_payload" codex
   assert_status 0 "codex-$optional_payload"
@@ -377,12 +392,28 @@ invoke codex-multiple-live codex "$fixture/no-cache-multiple-live"
 assert_status 1 codex-multiple-live
 assert_no_output 'multiple Codex providers'
 
-for malformed_payload in missing-weekly non-numeric-weekly invalid-json empty; do
+for malformed_payload in missing-weekly missing-weekly-resets-at non-string-weekly-resets-at \
+  unparseable-weekly-resets-at non-numeric-weekly no-codex-provider invalid-json empty; do
   CODEX_PAYLOAD=$malformed_payload
   invoke "codex-$malformed_payload" codex "$fixture/no-cache-$malformed_payload"
   assert_status 1 "codex-$malformed_payload"
   assert_no_output "malformed $malformed_payload live payload"
 done
+
+fresh_codex_cache=$(<"$status_cache/codex.json")
+CODEX_PAYLOAD=invalid-json
+invoke codex-invalid-json-stale codex
+assert_status 0 codex-invalid-json-stale
+assert_json_field '.text' '7%/4d14h' 'stale invalid JSON preserves Codex text'
+assert_json_field '.class' 'stale' 'stale invalid JSON class'
+stale_invalid_json_tooltip=$(jq -er '.tooltip' <<<"$last_output")
+[[ $stale_invalid_json_tooltip == *'Weekly: 7% used, resets in 4d14h'* && \
+  $stale_invalid_json_tooltip == *'invalid CodexBar usage JSON'* ]] || {
+  printf 'status-test: stale invalid JSON tooltip did not preserve weekly usage and append its parse error: %s\n' \
+    "$stale_invalid_json_tooltip" >&2
+  exit 1
+}
+assert_equal "$fresh_codex_cache" "$(<"$status_cache/codex.json")" 'invalid JSON leaves the fresh Codex cache unchanged'
 
 CODEX_PAYLOAD=valid-array
 CODEX_FAIL=1
