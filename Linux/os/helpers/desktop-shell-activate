@@ -225,8 +225,8 @@ restart_route_publisher=(systemctl --user restart watch-rustdesk-submap.service)
 "${restart_route_publisher[@]}" || die 'could not restart notification route publisher'
 wait_for_unit_active watch-rustdesk-submap.service || die 'notification route publisher is not active'
 
-start_shell=(systemctl --user start desktop-shell.service)
-"${start_shell[@]}" || die 'could not start desktop-shell.service'
+restart_shell=(systemctl --user restart desktop-shell.service)
+"${restart_shell[@]}" || die 'could not restart desktop-shell.service'
 wait_for_unit_active desktop-shell.service || die 'desktop-shell.service is not active'
 
 shell_pid=$(read_shell_pid) || die 'could not read desktop-shell.service MainPID'

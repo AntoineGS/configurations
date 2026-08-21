@@ -57,14 +57,18 @@ printf 'systemctl|%s\n' "$(IFS='|'; printf '%s' "$*")" >>"${COMMAND_LOG:?}"
 shift
 case ${1:-} in
   restart)
-    [[ ${2:-} == watch-rustdesk-submap.service && $# == 2 ]] || exit 125
-    if ((FAIL_ROUTE_RESTART != 0)); then exit "$FAIL_ROUTE_RESTART"; fi
-    printf 'systemctl --user restart watch-rustdesk-submap.service\n' >>"${MUTATION_LOG:?}"
-    ;;
-  start)
-    [[ ${2:-} == desktop-shell.service && $# == 2 ]] || exit 125
-    if ((FAIL_SHELL_START != 0)); then exit "$FAIL_SHELL_START"; fi
-    printf 'systemctl --user start desktop-shell.service\n' >>"${MUTATION_LOG:?}"
+    [[ $# == 2 ]] || exit 125
+    case ${2:-} in
+      watch-rustdesk-submap.service)
+        if ((FAIL_ROUTE_RESTART != 0)); then exit "$FAIL_ROUTE_RESTART"; fi
+        printf 'systemctl --user restart watch-rustdesk-submap.service\n' >>"${MUTATION_LOG:?}"
+        ;;
+      desktop-shell.service)
+        if ((FAIL_SHELL_RESTART != 0)); then exit "$FAIL_SHELL_RESTART"; fi
+        printf 'systemctl --user restart desktop-shell.service\n' >>"${MUTATION_LOG:?}"
+        ;;
+      *) exit 125 ;;
+    esac
     ;;
   is-active)
     [[ ${2:-} == --quiet ]] || exit 125
@@ -214,7 +218,7 @@ assert_fallback_commands_denied() {
 }
 
 export COMMAND_LOG MUTATION_LOG CUE_FILE OWNER_SEQUENCE SHOW_SEQUENCE SHOW_COUNT PING_COUNT HEALTH_COUNT HEALTH_JSON
-export FAIL_ROUTE_RESTART=0 FAIL_SHELL_START=0 FAIL_ROUTE_ACTIVE=0 FAIL_SHELL_ACTIVE=0
+export FAIL_ROUTE_RESTART=0 FAIL_SHELL_RESTART=0 FAIL_ROUTE_ACTIVE=0 FAIL_SHELL_ACTIVE=0
 export PING_FAILURES=0 HEALTH_FAILURES=0 IPC_TIMEOUT_STATUS=0
 : >"$COMMAND_LOG"
 assert_fallback_commands_denied
@@ -229,7 +233,7 @@ reset_case() {
   printf '%s\n' 0 >"$HEALTH_COUNT"
   printf '%s\n' '{"notificationsOwned":true,"polkitRegistered":true,"osdAvailable":true,"notificationRouteError":""}' >"$HEALTH_JSON"
   rm -f -- "$CUE_FILE" "$RUNTIME_DIR/desktop-shell-lifecycle.lock"
-  FAIL_ROUTE_RESTART=0 FAIL_SHELL_START=0 FAIL_ROUTE_ACTIVE=0 FAIL_SHELL_ACTIVE=0
+  FAIL_ROUTE_RESTART=0 FAIL_SHELL_RESTART=0 FAIL_ROUTE_ACTIVE=0 FAIL_SHELL_ACTIVE=0
   PING_FAILURES=0 HEALTH_FAILURES=0 IPC_TIMEOUT_STATUS=0
 }
 
@@ -241,7 +245,7 @@ run_activation() {
 }
 
 assert_success_trace() {
-  local expected=$'systemctl --user restart watch-rustdesk-submap.service\nsystemctl --user start desktop-shell.service'
+  local expected=$'systemctl --user restart watch-rustdesk-submap.service\nsystemctl --user restart desktop-shell.service'
   assert_equal "$expected" "$(<"$MUTATION_LOG")" 'active mutation trace'
 }
 
@@ -311,10 +315,10 @@ assert_equal 'systemctl --user restart watch-rustdesk-submap.service' "$(<"$MUTA
   'route active failure mutated the shell service'
 
 reset_case
-FAIL_SHELL_START=7
-run_activation >/dev/null 2>&1 && fail 'desktop-shell start failure was accepted'
+FAIL_SHELL_RESTART=7
+run_activation >/dev/null 2>&1 && fail 'desktop-shell restart failure was accepted'
 assert_equal 'systemctl --user restart watch-rustdesk-submap.service' "$(<"$MUTATION_LOG")" \
-  'desktop-shell start failure mutated later services'
+  'desktop-shell restart failure mutated later services'
 assert_no_shell_readiness
 
 reset_case
