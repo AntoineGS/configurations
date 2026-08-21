@@ -1328,7 +1328,7 @@ applications:
         pacman: cifs-utils
     name: office-shares
     description: Kerberos-authenticated office SMB mounts with stable home-directory links
-    when: '{{ eq .Hostname "antoinews-linux" }}'
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
       - targets:
           linux: /usr/local/libexec/antoinews-linux
@@ -1350,6 +1350,7 @@ applications:
         backup: ./Linux/office-shares
         files:
           - mount-office-shares
+          - check-office-shares-auth
       - targets:
           linux: ~/.config/systemd/user
         name: user-units
@@ -1357,13 +1358,18 @@ applications:
         files:
           - office-shares-mount.service
           - office-shares-mount.timer
+          - office-shares-auth-check.service
+          - office-shares-auth-check.timer
       - check:
           linux: >-
             systemctl --user is-enabled --quiet office-shares-mount.timer &&
             systemctl --user is-active --quiet office-shares-mount.timer &&
-            test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no
+            systemctl --user is-enabled --quiet office-shares-auth-check.timer &&
+            systemctl --user is-active --quiet office-shares-auth-check.timer &&
+            test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no &&
+            test "$(systemctl --user show office-shares-auth-check.timer --property=NeedDaemonReload --value)" = no
         run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer
+          linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer office-shares-auth-check.timer
         name: enable-timer
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'

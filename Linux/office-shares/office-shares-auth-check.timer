@@ -1,0 +1,11 @@
+[Unit]
+Description=Check office share domain authentication hourly
+
+[Timer]
+OnStartupSec=2m
+OnUnitInactiveSec=1h
+AccuracySec=1m
+Unit=office-shares-auth-check.service
+
+[Install]
+WantedBy=timers.target
