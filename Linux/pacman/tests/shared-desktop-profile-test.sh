@@ -221,8 +221,7 @@ GRAPHICAL_SHARED_APPLICATIONS=(
   pamixer
   wiremix
   waybar
-  claudebar
-  codexbar
+  codexbar-cli
   hyprland-preview-share-picker
   insync
   obsidian
@@ -387,6 +386,7 @@ assert_focused_dry_run signal pacman signal-desktop
 assert_focused_dry_run insync yay insync
 assert_focused_dry_run obsidian pacman obsidian
 assert_focused_dry_run 1password yay 1password-beta
+assert_focused_dry_run codexbar-cli yay codexbar-cli
 
 GRAPHICAL_WHEN="'{{ and (eq .OS \"linux\") (or .HasDisplay (eq .Hostname \"antoinews-linux\")) (not .IsWSL) }}'"
 POWER_PROFILE_WHEN="'{{ and (eq .OS \"linux\") .HasDisplay (not .IsWSL) (ne .Hostname \"antoinews-linux\") }}'"

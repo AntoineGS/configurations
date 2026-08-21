@@ -793,9 +793,6 @@ applications:
   - package:
       managers:
         pacman: quickshell
-        yay:
-          deps:
-            - codexbar
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -823,14 +820,8 @@ applications:
         name: enable-service
   - package:
       managers:
-        yay: claudebar
-    name: claudebar
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        yay: codexbar
-    name: codexbar
+        yay: codexbar-cli
+    name: codexbar-cli
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - package:

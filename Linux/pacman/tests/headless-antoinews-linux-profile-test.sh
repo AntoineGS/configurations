@@ -100,6 +100,7 @@ GRAPHICAL_APPLICATIONS=(
   autostart
   browser-flags
   enable-desktop-services
+  codexbar-cli
 )
 
 if ! antoinews_output="$(list_headless_host antoinews-linux 2>&1)"; then
