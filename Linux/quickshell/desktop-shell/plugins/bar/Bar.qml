@@ -28,8 +28,8 @@ Item {
   property string centerAnchor: "desktop.clock"
   readonly property string position: "top"
   readonly property bool vertical: false
-  readonly property int barSize: 32
-  readonly property real moduleGap: 3
+  readonly property int barSize:28 
+  readonly property real moduleGap: 0
 
   property color themeForeground: Color.bar.text
   property color themeContrastForeground: Color.background
