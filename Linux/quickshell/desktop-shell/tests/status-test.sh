@@ -112,6 +112,12 @@ case ${CODEX_PAYLOAD:-valid} in
   non-numeric-weekly)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":"7","resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[]}}]'
     ;;
+  malformed-windows)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":42}}]'
+    ;;
+  malformed-window-entries)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[42,{"title":"Scalar window","window":7},{"title":7,"window":{"usedPercent":1,"resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Valid window","window":{"usedPercent":1,"resetsAt":"2026-08-21T17:30:00Z"}}]}}]'
+    ;;
   two-codex)
     printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{}},{"provider":"codex","source":"oauth","usage":{}}]'
     ;;
@@ -311,6 +317,19 @@ assert_status 0 codex-object-success
 assert_json_field '.text' '7%/4d14h' 'Codex object weekly reset countdown'
 assert_json_field '.tooltip' $'Weekly: 7% used, resets in 4d14h\nCodex Spark 5-hour: 0% used, resets in 5h30m\nCodex Spark Weekly: 0% used, resets in 6d23h' 'Codex object quota tooltip'
 assert_json_field '.class' 'muted' 'Codex object muted class'
+
+for optional_payload in malformed-windows malformed-window-entries; do
+  CODEX_PAYLOAD=$optional_payload
+  invoke "codex-$optional_payload" codex
+  assert_status 0 "codex-$optional_payload"
+  assert_json_field '.text' '7%/4d14h' "Codex $optional_payload weekly text"
+  if [[ $optional_payload == malformed-windows ]]; then
+    expected_optional_tooltip='Weekly: 7% used, resets in 4d14h'
+  else
+    expected_optional_tooltip=$'Weekly: 7% used, resets in 4d14h\nValid window: 1% used, resets in 5h30m'
+  fi
+  assert_json_field '.tooltip' "$expected_optional_tooltip" "Codex $optional_payload tooltip"
+done
 
 invoke disk disk
 assert_status 0 disk
