@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 HELPER="$ROOT/Linux/os/helpers/desktop-shell-status"
 CONFIG="$ROOT/Linux/quickshell/desktop-shell/config/shell.json.tmpl"
 AGENT_PANEL="$ROOT/Linux/quickshell/desktop-shell/plugins/agents/Panel.qml"
+WAYBAR_CONFIG="$ROOT/Linux/waybar/config.jsonc.tmpl"
 
 command -v jq >/dev/null 2>&1 || {
   printf 'status-test: jq is required\n' >&2
@@ -459,6 +460,11 @@ grep -Fq '"onClick": "voxtype-model"' "$CONFIG"
 grep -Fq '"onRightClick": "voxtype-config"' "$CONFIG"
 grep -Fq 'command: ["desktop-shell-status", "codex"]' "$AGENT_PANEL"
 grep -Fq 'https://chatgpt.com/codex/settings/usage' "$AGENT_PANEL"
+grep -Fq '"exec": "desktop-shell-status codex"' "$WAYBAR_CONFIG"
+if grep -Fq 'weekly_pct' "$WAYBAR_CONFIG"; then
+  printf 'status-test: legacy weekly_pct formatting remains in the Waybar config\n' >&2
+  exit 1
+fi
 if grep -Fq 'onClickRight' "$CONFIG"; then
   printf 'status-test: obsolete onClickRight key remains in the command config\n' >&2
   exit 1
