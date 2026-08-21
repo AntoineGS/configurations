@@ -67,6 +67,8 @@ for (const [role, value] of Object.entries(palette)) {
 
 assert.ok(fs.existsSync(themePath), "repository-owned shell.toml exists")
 const theme = fs.readFileSync(themePath, "utf8")
+assert.match(theme, /^\[font\]\nbase-size\s*=\s*14\s*$/m,
+  "shell typography uses the larger 14 px base size")
 assert.match(theme, /\[controls\][\s\S]*?hover-cursor-color\s*=\s*"accent"/,
   "shared control hover color uses the accent token")
 const themeValues = {}

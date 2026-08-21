@@ -1,5 +1,8 @@
 # Fixed Catppuccin Mocha surface tokens for the repository-owned shell.
 
+[font]
+base-size = 14
+
 [bar]
 background = "#1e1e2e"
 background-alpha = 1.0
