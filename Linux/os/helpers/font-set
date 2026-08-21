@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-# Set the system-wide monospace font that should be used by the terminal, hyprlock, waybar, swayosd, etc.
+# Set the system-wide monospace font used by terminal, Hyprlock, fontconfig, and Ghostty.
 # The font name must be one of the ones returned by font-list.
 
 font_name="${1:-}"
@@ -26,21 +26,12 @@ if [[ -n $font_name ]]; then
     if [[ -f ~/.config/hypr/hyprlock.conf ]]; then
       sed -i "s/font_family = .*/font_family = $font_name/g" ~/.config/hypr/hyprlock.conf
     fi
-    if [[ -f ~/.config/waybar/style.css ]]; then
-      sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/waybar/style.css
-    fi
-    if [[ -f ~/.config/swayosd/style.css ]]; then
-      sed -i "s/font-family: .*/font-family: '$font_name';/g" ~/.config/swayosd/style.css
-    fi
     if [[ -f ~/.config/fontconfig/fonts.conf ]]; then
       xmlstarlet ed -L \
         -u '//match[@target="pattern"][test/string="monospace"]/edit[@name="family"]/string' \
         -v "$font_name" \
         ~/.config/fontconfig/fonts.conf
     fi
-
-    restart-waybar || true
-    restart-swayosd || true
 
     if pgrep -x ghostty; then
       notify-send "    You must restart Ghostty to see font change" || true

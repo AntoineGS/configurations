@@ -10,10 +10,8 @@ for file in \
   bash -n "$file"
 done
 
-grep -Fq '"exec": "screenrecording-status"' "$ROOT/Linux/waybar/config.jsonc.tmpl"
 grep -Fq '"type": "os"' "$ROOT/Linux/fastfetch/config.jsonc"
 if grep -Eiq 'omarchy|OMARCHY_PATH|\.config/omarchy|\.local/share/omarchy' \
-  "$ROOT/Linux/waybar/config.jsonc.tmpl" \
   "$ROOT/Linux/fastfetch/config.jsonc" \
   "$ROOT/Linux/os/helpers/update-available"; then
   exit 1

@@ -2,5 +2,5 @@
 
 set -Eeuo pipefail
 
-# Auto-detect and set the system timezone from geolocation, then refresh the clock.
-exec launch-floating-terminal-with-presentation tzupdate-and-restart-waybar
+# Auto-detect and set the system timezone from geolocation.
+exec launch-floating-terminal-with-presentation tzupdate-system

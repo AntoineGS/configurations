@@ -80,7 +80,6 @@ GRAPHICAL_APPLICATIONS=(
   desktop-shell
   hyprland
   pipewire-audio
-  waybar
   uwsm
   sddm
   teams-for-linux
@@ -90,10 +89,8 @@ GRAPHICAL_APPLICATIONS=(
   hyprland-preview-share-picker
   imv
   insync
-  mako
   obsidian
   signal
-  swayosd
   typora
   wiremix
   vicinae

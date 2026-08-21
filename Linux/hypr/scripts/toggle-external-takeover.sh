@@ -34,7 +34,6 @@ move_workspaces() {
       done
 }
 
-toggled=0
 if [ "$laptop_disabled" = "true" ]; then
   # Currently in takeover mode — restore mirror.
   hyprctl eval "hl.monitor({output=\"$LAPTOP\", mode=\"preferred\", position=\"auto\", scale=1})"
@@ -44,14 +43,10 @@ if [ "$laptop_disabled" = "true" ]; then
   fi
   [ -n "$focused_ws" ] && hyprctl eval "hl.dispatch(hl.dsp.focus({workspace=\"$focused_ws\"}))" >/dev/null
   notify "Mirror mode"
-  toggled=1
 elif [ -n "$external" ]; then
   # Mirror mode with external connected — switch to takeover.
   # Bounce the external (disable → re-enable) instead of just rewriting its
-  # config: when transitioning straight out of mirror mode Hyprland fails to
-  # re-advertise the wl_output global, which leaves waybar with no output to
-  # bind a bar surface to. The full disable/enable cycle forces a clean
-  # re-advertisement.
+  # config so Hyprland cleanly re-advertises the external output.
   hyprctl eval "hl.monitor({output=\"$external\", disabled=true})"
   sleep 0.3
   hyprctl eval "hl.monitor({output=\"$external\", mode=\"$RES\", position=\"0x0\", scale=1})"
@@ -59,14 +54,6 @@ elif [ -n "$external" ]; then
   hyprctl eval "hl.monitor({output=\"$LAPTOP\", disabled=true})"
   [ -n "$focused_ws" ] && hyprctl eval "hl.dispatch(hl.dsp.focus({workspace=\"$focused_ws\"}))" >/dev/null
   notify "Takeover ($external)"
-  toggled=1
 else
   notify "No external monitor connected"
-fi
-
-# Mirrored monitors share a single Wayland output, so waybar only spawns one
-# bar in mirror mode. After de-mirroring we need to restart it so it sees the
-# new output and renders a bar on the TV.
-if [ "$toggled" = "1" ]; then
-  restart-waybar >/dev/null 2>&1 &
 fi

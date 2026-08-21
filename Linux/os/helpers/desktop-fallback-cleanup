@@ -1,0 +1,378 @@
+#!/usr/bin/env bash
+# Preview and remove legacy desktop fallback components.
+# Requires Bash 4.4+; dry-run needs pacman, readlink, and stat only.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+IFS=$'\n\t'
+
+readonly SCRIPT_NAME="${0##*/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly ROUTE_SERVICE='desktop-shell-mako-route.service'
+readonly -a LEGACY_PACKAGES=(waybar waybar-git waybar-ai-usage-go-bin mako swayosd polkit-gnome pamixer)
+
+CURRENT_PHASE=preflight
+TEST_MODE=false
+declare -a PACKAGES CONFIG_TARGETS ROUTE_LINK BINARY_TARGET REPOSITORY_ROOTS
+declare -A TARGET_IDENTITIES
+
+usage() {
+  cat <<'EOF'
+Usage: desktop-fallback-cleanup [--dry-run]
+
+Preview removal of legacy Waybar/Mako/SwayOSD components. A plain invocation
+requires typing cleanup exactly after reviewing the preview; --dry-run exits
+without asking for confirmation or changing anything. --yes is unsupported.
+EOF
+}
+
+error_trap() {
+  local exit_status=$?
+  printf '%s: phase=%s failed at line %s (status %s)\n' \
+    "$SCRIPT_NAME" "$CURRENT_PHASE" "$1" "$exit_status" >&2
+}
+trap 'error_trap "$LINENO"' ERR
+
+die() {
+  printf '%s: phase=%s: %s\n' "$SCRIPT_NAME" "$CURRENT_PHASE" "$1" >&2
+  exit 1
+}
+
+require_commands() {
+  local command_name
+  for command_name in "$@"; do
+    command -v "$command_name" >/dev/null 2>&1 || die "required command not found: $command_name"
+  done
+}
+
+validate_test_overrides() {
+  local override
+  for override in FAKE_REPO_ROOT FAKE_CONFIG_ROOT FAKE_SYSTEMD_USER_DIR FAKE_WAYBAR_BIN; do
+    if [[ -n ${!override+x} && $TEST_MODE != true ]]; then
+      die "$override requires DESKTOP_FALLBACK_CLEANUP_TEST_MODE=1"
+    fi
+  done
+}
+
+path_is_under() {
+  [[ $1 == "$2" || $1 == "$2/"* ]]
+}
+
+target_identity() {
+  stat -c '%d:%i' -- "$1" || die "cannot capture identity: $1"
+}
+
+canonical_target_is_allowed() {
+  local resolved_target=$1 expected_suffix=$2 repository_root
+  for repository_root in "${REPOSITORY_ROOTS[@]}"; do
+    path_is_under "$resolved_target" "$repository_root/$expected_suffix" && return 0
+  done
+  return 1
+}
+
+validate_symlink_target() {
+  local path=$1 expected_suffix=$2 resolved_target
+  [[ -L $path ]] || die "real directory or non-symlink target requires manual review: $path"
+  resolved_target=$(readlink -f -- "$path") || die "cannot resolve symlink: $path"
+  canonical_target_is_allowed "$resolved_target" "$expected_suffix" ||
+    die "unsafe symlink target: $path -> $resolved_target"
+  TARGET_IDENTITIES["$path"]=$(target_identity "$path")
+}
+
+query_unowned_binary() {
+  local path=$1 query_output query_status
+  query_output=$(LC_ALL=C pacman -Qo -- "$path" 2>&1) || query_status=$?
+  query_status=${query_status:-0}
+  if ((query_status == 0)); then
+    die "refusing to remove package-owned binary: $path"
+  fi
+  if ((query_status != 1)) || [[ $query_output != *"No package owns $path"* ]]; then
+    die "ownership query failed or was ambiguous for $path: $query_output"
+  fi
+}
+
+collect_installed_packages() {
+  local installed package_name
+  declare -A installed_set=()
+  installed=$(pacman -Qq) || die 'unable to query installed packages'
+  while IFS= read -r package_name; do
+    if [[ -n $package_name ]]; then installed_set["$package_name"]=1; fi
+  done <<<"$installed"
+  PACKAGES=()
+  for package_name in "${LEGACY_PACKAGES[@]}"; do
+    if [[ ${installed_set[$package_name]:-0} == 1 ]]; then PACKAGES+=("$package_name"); fi
+  done
+}
+
+collect_targets() {
+  local path
+  CONFIG_TARGETS=()
+  for path in "$CONFIG_ROOT/waybar" "$CONFIG_ROOT/mako" "$CONFIG_ROOT/swayosd"; do
+    if [[ -e $path || -L $path ]]; then
+      validate_symlink_target "$path" "Linux/${path##*/}"
+      CONFIG_TARGETS+=("$path")
+    fi
+  done
+
+  ROUTE_LINK=()
+  if [[ -e $SYSTEMD_USER_DIR/$ROUTE_SERVICE || -L $SYSTEMD_USER_DIR/$ROUTE_SERVICE ]]; then
+    validate_symlink_target "$SYSTEMD_USER_DIR/$ROUTE_SERVICE" \
+      "Linux/quickshell/desktop-shell/systemd/$ROUTE_SERVICE"
+    ROUTE_LINK=("$SYSTEMD_USER_DIR/$ROUTE_SERVICE")
+  fi
+
+  BINARY_TARGET=()
+  if [[ -e $WAYBAR_BINARY || -L $WAYBAR_BINARY ]]; then
+    [[ ! -L $WAYBAR_BINARY ]] || die "binary symlink requires manual review: $WAYBAR_BINARY"
+    [[ -f $WAYBAR_BINARY ]] || die "binary is not a regular file: $WAYBAR_BINARY"
+    query_unowned_binary "$WAYBAR_BINARY"
+    TARGET_IDENTITIES["$WAYBAR_BINARY"]=$(target_identity "$WAYBAR_BINARY")
+    BINARY_TARGET=("$WAYBAR_BINARY")
+  fi
+}
+
+print_plan() {
+  local item
+  printf 'Cleanup plan:\n  packages:'
+  if ((${#PACKAGES[@]} == 0)); then printf ' none'; else for item in "${PACKAGES[@]}"; do printf ' %s' "$item"; done; fi
+  printf '\n  config symlinks:\n'
+  if ((${#CONFIG_TARGETS[@]} == 0)); then printf '    none\n'; else for item in "${CONFIG_TARGETS[@]}"; do printf '    %s\n' "$item"; done; fi
+  printf '  route symlink: %s\n' "${ROUTE_LINK[0]:-none}"
+  printf '  unowned binary: %s\n' "${BINARY_TARGET[0]:-none}"
+  printf '  runtime action: clear %s when present\n' "$ROUTE_SERVICE"
+}
+
+revalidate_symlink() {
+  local path=$1 expected_suffix=$2 current_target current_identity
+  [[ -L $path ]] || die "target identity/type changed before unlink: $path"
+  current_target=$(readlink -f -- "$path") || die "cannot re-resolve target before unlink: $path"
+  canonical_target_is_allowed "$current_target" "$expected_suffix" ||
+    die "symlink target changed before unlink: $path -> $current_target"
+  current_identity=$(target_identity "$path")
+  [[ ${TARGET_IDENTITIES[$path]:-} == "$current_identity" ]] ||
+    die "target identity changed before unlink: $path"
+}
+
+revalidate_binary() {
+  local path=$1 current_identity
+  [[ -f $path && ! -L $path ]] || die "binary type changed before unlink: $path"
+  query_unowned_binary "$path"
+  current_identity=$(target_identity "$path")
+  [[ ${TARGET_IDENTITIES[$path]:-} == "$current_identity" ]] ||
+    die "binary identity changed before unlink: $path"
+}
+
+test_before_unlink() {
+  if [[ $TEST_MODE == true && ${FAKE_TOCTOU:-0} == 1 && ${FAKE_TOCTOU_DONE:-0} == 0 ]]; then
+    export FAKE_TOCTOU_DONE=1
+    if ((${#CONFIG_TARGETS[@]} > 0)); then
+      rm -f -- "${CONFIG_TARGETS[0]}"
+      printf replacement >"${CONFIG_TARGETS[0]}"
+    fi
+  fi
+}
+
+unlink_config_target() {
+  local path=$1
+  test_before_unlink
+  revalidate_symlink "$path" "Linux/${path##*/}"
+  rm -f -- "$path" || die "failed to unlink config target: $path"
+  [[ ! -e $path && ! -L $path ]] || die "config target remains: $path"
+}
+
+unlink_route_target() {
+  local path=$1
+  revalidate_symlink "$path" "Linux/quickshell/desktop-shell/systemd/$ROUTE_SERVICE"
+  rm -f -- "$path" || die "failed to unlink route target: $path"
+  [[ ! -e $path && ! -L $path ]] || die "route link remains: $path"
+}
+
+clear_route_state() {
+  local enabled_output enabled_status active_output active_status enabled_state active_state
+  enabled_output=$(LC_ALL=C systemctl --user is-enabled "$ROUTE_SERVICE" 2>&1) || enabled_status=$?
+  enabled_status=${enabled_status:-0}
+  enabled_state=$(classify_enabled_state "$enabled_output" "$enabled_status")
+  active_output=$(LC_ALL=C systemctl --user is-active "$ROUTE_SERVICE" 2>&1) || active_status=$?
+  active_status=${active_status:-0}
+  active_state=$(classify_active_state "$active_output" "$active_status")
+
+  if ((${#ROUTE_LINK[@]} > 0)); then
+    if [[ $enabled_state == masked || $enabled_state == masked-runtime ]]; then
+      systemctl --user unmask "$ROUTE_SERVICE" || die 'failed to unmask legacy route'
+    fi
+    if [[ $enabled_state != not-found ]]; then
+      systemctl --user disable --now "$ROUTE_SERVICE" || die 'failed to disable legacy route'
+    fi
+    if [[ -e ${ROUTE_LINK[0]} || -L ${ROUTE_LINK[0]} ]]; then
+      unlink_route_target "${ROUTE_LINK[0]}"
+    fi
+    return 0
+  fi
+
+  case $enabled_state in
+    enabled|enabled-runtime|linked|linked-runtime)
+      systemctl --user disable --now "$ROUTE_SERVICE" || die 'failed to disable enabled route' ;;
+    masked|masked-runtime)
+      systemctl --user unmask "$ROUTE_SERVICE" || die 'failed to unmask masked route'
+      systemctl --user disable --now "$ROUTE_SERVICE" || die 'failed to disable unmasked route' ;;
+    disabled)
+      if [[ $active_state == active ]]; then
+        systemctl --user stop "$ROUTE_SERVICE" || die 'failed to stop disabled active route'
+      fi ;;
+    not-found)
+      [[ $active_state == inactive || $active_state == not-found ]] ||
+        die "route enablement/activity state is inconsistent: $enabled_state/$active_state" ;;
+    *)
+      die "cannot transition route state: $enabled_state/$active_state" ;;
+  esac
+}
+
+classify_enabled_state() {
+  local output=$1 status=$2
+  case $output in
+    enabled)
+      [[ $status == 0 ]] || die "inconsistent enabled route state: $output (status $status)"
+      printf 'enabled\n' ;;
+    enabled-runtime)
+      [[ $status == 0 ]] || die "inconsistent enabled route state: $output (status $status)"
+      printf 'enabled-runtime\n' ;;
+    linked|linked-runtime)
+      [[ $status == 0 ]] || die "inconsistent linked route state: $output (status $status)"
+      printf '%s\n' "$output" ;;
+    disabled|masked|masked-runtime|not-found)
+      [[ $status != 0 ]] || die "inconsistent converged route state: $output (status $status)"
+      printf '%s\n' "$output" ;;
+    *) die "cannot inspect route state: $output (status $status)" ;;
+  esac
+}
+
+classify_active_state() {
+  local output=$1 status=$2
+  case $output in
+    active)
+      [[ $status == 0 ]] || die "inconsistent active route state: $output (status $status)"
+      printf 'active\n' ;;
+    inactive)
+      [[ $status == 3 || $status == 4 ]] || die "inconsistent inactive route state: $output (status $status)"
+      printf 'inactive\n' ;;
+    unknown|not-found)
+      [[ $status == 4 ]] || die "inconsistent unknown route state: $output (status $status)"
+      printf 'not-found\n' ;;
+    *) die "cannot inspect route activity: $output (status $status)" ;;
+  esac
+}
+
+verify_route_state() {
+  local enabled_output enabled_status active_output active_status enabled_state active_state
+  enabled_output=$(LC_ALL=C systemctl --user is-enabled "$ROUTE_SERVICE" 2>&1) || enabled_status=$?
+  enabled_status=${enabled_status:-0}
+  enabled_state=$(classify_enabled_state "$enabled_output" "$enabled_status")
+  [[ $enabled_state == disabled || $enabled_state == not-found ]] || die 'legacy route remains enabled or masked'
+  active_output=$(LC_ALL=C systemctl --user is-active "$ROUTE_SERVICE" 2>&1) || active_status=$?
+  active_status=${active_status:-0}
+  active_state=$(classify_active_state "$active_output" "$active_status")
+  [[ $active_state == inactive || $active_state == not-found ]] || die 'legacy route remains active'
+}
+
+verify_packages_absent() {
+  local installed package_name
+  installed=$(pacman -Qq) || die 'unable to verify installed packages'
+  for package_name in "${LEGACY_PACKAGES[@]}"; do
+    while IFS= read -r installed_package; do
+      [[ $installed_package != "$package_name" ]] || die "legacy package remains: $package_name"
+    done <<<"$installed"
+  done
+}
+
+verify_absent_paths() {
+  local path
+  for path in "${CONFIG_ROOT}/waybar" "${CONFIG_ROOT}/mako" "${CONFIG_ROOT}/swayosd" \
+    "$SYSTEMD_USER_DIR/$ROUTE_SERVICE" "$WAYBAR_BINARY"; do
+    [[ ! -e $path && ! -L $path ]] || die "legacy path remains: $path"
+  done
+}
+
+verify_process_absent() {
+  local process_name process_status
+  for process_name in waybar mako swayosd-server; do
+    pgrep -x "$process_name" >/dev/null 2>&1 || process_status=$?
+    process_status=${process_status:-0}
+    case $process_status in
+      0) die "legacy process still active: $process_name" ;;
+      1) ;;
+      *) die "pgrep failed for $process_name (status $process_status)" ;;
+    esac
+    unset process_status
+  done
+  pgrep -f '/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1' >/dev/null 2>&1 || process_status=$?
+  process_status=${process_status:-0}
+  case $process_status in
+    0) die 'legacy polkit agent still active' ;;
+    1) ;;
+    *) die "pgrep failed for polkit agent (status $process_status)" ;;
+  esac
+}
+
+verify_health() {
+  CURRENT_PHASE=health
+  verify_process_absent
+  systemctl --user is-active --quiet desktop-shell.service || die 'desktop-shell.service is not active'
+  desktop-shell call desktop.notifications ping || die 'notification IPC health check failed'
+  desktop-shell call desktop.osd ping || die 'OSD IPC health check failed'
+  desktop-shell-status codex | jq -e '.class == "muted" and (.text | type == "string" and length > 0)' >/dev/null ||
+    die 'Codex status health check failed'
+}
+
+main() {
+  local dry_run=false confirmation
+  case ${1:-} in
+    '') ;;
+    --dry-run) dry_run=true ;;
+    --help|-h) usage; return 0 ;;
+    --yes) die '--yes is not supported; review the plan and type cleanup' ;;
+    *) usage >&2; return 2 ;;
+  esac
+  ((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) || die 'Bash 4.4+ is required'
+  [[ ${DESKTOP_FALLBACK_CLEANUP_TEST_MODE:-0} == 1 ]] && TEST_MODE=true
+  validate_test_overrides
+  require_commands pacman readlink stat
+  REPO_ROOT="${FAKE_REPO_ROOT:-$(cd -- "$SCRIPT_DIR/../../.." && pwd -P)}"
+  CONFIG_ROOT="${FAKE_CONFIG_ROOT:-$HOME/.config}"
+  SYSTEMD_USER_DIR="${FAKE_SYSTEMD_USER_DIR:-$CONFIG_ROOT/systemd/user}"
+  WAYBAR_BINARY="${FAKE_WAYBAR_BIN:-/usr/local/bin/waybar}"
+  REPOSITORY_ROOTS=("$REPO_ROOT")
+  if [[ $TEST_MODE != true ]] && command -v git >/dev/null 2>&1; then
+    local common_dir main_root
+    common_dir=$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+    if [[ -n $common_dir ]]; then main_root=$(dirname -- "$common_dir"); [[ $main_root != "$REPO_ROOT" ]] && REPOSITORY_ROOTS+=("$main_root"); fi
+  fi
+  collect_installed_packages
+  collect_targets
+  print_plan
+  if [[ $dry_run == true ]]; then return 0; fi
+
+  require_commands sudo systemctl rm pgrep desktop-shell desktop-shell-activate desktop-shell-status jq
+  printf 'Type cleanup to apply this plan: '
+  IFS= read -r confirmation || die 'confirmation required'
+  [[ $confirmation == cleanup ]] || { CURRENT_PHASE=confirmation; die 'Type cleanup exactly; no changes were made'; }
+
+  CURRENT_PHASE=packages
+  if ((${#PACKAGES[@]} > 0)); then sudo pacman -Rns "${PACKAGES[@]}" || die 'package removal failed'; fi
+  verify_packages_absent
+  CURRENT_PHASE=route
+  clear_route_state
+  verify_route_state
+  CURRENT_PHASE=filesystem
+  for path in "${CONFIG_TARGETS[@]}"; do unlink_config_target "$path"; done
+  if ((${#BINARY_TARGET[@]} > 0)); then
+    revalidate_binary "${BINARY_TARGET[0]}"
+    sudo rm -f -- "${BINARY_TARGET[0]}" || die 'failed to remove unowned binary'
+  fi
+  verify_absent_paths
+  CURRENT_PHASE=activation
+  desktop-shell-activate || die 'desktop-shell activation failed'
+  verify_health
+  printf 'Cleanup and active desktop-shell health verification succeeded.\n'
+}
+
+main "$@"

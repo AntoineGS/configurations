@@ -152,7 +152,7 @@ snapshot_protected_processes() {
   local pid command_line
   ps -eo pid=,args= | while read -r pid command_line; do
     [[ -n $pid ]] || continue
-    if [[ $command_line == *polkit-gnome* || $command_line == *"$live_shell_marker"* ]]; then
+    if [[ $command_line == *"$live_shell_marker"* ]]; then
       process_identity "$pid" || true
     fi
   done | sort -t $'\t' -k1,1n -u

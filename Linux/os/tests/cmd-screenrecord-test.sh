@@ -8,6 +8,11 @@ MENU="$REPO_ROOT/Linux/os/helpers/menu"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
+if grep -Eiq 'waybar|restart-waybar|RTMIN\+[0-9]+' "$SCREENRECORD"; then
+  printf '%s\n' 'screenrecord still contains legacy desktop indicator behavior' >&2
+  exit 1
+fi
+
 BIN="$TEST_ROOT/bin"
 HOME_DIR="$TEST_ROOT/home"
 VIDEOS="$TEST_ROOT/videos"
@@ -36,7 +41,7 @@ EOF
 
 cat >"$BIN/date" <<'EOF'
 #!/bin/bash
-printf '2026-07-25_00-00-00\n'
+printf '%s\n' "${TEST_DATE_VALUE:-2026-07-25_00-00-00}"
 EOF
 
 cat >"$BIN/slurp" <<'EOF'
@@ -63,7 +68,9 @@ EOF
 cat >"$BIN/gpu-screen-recorder" <<'EOF'
 #!/bin/bash
 
-printf '%s\n' "$@" >"$TEST_GSR_ARGS"
+args_tmp="${TEST_GSR_ARGS}.tmp"
+printf '%s\n' "$@" >"$args_tmp"
+mv -- "$args_tmp" "$TEST_GSR_ARGS"
 
 output=""
 previous=""
@@ -72,6 +79,7 @@ for arg in "$@"; do
   previous="$arg"
 done
 
+sleep 0.05
 : >"$output"
 sleep 0.2
 EOF
@@ -96,14 +104,29 @@ wait_for_notification() {
   exit 1
 }
 
+wait_for_file() {
+  local file=$1
+  local attempt
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    [[ -e $file ]] && return 0
+    sleep 0.01
+  done
+  printf 'expected test output was not created: %s\n' "$file" >&2
+  exit 1
+}
+
 run_screenrecord() {
+  local date_value=$1
+  shift
   rm -f "$GSR_ARGS"
-  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" \
+  PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_DATE_VALUE="$date_value" \
+    TEST_GSR_ARGS="$GSR_ARGS" TEST_NOTIFY_ARGS="$NOTIFY_ARGS" \
     SCREENRECORD_STATE_FILE="$STATE_FILE" SCREENRECORD_DIR="$VIDEOS" \
     "$SCREENRECORD" "$@"
 }
 
-run_screenrecord --region --resolution=0x0
+run_screenrecord 2026-07-25_00-00-01 --region --resolution=0x0
+wait_for_file "$GSR_ARGS"
 expected="-w
 640x480+100+200
 -k
@@ -117,14 +140,19 @@ cfr
 -fallback-cpu-encoding
 yes
 -o
-$VIDEOS/screenrecording-2026-07-25_00-00-00.mp4"
+$VIDEOS/screenrecording-2026-07-25_00-00-01.mp4"
 assert_equal "$(<"$GSR_ARGS")" "$expected"
+[[ -f "$VIDEOS/screenrecording-2026-07-25_00-00-01.mp4" ]] || {
+  printf '%s\n' 'first recording fixture was not created' >&2
+  exit 1
+}
 [[ -f $STATE_FILE ]] || {
   printf 'screen recording state was not written to the isolated test path\n' >&2
   exit 1
 }
 
-run_screenrecord --resolution=0x0
+run_screenrecord 2026-07-25_00-00-02 --resolution=0x0
+wait_for_file "$GSR_ARGS"
 expected="-w
 portal
 -k
@@ -138,8 +166,13 @@ cfr
 -fallback-cpu-encoding
 yes
 -o
-$VIDEOS/screenrecording-2026-07-25_00-00-00.mp4"
+$VIDEOS/screenrecording-2026-07-25_00-00-02.mp4"
 assert_equal "$(<"$GSR_ARGS")" "$expected"
+[[ -f "$VIDEOS/screenrecording-2026-07-25_00-00-01.mp4" &&
+  -f "$VIDEOS/screenrecording-2026-07-25_00-00-02.mp4" ]] || {
+  printf '%s\n' 'unique recording fixtures were not both created' >&2
+  exit 1
+}
 
 rm -f "$GSR_ARGS"
 PATH="$BIN:$PATH" HOME="$HOME_DIR" TEST_GSR_ARGS="$GSR_ARGS" TEST_SLURP_CANCEL=true SCREENRECORD_DIR="$VIDEOS" \

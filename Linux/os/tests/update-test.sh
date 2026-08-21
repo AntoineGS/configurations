@@ -4,7 +4,6 @@ set -euo pipefail
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 helpers="$repo_root/Linux/os/helpers"
-waybar_config="$repo_root/Linux/waybar/config.jsonc.tmpl"
 test_root=$(mktemp -d)
 bin="$test_root/bin"
 log="$test_root/calls.log"
@@ -28,7 +27,6 @@ audited_helpers=(
 for helper in "${audited_helpers[@]}"; do
   [[ -r $helper ]] || fail "audited helper is missing or unreadable: $helper"
 done
-[[ -r $waybar_config ]] || fail "Waybar config is missing or unreadable: $waybar_config"
 
 stub() {
   local name=$1
@@ -82,13 +80,6 @@ if grep -Eq 'OMARCHY_PATH|40DFB630FF42BCFFB047046CF0134EE680CAC571|pkg-(missing|
 else
   grep_status=$?
   ((grep_status == 1)) || fail "could not audit update helpers (grep status $grep_status)"
-fi
-
-if grep -q 'custom/update' "$waybar_config"; then
-  fail "Waybar still references the removed Omarchy update checker"
-else
-  grep_status=$?
-  ((grep_status == 1)) || fail "could not audit Waybar config (grep status $grep_status)"
 fi
 
 failure_output="$test_root/failure-output"

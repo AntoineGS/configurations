@@ -619,12 +619,6 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: polkit-gnome
-    name: polkit-gnome
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
         pacman: fprintd
     name: fprintd
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -733,12 +727,6 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: pamixer
-    name: pamixer
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
         pacman: intel-ucode
     name: antoinews-linux-intel
     description: Intel microcode and integrated graphics stack for the Intel desktop
@@ -782,16 +770,6 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: waybar
-    name: waybar
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/waybar
-        name: config
-        backup: ./Linux/waybar
-  - package:
-      managers:
         pacman: quickshell
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -810,7 +788,6 @@ applications:
         backup: ./Linux/quickshell/desktop-shell/systemd
         files:
           - desktop-shell.service
-          - desktop-shell-mako-route.service
       - check:
           linux: >-
             systemctl --user is-enabled --quiet desktop-shell.service &&
@@ -1022,16 +999,6 @@ applications:
           linux: ~/.config/imv
         name: config
         backup: ./Linux/imv
-  - package:
-      managers:
-        pacman: mako
-    name: mako
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/mako
-        name: config
-        backup: ./Linux/mako
   - name: mise
     when: '{{ eq .OS "linux" }}'
     entries:
@@ -1041,16 +1008,6 @@ applications:
         backup: ./Linux/mise
         files:
           - config.toml
-  - package:
-      managers:
-        pacman: swayosd
-    name: swayosd
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/swayosd
-        name: config
-        backup: ./Linux/swayosd
   - name: typora
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:

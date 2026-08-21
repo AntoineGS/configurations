@@ -132,7 +132,6 @@ start_screenrecording() {
 
   if kill -0 $pid 2>/dev/null; then
     echo "$filename" >"$RECORDING_FILE"
-    toggle_screenrecording_indicator
   fi
 }
 
@@ -148,7 +147,6 @@ stop_screenrecording() {
     count=$((count + 1))
   done
 
-  toggle_screenrecording_indicator
   cleanup_webcam
 
   if pgrep -f "^gpu-screen-recorder" >/dev/null; then
@@ -182,10 +180,6 @@ stop_screenrecording() {
 
 cleanup_recording_state() {
   rm -f "$RECORDING_FILE" || true
-}
-
-toggle_screenrecording_indicator() {
-  pkill -RTMIN+8 waybar || true
 }
 
 screenrecording_active() {

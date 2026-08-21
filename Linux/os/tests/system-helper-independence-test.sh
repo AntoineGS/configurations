@@ -19,11 +19,13 @@ modified_helpers=(
   voxtype-install
   cmd-tzupdate
   voxtype-model
-  tzupdate-and-restart-waybar
   voxtype-model-setup
   cmd-screenrecord
   cmd-screenshot
   font-set
+  toggle-idle
+  toggle-nightlight
+  tz-select
 )
 
 deleted_helpers=(
@@ -52,12 +54,36 @@ deleted_helpers=(
   update-git
   update-restart
   update-without-idle
+  tzupdate-and-restart-waybar
+  restart-waybar
+  restart-mako
+  restart-swayosd
+  notification-dismiss
+  swayosd-brightness
+  swayosd-kbd-brightness
 )
 
 for helper in "${modified_helpers[@]}"; do
   helper_path="$ROOT/Linux/os/helpers/$helper"
   test -x "$helper_path"
   bash -n "$helper_path"
+done
+
+for helper_path in \
+  "${ROOT}/Linux/os/helpers/cmd-tzupdate" \
+  "${ROOT}/Linux/os/helpers/font-current" \
+  "${ROOT}/Linux/os/helpers/font-set" \
+  "${ROOT}/Linux/os/helpers/toggle-idle" \
+  "${ROOT}/Linux/os/helpers/toggle-nightlight" \
+  "${ROOT}/Linux/os/helpers/tz-select" \
+  "${ROOT}/Linux/os/helpers/voxtype-install" \
+  "${ROOT}/Linux/os/helpers/voxtype-model-setup" \
+  "${ROOT}/Linux/os/helpers/cmd-screenrecord" \
+  "${ROOT}/Linux/hypr/scripts/toggle-external-takeover.sh"; do
+  if grep -Eiq 'waybar|makoctl|swayosd|polkit-gnome|restart-waybar|restart-swayosd' "$helper_path"; then
+    printf 'retained helper still contains a legacy desktop dependency: %s\n' "$helper_path" >&2
+    exit 1
+  fi
 done
 
 for helper in "${deleted_helpers[@]}"; do
@@ -123,11 +149,12 @@ if grep -Eq '\$\*|bash -c' "$ROOT/Linux/os/helpers/launch-floating-terminal-with
   exit 1
 fi
 
-grep -Fq 'launch-floating-terminal-with-presentation tzupdate-and-restart-waybar' \
+grep -Fq 'launch-floating-terminal-with-presentation tzupdate-system' \
   "$ROOT/Linux/os/helpers/cmd-tzupdate"
 grep -Fq 'launch-floating-terminal-with-presentation voxtype-model-setup' \
   "$ROOT/Linux/os/helpers/voxtype-model"
-grep -Fq 'sudo tzupdate' "$ROOT/Linux/os/helpers/tzupdate-and-restart-waybar"
+grep -Fq 'sudo tzupdate' "$ROOT/Linux/os/helpers/tzupdate-system"
+grep -Fq "fc-match -f '%{family[0]}\\n' monospace" "$ROOT/Linux/os/helpers/font-current"
 grep -Fq 'voxtype setup model' "$ROOT/Linux/os/helpers/voxtype-model-setup"
 if grep -Fq 'sudo tzupdate && restart-waybar' "$ROOT/Linux/os/helpers/cmd-tzupdate"; then
   printf '%s\n' 'timezone update still passes a compound shell command' >&2

@@ -3,4 +3,3 @@
 set -Eeuo pipefail
 
 voxtype setup model
-restart-waybar

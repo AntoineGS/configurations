@@ -7,13 +7,19 @@ RG_BIN="${RG_BIN:-rg}"
 
 test -f "$ROOT/Linux/Xcompose/.XCompose"
 grep -Fqx '          - .XCompose' "$ROOT/tidydots.yaml"
+for legacy_path in Linux/waybar Linux/mako Linux/swayosd; do
+  if [[ -e "$ROOT/$legacy_path" || -L "$ROOT/$legacy_path" ]]; then
+    printf 'legacy path exists: %s\n' "$legacy_path" >&2
+    exit 1
+  fi
+  if git -C "$ROOT" ls-files --error-unmatch -- "$legacy_path" >/dev/null 2>&1; then
+    printf 'legacy path remains tracked: %s\n' "$legacy_path" >&2
+    exit 1
+  fi
+done
 grep -Fqx 'stylesheets: ["./style.css"]' "$ROOT/Linux/hyprland-preview-share-picker/config.yaml"
 test -f "$ROOT/Linux/hyprland-preview-share-picker/style.css"
-grep -Fq '@define-color background-color #1e1e2e;' "$ROOT/Linux/swayosd/style.css"
-grep -Fq '@define-color progress #89b4fa;' "$ROOT/Linux/swayosd/style.css"
-test -f "$ROOT/Linux/swayosd/style.css"
 grep -Fq 'backup: ./Linux/hyprland-preview-share-picker' "$ROOT/tidydots.yaml"
-grep -Fq 'backup: ./Linux/swayosd' "$ROOT/tidydots.yaml"
 
 set +e
 if rg_output=$("$RG_BIN" -n -i --hidden "$PATTERN" \
@@ -22,11 +28,9 @@ if rg_output=$("$RG_BIN" -n -i --hidden "$PATTERN" \
   "$ROOT/Linux/hypr" \
   "$ROOT/Linux/hyprland-preview-share-picker" \
   "$ROOT/Linux/ghostty" \
-  "$ROOT/Linux/waybar" \
   "$ROOT/Linux/fastfetch" \
   "$ROOT/Linux/limine" \
   "$ROOT/Linux/sddm" \
-  "$ROOT/Linux/swayosd" \
   "$ROOT/Linux/os/helpers"); then
   rg_status=0
 else
