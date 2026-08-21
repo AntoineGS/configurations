@@ -1,0 +1,9 @@
+[Unit]
+Description=Prompt when office share domain authentication expires
+Wants=desktop-shell.service
+After=graphical-session.target desktop-shell.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/office-shares/check-office-shares-auth
+TimeoutStartSec=infinity

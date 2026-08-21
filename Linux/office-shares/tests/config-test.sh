@@ -7,6 +7,9 @@ component_dir="$(cd -- "$script_dir/.." && pwd -P)"
 repo_dir="$(cd -- "$component_dir/../.." && pwd -P)"
 service="$component_dir/office-shares-mount.service"
 timer="$component_dir/office-shares-mount.timer"
+auth_helper="$component_dir/check-office-shares-auth"
+auth_service="$component_dir/office-shares-auth-check.service"
+auth_timer="$component_dir/office-shares-auth-check.timer"
 config="$repo_dir/tidydots.yaml"
 legacy_helpers_target='~'/.local/share/helpers
 legacy_helpers_source='Linux/os/helpers'
@@ -18,9 +21,12 @@ fail() {
 }
 
 [[ -x "$component_dir/mount-office-shares" ]] || fail 'user helper is not executable'
+[[ -x "$auth_helper" ]] || fail 'authentication check helper is not executable'
 [[ -x "$component_dir/setup-office-shares-fstab" ]] || fail 'root helper is not executable'
 [[ -r "$service" ]] || fail 'service is missing'
 [[ -r "$timer" ]] || fail 'timer is missing'
+[[ -r "$auth_service" ]] || fail 'authentication check service is missing'
+[[ -r "$auth_timer" ]] || fail 'authentication check timer is missing'
 
 grep -Fqx 'Type=oneshot' "$service" || fail 'service is not oneshot'
 exec_start_count="$(awk '/^[[:space:]]*ExecStart=/ { count++ } END { print count + 0 }' "$service")"
@@ -40,6 +46,20 @@ grep -Fqx 'OnStartupSec=30s' "$timer" || fail 'initial timer delay differs'
 grep -Fqx 'OnUnitActiveSec=60s' "$timer" || fail 'timer cadence differs'
 grep -Fqx 'WantedBy=timers.target' "$timer" || fail 'timer install target differs'
 
+grep -Fqx 'After=graphical-session.target desktop-shell.service' "$auth_service" || \
+  fail 'authentication check does not wait for the graphical notification service'
+grep -Fqx 'Wants=desktop-shell.service' "$auth_service" || \
+  fail 'authentication check does not start the graphical notification service'
+grep -Fqx 'Type=oneshot' "$auth_service" || fail 'authentication check service is not oneshot'
+grep -Fqx 'ExecStart=%h/.local/libexec/office-shares/check-office-shares-auth' "$auth_service" || \
+  fail 'authentication check service helper path differs'
+grep -Fqx 'TimeoutStartSec=infinity' "$auth_service" || \
+  fail 'authentication notification cannot remain active indefinitely'
+grep -Fqx 'OnStartupSec=2m' "$auth_timer" || fail 'authentication check initial delay differs'
+grep -Fqx 'OnUnitInactiveSec=1h' "$auth_timer" || fail 'authentication check cadence differs'
+grep -Fqx 'AccuracySec=1m' "$auth_timer" || fail 'authentication check timer accuracy differs'
+grep -Fqx 'WantedBy=timers.target' "$auth_timer" || fail 'authentication check timer install target differs'
+
 block="$(awk '
   /^  - / && found { exit }
   /^  - / { candidate = $0 ORS; found = 0; next }
@@ -49,8 +69,8 @@ block="$(awk '
 ' "$config")"
 
 [[ -n "$block" ]] || fail 'office-shares tidydots entry is missing'
-hostname_gate_count="$(awk '$0 == "    when: '\''{{ eq .Hostname \"antoinews-linux\" }}'\''" { count++ } END { print count + 0 }' <<<"$block")"
-[[ "$hostname_gate_count" == 1 ]] || fail 'hostname gate differs or is not unique'
+platform_gate_count="$(awk '$0 == "    when: '\''{{ and (eq .OS \"linux\") (eq .Hostname \"antoinews-linux\") }}'\''" { count++ } END { print count + 0 }' <<<"$block")"
+[[ "$platform_gate_count" == 1 ]] || fail 'Linux and hostname gate differs or is not unique'
 grep -Fq 'pacman: cifs-utils' <<<"$block" || fail 'cifs-utils package is missing'
 if grep -Fq 'gvfs-smb' <<<"$block"; then
   fail 'superseded gvfs-smb package remains'
@@ -110,7 +130,8 @@ expected_mount_helper_entry="      - targets:
         name: mount-helper
         backup: ./Linux/office-shares
         files:
-          - mount-office-shares"
+          - mount-office-shares
+          - check-office-shares-auth"
 [[ "$user_helper_entry" == "$expected_mount_helper_entry" ]] || \
   fail 'mount-helper entry structure differs'
 require_entry_line mount-helper "$user_helper_entry" \
@@ -123,6 +144,8 @@ require_entry_line mount-helper "$user_helper_entry" \
   '        backup: ./Linux/office-shares' 'user helper backup path differs'
 require_entry_line mount-helper "$user_helper_entry" \
   '          - mount-office-shares' 'user helper file is not mapped'
+require_entry_line mount-helper "$user_helper_entry" \
+  '          - check-office-shares-auth' 'authentication check helper is not mapped'
 if grep -Fq -- "$legacy_helpers_target" "$service" || grep -Fq -- "$legacy_helpers_target" <<<"$block"; then
   fail 'global helpers deployment path remains'
 fi
@@ -142,6 +165,10 @@ require_entry_line user-units "$user_units_entry" \
   '          - office-shares-mount.service' 'service is not mapped'
 require_entry_line user-units "$user_units_entry" \
   '          - office-shares-mount.timer' 'timer is not mapped'
+require_entry_line user-units "$user_units_entry" \
+  '          - office-shares-auth-check.service' 'authentication check service is not mapped'
+require_entry_line user-units "$user_units_entry" \
+  '          - office-shares-auth-check.timer' 'authentication check timer is not mapped'
 
 timer_entry="$(extract_entry enable-timer)"
 require_entry_line enable-timer "$timer_entry" \
@@ -151,11 +178,20 @@ require_entry_line enable-timer "$timer_entry" \
   '            systemctl --user is-active --quiet office-shares-mount.timer &&' \
   'timer active-state check is missing'
 require_entry_line enable-timer "$timer_entry" \
-  "            test \"\$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)\" = no" \
-  'NeedDaemonReload no-state assertion is missing'
+  '            systemctl --user is-enabled --quiet office-shares-auth-check.timer &&' \
+  'authentication timer enabled-state check is missing'
 require_entry_line enable-timer "$timer_entry" \
-  '          linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer' \
-  'timer activation is missing'
+  '            systemctl --user is-active --quiet office-shares-auth-check.timer &&' \
+  'authentication timer active-state check is missing'
+require_entry_line enable-timer "$timer_entry" \
+  '            test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no &&' \
+  'mount timer NeedDaemonReload no-state assertion is missing'
+require_entry_line enable-timer "$timer_entry" \
+  '            test "$(systemctl --user show office-shares-auth-check.timer --property=NeedDaemonReload --value)" = no' \
+  'authentication timer NeedDaemonReload no-state assertion is missing'
+require_entry_line enable-timer "$timer_entry" \
+  '          linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer office-shares-auth-check.timer' \
+  'timer activation differs'
 
 tidydots --dir "$repo_dir" list >/dev/null || fail 'tidydots cannot parse the configuration'
 printf 'PASS: office share units and tidydots configuration\n'
