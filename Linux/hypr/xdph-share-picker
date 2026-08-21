@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ $(hostname) != antoinews-linux ]]; then
+  exec hyprland-preview-share-picker "$@"
+fi
+
+command -v hyprctl >/dev/null
+command -v jq >/dev/null
+
+if ! hyprctl monitors -j | jq -e 'any(.[]; .name == "DP-2" and .disabled == false)' >/dev/null; then
+  exit 1
+fi
+
+printf '%s\n' '[SELECTION]r/screen:DP-2'
