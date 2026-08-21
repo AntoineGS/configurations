@@ -110,6 +110,15 @@ contract("tailscale bar icon preserves idle dim and uses button content color", 
   assert.match(tailscalePanelSource, /iconSize: Style\.font\.display[\s\S]*?color: tailscale\.active \? root\.foreground : root\.dim/)
 })
 
+contract("tailscale bar icon applies its measured optical correction", () => {
+  const barButtonSource = tailscalePanelSource.slice(
+    tailscalePanelSource.indexOf("BarIconButton {"),
+    tailscalePanelSource.indexOf("KeyboardPanel {")
+  )
+  assert.match(barButtonSource,
+    /TailscaleIcon \{[\s\S]*?anchors\.horizontalCenterOffset: Style\.space\(2\)[\s\S]*?anchors\.verticalCenterOffset: Style\.space\(2\)/)
+})
+
 contract("center anchor boundaries use one module gap", () => {
   assert.match(centerSource, /anchors\.rightMargin: root\.moduleGap/)
   assert.match(centerSource, /anchors\.leftMargin: root\.moduleGap/)

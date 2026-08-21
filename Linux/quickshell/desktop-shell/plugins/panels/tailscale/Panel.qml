@@ -72,6 +72,8 @@ Panel {
     iconComponent: Component {
       TailscaleIcon {
         anchors.centerIn: parent
+        anchors.horizontalCenterOffset: Style.space(2)
+        anchors.verticalCenterOffset: Style.space(2)
         iconSize: Style.space(12)
         color: button.contentColor
         badgeColor: root.urgent
