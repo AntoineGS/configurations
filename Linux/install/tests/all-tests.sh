@@ -31,6 +31,8 @@ run_shellcheck() {
     Linux/hypr/tests/setup-rustdesk-focus-handoff-test.sh
     Linux/hypr/tests/tiling-bindings-test.sh
     Linux/hypr/tests/watch-rustdesk-submap-test.sh
+    Linux/hypr/tests/xdph-share-picker-test.sh
+    Linux/hypr/xdph-share-picker
     Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
     Linux/opencode/tests/test-setup-context-tokenizers.sh
     Linux/opencode/tests/test-setup-temp-cleanup.sh
@@ -89,6 +91,7 @@ run bash Linux/hypr/tests/rustdesk-focus-handoff-test.sh
 run bash Linux/hypr/tests/setup-rustdesk-focus-handoff-test.sh
 run bash Linux/hypr/tests/tiling-bindings-test.sh
 run bash Linux/hypr/tests/watch-rustdesk-submap-test.sh
+run bash Linux/hypr/tests/xdph-share-picker-test.sh
 run bash Linux/os/tests/desktop-bluetooth-state-test.sh
 run bash Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
 run bash Linux/quickshell/desktop-shell/tests/service-test.sh

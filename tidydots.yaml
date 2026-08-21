@@ -456,6 +456,12 @@ applications:
         name: config
         backup: ./Linux/hypr
       - targets:
+          linux: ~/.local/bin
+        name: screencopy-picker
+        backup: ./Linux/hypr
+        files:
+          - xdph-share-picker
+      - targets:
           linux: ~/.config/systemd/user
         name: rustdesk-service
         backup: ./Linux/hypr
