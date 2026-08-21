@@ -1725,6 +1725,7 @@ Item {
 
       readonly property var popupPlacement: NotificationLogic.popupPlacement(
         service.barPosition, service.barClearance, Style.gapsOut)
+      readonly property int placementInset: Style.space(6)
 
       anchors { top: true; bottom: true; left: true; right: true }
 
@@ -1735,8 +1736,8 @@ Item {
         visible: service.cardsVisibleOn(popupWindow.modelData)
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.popupPlacement.margins.top
-        anchors.rightMargin: popupWindow.popupPlacement.margins.right
+        anchors.topMargin: popupWindow.popupPlacement.margins.top + popupWindow.placementInset
+        anchors.rightMargin: popupWindow.popupPlacement.margins.right + popupWindow.placementInset
         spacing: Style.space(8)
 
         Repeater {
@@ -1823,8 +1824,8 @@ Item {
         visible: service.cueVisibleOn(popupWindow.modelData)
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.topMargin: popupWindow.popupPlacement.margins.top
-        anchors.rightMargin: popupWindow.popupPlacement.margins.right
+        anchors.topMargin: popupWindow.popupPlacement.margins.top + popupWindow.placementInset
+        anchors.rightMargin: popupWindow.popupPlacement.margins.right + popupWindow.placementInset
         implicitWidth: Style.space(250)
         implicitHeight: Style.space(48)
         radius: service.cornerRadius
