@@ -221,8 +221,12 @@ codex_status() {
         or ((($weekly.resetsAt | try fromdateiso8601 catch null) | type) != "number") then
         error("Codex weekly usage is missing or invalid")
       else
-        (["Weekly: \($weekly.usedPercent)% used, resets in \(countdown($weekly.resetsAt))"]
-          + [($provider.usage.extraRateWindows // [])[]
+        ($provider.usage.extraRateWindows
+          | if type == "array" then . else [] end) as $windows
+        | (["Weekly: \($weekly.usedPercent)% used, resets in \(countdown($weekly.resetsAt))"]
+          + [$windows[]
+              | select(type == "object")
+              | select((.window | type) == "object")
               | select((.title | type) == "string"
                 and (.window.usedPercent | type) == "number"
                 and (.window.resetsAt | type) == "string"
