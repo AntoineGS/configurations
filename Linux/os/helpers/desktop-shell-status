@@ -178,14 +178,65 @@ voxtype_status() {
 }
 
 codex_status() {
+  local source
+  local now
   local result
 
   : >"$ERROR_FILE"
-  if ! result=$(codexbar --format '{weekly_pct}%/{weekly_reset}' \
-    --color-low '#7f849c' --color-mid '#7f849c' \
-    --color-high '#7f849c' --color-critical '#7f849c' \
-    2>"$ERROR_FILE" | jq -c '.text |= gsub("d "; "d") | .text |= gsub("h "; "h") | .class = "muted"' 2>>"$ERROR_FILE"); then
+  if ! source=$(codexbar usage --provider codex --source oauth --format json --json-only 2>"$ERROR_FILE"); then
     adapter_error codex "$(error_message "Codex status query failed")"
+    return $?
+  fi
+
+  : >"$ERROR_FILE"
+  if ! now=$(date +%s 2>"$ERROR_FILE"); then
+    adapter_error codex "$(error_message "Codex status query failed")"
+    return $?
+  fi
+
+  : >"$ERROR_FILE"
+  if ! result=$(jq -ce --argjson now "$now" '
+    def countdown($timestamp):
+      (($timestamp | fromdateiso8601) - $now | if . < 0 then 0 else floor end) as $seconds
+      | ($seconds / 86400 | floor) as $days
+      | (($seconds % 86400) / 3600 | floor) as $hours
+      | (($seconds % 3600) / 60 | floor) as $minutes
+      | if $days > 0 then "\($days)d\($hours)h"
+        elif $hours > 0 then "\($hours)h\($minutes)m"
+        else "\($minutes)m"
+        end;
+
+    def codex_provider:
+      if type == "array" then
+        map(select(.provider == "codex"))
+        | if length == 1 then .[0] else error("expected exactly one Codex provider") end
+      elif type == "object" and .provider == "codex" then .
+      else error("expected one Codex provider")
+      end;
+
+    codex_provider as $provider
+    | $provider.usage.secondary as $weekly
+    | if ($weekly.usedPercent | type) != "number"
+        or ($weekly.resetsAt | type) != "string"
+        or ((($weekly.resetsAt | try fromdateiso8601 catch null) | type) != "number") then
+        error("Codex weekly usage is missing or invalid")
+      else
+        (["Weekly: \($weekly.usedPercent)% used, resets in \(countdown($weekly.resetsAt))"]
+          + [($provider.usage.extraRateWindows // [])[]
+              | select((.title | type) == "string"
+                and (.window.usedPercent | type) == "number"
+                and (.window.resetsAt | type) == "string"
+                and ((.window.resetsAt | try fromdateiso8601 catch null) | type) == "number")
+              | "\(.title): \(.window.usedPercent)% used, resets in \(countdown(.window.resetsAt))"])
+          as $tooltip
+        | {
+            text: "\($weekly.usedPercent)%/\(countdown($weekly.resetsAt))",
+            tooltip: ($tooltip | join("\n")),
+            class: "muted"
+          }
+      end
+  ' <<<"$source" 2>"$ERROR_FILE"); then
+    adapter_error codex "$(error_message "invalid CodexBar usage JSON")"
     return $?
   fi
 

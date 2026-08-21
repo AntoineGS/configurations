@@ -159,11 +159,20 @@ temporary_records=("$usage_dir"/.[!.]*.tmp)
 cat >"$fake_bin/codexbar" <<'FAKE_CODEXBAR'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-printf '%s\n' '{"text":"1%/4d 7h 03m","tooltip":"Codex quota","class":"source"}'
+printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[{"title":"Codex Spark 5-hour","window":{"usedPercent":0,"resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Codex Spark Weekly","window":{"usedPercent":0,"resetsAt":"2026-08-28T11:00:00Z"}}]}}]'
 FAKE_CODEXBAR
 chmod +x "$fake_bin/codexbar"
+
+cat >"$fake_bin/date" <<'FAKE_DATE'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ ${1:-} == '+%s' ]] || exit 1
+printf '%s\n' '1787313600'
+FAKE_DATE
+chmod +x "$fake_bin/date"
 compact_output=$(PATH="$fake_bin:$original_path" HOME="$home_root" XDG_CACHE_HOME="$cache_home" "$STATUS" codex)
-jq -e '.text == "1%/4d7h03m" and (.text | contains("Codex") | not)' <<<"$compact_output" >/dev/null \
+jq -e '.text == "7%/4d14h" and (.text | contains("Codex") | not)' <<<"$compact_output" >/dev/null \
   || fail "compact Codex status changed"
 
 jq -e '

@@ -100,23 +100,36 @@ if [[ ${CODEX_FAIL:-0} == 1 ]]; then
   exit 1
 fi
 case ${CODEX_PAYLOAD:-valid} in
-valid)
-  printf '%s\n' '{"text":"1%/4d 7h 03m","tooltip":"Codex quota","class":"source","extra":"preserve"}'
-  ;;
-missing-tooltip)
-  printf '%s\n' '{"text":"1%/4d 7h","class":"source"}'
-  ;;
-non-string-tooltip)
-  printf '%s\n' '{"text":"1%/4d 7h","tooltip":42,"class":"source"}'
-  ;;
-two-valid)
-  printf '%s\n' '{"text":"first","tooltip":"First tooltip","class":"source"}'
-  printf '%s\n' '{"text":"second","tooltip":"Second tooltip","class":"source"}'
-  ;;
-empty)
+  valid-array)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[{"title":"Codex Spark 5-hour","window":{"usedPercent":0,"resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Codex Spark Weekly","window":{"usedPercent":0,"resetsAt":"2026-08-28T11:00:00Z"}}]}}]'
+    ;;
+  valid-object)
+    printf '%s\n' '{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":7,"resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[{"title":"Codex Spark 5-hour","window":{"usedPercent":0,"resetsAt":"2026-08-21T17:30:00Z"}},{"title":"Codex Spark Weekly","window":{"usedPercent":0,"resetsAt":"2026-08-28T11:00:00Z"}}]}}'
+    ;;
+  missing-weekly)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"extraRateWindows":[]}}]'
+    ;;
+  non-numeric-weekly)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{"secondary":{"usedPercent":"7","resetsAt":"2026-08-26T02:00:00Z"},"extraRateWindows":[]}}]'
+    ;;
+  two-codex)
+    printf '%s\n' '[{"provider":"codex","source":"oauth","usage":{}},{"provider":"codex","source":"oauth","usage":{}}]'
+    ;;
+  invalid-json)
+    printf '%s\n' 'not-json'
+    ;;
+  empty)
   ;;
 esac
 FAKE_CODEXBAR
+
+cat >"$fake_bin/date" <<'FAKE_DATE'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ ${1:-} == '+%s' ]] || exit 1
+printf '%s\n' '1787313600'
+FAKE_DATE
 
 cat >"$fake_bin/df" <<'FAKE_DF'
 #!/usr/bin/env bash
@@ -165,7 +178,7 @@ export DESKTOP_SHELL_COMMAND_TRACE="$command_trace"
 export RECORDING_ACTIVE=0
 export VOXTYPE_STATE=idle
 export CODEX_FAIL=0
-export CODEX_PAYLOAD=valid
+export CODEX_PAYLOAD=valid-array
 export DF_FAIL=0
 export DF_TMP_FAIL=0
 
@@ -287,21 +300,17 @@ done <"$voxtype_trace"
 
 invoke codex-success codex
 assert_status 0 codex-success
-assert_json_field '.text' '1%/4d7h03m' 'Codex reset normalization'
-assert_json_field '.tooltip' 'Codex quota' 'Codex tooltip preservation'
+assert_json_field '.text' '7%/4d14h' 'Codex weekly reset countdown'
+assert_json_field '.tooltip' $'Weekly: 7% used, resets in 4d14h\nCodex Spark 5-hour: 0% used, resets in 5h30m\nCodex Spark Weekly: 0% used, resets in 6d23h' 'Codex quota tooltip'
 assert_json_field '.class' 'muted' 'Codex muted class'
-assert_json_field '.extra' 'preserve' 'Codex top-level field preservation'
-while IFS= read -r codex_args; do
-  [[ $codex_args == *"--format {weekly_pct}%/{weekly_reset}"* ]] || {
-    printf 'status-test: codex command contract missing format: %s\n' "$codex_args" >&2
-    exit 1
-  }
-  [[ $codex_args == *"--color-low #7f849c"* && $codex_args == *"--color-mid #7f849c"* && \
-    $codex_args == *"--color-high #7f849c"* && $codex_args == *"--color-critical #7f849c"* ]] || {
-    printf 'status-test: codex command contract missing neutral colors: %s\n' "$codex_args" >&2
-    exit 1
-  }
-done <"$codex_trace"
+assert_equal 'usage --provider codex --source oauth --format json --json-only' "$(<"$codex_trace")" 'CodexBar CLI command contract'
+
+CODEX_PAYLOAD=valid-object
+invoke codex-object-success codex
+assert_status 0 codex-object-success
+assert_json_field '.text' '7%/4d14h' 'Codex object weekly reset countdown'
+assert_json_field '.tooltip' $'Weekly: 7% used, resets in 4d14h\nCodex Spark 5-hour: 0% used, resets in 5h30m\nCodex Spark Weekly: 0% used, resets in 6d23h' 'Codex object quota tooltip'
+assert_json_field '.class' 'muted' 'Codex object muted class'
 
 invoke disk disk
 assert_status 0 disk
@@ -343,43 +352,27 @@ temporary_cache_files=("$status_cache"/*.tmp "$status_cache"/.*.??????)
 shopt -u nullglob
 assert_equal 0 "${#temporary_cache_files[@]}" 'atomic cache leaves no temporary files'
 
-CODEX_PAYLOAD=two-valid
+CODEX_PAYLOAD=two-codex
 invoke codex-multiple-live codex "$fixture/no-cache-multiple-live"
 assert_status 1 codex-multiple-live
-assert_no_output 'multiple valid live payloads'
+assert_no_output 'multiple Codex providers'
 
-CODEX_PAYLOAD=empty
-invoke codex-empty-live codex "$fixture/no-cache-empty-live"
-assert_status 1 codex-empty-live
-assert_no_output 'empty live payload'
+for malformed_payload in missing-weekly non-numeric-weekly invalid-json empty; do
+  CODEX_PAYLOAD=$malformed_payload
+  invoke "codex-$malformed_payload" codex "$fixture/no-cache-$malformed_payload"
+  assert_status 1 "codex-$malformed_payload"
+  assert_no_output "malformed $malformed_payload live payload"
+done
 
-CODEX_PAYLOAD=missing-tooltip
-invoke codex-missing-field codex "$fixture/no-cache-missing-field"
-assert_status 1 codex-missing-field
-assert_no_output 'malformed successful payload with a missing field'
-[[ -n $last_stderr ]] || {
-  printf 'status-test: missing-field payload did not report its schema error\n' >&2
-  exit 1
-}
-
-CODEX_PAYLOAD=non-string-tooltip
-invoke codex-non-string-field codex "$fixture/no-cache-non-string-field"
-assert_status 1 codex-non-string-field
-assert_no_output 'malformed successful payload with a non-string field'
-[[ -n $last_stderr ]] || {
-  printf 'status-test: non-string payload did not report its schema error\n' >&2
-  exit 1
-}
-
-CODEX_PAYLOAD=valid
+CODEX_PAYLOAD=valid-array
 CODEX_FAIL=1
 invoke codex-stale codex
 assert_status 0 codex-stale
-assert_json_field '.text' '1%/4d7h03m' 'stale Codex text fallback'
+assert_json_field '.text' '7%/4d14h' 'stale Codex text fallback'
 assert_json_field '.class' 'stale' 'stale Codex class'
 stale_tooltip=$(jq -er '.tooltip' <<<"$last_output")
-[[ $stale_tooltip == *'Codex quota'* && $stale_tooltip == *'codexbar fixture failure'* ]] || {
-  printf 'status-test: stale tooltip did not preserve and append the adapter error: %s\n' "$stale_tooltip" >&2
+[[ $stale_tooltip == *'Weekly: 7% used'* && $stale_tooltip == *'codexbar fixture failure'* ]] || {
+  printf 'status-test: stale tooltip did not preserve weekly usage and append the adapter error: %s\n' "$stale_tooltip" >&2
   exit 1
 }
 assert_equal 'muted' "$(jq -er '.class' "$status_cache/codex.json")" 'good Codex cache remains fresh'
