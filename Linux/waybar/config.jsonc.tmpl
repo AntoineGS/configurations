@@ -226,7 +226,7 @@
     "on-click": "launch-or-focus-tui btop"
   },
   "custom/codexbar": {
-    "exec": "codexbar --format '{weekly_pct}%/{weekly_reset}' --color-low '#cdd6f4' --color-mid '#cdd6f4' --color-high '#cdd6f4' --color-critical '#cdd6f4' | jq -c '.text |= gsub(\"d \"; \"d\")'",
+    "exec": "desktop-shell-status codex",
     "return-type": "json",
     "interval": 300,
     "signal": 12,
