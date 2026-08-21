@@ -1,6 +1,12 @@
 -- This file replaces the deprecated tiling.conf with the tiling-v2 bindings.
 -- All bindings below preserve the behavior of the previous .conf.
 
+local hostname_pipe = io.popen("hostname")
+local hostname = hostname_pipe and hostname_pipe:read("*l") or ""
+if hostname_pipe then
+  hostname_pipe:close()
+end
+
 -- Fullscreen management
 hl.bind("SUPER + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }), { description = "Force full screen" })
 hl.bind("SUPER + F",         hl.dsp.window.fullscreen({ mode = "maximized",  action = "toggle" }), { description = "Full width" })
@@ -77,7 +83,11 @@ hl.bind("SUPER + SHIFT + K", hl.dsp.window.move({ direction = "up"    }), { desc
 hl.bind("SUPER + SHIFT + J", hl.dsp.window.move({ direction = "down"  }), { description = "Move window to lower workspace" })
 hl.bind("SUPER + M",         hl.dsp.layout("swapwithmaster"),             { description = "Swap with master" })
 
-hl.bind("SUPER + H", hl.dsp.focus({ direction = "left"  }), { description = "Move focus left" })
+if hostname == "antoinews-linux" then
+  hl.bind("SUPER + H", hl.dsp.exec_cmd("~/.config/hypr/rustdesk-focus-handoff.sh send"), { description = "Move focus left" })
+else
+  hl.bind("SUPER + H", hl.dsp.focus({ direction = "left" }), { description = "Move focus left" })
+end
 hl.bind("SUPER + L", hl.dsp.focus({ direction = "right" }), { description = "Move focus right" })
 hl.bind("SUPER + K", hl.dsp.focus({ direction = "up"    }), { description = "Move focus up" })
 hl.bind("SUPER + J", hl.dsp.focus({ direction = "down"  }), { description = "Move focus down" })

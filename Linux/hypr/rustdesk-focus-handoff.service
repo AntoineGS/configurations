@@ -1,0 +1,13 @@
+[Unit]
+Description=RustDesk focus handoff listener
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/hypr/rustdesk-focus-handoff.sh listen
+Restart=always
+RestartSec=2
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
