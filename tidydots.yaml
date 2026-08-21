@@ -477,6 +477,21 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
         name: enable-external-keyboard-service
+  - name: rustdesk-focus-handoff
+    description: Return host-edge focus navigation to the RustDesk client
+    when: '{{ and (eq .OS "linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
+    entries:
+      - targets:
+          linux: ~/.config/systemd/user
+        name: service
+        backup: ./Linux/hypr
+        files:
+          - rustdesk-focus-handoff.service
+      - check:
+          linux: ~/.config/hypr/setup-rustdesk-focus-handoff --check
+        run:
+          linux: ~/.config/hypr/setup-rustdesk-focus-handoff --apply
+        name: enable-service
   - name: rustdesk-wayland
     description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
     when: '{{ eq .Hostname "antoinews-linux" }}'

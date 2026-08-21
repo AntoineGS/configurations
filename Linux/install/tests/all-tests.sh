@@ -24,7 +24,12 @@ run_shellcheck() {
     Linux/pacman/tests/headless-antoinews-linux-profile-test.sh
     Linux/pacman/tests/shared-desktop-profile-test.sh
     Linux/hypr/watch-rustdesk-submap.sh
+    Linux/hypr/rustdesk-focus-handoff.sh
+    Linux/hypr/setup-rustdesk-focus-handoff
     Linux/hypr/tests/monitor-policy-test.sh
+    Linux/hypr/tests/rustdesk-focus-handoff-test.sh
+    Linux/hypr/tests/setup-rustdesk-focus-handoff-test.sh
+    Linux/hypr/tests/tiling-bindings-test.sh
     Linux/hypr/tests/watch-rustdesk-submap-test.sh
     Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
     Linux/opencode/tests/test-setup-context-tokenizers.sh
@@ -80,6 +85,9 @@ run bash Linux/os/tests/no-omarchy-runtime-test.sh
 run bash Linux/os/tests/no-omarchy-runtime-error-test.sh
 run bash Both/ShellPicker/tests/test-setup-shell-picker.sh
 run bash Linux/hypr/tests/monitor-policy-test.sh
+run bash Linux/hypr/tests/rustdesk-focus-handoff-test.sh
+run bash Linux/hypr/tests/setup-rustdesk-focus-handoff-test.sh
+run bash Linux/hypr/tests/tiling-bindings-test.sh
 run bash Linux/hypr/tests/watch-rustdesk-submap-test.sh
 run bash Linux/os/tests/desktop-bluetooth-state-test.sh
 run bash Linux/quickshell/desktop-shell/tests/bluetooth-test.sh
@@ -88,7 +96,12 @@ run bash Linux/quickshell/desktop-shell/tests/desktop-services-setup-test.sh
 run bash Linux/quickshell/desktop-shell/tests/desktop-services-cutover-test.sh
 run bash Linux/os/tests/power-profile-availability-test.sh
 run bash -n Linux/hypr/watch-rustdesk-submap.sh
+run bash -n Linux/hypr/rustdesk-focus-handoff.sh
+run bash -n Linux/hypr/setup-rustdesk-focus-handoff
 run bash -n Linux/hypr/tests/monitor-policy-test.sh
+run bash -n Linux/hypr/tests/rustdesk-focus-handoff-test.sh
+run bash -n Linux/hypr/tests/setup-rustdesk-focus-handoff-test.sh
+run bash -n Linux/hypr/tests/tiling-bindings-test.sh
 run bash -n Linux/hypr/tests/watch-rustdesk-submap-test.sh
 run luac -p Linux/hypr/autostart.lua Linux/hypr/monitors.lua
 run_shellcheck

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly EXPECTED_HOSTNAME=DESKTOP-E07VTRN
+readonly UNIT_NAME=rustdesk-focus-handoff.service
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+readonly SCRIPT_DIR
+readonly UNIT_SOURCE="$SCRIPT_DIR/$UNIT_NAME"
+readonly UNIT_TARGET="$HOME/.config/systemd/user/$UNIT_NAME"
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+require_client_host() {
+  local current_hostname
+
+  current_hostname=$(hostname)
+  if [[ $current_hostname != "$EXPECTED_HOSTNAME" ]]; then
+    printf '%s: expected host %s, got %s\n' "${0##*/}" "$EXPECTED_HOSTNAME" "$current_hostname" >&2
+    return 1
+  fi
+}
+
+check_setup() {
+  require_client_host &&
+    [[ -f $UNIT_SOURCE ]] &&
+    [[ -L $UNIT_TARGET ]] &&
+    [[ $(readlink -f -- "$UNIT_TARGET") == $(readlink -f -- "$UNIT_SOURCE") ]] &&
+    systemctl --user is-enabled --quiet "$UNIT_NAME" &&
+    systemctl --user is-active --quiet "$UNIT_NAME" &&
+    [[ $(systemctl --user show "$UNIT_NAME" --property=NeedDaemonReload --value) == no ]]
+}
+
+apply_setup() {
+  local target_dir
+
+  require_client_host
+  [[ -f $UNIT_SOURCE ]] || {
+    printf '%s: service unit is missing: %s\n' "${0##*/}" "$UNIT_SOURCE" >&2
+    return 1
+  }
+  if [[ -e $UNIT_TARGET && ! -L $UNIT_TARGET ]]; then
+    printf '%s: refusing to replace non-symlink: %s\n' "${0##*/}" "$UNIT_TARGET" >&2
+    return 1
+  fi
+
+  target_dir=$(dirname -- "$UNIT_TARGET")
+  mkdir -p -- "$target_dir"
+  ln -sfn -- "$UNIT_SOURCE" "$UNIT_TARGET"
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$UNIT_NAME"
+  check_setup
+}
+
+if (($# != 1)); then
+  usage >&2
+  exit 2
+fi
+
+case ${1:-} in
+  --check) check_setup ;;
+  --apply) apply_setup ;;
+  --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
