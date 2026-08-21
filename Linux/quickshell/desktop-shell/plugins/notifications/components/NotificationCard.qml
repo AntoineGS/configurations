@@ -27,8 +27,10 @@ BorderSurface {
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
   readonly property color dimColor: Qt.darker(Color.notifications.text, 1.4)
   readonly property color bodyColor: Qt.darker(Color.notifications.text, 1.15)
-  readonly property color accentColor: urgency === 2 ? Color.urgent
-    : (urgency === 0 ? dimColor : Color.notifications.countdown)
+  readonly property bool urgencyBadgeVisible: urgency === 0 || urgency === 2
+  readonly property string urgencyBadgeGlyph: urgency === 2 ? "!" : "i"
+  readonly property color urgencyBadgeColor: urgency === 2
+    ? Color.notifications.critical : Color.notifications.low
   readonly property var cardBorderSpec: Border.surfaceSpec(
     "notifications", "border", Color.notifications.border, Math.max(1, Style.space(2)))
 
@@ -109,17 +111,41 @@ BorderSurface {
         Layout.rightMargin: Style.space(10)
         spacing: Style.space(2)
 
-        Text {
+        RowLayout {
           Layout.fillWidth: true
-          visible: root.summary.length > 0
-          text: root.summary
-          font.family: root.fontFamily
-          color: Color.notifications.text
-          font.pixelSize: Style.font.title
-          font.bold: true
-          wrapMode: Text.WordWrap
-          elide: Text.ElideRight
-          maximumLineCount: 2
+          visible: root.summary.length > 0 || root.urgencyBadgeVisible
+          spacing: Style.space(6)
+
+          Rectangle {
+            Layout.preferredWidth: Style.space(18)
+            Layout.preferredHeight: Style.space(18)
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.urgencyBadgeVisible
+            radius: width / 2
+            color: root.urgencyBadgeColor
+
+            Text {
+              anchors.centerIn: parent
+              text: root.urgencyBadgeGlyph
+              color: Color.background
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+          }
+
+          Text {
+            Layout.fillWidth: true
+            visible: root.summary.length > 0
+            text: root.summary
+            font.family: root.fontFamily
+            color: Color.notifications.text
+            font.pixelSize: Style.font.title
+            font.bold: true
+            wrapMode: Text.WordWrap
+            elide: Text.ElideRight
+            maximumLineCount: 2
+          }
         }
 
         Text {

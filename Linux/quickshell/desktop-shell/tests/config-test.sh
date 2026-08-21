@@ -61,9 +61,19 @@ const palette = {
   muted: "#7f849c"
 }
 const active = "#f9e2af"
+const notificationPalette = {
+  background: "#52476a",
+  text: palette.foreground,
+  border: "#52476a",
+  countdown: palette.foreground,
+  low: "#89b4fa",
+  critical: palette.urgent,
+}
 for (const [role, value] of Object.entries(palette)) {
   assert.match(color, new RegExp(`property color ${role}: "${value}"`), `${role} uses the Catppuccin fallback`)
 }
+assert.match(color, /property color low:\s*root\.pick\("notifications\.low",\s*"#89b4fa"\)/)
+assert.match(color, /property color critical:\s*root\.pick\("notifications\.critical",\s*root\.urgent\)/)
 
 assert.ok(fs.existsSync(themePath), "repository-owned shell.toml exists")
 const theme = fs.readFileSync(themePath, "utf8")
@@ -102,10 +112,12 @@ const surfaceRoles = {
   "menu.selected-background": palette.muted,
   "menu.selected-text": palette.accent,
   "menu.selected-border": palette.accent,
-  "notifications.background": palette.background,
-  "notifications.text": palette.foreground,
-  "notifications.border": palette.accent,
-  "notifications.countdown": palette.accent,
+  "notifications.background": notificationPalette.background,
+  "notifications.text": notificationPalette.text,
+  "notifications.border": notificationPalette.border,
+  "notifications.countdown": notificationPalette.countdown,
+  "notifications.low": notificationPalette.low,
+  "notifications.critical": notificationPalette.critical,
   "polkit.background": palette.background,
   "polkit.text": palette.foreground,
   "polkit.text-error": palette.urgent,
