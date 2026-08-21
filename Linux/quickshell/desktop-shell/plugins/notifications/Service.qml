@@ -1477,8 +1477,9 @@ Item {
   }
 
   function cueVisibleOn(screen) {
-    return service.routeValid && service.route.cueOutput !== null
+    return service.routeVisible && service.route.cueOutput !== null
       && String(service.route.cueOutput) === screenName(screen)
+      && popupModel.count > 0
   }
 
   Process {
@@ -1824,8 +1825,8 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: popupWindow.popupPlacement.margins.top
         anchors.rightMargin: popupWindow.popupPlacement.margins.right
-        implicitWidth: cueLabel.implicitWidth + Style.space(20)
-        implicitHeight: cueLabel.implicitHeight + Style.space(12)
+        implicitWidth: Style.space(250)
+        implicitHeight: Style.space(48)
         radius: service.cornerRadius
         color: Color.notifications.background
         borderSpec: Border.surfaceSpec("notifications", "border", Color.notifications.border, Math.max(1, Style.space(2)))
@@ -1836,7 +1837,7 @@ Item {
           text: NotificationLogic.cueGlyph(service.route.direction)
           color: Color.notifications.text
           font.family: Style.font.family
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.display
         }
       }
     }
