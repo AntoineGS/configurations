@@ -20,6 +20,7 @@ Item {
 
   readonly property bool opened: panelController.open
   readonly property color barForeground: bar ? bar.barForeground : Color.foreground
+  readonly property color panelForeground: Color.barPanels.text
 
   function open() { panelController.show() }
   function close() { panelController.hide() }

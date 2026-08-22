@@ -19,7 +19,7 @@ Panel {
   property bool resizePending: false
   property string actionError: ""
   property bool refreshQueued: false
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property color statForeground: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family

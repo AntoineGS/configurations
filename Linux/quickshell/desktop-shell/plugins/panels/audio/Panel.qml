@@ -17,7 +17,7 @@ Panel {
   readonly property var nodes: capabilityAvailable && Pipewire.nodes ? Pipewire.nodes.values : []
   readonly property var sink: capabilityAvailable ? Pipewire.defaultAudioSink : null
   readonly property var source: capabilityAvailable ? Pipewire.defaultAudioSource : null
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var candidateSinks: {
     var result = []

@@ -22,7 +22,7 @@ Panel {
   readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
   readonly property var devices: Bluetooth.devices ? Bluetooth.devices.values : []
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var deviceGroups: Model.deviceLists(devices)
   readonly property var connectedDevices: deviceGroups.connected || []

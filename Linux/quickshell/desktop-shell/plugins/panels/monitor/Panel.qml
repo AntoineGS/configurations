@@ -26,7 +26,7 @@ Panel {
   readonly property string internalMonitor: String(stateData.internalMonitor || "")
   readonly property string focusedMonitor: String(stateData.focusedMonitor || "")
   readonly property int enabledDisplayCount: Model.enabledDisplayCount(displays)
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   function reportCapability() {

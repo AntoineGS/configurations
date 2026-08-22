@@ -26,7 +26,7 @@ Panel {
   readonly property int batteryPercent: Model.batteryPercentage(battery.status)
   readonly property bool batteryAvailable: String(battery.status || "") !== ""
   readonly property bool showPercentage: setting("showPercentage", false) === true
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   function reportCapability() {

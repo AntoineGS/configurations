@@ -4,12 +4,48 @@
 const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
-
+const vm = require("node:vm")
 const shellRoot = path.resolve(__dirname, "..")
 const read = relative => fs.readFileSync(path.join(shellRoot, relative), "utf8")
+const cardStyle = require("../Commons/CardStyle.js")
+const geometry = {}
+vm.runInNewContext(read("Commons/BorderGeometry.js").replace(".pragma library", ""), geometry)
+
 const theme = read("config/shell.toml")
 const color = read("Commons/Color.qml")
 const border = read("Commons/Border.qml")
+const cardStyleSource = read("Commons/CardStyle.js")
+
+const sharedValues = {
+  "cards.background-alpha": "0.35",
+  "cards.border": "#52476a",
+  "cards.border-gradient": "90deg #52476a #cba6f7",
+  "cards.border-width": "1 2 3 4",
+  "cards.border-width-right": "5",
+  "notifications.background-alpha": "not-a-number",
+  "notifications.border-width-left": "6",
+}
+assert.equal(cardStyle.inheritedAlpha(sharedValues, "notifications", "background-alpha", "cards", 0.8), 0.8)
+assert.equal(cardStyle.inheritedAlpha({ "cards.background-alpha": "0.35" }, "notifications", "background-alpha", "cards", 0.8), 0.35)
+assert.equal(cardStyle.inheritedPick({}, "notifications", "background", "cards", "#1e1e2e"), "#1e1e2e")
+assert.equal(cardStyle.surfaceValueOr({
+  "cards.selected-border-width": "3",
+  "notifications.border-width": "7",
+}, "notifications", ["selected-border-width", "border-width"]), "7")
+const borderWidths = geometry.withSideOverrides(
+  geometry.parseWidthSpec(cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-width"]), 2),
+  cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-width-top"]),
+  cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-width-right"]),
+  cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-width-bottom"]),
+  cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-width-left"])
+)
+assert.deepEqual(JSON.parse(JSON.stringify(borderWidths)), { top: 1, right: 5, bottom: 3, left: 6 })
+assert.deepEqual(JSON.parse(JSON.stringify(geometry.parseGradientSpec(
+  cardStyle.surfaceValueOr(sharedValues, "notifications", ["border-gradient"]), "#1e1e2e", 1))), {
+  colors: ["#52476a", "#cba6f7"],
+  angle: 90,
+  enabled: true,
+})
 
 function section(name) {
   const marker = `[${name}]\n`
@@ -48,7 +84,7 @@ assert.match(color, /inheritedComposed\("bar-panels",\s*"cards",\s*"background"/
 assert.match(color, /inheritedPick\("bar-panels",\s*"text",\s*"cards"/)
 
 assert.match(border, /function surfaceBase\(section\)/)
-assert.match(border, /section === "notifications" \|\| section === "tooltip" \|\| section === "bar-panels"/)
+assert.match(cardStyleSource, /section === "notifications" \|\| section === "tooltip" \|\| section === "bar-panels"/)
 assert.match(border, /function surfaceValue\(section, key\)/)
 assert.match(border, /function surfaceValueOr\(section, keys\)/)
 assert.match(border, /function surfaceAlpha\(section, key, fallback\)/)
@@ -57,5 +93,45 @@ assert.match(border, /surfaceAlpha\(section, alphaKey \|\| token \+ "-alpha", 1\
 assert.match(border, /resolveValueRef\(surfaceValue\(section, token\)\)/)
 assert.match(border, /surfaceValue\("notifications", "border"\)/)
 assert.match(border, /surfaceAlpha\("notifications", "border-alpha", opacity\)/)
+
+const keyboardPanel = read("Ui/KeyboardPanel.qml")
+const panelBase = read("Ui/Panel.qml")
+const button = read("Ui/Button.qml")
+const panelToolTip = read("Ui/PanelToolTip.qml")
+const bar = read("plugins/bar/Bar.qml")
+const tray = read("plugins/bar/widgets/Tray.qml")
+const osd = read("plugins/osd/Osd.qml")
+const popupCard = read("Ui/PopupCard.qml")
+
+assert.match(keyboardPanel, /Color\.barPanels\.background/)
+assert.match(keyboardPanel, /Border\.surfaceSpec\("bar-panels", "border", Color\.barPanels\.border/)
+assert.doesNotMatch(keyboardPanel, /Color\.popups/)
+assert.match(panelBase, /readonly property color panelForeground:\s*Color\.barPanels\.text/)
+assert.match(button, /ToolTip\s*\{[\s\S]*?radius:\s*Style\.cornerRadius/)
+assert.match(panelToolTip, /Color\.tooltip\.(?:text|background|border)/)
+assert.match(bar, /Color\.tooltip\.(?:text|background|border)/)
+assert.match(osd, /Color\.popups\.(?:text|background|border)/)
+assert.doesNotMatch(osd, /Color\.barPanels/)
+assert.match(popupCard, /Color\.popups\.(?:background|border)/)
+assert.match(tray, /\.display\(anchorItem\.QsWindow\.window, point\.x, point\.y\)/)
+
+const panelForegroundContracts = [
+  ["plugins/agents/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/audio/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/bluetooth/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/clock/Panel.qml", /readonly property color contentForeground:\s*panelForeground/],
+  ["plugins/panels/monitor/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/network/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/power/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/tailscale/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+  ["plugins/panels/vm/Panel.qml", /readonly property color foreground:\s*panelForeground/],
+]
+for (const [relative, contract] of panelForegroundContracts) assert.match(read(relative), contract, relative)
+
+const agents = read("plugins/agents/Panel.qml")
+const tailscale = read("plugins/panels/tailscale/Panel.qml")
+assert.match(agents, /readonly property color surface:\s*Color\.barPanels\.background/)
+assert.match(tailscale, /readonly property color barIconForeground:\s*bar \? bar\.foreground : Color\.foreground/)
+assert.match(tailscale, /foreground:\s*tailscale\.active \? root\.barIconForeground : root\.barIconDim/)
 
 console.log("card-style-test: shared card theme contract verified")

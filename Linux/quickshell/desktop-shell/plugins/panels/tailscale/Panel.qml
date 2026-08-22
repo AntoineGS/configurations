@@ -16,11 +16,13 @@ Panel {
   property bool cursorActive: false
   property int selectedIndex: 0
 
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: panelForeground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool capabilityAvailable: tailscale.available
   readonly property color dim: Qt.darker(foreground, 1.5)
+  readonly property color barIconForeground: bar ? bar.foreground : Color.foreground
+  readonly property color barIconDim: Qt.darker(barIconForeground, 1.5)
 
   function reportCapability() {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
@@ -68,7 +70,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    foreground: tailscale.active ? root.foreground : root.dim
+    foreground: tailscale.active ? root.barIconForeground : root.barIconDim
     iconComponent: Component {
       TailscaleIcon {
         anchors.centerIn: parent
@@ -77,6 +79,7 @@ Panel {
         iconSize: Style.space(12)
         color: button.contentColor
         badgeColor: root.urgent
+        badgeBackground: Color.bar.background
         crossed: !tailscale.active
         warning: tailscale.needsLogin
       }
@@ -135,6 +138,7 @@ Panel {
               TailscaleIcon {
                 iconSize: Style.font.display
                 color: tailscale.active ? root.foreground : root.dim
+                badgeBackground: Color.barPanels.background
                 crossed: !tailscale.active
                 warning: tailscale.needsLogin
               }

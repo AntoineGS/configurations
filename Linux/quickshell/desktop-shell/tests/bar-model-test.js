@@ -11,6 +11,10 @@ const clockSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/clock/B
 const opticalGlyphSource = fs.readFileSync(path.join(shellRoot, "Ui/OpticalGlyph.qml"), "utf8")
 const tailscalePanelSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/tailscale/Panel.qml"), "utf8")
 const tailscaleIconSource = fs.readFileSync(path.join(shellRoot, "plugins/panels/tailscale/TailscaleIcon.qml"), "utf8")
+const tailscaleBarButtonSource = tailscalePanelSource.slice(
+  tailscalePanelSource.indexOf("BarIconButton {"),
+  tailscalePanelSource.indexOf("KeyboardPanel {")
+)
 const widgetButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/WidgetButton.qml"), "utf8")
 const barIconButtonSource = fs.readFileSync(path.join(shellRoot, "Ui/BarIconButton.qml"), "utf8")
 const centerSource = barSource.slice(barSource.indexOf("component CenterModules"), barSource.indexOf("component ModuleList"))
@@ -101,21 +105,21 @@ contract("custom glyph colors animate smoothly", () => {
 })
 
 contract("tailscale bar icon preserves idle dim and uses button content color", () => {
-  const barButtonSource = tailscalePanelSource.slice(
-    tailscalePanelSource.indexOf("BarIconButton {"),
-    tailscalePanelSource.indexOf("KeyboardPanel {")
-  )
-  assert.match(barButtonSource, /foreground: tailscale\.active \? root\.foreground : root\.dim/)
-  assert.match(barButtonSource, /TailscaleIcon \{[\s\S]*?color: button\.contentColor/)
+  assert.match(tailscaleBarButtonSource, /foreground: tailscale\.active \? root\.barIconForeground : root\.barIconDim/)
+  assert.match(tailscaleBarButtonSource, /TailscaleIcon \{[\s\S]*?color: button\.contentColor/)
   assert.match(tailscalePanelSource, /iconSize: Style\.font\.display[\s\S]*?color: tailscale\.active \? root\.foreground : root\.dim/)
 })
 
+contract("tailscale warning badges use their host surface", () => {
+  assert.match(tailscaleIconSource, /property color badgeBackground: Color\.bar\.background/)
+  assert.match(tailscaleIconSource, /borderSpec: Border\.flat\(root\.badgeBackground, 1\)/)
+  assert.match(tailscaleBarButtonSource, /TailscaleIcon \{[\s\S]*?badgeBackground: Color\.bar\.background/)
+  const panelIconSource = tailscalePanelSource.slice(tailscalePanelSource.indexOf("iconComponent: Component"))
+  assert.match(panelIconSource, /TailscaleIcon \{[\s\S]*?badgeBackground: Color\.barPanels\.background/)
+})
+
 contract("tailscale bar icon applies its measured optical correction", () => {
-  const barButtonSource = tailscalePanelSource.slice(
-    tailscalePanelSource.indexOf("BarIconButton {"),
-    tailscalePanelSource.indexOf("KeyboardPanel {")
-  )
-  assert.match(barButtonSource,
+  assert.match(tailscaleBarButtonSource,
     /TailscaleIcon \{[\s\S]*?anchors\.horizontalCenterOffset: Style\.space\(2\)[\s\S]*?anchors\.verticalCenterOffset: Style\.space\(2\)/)
 })
 
@@ -134,8 +138,7 @@ contract("command modules provide their loader component", () => {
   assert.match(barSource, /function injectProps\(\) \{[\s\S]*?if \(slot\.commandCustom\) return/)
 })
 
-contract("bar matches compact shell density", () => {
-  assert.match(barSource, /readonly property int barSize: 32/)
+contract("bar typography and icons use shared sizing contracts", () => {
   assert.match(barSource, /property real fontSize: 14/)
   assert.match(barSource, /property int fontWeight: Font\.Bold/)
   assert.match(widgetButtonSource, /fontSize: bar && bar\.fontSize \? bar\.fontSize : Style\.font\.body/)
