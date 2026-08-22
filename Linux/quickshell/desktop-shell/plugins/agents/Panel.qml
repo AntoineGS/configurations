@@ -11,7 +11,8 @@ Panel {
 
   readonly property color foreground: panelForeground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
-  readonly property color dim: panelSecondary
+  readonly property color dim: Qt.darker(foreground, 1.55)
+  readonly property color secondary: panelSecondary
   readonly property color surface: Color.barPanels.background
   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -621,7 +622,7 @@ Panel {
             width: parent.width
             topPadding: Style.space(2)
             text: root.footerText()
-            color: root.dim
+            color: root.secondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             horizontalAlignment: Text.AlignHCenter
@@ -686,7 +687,7 @@ Panel {
         var remainingMs = root.resetMsFor(limitRow.window)
         return remainingMs > 0 ? "Resets in " + root.formatDuration(remainingMs) : ""
       }
-      color: root.dim
+      color: root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }
@@ -736,7 +737,7 @@ Panel {
     Text {
       id: dayLabel
       text: root.dayLabel(dayRow.day ? dayRow.day.date : "", dayRow.today)
-      color: dayRow.today ? root.foreground : root.dim
+      color: dayRow.today ? root.foreground : root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: dayRow.today
@@ -773,7 +774,7 @@ Panel {
     Text {
       id: dayValue
       text: usage.formatTokenCount(dayRow.day ? Number(dayRow.day.messageCount || 0) : 0)
-      color: dayRow.today ? root.foreground : root.dim
+      color: dayRow.today ? root.foreground : root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
@@ -842,7 +843,7 @@ Panel {
     Text {
       id: modelTokens
       text: modelRow.row ? usage.formatTokenCount(modelRow.row.total) : ""
-      color: root.dim
+      color: root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       font.bold: true
