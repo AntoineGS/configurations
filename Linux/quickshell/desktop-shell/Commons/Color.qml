@@ -93,6 +93,7 @@ QtObject {
   readonly property QtObject cards: QtObject {
     property color background: root.composed("cards.background", "cards.background-alpha", root.background, 1.0)
     property color text: root.pick("cards.text", root.foreground)
+    property color secondaryText: root.pick("cards.text-secondary", root.foreground)
     property color border: root.composed("cards.border", "cards.border-alpha", root.accent, 1.0)
   }
   readonly property QtObject popups: QtObject {
@@ -104,6 +105,7 @@ QtObject {
     property color background: root.inheritedComposed("tooltip",
       "cards", "background", "background-alpha", root.background, 1.0)
     property color text: root.inheritedPick("tooltip", "text", "cards", root.foreground)
+    property color secondaryText: root.inheritedPick("tooltip", "text-secondary", "cards", root.foreground)
     property color border: root.inheritedComposed("tooltip",
       "cards", "border", "border-alpha", root.foreground, 1.0)
   }
@@ -111,6 +113,7 @@ QtObject {
     property color background: root.inheritedComposed("bar-panels",
       "cards", "background", "background-alpha", root.background, 1.0)
     property color text: root.inheritedPick("bar-panels", "text", "cards", root.foreground)
+    property color secondaryText: root.inheritedPick("bar-panels", "text-secondary", "cards", root.foreground)
     property color border: root.inheritedComposed("bar-panels",
       "cards", "border", "border-alpha", root.accent, 1.0)
   }
@@ -118,6 +121,7 @@ QtObject {
     property color background: root.inheritedComposed("notifications",
       "cards", "background", "background-alpha", root.background, 1.0)
     property color text: root.inheritedPick("notifications", "text", "cards", root.foreground)
+    property color secondaryText: root.inheritedPick("notifications", "text-secondary", "cards", root.foreground)
     property color border: root.inheritedComposed("notifications",
       "cards", "border", "border-alpha", root.accent, 1.0)
     property color countdown: root.pick("notifications.countdown", root.accent)

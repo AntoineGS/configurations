@@ -56,13 +56,37 @@ function section(name) {
   return next < 0 ? rest : rest.slice(0, next)
 }
 
+function hexToken(body, key) {
+  const match = body.match(new RegExp(`^${key}\\s*=\\s*"(#[0-9a-f]{6})"$`, "im"))
+  assert.ok(match, `${key} must be a six-digit hex color`)
+  return match[1].toLowerCase()
+}
+
+function relativeLuminance(hex) {
+  const channels = hex.slice(1).match(/../g).map(value => parseInt(value, 16) / 255)
+    .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+function contrastRatio(left, right) {
+  const values = [relativeLuminance(left), relativeLuminance(right)].sort((a, b) => b - a)
+  return (values[0] + 0.05) / (values[1] + 0.05)
+}
+
 const cards = section("cards")
-assert.match(cards, /^background\s*=\s*"#52476a"$/m)
+assert.match(cards, /^background\s*=\s*"#403651"$/m)
 assert.match(cards, /^background-alpha\s*=\s*1\.0$/m)
-assert.match(cards, /^text\s*=\s*"#cdd6f4"$/m)
-assert.match(cards, /^border\s*=\s*"#52476a"$/m)
+assert.match(cards, /^text\s*=\s*"#f8f5ff"$/m)
+assert.match(cards, /^text-secondary\s*=\s*"#b8c9ff"$/m)
+assert.match(cards, /^border\s*=\s*"#403651"$/m)
 assert.match(cards, /^border-alpha\s*=\s*1\.0$/m)
 assert.match(cards, /^border-width\s*=\s*2$/m)
+
+const cardBackground = hexToken(cards, "background")
+assert.ok(contrastRatio(cardBackground, hexToken(cards, "text")) >= 4.5,
+  "primary card text meets WCAG AA contrast")
+assert.ok(contrastRatio(cardBackground, hexToken(cards, "text-secondary")) >= 4.5,
+  "secondary card text meets WCAG AA contrast")
 
 const notifications = section("notifications")
 assert.doesNotMatch(notifications, /^(?:background|background-alpha|text|border|border-alpha|border-width)\s*=/m)
@@ -80,8 +104,12 @@ assert.match(color, /inheritedComposed\("notifications",\s*"cards",\s*"backgroun
 assert.match(color, /inheritedPick\("notifications",\s*"text",\s*"cards"/)
 assert.match(color, /inheritedComposed\("tooltip",\s*"cards",\s*"background"/)
 assert.match(color, /inheritedPick\("tooltip",\s*"text",\s*"cards"/)
+assert.match(color, /property color secondaryText:\s*root\.pick\("cards\.text-secondary", root\.foreground\)/)
+assert.match(color, /inheritedPick\("tooltip",\s*"text-secondary",\s*"cards",\s*root\.foreground\)/)
 assert.match(color, /inheritedComposed\("bar-panels",\s*"cards",\s*"background"/)
 assert.match(color, /inheritedPick\("bar-panels",\s*"text",\s*"cards"/)
+assert.match(color, /inheritedPick\("bar-panels",\s*"text-secondary",\s*"cards",\s*root\.foreground\)/)
+assert.match(color, /inheritedPick\("notifications",\s*"text-secondary",\s*"cards",\s*root\.foreground\)/)
 
 assert.match(border, /function surfaceBase\(section\)/)
 assert.match(cardStyleSource, /section === "notifications" \|\| section === "tooltip" \|\| section === "bar-panels"/)
