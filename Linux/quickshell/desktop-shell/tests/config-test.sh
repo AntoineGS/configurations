@@ -61,10 +61,12 @@ const palette = {
   muted: "#7f849c"
 }
 const active = "#f9e2af"
-const notificationPalette = {
+const cardPalette = {
   background: "#52476a",
   text: palette.foreground,
   border: "#52476a",
+}
+const notificationPalette = {
   countdown: palette.foreground,
   low: "#89b4fa",
   critical: palette.urgent,
@@ -102,9 +104,9 @@ const surfaceRoles = {
   "popups.background": palette.background,
   "popups.text": palette.foreground,
   "popups.border": palette.accent,
-  "tooltip.background": palette.background,
-  "tooltip.text": palette.foreground,
-  "tooltip.border": palette.accent,
+  "cards.background": cardPalette.background,
+  "cards.text": cardPalette.text,
+  "cards.border": cardPalette.border,
   "menu.background": palette.background,
   "menu.text": palette.foreground,
   "menu.border": palette.accent,
@@ -112,9 +114,6 @@ const surfaceRoles = {
   "menu.selected-background": palette.muted,
   "menu.selected-text": palette.accent,
   "menu.selected-border": palette.accent,
-  "notifications.background": notificationPalette.background,
-  "notifications.text": notificationPalette.text,
-  "notifications.border": notificationPalette.border,
   "notifications.countdown": notificationPalette.countdown,
   "notifications.low": notificationPalette.low,
   "notifications.critical": notificationPalette.critical,
