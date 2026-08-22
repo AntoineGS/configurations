@@ -62,9 +62,10 @@ const palette = {
 }
 const active = "#f9e2af"
 const cardPalette = {
-  background: "#52476a",
-  text: palette.foreground,
-  border: "#52476a",
+  background: "#403651",
+  text: "#f8f5ff",
+  secondaryText: "#b8c9ff",
+  border: "#403651",
 }
 const notificationPalette = {
   countdown: palette.foreground,
@@ -106,6 +107,7 @@ const surfaceRoles = {
   "popups.border": palette.accent,
   "cards.background": cardPalette.background,
   "cards.text": cardPalette.text,
+  "cards.text-secondary": cardPalette.secondaryText,
   "cards.border": cardPalette.border,
   "menu.background": palette.background,
   "menu.text": palette.foreground,
