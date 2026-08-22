@@ -8,10 +8,11 @@ Text {
   id: root
 
   property color foreground: Color.foreground
+  property color secondaryForeground: Color.barPanels.secondaryText
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.caption
 
-  color: Qt.darker(foreground, 1.4)
+  color: secondaryForeground
   font.family: fontFamily
   font.pixelSize: fontSize
   font.bold: true
