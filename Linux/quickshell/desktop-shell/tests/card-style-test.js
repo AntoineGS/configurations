@@ -28,6 +28,14 @@ const sharedValues = {
 assert.equal(cardStyle.inheritedAlpha(sharedValues, "notifications", "background-alpha", "cards", 0.8), 0.8)
 assert.equal(cardStyle.inheritedAlpha({ "cards.background-alpha": "0.35" }, "notifications", "background-alpha", "cards", 0.8), 0.35)
 assert.equal(cardStyle.inheritedPick({}, "notifications", "background", "cards", "#1e1e2e"), "#1e1e2e")
+assert.equal(cardStyle.inheritedPick({
+  "notifications.text-secondary": "#own",
+  "cards.text-secondary": "#cards",
+}, "notifications", "text-secondary", "cards", "#caller"), "#own")
+assert.equal(cardStyle.inheritedPick({
+  "cards.text-secondary": "#cards",
+}, "notifications", "text-secondary", "cards", "#caller"), "#cards")
+assert.equal(cardStyle.inheritedPick({}, "notifications", "text-secondary", "cards", "#caller"), "#caller")
 assert.equal(cardStyle.surfaceValueOr({
   "cards.selected-border-width": "3",
   "notifications.border-width": "7",
@@ -182,7 +190,22 @@ assert.match(agents, /readonly property color surface:\s*Color\.barPanels\.backg
 assert.match(tailscale, /readonly property color barIconForeground:\s*bar \? bar\.foreground : Color\.foreground/)
 assert.match(tailscale, /foreground:\s*tailscale\.active \? root\.barIconForeground : root\.barIconDim/)
 
-assert.match(agents, /readonly property color dim:\s*panelSecondary/)
+assert.match(agents, /readonly property color dim:\s*Qt\.darker\(foreground, 1\.55\)/)
+assert.match(agents, /readonly property color secondary:\s*panelSecondary/)
+assert.match(agents, /text: "No AI coding subscriptions found\.[\s\S]*?\n\s+color:\s*root\.dim/,
+  "empty Agents state remains dim")
+assert.match(agents, /text: root\.statusText\(root\.provider\)[\s\S]*?\n\s+color:\s*root\.dim/,
+  "Agents status and error content remains dim")
+assert.match(agents, /text: root\.footerText\(\)\s*\n\s+color:\s*root\.secondary/,
+  "Agents footer metadata uses secondary")
+assert.match(agents, /id: resetText[\s\S]*?\n\s+color:\s*root\.secondary/,
+  "limit reset metadata uses secondary")
+assert.match(agents, /text: root\.dayLabel\(dayRow\.day \? dayRow\.day\.date : "", dayRow\.today\)\s*\n\s+color:\s*dayRow\.today \? root\.foreground : root\.secondary/,
+  "non-today history labels use secondary")
+assert.match(agents, /text: usage\.formatTokenCount\(dayRow\.day \? Number\(dayRow\.day\.messageCount \|\| 0\) : 0\)\s*\n\s+color:\s*dayRow\.today \? root\.foreground : root\.secondary/,
+  "non-today history values use secondary")
+assert.match(agents, /id: modelTokens[\s\S]*?\n\s+color:\s*root\.secondary/,
+  "model token totals use secondary")
 
 assert.match(audio, /id:\s*heroIcon[\s\S]*?color:\s*root\.panelSecondary/)
 assert.match(audio, /text:\s*root\.outputVolumeName[\s\S]*?color:\s*root\.panelSecondary/)
