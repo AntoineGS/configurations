@@ -19,7 +19,7 @@ Item {
   // space itself, so callers never do the geometry.
   property Component trailingControl: null
 
-  readonly property color dim: Qt.darker(foreground, 1.4)
+  property color secondaryForeground: Color.barPanels.secondaryText
   readonly property real trailingInset: trailingLoader.item && trailingLoader.item.visible ? trailingLoader.width + Style.space(12) : 0
 
   width: parent ? parent.width : implicitWidth
@@ -77,7 +77,7 @@ Item {
           id: detailText
           anchors.centerIn: parent
           text: root.detail
-          color: root.dim
+          color: root.secondaryForeground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
           font.bold: true
@@ -90,7 +90,7 @@ Item {
       width: parent.width
       text: root.meta.toUpperCase()
       visible: text !== ""
-      color: root.dim
+      color: root.secondaryForeground
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true

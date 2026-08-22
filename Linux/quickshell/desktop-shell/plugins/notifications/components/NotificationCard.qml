@@ -26,7 +26,7 @@ BorderSurface {
   readonly property string sanitizedBody: sanitizeBody(body)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
   readonly property color dimColor: Qt.darker(Color.notifications.text, 1.4)
-  readonly property color bodyColor: Qt.darker(Color.notifications.text, 1.15)
+  readonly property color bodyColor: Color.notifications.secondaryText
   readonly property bool urgencyBadgeVisible: urgency === 0 || urgency === 2
   readonly property string urgencyBadgeGlyph: urgency === 2 ? "!" : "i"
   readonly property color urgencyBadgeColor: urgency === 2
