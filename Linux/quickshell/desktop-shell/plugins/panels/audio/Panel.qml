@@ -289,7 +289,7 @@ Panel {
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
               text: root.icon
-              color: root.foreground
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
               opacity: root.outputMuted ? 0.5 : 1.0
@@ -330,7 +330,7 @@ Panel {
               }
               Text {
                 text: root.outputVolumeName(root.outputVolume, root.outputMuted).toUpperCase()
-                color: Qt.darker(root.foreground, 1.4)
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
@@ -359,7 +359,7 @@ Panel {
                 id: outputPercent
                 anchors.right: parent.right
                 text: Math.round(root.outputVolume * 100) + "%"
-                color: Qt.darker(root.foreground, 1.4)
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
@@ -499,7 +499,7 @@ Panel {
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       text: inputNode ? root.sourceGlyph(node) : root.sinkGlyph(node)
-      color: root.foreground
+      color: root.panelSecondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.title
     }
@@ -560,7 +560,7 @@ Panel {
         Text {
           id: streamPercent
           text: Math.round(streamRow.volume * 100) + "%"
-          color: Qt.darker(root.foreground, 1.4)
+          color: root.panelSecondary
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
         }

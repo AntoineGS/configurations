@@ -315,7 +315,7 @@ Panel {
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
               text: root.icon
-              color: root.foreground
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
             }
@@ -341,7 +341,7 @@ Panel {
                 text: root.kind === "wifi"
                   ? Math.round(root.signalStrength) + "% SIGNAL"
                   : (root.kind === "disconnected" ? "NOT CONNECTED" : "WIRED")
-                color: Qt.darker(root.foreground, 1.4)
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
@@ -470,7 +470,7 @@ Panel {
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       text: Model.wifiIconFor(rowData ? rowData.signal : 0)
-      color: root.foreground
+      color: root.panelSecondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.title
     }
@@ -492,7 +492,7 @@ Panel {
       anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       text: rowData && rowData.connected ? "CONNECTED" : (rowData ? rowData.signal + "%" : "")
-      color: Qt.darker(root.foreground, 1.4)
+      color: root.panelSecondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }

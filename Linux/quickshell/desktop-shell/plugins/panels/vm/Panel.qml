@@ -257,7 +257,7 @@ Panel {
             iconComponent: Component {
               Text {
                 text: ""
-                color: root.foreground
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
               }
@@ -297,7 +297,7 @@ Panel {
 
                 Text {
                   text: "MEMORY"
-                  color: Qt.darker(root.foreground, 1.4)
+                  color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   font.bold: true
@@ -312,7 +312,7 @@ Panel {
                 }
                 Text {
                   text: Model.formatGiB(root.vmState.usedKiB) + " / " + Model.formatGiB(root.vmState.currentKiB)
-                  color: Qt.darker(root.foreground, 1.4)
+                  color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
@@ -336,7 +336,7 @@ Panel {
 
                 Text {
                   text: "CPU"
-                  color: Qt.darker(root.foreground, 1.4)
+                  color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   font.bold: true
@@ -351,7 +351,7 @@ Panel {
                 }
                 Text {
                   text: root.vmState.vcpus + " VCPUS"
-                  color: Qt.darker(root.foreground, 1.4)
+                  color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
@@ -410,7 +410,7 @@ Panel {
               id: minimumLabel
               anchors.left: parent.left
               text: Model.minimumGiB() + " GiB"
-              color: Qt.darker(root.foreground, 1.4)
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
@@ -418,7 +418,7 @@ Panel {
               id: maximumLabel
               anchors.right: parent.right
               text: Model.maximumGiB(root.vmState) + " GiB"
-              color: Qt.darker(root.foreground, 1.4)
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
@@ -427,7 +427,7 @@ Panel {
           Text {
             width: parent.width
             text: "LIVE + NEXT BOOT"
-            color: Qt.darker(root.foreground, 1.4)
+            color: root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.bold: true
@@ -438,7 +438,7 @@ Panel {
             width: parent.width
             visible: root.resizePending || root.actionError !== ""
             text: root.resizePending ? "Updating memory..." : root.actionError
-            color: root.actionError !== "" ? Color.urgent : Qt.darker(root.foreground, 1.4)
+            color: root.actionError !== "" ? Color.urgent : root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
