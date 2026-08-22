@@ -40,6 +40,20 @@ QtObject {
     return Util.clampAlpha(n)
   }
 
+  function inheritedPick(section, key, baseSection, fallback) {
+    return pick(section + "." + key, pick(baseSection + "." + key, fallback))
+  }
+
+  function inheritedAlpha(section, key, baseSection, fallback) {
+    return pickAlpha(section + "." + key, pickAlpha(baseSection + "." + key, fallback))
+  }
+
+  function inheritedComposed(section, baseSection, colorKey, alphaKey, colorFallback, alphaFallback) {
+    return Util.alpha(
+      flatColor(inheritedPick(section, colorKey, baseSection, colorFallback), colorFallback),
+      inheritedAlpha(section, alphaKey, baseSection, alphaFallback))
+  }
+
   function firstColorToken(value) {
     var parts = String(value || "").replace(/^\s+|\s+$/g, "").split(/\s+/)
     for (var i = 0; i < parts.length; i++) {
@@ -75,20 +89,36 @@ QtObject {
     property color text: root.pick("bar.text", root.foreground)
     property color active: root.pick("bar.active", root.urgent)
   }
+  readonly property QtObject cards: QtObject {
+    property color background: root.composed("cards.background", "cards.background-alpha", root.background, 1.0)
+    property color text: root.pick("cards.text", root.foreground)
+    property color border: root.composed("cards.border", "cards.border-alpha", root.accent, 1.0)
+  }
   readonly property QtObject popups: QtObject {
     property color background: root.composed("popups.background", "popups.background-alpha", root.background, 1.0)
     property color text: root.pick("popups.text", root.foreground)
     property color border: root.composed("popups.border", "popups.border-alpha", root.accent, 1.0)
   }
   readonly property QtObject tooltip: QtObject {
-    property color background: root.composed("tooltip.background", "tooltip.background-alpha", root.background, 1.0)
-    property color text: root.pick("tooltip.text", root.foreground)
-    property color border: root.composed("tooltip.border", "tooltip.border-alpha", root.foreground, 1.0)
+    property color background: root.inheritedComposed("tooltip",
+      "cards", "background", "background-alpha", root.background, 1.0)
+    property color text: root.inheritedPick("tooltip", "text", "cards", root.foreground)
+    property color border: root.inheritedComposed("tooltip",
+      "cards", "border", "border-alpha", root.foreground, 1.0)
+  }
+  readonly property QtObject barPanels: QtObject {
+    property color background: root.inheritedComposed("bar-panels",
+      "cards", "background", "background-alpha", root.background, 1.0)
+    property color text: root.inheritedPick("bar-panels", "text", "cards", root.foreground)
+    property color border: root.inheritedComposed("bar-panels",
+      "cards", "border", "border-alpha", root.accent, 1.0)
   }
   readonly property QtObject notifications: QtObject {
-    property color background: root.composed("notifications.background", "notifications.background-alpha", root.background, 1.0)
-    property color text: root.pick("notifications.text", root.foreground)
-    property color border: root.composed("notifications.border", "notifications.border-alpha", root.accent, 1.0)
+    property color background: root.inheritedComposed("notifications",
+      "cards", "background", "background-alpha", root.background, 1.0)
+    property color text: root.inheritedPick("notifications", "text", "cards", root.foreground)
+    property color border: root.inheritedComposed("notifications",
+      "cards", "border", "border-alpha", root.accent, 1.0)
     property color countdown: root.pick("notifications.countdown", root.accent)
     property color low: root.pick("notifications.low", "#89b4fa")
     property color critical: root.pick("notifications.critical", root.urgent)

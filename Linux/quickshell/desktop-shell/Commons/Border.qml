@@ -34,6 +34,32 @@ QtObject {
     return ""
   }
 
+  function surfaceBase(section) {
+    if (section === "notifications" || section === "tooltip" || section === "bar-panels") return "cards"
+    return ""
+  }
+
+  function surfaceValue(section, key) {
+    var own = value(section, key)
+    if (String(own).length > 0) return own
+    var base = surfaceBase(section)
+    return base.length > 0 ? value(base, key) : ""
+  }
+
+  function surfaceValueOr(section, keys) {
+    var own = valueOr(section, keys)
+    if (String(own).length > 0) return own
+    var base = surfaceBase(section)
+    return base.length > 0 ? valueOr(base, keys) : ""
+  }
+
+  function surfaceAlpha(section, key, fallback) {
+    var raw = surfaceValue(section, key)
+    if (String(raw).length === 0) return fallback
+    var n = Number(raw)
+    return isFinite(n) ? Geometry.clampAlpha(n) : fallback
+  }
+
   function resolveValueRef(raw) {
     var s = String(raw || "").replace(/^\s+|\s+$/g, "")
     var seen = {}
@@ -108,14 +134,14 @@ QtObject {
   }
 
   function surfaceWidths(section, token, fallbackWidth) {
-    var base = valueOr(section, token === "border" ? ["border-width"] : [token + "-width", "border-width"])
+    var base = surfaceValueOr(section, token === "border" ? ["border-width"] : [token + "-width", "border-width"])
     var widths = Geometry.parseWidthSpec(base, fallbackWidth)
     return Geometry.withSideOverrides(
       widths,
-      valueOr(section, token === "border" ? ["border-width-top"] : [token + "-width-top", "border-width-top"]),
-      valueOr(section, token === "border" ? ["border-width-right"] : [token + "-width-right", "border-width-right"]),
-      valueOr(section, token === "border" ? ["border-width-bottom"] : [token + "-width-bottom", "border-width-bottom"]),
-      valueOr(section, token === "border" ? ["border-width-left"] : [token + "-width-left", "border-width-left"])
+      surfaceValueOr(section, token === "border" ? ["border-width-top"] : [token + "-width-top", "border-width-top"]),
+      surfaceValueOr(section, token === "border" ? ["border-width-right"] : [token + "-width-right", "border-width-right"]),
+      surfaceValueOr(section, token === "border" ? ["border-width-bottom"] : [token + "-width-bottom", "border-width-bottom"]),
+      surfaceValueOr(section, token === "border" ? ["border-width-left"] : [token + "-width-left", "border-width-left"])
     )
   }
 
@@ -138,9 +164,9 @@ QtObject {
   }
 
   function surfaceSpec(section, token, fallbackColor, fallbackWidth, alphaKey) {
-    var opacity = alpha(section, alphaKey || token + "-alpha", 1.0)
-    var legacyGradientRaw = valueOr(section, token === "border" ? ["border-gradient"] : [token + "-gradient", "border-gradient"])
-    var resolved = borderValue(resolveValueRef(value(section, token)), fallbackColor, opacity, legacyGradientRaw)
+    var opacity = surfaceAlpha(section, alphaKey || token + "-alpha", 1.0)
+    var legacyGradientRaw = surfaceValueOr(section, token === "border" ? ["border-gradient"] : [token + "-gradient", "border-gradient"])
+    var resolved = borderValue(resolveValueRef(surfaceValue(section, token)), fallbackColor, opacity, legacyGradientRaw)
 
     return {
       color: resolved.color,
@@ -157,8 +183,8 @@ QtObject {
     // border under [notifications]. Use it as the compatibility source until
     // the next theme refresh writes the shared token.
     if (String(raw).length === 0) {
-      raw = value("notifications", "border")
-      opacity = alpha("notifications", "border-alpha", opacity)
+      raw = surfaceValue("notifications", "border")
+      opacity = surfaceAlpha("notifications", "border-alpha", opacity)
     }
 
     var resolved = borderValue(resolveValueRef(raw), fallbackColor, opacity, "")
