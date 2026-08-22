@@ -174,7 +174,7 @@ Panel {
             Text {
               width: parent.width
               text: tailscale.selfAddresses.length > 0 ? tailscale.selfAddresses.join(" · ") : "No Tailscale address"
-                      color: root.panelSecondary
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               elide: Text.ElideRight
@@ -226,7 +226,7 @@ Panel {
 
                   Text {
                     text: Model.osIcon(modelData.os)
-                    color: root.foreground
+                    color: root.panelSecondary
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.icon
                     anchors.verticalCenter: parent.verticalCenter
