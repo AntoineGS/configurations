@@ -180,7 +180,7 @@ Panel {
             iconComponent: Component {
               Text {
                 text: Model.displayIcon(root.displays.length)
-                color: root.foreground
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
               }
@@ -222,7 +222,7 @@ Panel {
             width: parent.width
             visible: root.brightness.available
             text: root.brightnessPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
-            color: root.foreground
+            color: root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
           }
@@ -257,7 +257,7 @@ Panel {
               }
               Text {
                 text: root.keyboardBrightness.percent + "%"
-                color: root.foreground
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 anchors.verticalCenter: parent.verticalCenter
@@ -301,7 +301,7 @@ Panel {
                 Text {
                   id: scaleLabel
                   text: (modelData.scale || 1) + "x"
-                  color: Qt.darker(root.foreground, 1.4)
+                  color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   anchors.verticalCenter: parent.verticalCenter

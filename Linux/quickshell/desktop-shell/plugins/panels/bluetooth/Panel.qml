@@ -353,7 +353,7 @@ Panel {
               anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
               text: root.icon
-              color: root.foreground
+              color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
               opacity: root.adapter && root.adapter.enabled ? 1.0 : 0.5
@@ -391,7 +391,7 @@ Panel {
               }
               Text {
                 text: root.heroStatus.toUpperCase()
-                color: Qt.darker(root.foreground, 1.4)
+                color: root.panelSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
@@ -480,7 +480,7 @@ Panel {
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       text: deviceRow.connected ? "󰂱" : "󰂯"
-      color: root.foreground
+      color: root.panelSecondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.title
     }
@@ -503,7 +503,7 @@ Panel {
         visible: deviceRow.statusText !== ""
         text: deviceRow.statusText
         textFormat: Text.RichText
-        color: Qt.darker(root.foreground, 1.4)
+        color: root.panelSecondary
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         elide: Text.ElideRight

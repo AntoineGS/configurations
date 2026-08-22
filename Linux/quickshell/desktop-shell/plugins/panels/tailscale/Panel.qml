@@ -137,7 +137,7 @@ Panel {
             iconComponent: Component {
               TailscaleIcon {
                 iconSize: Style.font.display
-                color: tailscale.active ? root.foreground : root.dim
+                color: tailscale.active ? root.panelSecondary : root.dim
                 badgeBackground: Color.barPanels.background
                 crossed: !tailscale.active
                 warning: tailscale.needsLogin
@@ -157,7 +157,7 @@ Panel {
             visible: tailscale.actionStatus !== "" || tailscale.lastError !== ""
             width: parent.width
             text: tailscale.actionStatus !== "" ? tailscale.actionStatus : tailscale.lastError
-            color: tailscale.lastError !== "" && tailscale.actionStatus === "" ? root.urgent : root.dim
+            color: tailscale.lastError !== "" && tailscale.actionStatus === "" ? root.urgent : root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
@@ -174,7 +174,7 @@ Panel {
             Text {
               width: parent.width
               text: tailscale.selfAddresses.length > 0 ? tailscale.selfAddresses.join(" · ") : "No Tailscale address"
-              color: root.foreground
+                      color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               elide: Text.ElideRight
@@ -245,7 +245,7 @@ Panel {
                     Text {
                       width: parent.width
                       text: Model.peerAddress(modelData) + (modelData.exitNode ? " · EXIT NODE" : "")
-                      color: root.dim
+                      color: root.panelSecondary
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                       elide: Text.ElideRight
