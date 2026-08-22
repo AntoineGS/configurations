@@ -59,8 +59,11 @@ assert.match(panel, /text: deviceRow\.statusText/, "popup does not render the co
 assert.match(panel, /readonly property string statusText: \{[\s\S]*rowData\.batteryStatus/,
   "popup status does not use merged battery values")
 assert.match(panel, /textFormat: Text\.RichText/, "popup cannot color individual low values")
-assert.match(panel, /color: Qt\.darker\(root\.foreground, 1\.4\)/,
-  "healthy popup details lost their dimmed styling")
+const statusTextStart = panel.indexOf("text: deviceRow.statusText")
+const statusTextEnd = panel.indexOf("font.family", statusTextStart)
+assert.ok(statusTextStart >= 0 && statusTextEnd > statusTextStart, "popup status text block exists")
+assert.match(panel.slice(statusTextStart, statusTextEnd), /color: root\.panelSecondary/,
+  "healthy popup details do not use semantic secondary styling")
 assert.match(panel, /active: root\.lowBattery/, "bar icon has no low-battery state")
 assert.match(panel, /activeColor: root\.warningColor/, "bar icon does not use Peach")
 

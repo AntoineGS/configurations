@@ -107,7 +107,7 @@ contract("custom glyph colors animate smoothly", () => {
 contract("tailscale bar icon preserves idle dim and uses button content color", () => {
   assert.match(tailscaleBarButtonSource, /foreground: tailscale\.active \? root\.barIconForeground : root\.barIconDim/)
   assert.match(tailscaleBarButtonSource, /TailscaleIcon \{[\s\S]*?color: button\.contentColor/)
-  assert.match(tailscalePanelSource, /iconSize: Style\.font\.display[\s\S]*?color: tailscale\.active \? root\.foreground : root\.dim/)
+  assert.match(tailscalePanelSource, /iconSize: Style\.font\.display[\s\S]*?color: tailscale\.active \? root\.panelSecondary : root\.dim/)
 })
 
 contract("tailscale warning badges use their host surface", () => {
