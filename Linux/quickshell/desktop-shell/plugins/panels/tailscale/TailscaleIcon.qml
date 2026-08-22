@@ -8,6 +8,7 @@ Item {
   property real iconSize: Style.font.icon
   property color color: Color.foreground
   property color badgeColor: Color.urgent
+  property color badgeBackground: Color.bar.background
   property bool crossed: false
   property bool warning: false
 
@@ -52,7 +53,7 @@ Item {
     color: root.badgeColor
     anchors.right: parent.right
     anchors.bottom: parent.bottom
-    borderSpec: Border.flat(Color.popups.background, 1)
+    borderSpec: Border.flat(root.badgeBackground, 1)
 
     Text {
       anchors.centerIn: parent

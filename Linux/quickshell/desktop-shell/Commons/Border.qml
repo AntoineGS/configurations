@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import "BorderGeometry.js" as Geometry
+import "CardStyle.js" as CardStyle
 
 // Central border-spec factory for shell surfaces and controls. A spec carries
 // color, optional gradient, and top/right/bottom/left widths so renderers can
@@ -35,29 +36,19 @@ QtObject {
   }
 
   function surfaceBase(section) {
-    if (section === "notifications" || section === "tooltip" || section === "bar-panels") return "cards"
-    return ""
+    return CardStyle.surfaceBase(section)
   }
 
   function surfaceValue(section, key) {
-    var own = value(section, key)
-    if (String(own).length > 0) return own
-    var base = surfaceBase(section)
-    return base.length > 0 ? value(base, key) : ""
+    return CardStyle.surfaceValue(Color.shellValues, section, key)
   }
 
   function surfaceValueOr(section, keys) {
-    var own = valueOr(section, keys)
-    if (String(own).length > 0) return own
-    var base = surfaceBase(section)
-    return base.length > 0 ? valueOr(base, keys) : ""
+    return CardStyle.surfaceValueOr(Color.shellValues, section, keys)
   }
 
   function surfaceAlpha(section, key, fallback) {
-    var raw = surfaceValue(section, key)
-    if (String(raw).length === 0) return fallback
-    var n = Number(raw)
-    return isFinite(n) ? Geometry.clampAlpha(n) : fallback
+    return CardStyle.surfaceAlpha(Color.shellValues, section, key, fallback)
   }
 
   function resolveValueRef(raw) {

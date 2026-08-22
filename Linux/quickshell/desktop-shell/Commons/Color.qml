@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "BorderGeometry.js" as Geometry
+import "CardStyle.js" as CardStyle
 
 // Color surfaces for the shell. Foundational palette (foreground, background,
 // accent, urgent) comes from theme/colors.toml. Per-surface roles come from
@@ -41,11 +42,11 @@ QtObject {
   }
 
   function inheritedPick(section, key, baseSection, fallback) {
-    return pick(section + "." + key, pick(baseSection + "." + key, fallback))
+    return CardStyle.inheritedPick(root.shellValues, section, key, baseSection, fallback)
   }
 
   function inheritedAlpha(section, key, baseSection, fallback) {
-    return pickAlpha(section + "." + key, pickAlpha(baseSection + "." + key, fallback))
+    return CardStyle.inheritedAlpha(root.shellValues, section, key, baseSection, fallback)
   }
 
   function inheritedComposed(section, baseSection, colorKey, alphaKey, colorFallback, alphaFallback) {
