@@ -204,6 +204,12 @@ assert.match(clockPanel, /text:\s*root\.weekdayLabel[\s\S]*?color:\s*root\.conte
 assert.match(clockPanel, /text:\s*modelData\.week[\s\S]*?color:\s*root\.contentSecondary/)
 assert.match(clockPanel, /modelData\.weekend \? root\.contentSecondary : root\.contentForeground/)
 assert.match(clockPanel, /id:\s*monthLabel[\s\S]*?color:\s*root\.contentSecondary/)
+const weekStartTextStart = clockPanel.indexOf('text: "W"')
+const weekStartTextEnd = clockPanel.indexOf("font.family", weekStartTextStart)
+assert.ok(weekStartTextStart >= 0 && weekStartTextEnd > weekStartTextStart, "week-start control block exists")
+assert.match(clockPanel.slice(weekStartTextStart, weekStartTextEnd),
+  /color:\s*weekStartMouse\.containsMouse\s*\?\s*Style\.hoverStateColor\(root\.contentForeground, Color\.accent\)\s*:\s*Qt\.darker\(root\.contentForeground, 1\.9\)/,
+  "week-start control preserves its idle dim and hover logic")
 assert.match(clockPanel, /modelData\.inMonth[\s\S]*?Qt\.darker\(root\.contentForeground, 2\.2\)/,
   "out-of-month dates retain unavailable-state dimming")
 
@@ -220,7 +226,11 @@ assert.match(network, /text:\s*root\.wifiDevice \? "Scanning for networks\.\.\."
 
 assert.match(tailscale, /tailscale\.active \? root\.panelSecondary : root\.dim/)
 assert.match(tailscale, /tailscale\.lastError[^\n]*\? root\.urgent : root\.panelSecondary/)
-assert.match(tailscale, /Model\.osIcon[\s\S]*?color:\s*root\.panelSecondary/)
+const peerGlyphStart = tailscale.indexOf("text: Model.osIcon(modelData.os)")
+const peerGlyphEnd = tailscale.indexOf("font.family", peerGlyphStart)
+assert.ok(peerGlyphStart >= 0 && peerGlyphEnd > peerGlyphStart, "Tailscale peer glyph block exists")
+assert.match(tailscale.slice(peerGlyphStart, peerGlyphEnd), /color:\s*root\.panelSecondary/,
+  "Tailscale peer glyph uses semantic secondary styling")
 assert.match(tailscale, /Model\.peerAddress[\s\S]*?color:\s*root\.panelSecondary/)
 assert.match(tailscale, /text:\s*"No peers found on this tailnet"[\s\S]*?color:\s*root\.dim/)
 
