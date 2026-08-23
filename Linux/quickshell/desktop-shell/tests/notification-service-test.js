@@ -121,7 +121,7 @@ for (const fileViewId of ["routeFile", "leaseFile"]) {
     `${fileViewId} is a change watcher and cannot associate asynchronous text with a revision`)
 }
 assert.match(runtimeTest,
-  /refreshed_at_ms=\$\(date \+%s%3N\)[\s\S]*write_lease_payload "\$refreshed_at_ms" "\$\(\(refreshed_at_ms \+ 1500\)\)" "\$updated_at"/,
+  /route_lease_max_age_ms=5000[\s\S]*refreshed_at_ms=\$\(date \+%s%3N\)[\s\S]*write_lease_payload "\$refreshed_at_ms" "\$\(\(refreshed_at_ms \+ route_lease_max_age_ms\)\)" "\$updated_at"/,
   "route-pair fixtures derive both millisecond lease endpoints from one timestamp")
 assert.doesNotMatch(runtimeTest, /write_lease_payload "\$\(date \+%s%3N\)"/,
   "route-pair fixtures do not sample the lease endpoints independently")
@@ -209,11 +209,22 @@ assert.match(cueVisibleBody, /service\.routeVisible/)
 assert.match(cueVisibleBody, /cueOutput !== null[\s\S]*screenName\(screen\)/)
 assert.match(cueVisibleBody, /popupModel\.count > 0/)
 assert.doesNotMatch(cueVisibleBody, /direction !== null/)
-assert.match(service, /readonly property int placementInset:\s*Style\.space\(6\)/)
+assert.match(service, /readonly property int placementInset:\s*Style\.space\(56\)/)
 assert.equal((service.match(/\+ popupWindow\.placementInset/g) || []).length, 4,
   "notification cards and cue share the down-left placement inset")
 assert.match(service, /id:\s*cueSurface[\s\S]*implicitWidth:\s*Style\.space\(250\)/)
 assert.match(service, /id:\s*cueSurface[\s\S]*implicitHeight:\s*Style\.space\(48\)/)
+assert.match(service, /ElevatedSurface\s*\{[\s\S]*?id:\s*cueSurface/)
+assert.match(service, /id:\s*cueSurface[\s\S]*radius:\s*0/)
+assert.match(service, /id:\s*cueSurface[\s\S]*borderSpec:\s*Border\.none\(\)/)
+assert.match(service, /id:\s*cueSurface[\s\S]*concealedScale:\s*1\.0/)
+assert.match(service, /id:\s*cueSurface[\s\S]*motionDuration:\s*160/)
+assert.match(service, /id:\s*cueSurface[\s\S]*entranceX:\s*Style\.space\(12\)/)
+assert.match(service, /id:\s*cueSurface[\s\S]*shadowBlurMax:\s*48/)
+assert.match(service, /id:\s*cueSurface[\s\S]*shadowOpacityAmount:\s*0\.78/)
+assert.match(service, /id:\s*cueSurface[\s\S]*shadowOffsetY:\s*14/)
+assert.match(service, /id:\s*cueSurface[\s\S]*shadowScaleAmount:\s*1\.03/)
+assert.match(service, /id:\s*cueSurface[\s\S]*effectPaddingRect:\s*Qt\.rect\(-8, -8, 16, 30\)/)
 assert.match(service, /id:\s*cueLabel[\s\S]*font\.pixelSize:\s*Style\.font\.display/)
 assert.match(service, /text:\s*NotificationLogic\.cueGlyph\(service\.route\.direction\)/)
 
@@ -364,17 +375,23 @@ assert.match(service, /routeTransitionLog:\s*service\.routeTransitionLog/)
 assert.match(shell, /notificationRouteMetadataAttemptCount:\s*notificationService\s*\?\s*notificationService\.routeMetadataAttemptCount/,
   "shell health exposes notification metadata attempts")
 
-assert.match(card, /^BorderSurface\s*\{/m)
+assert.match(card, /^ElevatedSurface\s*\{/m)
 assert.match(card, /Color\.notifications\.[A-Za-z]+/)
 assert.match(card, /Style\.(?:space|font)\b/)
 assert.match(card, /\bradius\s*:/)
 assert.match(card, /\bimplicitWidth\s*:/)
-assert.match(card, /readonly property bool urgencyBadgeVisible:\s*urgency === 0 \|\| urgency === 2/)
-assert.match(card, /readonly property string urgencyBadgeGlyph:\s*urgency === 2 \? "!" : "i"/)
-assert.match(card, /readonly property color urgencyBadgeColor:\s*urgency === 2[\s\S]*Color\.notifications\.critical[\s\S]*Color\.notifications\.low/)
-assert.match(card, /visible:\s*root\.summary\.length > 0 \|\| root\.urgencyBadgeVisible/)
-assert.match(card, /color:\s*root\.urgencyBadgeColor/)
-assert.match(card, /text:\s*root\.urgencyBadgeGlyph/)
+assert.match(card, /readonly property color surfaceColor:\s*urgency === 0/)
+assert.match(card, /readonly property string urgencyLabel:/)
+assert.match(card, /readonly property string sourceLabel:/)
+assert.match(card, /readonly property string timeLabel:/)
+assert.match(card, /id:\s*metadataRule/)
+assert.match(card, /id:\s*actionRule/)
+assert.match(card, /onClicked:\s*root\.actionClicked\(String\(modelData\.identifier \|\| ""\)\)/)
+assert.match(card, /Flow\s*\{[\s\S]*maximumWidth:\s*Style\.space\(140\)/)
+assert.match(card, /Quickshell\.iconPath\(value, true\)/,
+  "notification card resolves normalized theme icon names")
+assert.doesNotMatch(card, /urgencyBadge/)
+assert.doesNotMatch(card, /smallIconSlot/)
 assert.doesNotMatch(card, /#[0-9A-Fa-f]{3,8}\b/)
 assert.doesNotMatch(card, /\b(?:color|border\.color)\s*:\s*["']/)
 

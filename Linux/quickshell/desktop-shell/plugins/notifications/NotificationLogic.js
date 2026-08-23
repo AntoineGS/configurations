@@ -12,6 +12,8 @@ var NOTIFICATION_LIMITS = {
   maxPersistenceJobs: 100,
 }
 
+var MAX_ROUTE_LEASE_MS = 5000
+
 function limits() {
   var result = {}
   for (var key in NOTIFICATION_LIMITS) result[key] = NOTIFICATION_LIMITS[key]
@@ -349,7 +351,7 @@ function normalizeLease(raw, nowMs, expectedRouteUpdatedAt) {
   if (refreshedAtMs > nowMs) return invalidLease("lease refreshedAtMs is from the future")
   if (expiresAtMs <= nowMs) return invalidLease("lease is stale")
   if (expiresAtMs < refreshedAtMs) return invalidLease("lease lifetime is invalid")
-  if (expiresAtMs - refreshedAtMs > 1500) return invalidLease("lease lifetime is too long")
+  if (expiresAtMs - refreshedAtMs > MAX_ROUTE_LEASE_MS) return invalidLease("lease lifetime is too long")
 
   if (typeof expectedRouteUpdatedAt !== "number" || !isFinite(expectedRouteUpdatedAt) ||
       Math.floor(expectedRouteUpdatedAt) !== expectedRouteUpdatedAt || expectedRouteUpdatedAt < 0)

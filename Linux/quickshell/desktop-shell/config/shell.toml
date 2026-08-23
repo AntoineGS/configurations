@@ -15,11 +15,11 @@ hover-cursor-color = "accent"
 # Shared notification, Bar hint, and Bar panel chrome. Add a token to the
 # corresponding surface section only when that surface should diverge.
 [cards]
-background = "#403651"
+background = "#303143"
 background-alpha = 1.0
 text = "#f8f5ff"
 text-secondary = "#b8c9ff"
-border = "#403651"
+border = "#303143"
 border-alpha = 1.0
 border-width = 2
 
@@ -45,8 +45,15 @@ selected-border = "#cba6f7"
 selected-border-alpha = 0.25
 
 [notifications]
-countdown = "#cdd6f4"
-low = "#89b4fa"
+background = "#b4befe"
+background-alpha = 1.0
+text = "#11111b"
+text-secondary = "#11111b"
+border = "transparent"
+border-alpha = 0.0
+border-width = 0
+countdown = "#11111b"
+low = "#89dceb"
 critical = "#f38ba8"
 
 [polkit]

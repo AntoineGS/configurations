@@ -17,25 +17,25 @@ assert.deepEqual(logic.normalizeRoute(fresh, 1786930040000), {
 const freshLease = JSON.stringify({
   version: 2,
   refreshedAtMs: 1786930000000,
-  expiresAtMs: 1786930001500,
+  expiresAtMs: 1786930005000,
   routeUpdatedAt: 1786930000,
 })
 assert.deepEqual(logic.normalizeLease(freshLease, 1786930000000, 1786930000), {
   valid: true,
   refreshedAtMs: 1786930000000,
-  expiresAtMs: 1786930001500,
+  expiresAtMs: 1786930005000,
   routeUpdatedAt: 1786930000,
   error: "",
 })
 assert.deepEqual(logic.normalizeLease(freshLease, 1786930001000, 1786930000), {
   valid: true,
   refreshedAtMs: 1786930000000,
-  expiresAtMs: 1786930001500,
+  expiresAtMs: 1786930005000,
   routeUpdatedAt: 1786930000,
   error: "",
 })
 assert.equal(logic.normalizeLease("", 1786930001000, 1786930000).valid, false)
-assert.match(logic.normalizeLease(freshLease, 1786930001500, 1786930000).error, /stale/)
+assert.match(logic.normalizeLease(freshLease, 1786930005000, 1786930000).error, /stale/)
 assert.match(logic.normalizeLease(freshLease, 1786930001000, 1786930001).error, /route timestamp/)
 assert.match(logic.normalizeLease(freshLease, 1786930001000, "1786930000").error, /expected route timestamp/)
 assert.match(logic.normalizeLease(JSON.stringify({
@@ -47,7 +47,7 @@ assert.match(logic.normalizeLease(JSON.stringify({
 for (const raw of [
   "{",
   JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930001, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930003000, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930005001, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: 1786930001501, expiresAtMs: 1786930003001, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: 1786930000000.5, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: -1, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),

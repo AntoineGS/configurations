@@ -141,6 +141,7 @@ home="$fixture/home"
 route_dir="$runtime_dir/desktop-shell"
 route_path="$route_dir/notification-route.json"
 lease_path="$route_dir/notification-route-lease.json"
+route_lease_max_age_ms=5000
 popup_dir="$state_home/desktop-shell/notifications"
 history_dir="$popup_dir/history"
 fixture_wayland_display="$wayland_display"
@@ -262,7 +263,7 @@ write_route_pair() {
   write_route_payload "$payload"
   updated_at=$(jq -er '.updatedAt' <<<"$payload") || return 1
   refreshed_at_ms=$(date +%s%3N)
-  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + 1500))" "$updated_at"
+  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + route_lease_max_age_ms))" "$updated_at"
 }
 
 refresh_route_lease() {
@@ -270,7 +271,7 @@ refresh_route_lease() {
   local refreshed_at_ms
   updated_at=$(jq -er '.updatedAt' "$route_path") || return 0
   refreshed_at_ms=$(date +%s%3N)
-  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + 1500))" "$updated_at"
+  write_lease_payload "$refreshed_at_ms" "$((refreshed_at_ms + route_lease_max_age_ms))" "$updated_at"
 }
 
 start_watcher_publisher() {
@@ -428,7 +429,9 @@ assert_metadata_failure_bounded() {
     }
     jq -e --argjson refreshed "$expected_refreshed" --argjson expires "$expected_expires" \
       '.routeValid == true and .routeAcceptedRefreshedAtMs == $refreshed and
-       .routeAcceptedExpiresAtMs == $expires and .routeCandidatePending == true' \
+       .routeAcceptedExpiresAtMs == $expires and
+       (.routeCandidatePending == true or .routeCandidateMetadataPending == true or
+        .routeMetadataRunning == true)' \
       <<<"$status_json" >/dev/null || {
       printf 'FAIL: accepted route changed during %s metadata hold: %s\n' "$label" "$status_json" >&2
       exit 1
@@ -798,7 +801,7 @@ write_lease_payload "$((route_now_ms - 3000))" "$((route_now_ms - 1000))" "$rout
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
-write_lease_payload "$route_now_ms" "$((route_now_ms + 1500))" "$((route_now + 1))"
+write_lease_payload "$route_now_ms" "$((route_now_ms + route_lease_max_age_ms))" "$((route_now + 1))"
 wait_for_status '.routeValid == false and .routeVisible == false'
 wait_for_ipc pong desktop.notifications ping
 
@@ -811,6 +814,9 @@ wait_for_health '.notificationsOwned == true and .notificationRouteValid == true
 # loop; the next valid publication must prove event-driven recovery through its file event.
 write_route_pair '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$(date +%s)"'}'
 wait_for_status '.routeValid == true and .routeVisible == true and .routeError == ""'
+wait_for_status '.routeAcceptedRevision == .routeCandidateRevision and
+  .routeCandidatePending == false and .routeCandidateMetadataPending == false and
+  .routeMetadataRunning == false'
 stable_status=$(read_status)
 stable_refreshed_at_ms=$(jq -er '.routeAcceptedRefreshedAtMs' <<<"$stable_status")
 stable_expires_at_ms=$(jq -er '.routeAcceptedExpiresAtMs' <<<"$stable_status")
@@ -821,7 +827,7 @@ missing_attempts=$(assert_metadata_failure_bounded \
 recovery_updated_at=$(date +%s)
 recovery_refreshed_at_ms=$(date +%s%3N)
 write_route_payload '{"version":1,"visible":true,"output":"DVI-D-1","cueOutput":null,"direction":null,"updatedAt":'"$recovery_updated_at"'}'
-write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + 1500))" "$recovery_updated_at"
+write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + route_lease_max_age_ms))" "$recovery_updated_at"
 wait_for_event_route_promotion "$recovery_refreshed_at_ms" "$missing_attempts"
 
 stable_status=$(read_status)
@@ -830,20 +836,20 @@ stable_expires_at_ms=$(jq -er '.routeAcceptedExpiresAtMs' <<<"$stable_status")
 insecure_updated_at=$(date +%s)
 insecure_refreshed_at_ms=$(date +%s%3N)
 write_route_payload '{"version":1,"visible":true,"output":"HDMI-A-1","cueOutput":null,"direction":null,"updatedAt":'"$insecure_updated_at"'}' 000
-write_lease_payload "$insecure_refreshed_at_ms" "$((insecure_refreshed_at_ms + 1500))" "$insecure_updated_at"
+write_lease_payload "$insecure_refreshed_at_ms" "$((insecure_refreshed_at_ms + route_lease_max_age_ms))" "$insecure_updated_at"
 insecure_attempts=$(assert_metadata_failure_bounded \
   "$stable_refreshed_at_ms" "$stable_expires_at_ms" insecure)
 
 recovery_updated_at=$(date +%s)
 recovery_refreshed_at_ms=$(date +%s%3N)
 write_route_payload '{"version":1,"visible":true,"output":"HDMI-A-1","cueOutput":null,"direction":null,"updatedAt":'"$recovery_updated_at"'}'
-write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + 1500))" "$recovery_updated_at"
+write_lease_payload "$recovery_refreshed_at_ms" "$((recovery_refreshed_at_ms + route_lease_max_age_ms))" "$recovery_updated_at"
 wait_for_event_route_promotion "$recovery_refreshed_at_ms" "$insecure_attempts"
 
 # The millisecond lease is observed as invalid without an extra fixed sleep.
 lease_expiry_started=$SECONDS
 wait_for_status '.routeValid == false and .routeVisible == false'
-((SECONDS - lease_expiry_started <= 2)) || {
+((SECONDS - lease_expiry_started <= 6)) || {
   printf 'FAIL: lease expiry was observed after %s seconds\n' "$((SECONDS - lease_expiry_started))" >&2
   exit 1
 }
@@ -906,7 +912,7 @@ current_time_ms=$(date +%s%3N)
 notification_publisher_kill \
   "$watcher_publisher_pid" "$watcher_publisher_start_time" "$watcher_publisher_executable" KILL
 expiry_observed=false
-expiry_deadline=$((SECONDS + 5))
+expiry_deadline=$((SECONDS + 7))
 while ((SECONDS < expiry_deadline)); do
   status_json=$(read_status) || true
   if [[ -n $status_json ]] && ! jq -e '.routeValid == true' <<<"$status_json" >/dev/null; then

@@ -44,6 +44,7 @@ BorderSurface {
   property bool iconSpinning: false
   property real horizontalPadding: Style.spacing.controlPaddingX
   property real verticalPadding: Style.spacing.controlPaddingY
+  property real maximumWidth: -1
   property bool leftAlign: false
 
   leftPadding: horizontalPadding
@@ -70,9 +71,12 @@ BorderSurface {
   // Reserve the largest border any visual state can paint. Otherwise a
   // borderless idle button grows by a pixel per side on hover/focus and
   // relayouts neighboring controls.
-  implicitWidth: row.implicitWidth + horizontalPadding * 2 + _reservedBorderLeft + _reservedBorderRight
+  readonly property real naturalImplicitWidth:
+    row.implicitWidth + horizontalPadding * 2 + _reservedBorderLeft + _reservedBorderRight
+  implicitWidth: maximumWidth > 0 ? Math.min(naturalImplicitWidth, maximumWidth) : naturalImplicitWidth
   implicitHeight: row.implicitHeight + verticalPadding * 2 + _reservedBorderTop + _reservedBorderBottom
   radius: Style.cornerRadius
+  clip: maximumWidth > 0
 
   readonly property bool hot: mouseArea.containsMouse || hasCursor
   readonly property bool _showFocusRing: focusable && activeFocus
@@ -127,26 +131,14 @@ BorderSurface {
 
   Behavior on color { ColorAnimation { duration: 120 } }
 
-  ToolTip {
+  PanelToolTip {
     visible: root.tooltipText !== "" && mouseArea.containsMouse
     text: root.tooltipText
-    delay: 400
-    padding: 0
-    background: BorderSurface {
-      color: root.tooltipBackground
-      borderSpec: root._tooltipBorderSpec
-      radius: Style.cornerRadius
-    }
-    contentItem: Text {
-      text: root.tooltipText
-      color: root.tooltipForeground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      leftPadding: Border.left(root._tooltipBorderSpec) + Style.spacing.controlPaddingX
-      rightPadding: Border.right(root._tooltipBorderSpec) + Style.spacing.controlPaddingX
-      topPadding: Border.top(root._tooltipBorderSpec) + Style.spacing.controlPaddingY
-      bottomPadding: Border.bottom(root._tooltipBorderSpec) + Style.spacing.controlPaddingY
-    }
+    panelBackground: root.tooltipBackground
+    panelForeground: root.tooltipForeground
+    panelBorder: root.tooltipBorder
+    fontFamily: root.fontFamily
+    fontSize: Style.font.bodySmall
   }
 
   Row {
@@ -178,11 +170,16 @@ BorderSurface {
 
     Text {
       visible: root.text !== ""
+      width: root.maximumWidth > 0 ? Math.max(0, root.maximumWidth - root.horizontalPadding * 2
+        - root._reservedBorderLeft - root._reservedBorderRight
+        - (root.iconText !== "" ? row.spacing + root.iconSize : 0)) : implicitWidth
       text: root.text
       color: root.selected ? root._selectedColor : root.foreground
       font.family: root.fontFamily
       font.pixelSize: root.fontSize
       font.bold: root.selected
+      elide: root.maximumWidth > 0 ? Text.ElideRight : Text.ElideNone
+      maximumLineCount: 1
       anchors.verticalCenter: parent.verticalCenter
     }
   }

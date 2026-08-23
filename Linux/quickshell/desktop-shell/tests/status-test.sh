@@ -44,7 +44,7 @@ cat >"$fake_bin/sleep" <<'FAKE_SLEEP'
 set -Eeuo pipefail
 
 printf '%s\n' "$*" >>"$DESKTOP_SHELL_SLEEP_TRACE"
-if [[ ${1:-} == "0.2" ]]; then
+if [[ ${1:-} == "1" ]]; then
   printf '%s\n' 'cpu 120 0 120 840 0 0 0 0 0 0' >"$DESKTOP_SHELL_PROC_ROOT/stat"
 fi
 FAKE_SLEEP
@@ -374,7 +374,7 @@ invoke cpu cpu
 assert_status 0 cpu
 assert_json_field '.text' $' 50%' 'CPU glyph and percentage separation'
 assert_json_field '.percentage' '50' 'CPU numeric percentage'
-assert_equal '0.2' "$(<"$sleep_trace")" 'CPU sample interval'
+assert_equal '1' "$(<"$sleep_trace")" 'CPU sample interval'
 
 status_cache="$cache_home/desktop-shell/status"
 [[ -s "$status_cache/codex.json" && -s "$status_cache/cpu.json" ]] || {

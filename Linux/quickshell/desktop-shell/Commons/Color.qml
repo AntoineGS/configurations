@@ -125,7 +125,7 @@ QtObject {
     property color border: root.inheritedComposed("notifications",
       "cards", "border", "border-alpha", root.accent, 1.0)
     property color countdown: root.pick("notifications.countdown", root.accent)
-    property color low: root.pick("notifications.low", "#89b4fa")
+    property color low: root.pick("notifications.low", "#89dceb")
     property color critical: root.pick("notifications.critical", root.urgent)
   }
   readonly property QtObject menu: QtObject {

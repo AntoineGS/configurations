@@ -29,8 +29,6 @@ Item {
   readonly property string routePath: routeDir + "/notification-route.json"
   readonly property string leasePath: routeDir + "/notification-route-lease.json"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
-  readonly property int cornerRadius: Style.cornerRadius
-
   property bool ownershipEnabled: Quickshell.env("DESKTOP_SHELL_NOTIFICATIONS_REGISTER") === "1"
   property bool notificationsOwned: false
   property string ownershipError: "notification owner probe pending"
@@ -1725,7 +1723,7 @@ Item {
 
       readonly property var popupPlacement: NotificationLogic.popupPlacement(
         service.barPosition, service.barClearance, Style.gapsOut)
-      readonly property int placementInset: Style.space(6)
+      readonly property int placementInset: Style.space(56)
 
       anchors { top: true; bottom: true; left: true; right: true }
 
@@ -1805,7 +1803,6 @@ Item {
               urgency: cardSlot.urgency
               timestamp: cardSlot.timestamp
               actions: cardSlot.actions
-              cornerRadius: service.cornerRadius
               fontFamily: service.shell && service.shell.bar
                 ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
 
@@ -1819,18 +1816,28 @@ Item {
         }
       }
 
-      BorderSurface {
+      ElevatedSurface {
         id: cueSurface
         visible: service.cueVisibleOn(popupWindow.modelData)
+        revealed: visible
+        entranceX: Style.space(12)
+        concealedScale: 1.0
+        motionDuration: 160
+        shadowBlurMax: 48
+        shadowBlurAmount: 1.0
+        shadowOpacityAmount: 0.78
+        shadowOffsetY: 14
+        shadowScaleAmount: 1.03
+        effectPaddingRect: Qt.rect(-8, -8, 16, 30)
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.topMargin: popupWindow.popupPlacement.margins.top + popupWindow.placementInset
         anchors.rightMargin: popupWindow.popupPlacement.margins.right + popupWindow.placementInset
         implicitWidth: Style.space(250)
         implicitHeight: Style.space(48)
-        radius: service.cornerRadius
+        radius: 0
         color: Color.notifications.background
-        borderSpec: Border.surfaceSpec("notifications", "border", Color.notifications.border, Math.max(1, Style.space(2)))
+        borderSpec: Border.none()
 
         Text {
           id: cueLabel
