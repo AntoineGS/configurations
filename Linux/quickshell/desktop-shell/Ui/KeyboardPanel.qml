@@ -44,6 +44,7 @@ PanelWindow {
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
+  property int elevationInset: Style.space(24)
   property var borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, Math.max(1, Style.space(2)))
   property bool centerOnBar: false
   property bool open: false
@@ -65,6 +66,12 @@ PanelWindow {
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
   readonly property string barPos: bar ? bar.position : "top"
+  readonly property real entranceX: barPos === "left" ? -Style.space(6)
+    : barPos === "right" ? Style.space(6) : 0
+  readonly property real entranceY: barPos === "top" ? -Style.space(6)
+    : barPos === "bottom" ? Style.space(6) : 0
+  readonly property real shadowInsetX: (barPos === "top" || barPos === "bottom") ? elevationInset : 0
+  readonly property real shadowInsetY: (barPos === "left" || barPos === "right") ? elevationInset : 0
 
   function close() {
     if (owner && "close" in owner) owner.close()
@@ -213,8 +220,14 @@ PanelWindow {
       x = anchorScreenPos.x + anchorW / 2 - contentWidth / 2
       y = barH + gap
     }
-    x = Math.max(margin, Math.min(x, screenW - contentWidth - margin))
-    y = Math.max(margin, Math.min(y, screenH - contentHeight - margin))
+    var minX = margin + shadowInsetX
+    var maxX = screenW - contentWidth - margin - shadowInsetX
+    var minY = margin + shadowInsetY
+    var maxY = screenH - contentHeight - margin - shadowInsetY
+    if (maxX < minX) { minX = margin; maxX = screenW - contentWidth - margin }
+    if (maxY < minY) { minY = margin; maxY = screenH - contentHeight - margin }
+    x = Math.max(minX, Math.min(x, maxX))
+    y = Math.max(minY, Math.min(y, maxY))
     return Qt.point(Math.round(x), Math.round(y))
   }
 
@@ -376,7 +389,7 @@ PanelWindow {
 
   // --- card ----------------------------------------------------------------
 
-  BorderSurface {
+  ElevatedSurface {
     id: card
     x: root.cardOrigin.x
     y: root.cardOrigin.y
@@ -386,12 +399,10 @@ PanelWindow {
     borderSpec: root.borderSpec
     padding: root.padding
     radius: Style.cornerRadius
-    opacity: root.open || root.popoutSwitching ? 1.0 : 0
-
-    Behavior on opacity {
-      enabled: !root.popoutSwitching && !root.popoutSwitchClosing
-      NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-    }
+    revealed: root.open || root.popoutSwitching
+    entranceX: root.entranceX
+    entranceY: root.entranceY
+    motionEnabled: !root.popoutSwitching && !root.popoutSwitchClosing
 
     // Swallow clicks on the card so they don't bubble to the dismissal
     // MouseArea behind us.

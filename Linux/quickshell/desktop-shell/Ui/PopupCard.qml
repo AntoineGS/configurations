@@ -13,6 +13,7 @@ PopupWindow {
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
+  property int elevationInset: Style.space(24)
   property color borderColor: Color.popups.border
   property var borderSpec: Border.localOrSurfaceSpec("popups", "border", borderColor, Color.popups.border, Math.max(1, Style.space(2)))
   property bool open: false
@@ -29,6 +30,10 @@ PopupWindow {
   readonly property real screenH: popupScreen ? popupScreen.height : 0
   readonly property real barW: anchorWindow ? anchorWindow.width : 0
   readonly property real barH: anchorWindow ? anchorWindow.height : 0
+  readonly property real entranceX: !bar ? 0 : bar.position === "left" ? -Style.space(6)
+    : bar.position === "right" ? Style.space(6) : 0
+  readonly property real entranceY: !bar ? 0 : bar.position === "top" ? -Style.space(6)
+    : bar.position === "bottom" ? Style.space(6) : 0
   readonly property real availableCardWidth: screenW > 0
     ? Math.max(120, screenW - ((bar && (bar.position === "left" || bar.position === "right")) ? barW : 0) - root.margin * 2)
     : 0
@@ -57,6 +62,16 @@ PopupWindow {
     return Math.round(Math.min(desired, maxHeight))
   }
 
+  function clampParallelOrigin(value, popupExtent, cardExtent, availableExtent) {
+    var min = root.margin
+    var max = availableExtent - popupExtent - root.margin
+    if (max < min) {
+      min = root.margin - root.elevationInset
+      max = availableExtent - cardExtent - root.margin - root.elevationInset
+    }
+    return Math.max(min, Math.min(value, max))
+  }
+
   function close() {
     if (owner && "close" in owner) owner.close()
     else root.open = false
@@ -66,8 +81,9 @@ PopupWindow {
 
   visible: open || card.opacity > 0
   color: "transparent"
-  implicitWidth: contentWidth
-  implicitHeight: contentHeight
+  implicitWidth: contentWidth + elevationInset * 2
+  implicitHeight: contentHeight + elevationInset * 2
+  mask: Region { item: card }
 
   onOpenChanged: {
     if (!bar) return
@@ -101,15 +117,15 @@ PopupWindow {
       var popupWidth = root.implicitWidth
       var popupHeight = root.implicitHeight
       var localX = target.width / 2 - popupWidth / 2
-      var localY = target.height + root.margin
+      var localY = target.height + root.margin - root.elevationInset
 
       if (root.bar.position === "bottom") {
-        localY = -popupHeight - root.margin
+        localY = -popupHeight - root.margin + root.elevationInset
       } else if (root.bar.position === "left") {
-        localX = target.width + root.margin
+        localX = target.width + root.margin - root.elevationInset
         localY = target.height / 2 - popupHeight / 2
       } else if (root.bar.position === "right") {
-        localX = -popupWidth - root.margin
+        localX = -popupWidth - root.margin + root.elevationInset
         localY = target.height / 2 - popupHeight / 2
       }
 
@@ -117,16 +133,20 @@ PopupWindow {
       if (!window) return
 
       if (root.centerOnBar) {
-        var cx = 0;
-        var cy = 0;
+        var cx = 0
+        var cy = 0
         if (root.bar.position === "top" || root.bar.position === "bottom") {
           cx = window.width / 2 - popupWidth / 2
-          cy = root.bar.position === "bottom" ? -popupHeight - root.margin : window.height + root.margin
-          cx = Math.max(root.margin, Math.min(cx, window.width - popupWidth - root.margin))
+          cy = root.bar.position === "bottom"
+            ? -popupHeight - root.margin + root.elevationInset
+            : window.height + root.margin - root.elevationInset
+          cx = root.clampParallelOrigin(cx, popupWidth, root.contentWidth, window.width)
         } else {
-          cx = root.bar.position === "left" ? window.width + root.margin : -popupWidth - root.margin
+          cx = root.bar.position === "left"
+            ? window.width + root.margin - root.elevationInset
+            : -popupWidth - root.margin + root.elevationInset
           cy = window.height / 2 - popupHeight / 2
-          cy = Math.max(root.margin, Math.min(cy, window.height - popupHeight - root.margin))
+          cy = root.clampParallelOrigin(cy, popupHeight, root.contentHeight, window.height)
         }
 
         popupAnchor.rect.x = Math.round(cx)
@@ -137,9 +157,9 @@ PopupWindow {
       var point = window.contentItem.mapFromItem(target, localX, localY)
 
       if (root.bar.position === "top" || root.bar.position === "bottom") {
-        point.x = Math.max(root.margin, Math.min(point.x, window.width - popupWidth - root.margin))
+        point.x = root.clampParallelOrigin(point.x, popupWidth, root.contentWidth, window.width)
       } else {
-        point.y = Math.max(root.margin, Math.min(point.y, window.height - popupHeight - root.margin))
+        point.y = root.clampParallelOrigin(point.y, popupHeight, root.contentHeight, window.height)
       }
 
       popupAnchor.rect.x = Math.round(point.x)
@@ -147,18 +167,19 @@ PopupWindow {
     }
   }
 
-  BorderSurface {
+  ElevatedSurface {
     id: card
-    anchors.fill: parent
+    x: root.elevationInset
+    y: root.elevationInset
+    width: root.contentWidth
+    height: root.contentHeight
     color: Color.popups.background
     borderSpec: root.borderSpec
     padding: root.padding
     radius: Style.cornerRadius
-    opacity: root.open ? 1.0 : 0
-
-    Behavior on opacity {
-      NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-    }
+    revealed: root.open
+    entranceX: root.entranceX
+    entranceY: root.entranceY
 
     Item {
       id: contentHolder

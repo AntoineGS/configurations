@@ -5,6 +5,7 @@ BarIconButton 1.0 BarIconButton.qml
 BarWidget 1.0 BarWidget.qml
 BorderOverlay 1.0 BorderOverlay.qml
 BorderSurface 1.0 BorderSurface.qml
+ElevatedSurface 1.0 ElevatedSurface.qml
 Button 1.0 Button.qml
 ConfirmDialog 1.0 ConfirmDialog.qml
 CursorSurface 1.0 CursorSurface.qml

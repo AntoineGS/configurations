@@ -5,8 +5,19 @@ import qs.Commons
 import qs.Ui
 import "../NotificationLogic.js" as NotificationLogic
 
-BorderSurface {
+ElevatedSurface {
   id: root
+
+  revealed: true
+  entranceX: Style.space(12)
+  concealedScale: 1.0
+  motionDuration: 160
+  shadowBlurMax: 48
+  shadowBlurAmount: 1.0
+  shadowOpacityAmount: 0.78
+  shadowOffsetY: 14
+  shadowScaleAmount: 1.03
+  effectPaddingRect: Qt.rect(-8, -8, 16, 30)
 
   property string app: ""
   property string appIcon: ""
@@ -16,7 +27,6 @@ BorderSurface {
   property int urgency: 1
   property double timestamp: 0
   property var actions: []
-  property int cornerRadius: 0
   property string fontFamily: Style.font.family
 
   readonly property bool hovered: hoverTracker.hovered
@@ -25,14 +35,13 @@ BorderSurface {
   readonly property bool hasSmallIcon: smallIconSource.length > 0
   readonly property string sanitizedBody: sanitizeBody(body)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
-  readonly property color dimColor: Qt.darker(Color.notifications.text, 1.4)
-  readonly property color bodyColor: Color.notifications.secondaryText
-  readonly property bool urgencyBadgeVisible: urgency === 0 || urgency === 2
-  readonly property string urgencyBadgeGlyph: urgency === 2 ? "!" : "i"
-  readonly property color urgencyBadgeColor: urgency === 2
-    ? Color.notifications.critical : Color.notifications.low
-  readonly property var cardBorderSpec: Border.surfaceSpec(
-    "notifications", "border", Color.notifications.border, Math.max(1, Style.space(2)))
+  readonly property color surfaceColor: urgency === 0
+    ? Color.notifications.low : urgency === 2
+      ? Color.notifications.critical : Color.notifications.background
+  readonly property color inkColor: Color.notifications.text
+  readonly property string urgencyLabel: urgency === 0 ? "LOW" : urgency === 2 ? "CRITICAL" : "NORMAL"
+  readonly property string sourceLabel: String(app || "SYSTEM").toUpperCase() + " / " + urgencyLabel
+  readonly property string timeLabel: formatTime(timestamp)
 
   signal closeRequested()
   signal cardClicked()
@@ -44,16 +53,21 @@ BorderSurface {
 
   function iconSource(icon) {
     var value = NotificationLogic.normalizeAppIconSource(icon)
-    if (value.length === 0) return ""
-    if (value.indexOf("image://") === 0) return value
+    if (value.length === 0 || value.indexOf("image://") === 0) return value
     return Quickshell.iconPath(value, true)
   }
 
+  function formatTime(value) {
+    var milliseconds = Number(value)
+    if (!isFinite(milliseconds) || milliseconds <= 0) return "NOW"
+    return Qt.formatTime(new Date(milliseconds), "HH:mm")
+  }
+
   implicitWidth: Style.space(380)
-  implicitHeight: mainColumn.implicitHeight + borderTop + borderBottom
-  radius: cornerRadius
-  color: Color.notifications.background
-  borderSpec: cardBorderSpec
+  implicitHeight: mainColumn.implicitHeight
+  radius: 0
+  color: surfaceColor
+  borderSpec: Border.none()
   clip: true
 
   HoverHandler { id: hoverTracker }
@@ -73,120 +87,144 @@ BorderSurface {
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    anchors.topMargin: root.borderTop
-    anchors.leftMargin: root.borderLeft
-    anchors.rightMargin: root.borderRight
     spacing: 0
 
     RowLayout {
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
-      Layout.rightMargin: Style.space(12)
-      Layout.topMargin: root.sanitizedBody.length === 0 ? Style.space(7) : Style.space(10)
-      Layout.bottomMargin: root.sanitizedBody.length === 0 ? Style.space(7) : Style.space(10)
-      spacing: Style.space(10)
+      Layout.rightMargin: Style.space(34)
+      Layout.topMargin: Style.space(10)
+      Layout.bottomMargin: Style.space(9)
+      spacing: Style.space(8)
 
       Item {
-        id: smallIconSlot
-        Layout.preferredWidth: visible ? Style.space(40) : 0
-        Layout.preferredHeight: visible ? Style.space(40) : 0
-        Layout.alignment: Qt.AlignVCenter
-        visible: root.hasSmallIcon && smallIconImage.status !== Image.Error
+        Layout.preferredWidth: visible ? Style.space(16) : 0
+        Layout.preferredHeight: visible ? Style.space(16) : 0
+        visible: root.hasSmallIcon && metadataIcon.status !== Image.Error
 
         Image {
-          id: smallIconImage
+          id: metadataIcon
           anchors.fill: parent
           source: root.smallIconSource
-          sourceSize.width: smallIconSlot.width * Screen.devicePixelRatio
-          sourceSize.height: smallIconSlot.height * Screen.devicePixelRatio
+          sourceSize.width: width * Screen.devicePixelRatio
+          sourceSize.height: height * Screen.devicePixelRatio
           fillMode: Image.PreserveAspectFit
           asynchronous: true
           smooth: true
         }
       }
 
-      ColumnLayout {
+      Text {
         Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-        Layout.rightMargin: Style.space(10)
-        spacing: Style.space(2)
+        text: root.sourceLabel
+        color: root.inkColor
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+        font.letterSpacing: Style.spaceReal(0.6)
+        elide: Text.ElideRight
+      }
 
-        RowLayout {
-          Layout.fillWidth: true
-          visible: root.summary.length > 0 || root.urgencyBadgeVisible
-          spacing: Style.space(6)
-
-          Rectangle {
-            Layout.preferredWidth: Style.space(18)
-            Layout.preferredHeight: Style.space(18)
-            Layout.alignment: Qt.AlignVCenter
-            visible: root.urgencyBadgeVisible
-            radius: width / 2
-            color: root.urgencyBadgeColor
-
-            Text {
-              anchors.centerIn: parent
-              text: root.urgencyBadgeGlyph
-              color: Color.background
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-          }
-
-          Text {
-            Layout.fillWidth: true
-            visible: root.summary.length > 0
-            text: root.summary
-            font.family: root.fontFamily
-            color: Color.notifications.text
-            font.pixelSize: Style.font.title
-            font.bold: true
-            wrapMode: Text.WordWrap
-            elide: Text.ElideRight
-            maximumLineCount: 2
-          }
-        }
-
-        Text {
-          Layout.fillWidth: true
-          Layout.topMargin: Style.space(2)
-          visible: root.sanitizedBody.length > 0
-          text: root.styledBody
-          textFormat: Text.StyledText
-          font.family: root.fontFamily
-          color: root.bodyColor
-          font.pixelSize: Style.font.title
-          wrapMode: Text.WordWrap
-          elide: Text.ElideRight
-          maximumLineCount: 3
-        }
+      Text {
+        text: root.timeLabel
+        color: root.inkColor
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
       }
     }
 
-    RowLayout {
+    Rectangle {
+      id: metadataRule
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
-      Layout.bottomMargin: Style.space(8)
-      spacing: Style.space(6)
+      height: Style.space(2)
+      color: root.inkColor
+    }
+
+    Text {
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.topMargin: Style.space(10)
+      Layout.bottomMargin: root.sanitizedBody.length > 0 ? 0 : Style.space(10)
+      visible: root.summary.length > 0
+      text: root.summary
+      color: root.inkColor
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.title
+      font.bold: true
+      wrapMode: Text.WordWrap
+      maximumLineCount: 2
+      elide: Text.ElideRight
+    }
+
+    Text {
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.topMargin: Style.space(6)
+      Layout.bottomMargin: Style.space(9)
+      visible: root.sanitizedBody.length > 0
+      text: root.styledBody
+      textFormat: Text.StyledText
+      color: root.inkColor
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+      font.bold: true
+      lineHeight: 1.45
+      lineHeightMode: Text.ProportionalHeight
+      wrapMode: Text.WordWrap
+      maximumLineCount: 3
+      elide: Text.ElideRight
+    }
+
+    Rectangle {
+      id: actionRule
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      visible: !!root.actions && root.actions.length > 0
+      height: Math.max(1, Style.space(1))
+      color: root.inkColor
+    }
+
+    Item {
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.topMargin: Style.space(8)
+      Layout.bottomMargin: Style.space(10)
+      implicitHeight: actionFlow.implicitHeight
       visible: !!root.actions && root.actions.length > 0
 
-      Repeater {
-        model: root.actions || []
+      Flow {
+        id: actionFlow
+        anchors.left: parent.left
+        anchors.right: parent.right
+        layoutDirection: Qt.RightToLeft
+        spacing: Style.space(6)
 
-        Button {
-          required property var modelData
-          Layout.fillWidth: true
-          text: modelData.text
-          foreground: Color.notifications.text
-          accent: Color.notifications.countdown
-          fontFamily: root.fontFamily
-          fontSize: Style.font.caption
-          horizontalPadding: Style.space(8)
-          verticalPadding: Style.space(4)
-          bordered: true
-          onClicked: root.actionClicked(String(modelData.identifier || ""))
+        Repeater {
+          model: root.actions || []
+
+          Button {
+            required property int index
+            required property var modelData
+            text: modelData.text
+            foreground: index === 0 ? root.surfaceColor : root.inkColor
+            background: index === 0 ? root.inkColor : "transparent"
+            accent: root.inkColor
+            borderSpec: Border.flat(root.inkColor, Math.max(1, Style.space(1)))
+            radius: 0
+            maximumWidth: Style.space(140)
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            horizontalPadding: Style.space(9)
+            verticalPadding: Style.space(6)
+            onClicked: root.actionClicked(String(modelData.identifier || ""))
+          }
         }
       }
     }
@@ -195,8 +233,8 @@ BorderSurface {
   Item {
     anchors.top: parent.top
     anchors.right: parent.right
-    anchors.topMargin: root.borderTop + Style.space(3)
-    anchors.rightMargin: root.borderRight + Style.space(3)
+    anchors.topMargin: Style.space(3)
+    anchors.rightMargin: Style.space(3)
     width: Style.space(18)
     height: Style.space(18)
     visible: opacity > 0
@@ -207,7 +245,7 @@ BorderSurface {
     Text {
       anchors.centerIn: parent
       text: "x"
-      color: closeArea.containsMouse ? Color.notifications.text : root.dimColor
+      color: root.inkColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
     }

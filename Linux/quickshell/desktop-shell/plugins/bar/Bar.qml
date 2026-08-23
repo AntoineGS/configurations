@@ -402,7 +402,7 @@ Item {
 
     Item {
       id: barContent
-      anchors.fill: parent
+      anchors.fill: parent  
 
       HoverHandler {
         id: barHover
@@ -426,11 +426,15 @@ Item {
     PopupWindow {
       id: tooltipWindow
 
+      property int elevationInset: Style.space(24)
+      property int hoverSafeInset: Style.space(6)
+
       visible: root.tooltipShown && root.tooltipTarget !== null
         && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, barWindow)
       color: "transparent"
-      implicitWidth: Math.ceil(tooltipBubble.implicitWidth)
-      implicitHeight: Math.ceil(tooltipBubble.implicitHeight)
+      implicitWidth: Math.ceil(tooltipBubble.implicitWidth) + elevationInset * 2
+      implicitHeight: Math.ceil(tooltipBubble.implicitHeight) + hoverSafeInset + elevationInset
+      mask: Region { item: tooltipBubble }
 
       anchor {
         id: tooltipAnchor
@@ -445,19 +449,26 @@ Item {
           var target = root.tooltipTarget
           if (!root.targetBelongsToWindow(target, barWindow)) return
           var point = barWindow.contentItem.mapFromItem(target, target.width / 2 - tooltipWindow.implicitWidth / 2,
-            target.height + 6)
+            target.height + 6 - tooltipWindow.hoverSafeInset)
           tooltipAnchor.rect.x = Math.round(point.x)
           tooltipAnchor.rect.y = Math.round(point.y)
         }
       }
 
-      BorderSurface {
+      ElevatedSurface {
         id: tooltipBubble
+        x: tooltipWindow.elevationInset
+        y: tooltipWindow.hoverSafeInset
         implicitWidth: tooltipLabel.implicitWidth + 20
         implicitHeight: tooltipLabel.implicitHeight + 14
         color: Color.tooltip.background
         borderSpec: Border.surfaceSpec("tooltip", "border", Color.tooltip.border, 1)
         radius: Style.cornerRadius
+        revealed: tooltipWindow.visible
+        entranceX: root.position === "left" ? -Style.space(6)
+          : root.position === "right" ? Style.space(6) : 0
+        entranceY: root.position === "top" ? -Style.space(6)
+          : root.position === "bottom" ? Style.space(6) : 0
 
         Text {
           id: tooltipLabel

@@ -23,16 +23,26 @@ ToolTip {
   property color panelBorder: Color.tooltip.border
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.bodySmall
+  property int elevationInset: Style.space(24)
 
   readonly property var panelBorderSpec: Border.localOrSurfaceSpec("tooltip", "border", panelBorder, Color.tooltip.border, Style.normalBorderWidth)
 
   delay: 400
-  padding: 0
+  leftPadding: elevationInset + Border.left(panelBorderSpec) + Style.spacing.controlPaddingX
+  rightPadding: elevationInset + Border.right(panelBorderSpec) + Style.spacing.controlPaddingX
+  topPadding: elevationInset + Border.top(panelBorderSpec) + Style.spacing.controlPaddingY
+  bottomPadding: elevationInset + Border.bottom(panelBorderSpec) + Style.spacing.controlPaddingY
 
-  background: BorderSurface {
+  background: ElevatedSurface {
+    x: root.elevationInset
+    y: root.elevationInset
+    width: root.width - root.elevationInset * 2
+    height: root.height - root.elevationInset * 2
     color: root.panelBackground
     borderSpec: root.panelBorderSpec
     radius: Style.cornerRadius
+    revealed: root.visible
+    entranceY: -Style.space(6)
   }
 
   contentItem: Text {
@@ -40,9 +50,5 @@ ToolTip {
     color: root.panelForeground
     font.family: root.fontFamily
     font.pixelSize: root.fontSize
-    leftPadding: Border.left(root.panelBorderSpec) + Style.spacing.controlPaddingX
-    rightPadding: Border.right(root.panelBorderSpec) + Style.spacing.controlPaddingX
-    topPadding: Border.top(root.panelBorderSpec) + Style.spacing.controlPaddingY
-    bottomPadding: Border.bottom(root.panelBorderSpec) + Style.spacing.controlPaddingY
   }
 }
