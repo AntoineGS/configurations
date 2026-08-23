@@ -402,7 +402,7 @@ cpu_status() {
     return $?
   fi
   : >"$ERROR_FILE"
-  if ! sleep 0.2 2>"$ERROR_FILE"; then
+  if ! sleep 1 2>"$ERROR_FILE"; then
     adapter_error cpu "$(error_message "CPU sample delay failed")"
     return $?
   fi
