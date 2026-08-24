@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+shopt -s inherit_errexit
+
+readonly SCRIPT_NAME=${0##*/}
+readonly -A ENTRY_KEYS=(
+  ["bar"]="bar"
+  ["bar-widget"]="barWidget"
+  ["menu"]="menu"
+  ["overlay"]="overlay"
+  ["panel"]="panel"
+  ["service"]="service"
+)
+
+fail() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+require_commands() {
+  local command
+  for command in find jq realpath; do
+    command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
+  done
+}
+
+validate_filesystem() {
+  local plugin_dir=$1
+  local manifest=$plugin_dir/manifest.json
+  local symlink
+
+  [[ -d "$plugin_dir" && ! -L "$plugin_dir" ]] || fail "a real plugin directory is required"
+  [[ -f "$manifest" && ! -L "$manifest" ]] || fail "root manifest.json is required"
+
+  symlink=$(find "$plugin_dir" -path "$plugin_dir/.git" -prune -o -type l -print -quit)
+  [[ -z "$symlink" ]] || fail "symbolic links are not allowed: $symlink"
+}
+
+validate_manifest_shape() {
+  local manifest=$1
+
+  jq -e . "$manifest" >/dev/null 2>&1 || fail "invalid JSON in manifest.json"
+  jq -e 'type == "object"' "$manifest" >/dev/null 2>&1 || fail "manifest must be an object"
+  jq -e '.schemaVersion | type == "number" and . == 1' "$manifest" >/dev/null 2>&1 || fail "schemaVersion must be 1"
+
+  local field
+  for field in id name version kinds entryPoints; do
+    jq -e --arg field "$field" 'has($field)' "$manifest" >/dev/null 2>&1 ||
+      fail "missing required field '$field'"
+  done
+  for field in id name version; do
+    jq -e --arg field "$field" '.[$field] | type == "string" and length > 0' "$manifest" >/dev/null 2>&1 ||
+      fail "$field must be a non-empty string"
+  done
+  jq -e '.kinds | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' "$manifest" >/dev/null 2>&1 ||
+    fail "kinds must be a non-empty array of strings"
+  jq -e '.kinds | length == (unique | length)' "$manifest" >/dev/null 2>&1 ||
+    fail "kinds must contain unique strings"
+  jq -e '.entryPoints | type == "object" and all(.[]; type == "string" and length > 0)' "$manifest" >/dev/null 2>&1 ||
+    fail "entryPoints must contain non-empty string values"
+  jq -e '.barWidget == null or (.barWidget | type == "object")' "$manifest" >/dev/null 2>&1 ||
+    fail "barWidget must be an object"
+  jq -e '.barWidget == null or .barWidget.defaultSection == null or (.barWidget.defaultSection as $section | ($section | type == "string") and (["left", "center", "right"] | index($section)) != null)' "$manifest" >/dev/null 2>&1 ||
+    fail "barWidget.defaultSection must be left, center, or right"
+}
+
+validate_id() {
+  local id=$1
+  [[ "$id" =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || fail "unsafe plugin id: $id"
+  [[ "$id" != desktop.* && "$id" != omarchy.* ]] || fail "plugin id uses reserved namespace: $id"
+}
+
+validate_kinds_and_entries() {
+  local plugin_dir=$1
+  local manifest=$2
+  local kind key entry resolved root
+  local -a kinds entry_keys
+
+  mapfile -t kinds < <(jq -r '.kinds[]' "$manifest")
+  mapfile -t entry_keys < <(jq -r '.entryPoints | keys[]' "$manifest")
+  root=$(realpath -- "$plugin_dir")
+
+  for key in "${entry_keys[@]}"; do
+    case "$key" in
+      bar|barWidget|menu|overlay|panel|service) ;;
+      *) fail "unsupported entry point key: $key" ;;
+    esac
+    entry=$(jq -r --arg key "$key" '.entryPoints[$key]' "$manifest")
+    [[ "$entry" != /* && "$entry" != \\* && ! "$entry" =~ ^[A-Za-z]:[\\/] ]] ||
+      fail "entry point escapes plugin directory: $entry"
+    resolved=$(realpath -m -- "$plugin_dir/$entry")
+    [[ "$resolved" == "$root/"* ]] || fail "entry point escapes plugin directory: $entry"
+  done
+
+  for kind in "${kinds[@]}"; do
+    key=${ENTRY_KEYS[$kind]:-}
+    [[ -n "$key" ]] || fail "unsupported kind: $kind"
+    jq -e --arg key "$key" '.entryPoints | has($key)' "$manifest" >/dev/null 2>&1 ||
+      fail "kind '$kind' requires entryPoints.$key"
+    entry=$(jq -r --arg key "$key" '.entryPoints[$key]' "$manifest")
+    resolved=$(realpath -m -- "$plugin_dir/$entry")
+    [[ -f "$resolved" && ! -L "$resolved" ]] || fail "entry point file not found: $entry"
+  done
+}
+
+main() {
+  local plugin_dir=${1:-}
+  local manifest
+  [[ $# == 1 ]] || fail "usage: $SCRIPT_NAME PLUGIN_DIRECTORY"
+  require_commands
+  validate_filesystem "$plugin_dir"
+  manifest=$plugin_dir/manifest.json
+  validate_manifest_shape "$manifest"
+  validate_id "$(jq -r '.id' "$manifest")"
+  validate_kinds_and_entries "$plugin_dir" "$manifest"
+}
+
+main "$@"
