@@ -11,7 +11,16 @@ shell_dir="$repo_root/Linux/quickshell/desktop-shell"
 helper_dir="$repo_root/Linux/os/helpers"
 tmp_dir=$(mktemp -d)
 shell_pid=""
-trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$tmp_dir"' EXIT
+
+stop_shell() {
+  if [[ -n $shell_pid ]]; then
+    kill "$shell_pid" 2>/dev/null || true
+    wait "$shell_pid" 2>/dev/null || true
+    shell_pid=""
+  fi
+}
+
+trap 'stop_shell; rm -rf -- "$tmp_dir"' EXIT
 
 plugins_dir="$tmp_dir/plugins"
 state_file="$tmp_dir/home/.config/desktop-shell/shell.json"
@@ -49,9 +58,37 @@ jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == fa
 
 quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}' >/dev/null
 quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false >/dev/null
-kill "$shell_pid"
-wait "$shell_pid" 2>/dev/null || true
-shell_pid=""
+stop_shell
+
+failure_state_file="$tmp_dir/failure-state"
+mkdir -p -- "$failure_state_file"
+env \
+  HOME="$tmp_dir/home" \
+  XDG_CONFIG_HOME="$tmp_dir/home/.config" \
+  XDG_CACHE_HOME="$tmp_dir/home/.cache" \
+  XDG_STATE_HOME="$tmp_dir/home/.local/state" \
+  DESKTOP_SHELL_TEST_NO_SURFACES=1 \
+  DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION=1 \
+  DESKTOP_SHELL_STATE_PATH="$failure_state_file" \
+  DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" \
+  DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
+  quickshell -n -p "$shell_dir" >"$tmp_dir/failure-quickshell.log" 2>&1 &
+shell_pid=$!
+for _ in {1..100}; do
+  plugins=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins 2>/dev/null || true)
+  if jq -e 'type == "array"' <<<"$plugins" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+failure_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
+[[ $failure_result != ok ]]
+failure_health=""
+for _ in {1..100}; do
+  failure_health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
+  if jq -e '.pluginStateWriteError != ""' <<<"$failure_health" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e '.pluginStateWriteError != ""' <<<"$failure_health" >/dev/null
+stop_shell
 
 stub_bin="$tmp_dir/bin"
 mkdir -p -- "$stub_bin"
@@ -80,8 +117,25 @@ fi
 launch_home="$tmp_dir/launch-home"
 mkdir -p -- "$launch_home/.config/quickshell/desktop-shell/config" "$launch_home/.local/share/helpers"
 touch "$launch_home/.config/quickshell/desktop-shell/shell.qml" "$launch_home/.config/quickshell/desktop-shell/config/shell.json"
-PATH="$stub_bin:/usr/bin:/bin" HOME="$launch_home" "$helper_dir/desktop-shell-launch"
-[[ $(<"$STUB_PATH") == "$launch_home/.local/share/helpers:"* ]]
+assert_launch_path() {
+  local input_path=$1
+  local expected_path=$2
+  PATH="$input_path" HOME="$launch_home" "$helper_dir/desktop-shell-launch"
+  [[ $(<"$STUB_PATH") == "$expected_path" ]]
+}
+
+assert_launch_path \
+  "$stub_bin:/usr/bin:/bin" \
+  "$launch_home/.local/share/helpers:$stub_bin:/usr/bin:/bin"
+assert_launch_path \
+  "$launch_home/.local/share/helpers:$stub_bin:/usr/bin:/bin" \
+  "$launch_home/.local/share/helpers:$stub_bin:/usr/bin:/bin"
+assert_launch_path \
+  "$stub_bin:$launch_home/.local/share/helpers:/usr/bin" \
+  "$launch_home/.local/share/helpers:$stub_bin:/usr/bin"
+assert_launch_path \
+  "$stub_bin:$launch_home/.local/share/helpers:/usr/bin:$launch_home/.local/share/helpers:/bin" \
+  "$launch_home/.local/share/helpers:$stub_bin:/usr/bin:/bin"
 
 facade="$tmp_dir/facade"
 mkdir -p -- "$facade"
