@@ -8,7 +8,14 @@ Personal dotfiles repository managing configurations for Windows and Linux envir
 - **Restore configs**: `nu backup-manager.nu restore`
 - **List mappings**: `nu backup-manager.nu list`
 - **Lua formatting**: `stylua .` (uses .stylua.toml: 120 columns, 2 spaces, Unix line endings)
-- **No dedicated test suite** - configs are validated by direct application usage
+
+## Testing Policy
+- This is a personal configuration repository; direct application and use are the default validation methods.
+- Tests are exceptional. Add or retain them only for complex stateful behavior, destructive or security-sensitive operations, or durable regressions for non-obvious bugs.
+- Routine configuration changes must not require adding or updating tests.
+- Do not test declarative configuration, package lists, styling or layout, keybindings, manifests, exact source text, simple wrappers, or straightforward command wiring.
+- Bug-investigation tests may be temporary. Keep them only when they protect against a likely-to-recur failure.
+- Run retained tests individually when changing their associated complex behavior or investigating a relevant bug; there is no repository-wide test suite.
 
 ## Code Style
 - **Line endings**: LF only (enforced via .gitattributes)

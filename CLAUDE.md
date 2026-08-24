@@ -90,8 +90,6 @@ intentionally limited to that application and may install only its package.
 The canonical complete bootstrap package preview is the unscoped command:
 `tidydots --dir "$REPO_DIR" install -n`.
 
-Run the complete read-only profile and runtime audit with `bash Linux/pacman/tests/all-profiles-test.sh`.
-
 **Install hooks:**
 
 ```bash

@@ -93,13 +93,6 @@ assert_no_recovery_mutation() {
   assert_log_not_contains 'sudo -n -- chmod 640 --' "$context: no recovery mode restore"
 }
 
-assert_source_contains() {
-  local -r needle="$1"
-  local -r context="$2"
-
-  assert_contains "$(<"$BOOTSTRAP")" "$needle" "$context"
-}
-
 assert_log_sequence() {
   local log_contents
   local line
@@ -444,7 +437,7 @@ run_bootstrap() {
   local input="$1"
   shift
 
-  # The bootstrap's privileged-operation prompt is covered by bootstrap-test.sh; approve it here for Snapper scenarios.
+  # This focused fixture approves the privileged-operation prompt for Snapper scenarios.
   input=$'yes\n'"$input"
 
   if LAST_OUTPUT=$(printf '%s\n' "$input" | \
@@ -737,7 +730,8 @@ test_rollback_preserves_original_metadata() {
   assert_log_contains 'sudo -n -- cp --preserve=all' 'metadata-preserving backup and restore'
   assert_log_contains 'sudo -n -- chown 1001:1002 -- /etc/snapper/configs/root' 'rollback restores original owner'
   assert_log_contains 'sudo -n -- chmod 640 -- /etc/snapper/configs/root' 'rollback restores original mode'
-  assert_log_contains 'sudo -n -- /usr/bin/setfacl --set-file=' 'rollback restores ACL'
+  assert_log_contains "sudo -n -- /usr/bin/setfacl --set-file=${BACKUP_DIRECTORY}/root.acl -- /etc/snapper/configs/root" \
+    'rollback restores ACL on the original target'
   assert_log_contains 'sudo -n -- /usr/bin/setfattr --restore=' 'rollback restores xattrs'
 }
 
@@ -874,14 +868,6 @@ test_repository_paths_reject_manifest_delimiters() {
       "manifest delimiter message: ${suffix@Q}"
     assert_log_not_contains 'sudo ' "no root command for manifest delimiter: ${suffix@Q}"
   done
-}
-
-test_metadata_restore_passes_target_explicitly() {
-  # shellcheck disable=SC2016
-  assert_source_contains 'restore_optional_metadata "$backup" "$target"' \
-    'metadata restore target argument'
-  # shellcheck disable=SC2016
-  assert_source_contains 'local -r target="$2"' 'metadata restore target local'
 }
 
 test_recovery_directories_are_root_owned_before_mode_lockdown() {
@@ -1026,7 +1012,6 @@ run_test test_production_initializer_rejects_inherited_overrides
 run_test test_stale_staging_files_are_cleaned_before_new_deployment
 run_test test_recovery_setup_failure_cleans_unjournaled_directory
 run_test test_repository_paths_reject_manifest_delimiters
-run_test test_metadata_restore_passes_target_explicitly
 run_test test_recovery_directories_are_root_owned_before_mode_lockdown
 run_test test_restore_ownership_precedes_setuid_and_setgid_mode
 run_test test_cleanup_failure_reports_partial_backup_state

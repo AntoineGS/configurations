@@ -16,17 +16,7 @@ fail() {
   exit 1
 }
 
-audited_helpers=(
-  "$helpers/update"
-  "$helpers/update-perform"
-  "$helpers/update-keyring"
-  "$helpers/desktop-shell"
-  "$helpers/desktop-shell-status"
-)
-
-for helper in "${audited_helpers[@]}"; do
-  [[ -r $helper ]] || fail "audited helper is missing or unreadable: $helper"
-done
+[[ -x "$helpers/update" ]] || fail "update helper is missing or not executable: $helpers/update"
 
 stub() {
   local name=$1
@@ -40,47 +30,9 @@ EOF
   chmod +x "$bin/$name"
 }
 
-assert_calls() {
-  local expected=$1
-  local actual
-  actual=$(<"$log")
-  [[ $actual == "$expected" ]] || fail "expected calls:\n$expected\nactual calls:\n$actual"
-}
-
-for command in snapshot update-time update-perform; do
+for command in snapshot update-time; do
   stub "$command"
 done
-
-: >"$log"
-PATH="$bin:$PATH" UPDATE_TEST_LOG="$log" "$helpers/update" -y
-assert_calls $'snapshot create\nupdate-time \nupdate-perform '
-
-for command in hyprctl update-keyring update-available-reset update-system-pkgs update-aur-pkgs \
-  update-orphan-pkgs hook update-analyze-logs update-restart; do
-  stub "$command"
-done
-
-: >"$log"
-PATH="$bin:$PATH" UPDATE_TEST_LOG="$log" "$helpers/update-perform"
-assert_calls $'hyprctl eval hl.dispatch(hl.dsp.window.tag({tag="+noidle"}))\nupdate-keyring \nupdate-system-pkgs \nupdate-aur-pkgs \nupdate-orphan-pkgs \nupdate-analyze-logs \nhyprctl eval hl.dispatch(hl.dsp.window.tag({tag="-noidle"}))'
-
-cat >"$bin/sudo" <<'EOF'
-#!/bin/bash
-printf 'sudo %s\n' "$*" >>"$UPDATE_TEST_LOG"
-EOF
-chmod +x "$bin/sudo"
-
-: >"$log"
-PATH="$bin:$PATH" UPDATE_TEST_LOG="$log" "$helpers/update-keyring"
-assert_calls 'sudo pacman -Sy --noconfirm archlinux-keyring'
-
-if grep -Eq 'OMARCHY_PATH|40DFB630FF42BCFFB047046CF0134EE680CAC571|pkg-(missing|add) keyring' \
-  "${audited_helpers[@]}"; then
-  fail "update flow still contains Omarchy repository or signing-key dependencies"
-else
-  grep_status=$?
-  ((grep_status == 1)) || fail "could not audit update helpers (grep status $grep_status)"
-fi
 
 failure_output="$test_root/failure-output"
 failure_status=0
