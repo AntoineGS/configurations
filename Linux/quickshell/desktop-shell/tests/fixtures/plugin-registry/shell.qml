@@ -9,6 +9,8 @@ ShellRoot {
   id: root
 
   property string resultPath: Quickshell.env("PLUGIN_REGISTRY_RESULT")
+  property string firstPartyRoot: Quickshell.shellDir + "/firstparty"
+  property bool rescanChecked: false
   property PluginRegistry registry: PluginRegistry { }
   property var state: PluginState.emptyState()
   property var config: ({
@@ -85,20 +87,45 @@ ShellRoot {
     scan += block("thirdparty", "/third/malformed", "not-json")
     scan += block("thirdparty", "/third/duplicate-one", manifest("acme.duplicate", ["panel"], { panel: "Panel.qml" }))
     scan += block("thirdparty", "/third/duplicate-two", manifest("acme.duplicate", ["panel"], { panel: "Panel.qml" }))
+    scan += block("thirdparty", "/third/duplicate-three", manifest("acme.duplicate", ["panel"], { panel: "Panel.qml" }))
+    scan += block("thirdparty", "/third/pair-one", manifest("acme.pair", ["panel"], { panel: "Panel.qml" }))
+    scan += block("thirdparty", "/third/pair-two", manifest("acme.pair", ["panel"], { panel: "Panel.qml" }))
 
     registry.parseScanOutput(scan)
     check(Object.keys(registry.installedPlugins).length === 6, "valid merged plugin count")
     check(registry.installedPlugins["desktop.bar"].__isFirstParty === true, "first-party provenance")
     check(registry.installedPlugins["acme.panel"].__sourceDir === "/third/panel", "third-party provenance")
-    check(!registry.installedPlugins["desktop.clock"], "reserved first-party ID shadow rejected")
+    check(registry.installedPlugins["desktop.clock"]
+      && registry.installedPlugins["desktop.clock"].__isFirstParty === true,
+      "authoritative first-party ID remains installed")
     check(!registry.installedPlugins["omarchy.fake"], "reserved omarchy ID rejected")
     check(!registry.installedPlugins["acme.unsafe"], "unsafe entry point rejected")
     check(!registry.installedPlugins["acme.duplicate"], "ambiguous user plugin rejected")
+    check(!registry.installedPlugins["acme.pair"], "two-source user plugin rejected")
     check(hasError("desktop.clock", "invalid plugin id"), "reserved ID error recorded")
     check(hasError("acme.unsafe", "unsafe entryPoint"), "unsafe entry point error recorded")
     check(hasError("acme.duplicate", "/third/duplicate-one")
-      && hasError("acme.duplicate", "/third/duplicate-two"), "duplicate source paths recorded")
+      && hasError("acme.duplicate", "/third/duplicate-two")
+      && hasError("acme.duplicate", "/third/duplicate-three"), "duplicate source paths recorded")
+    check(hasError("acme.pair", "/third/pair-one")
+      && hasError("acme.pair", "/third/pair-two"), "two duplicate source paths recorded")
     check(registry.isEnabled("desktop.menu") === true, "first-party plugin remains loadable")
+
+    check(registry.pluginWatchEnabled === false, "watcher disabled by test environment")
+    registry.watcherStopRequested = true
+    registry.handleWatcherExit(0)
+    check(!registry.watchRestartTimer.running && !registry.watcherStopRequested,
+      "intentional watcher exit does not restart")
+    registry.watcherUnavailable = false
+    registry.handleWatcherExit(125)
+    check(registry.watcherUnavailable && !registry.watchRestartTimer.running,
+      "unavailable watcher exit does not restart")
+    registry.watcherUnavailable = false
+    registry.pluginWatchEnabled = true
+    registry.handleWatcherExit(1)
+    check(registry.watchRestartTimer.running, "unexpected watcher exit schedules restart")
+    registry.watchRestartTimer.stop()
+    registry.pluginWatchEnabled = false
 
     registry.shellConfigProvider = function() { return root.config }
     registry.pluginStateProvider = function() { return root.state }
@@ -133,5 +160,22 @@ ShellRoot {
     Qt.exit(0)
   }
 
-  Component.onCompleted: root.run()
+  function runRescanAssertions() {
+    if (root.rescanChecked) return
+    root.rescanChecked = true
+    check(registry.installedPlugins["desktop.clock"]
+      && registry.installedPlugins["desktop.clock"].__isFirstParty === true,
+      "real rescan preserves first-party provenance")
+    root.run()
+  }
+
+  Connections {
+    target: root.registry
+    function onScanFinished() { root.runRescanAssertions() }
+  }
+
+  Component.onCompleted: {
+    registry.firstPartyDir = root.firstPartyRoot
+    registry.rescan()
+  }
 }
