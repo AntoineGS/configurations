@@ -13,3 +13,6 @@ assert.deepEqual(search.sortedEntries(apps, "internet", () => false).map(row => 
 assert.deepEqual(search.sortedEntries(apps, "calculator", () => false).map(row => row.entry.name), ["Calculator"])
 assert.deepEqual(search.sortedEntries(apps, "", entry => entry.id === "com.brave.Browser").map(row => row.entry.name), ["Calculator", "Contacts"])
 assert.equal(search.fuzzyScore(apps[1], "calculator"), -1)
+assert.equal(search.entryName({ id: "fallback.id" }), "fallback.id")
+assert.equal(search.entrySubtext({ genericName: "Web Browser" }), "Web Browser")
+assert.match(search.entrySearchText(apps[3]), /com\.brave\.browser/)
