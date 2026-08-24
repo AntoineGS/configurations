@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+shopt -s inherit_errexit
+
+readonly script_name=${0##*/}
+script_path=$(realpath -- "${BASH_SOURCE[0]}")
+readonly script_path
+script_dir=$(dirname -- "$script_path")
+readonly script_dir
+readonly plugins_dir=${DESKTOP_SHELL_PLUGINS_DIR:-$HOME/.config/omarchy/plugins}
+readonly validator=${DESKTOP_SHELL_PLUGIN_VALIDATE:-$script_dir/desktop-shell-plugin-validate}
+readonly ipc=${DESKTOP_SHELL_PLUGIN_IPC:-$script_dir/omarchy-shell}
+
+export GIT_TERMINAL_PROMPT=0
+export GIT_ASKPASS=/bin/false
+export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-'ssh -oBatchMode=yes'}
+
+stage_dir=
+installed_target=
+
+fail() {
+  printf '%s: %s\n' "$script_name" "$1" >&2
+  exit 1
+}
+
+usage() {
+  printf '%s\n' \
+    "usage: $script_name add|install URL [--enable] [--yes] [--expected-id ID]" \
+    "       $script_name validate DIR" \
+    "       $script_name list [--json]" \
+    "       $script_name enable ID [section=SECTION,index=N|before=ID|after=ID]" \
+    "       $script_name disable ID" >&2
+  exit 2
+}
+
+cleanup() {
+  if [[ -n $stage_dir && -d $stage_dir ]]; then
+    rm -rf -- "$stage_dir"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
+
+require_commands() {
+  local command
+  for command in git jq mktemp realpath; do
+    command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
+  done
+}
+
+validate_id() {
+  local id=$1
+  [[ $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || fail "unsafe plugin id: $id"
+}
+
+redact_url() {
+  local url=$1
+  printf '%s\n' "$url" | sed -E 's#^([[:alpha:]][[:alnum:]+.-]*://)[^/@]+@#\1<redacted>@#'
+}
+
+run_ipc() {
+  local response
+  response=$("$ipc" shell "$@") || fail "IPC failed: $*"
+  printf '%s' "$response"
+}
+
+validate_plugin() {
+  local directory=$1
+  [[ -x $validator ]] || fail "validator is missing or not executable: $validator"
+  "$validator" "$directory" || fail "plugin validation failed"
+}
+
+manifest_id() {
+  local directory=$1 id
+  id=$(jq -e -r '.id | select(type == "string" and length > 0)' -- "$directory/manifest.json") ||
+    fail "validated manifest has no string id"
+  validate_id "$id"
+  printf '%s' "$id"
+}
+
+find_duplicate_id() {
+  local requested_id=$1 manifest candidate
+  [[ -d $plugins_dir && ! -L $plugins_dir ]] || return 0
+  while IFS= read -r -d '' manifest; do
+    [[ $manifest == "$stage_dir/manifest.json" ]] && continue
+    candidate=$(jq -r '.id // empty' -- "$manifest" 2>/dev/null || true)
+    if [[ $candidate == "$requested_id" ]]; then
+      fail "plugin id already installed: $requested_id"
+    fi
+  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -type f -name manifest.json -print0)
+}
+
+confirm_install() {
+  local url=$1 answer
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    fail "refusing non-interactive install without --yes"
+  fi
+  printf 'Warning: plugins execute unsandboxed code. Install %s? [y/N] ' "$(redact_url "$url")" >&2
+  IFS= read -r answer || fail "installation not confirmed"
+  [[ $answer == y || $answer == Y || $answer == yes || $answer == YES ]] || fail "installation not confirmed"
+}
+
+rescan() {
+  local response
+  if ! response=$("$ipc" shell rescanPlugins); then
+    printf '%s: plugin rescan IPC failed\n' "$script_name" >&2
+    return 1
+  fi
+  if [[ $response != ok ]]; then
+    printf '%s: plugin rescan failed: %s\n' "$script_name" "$response" >&2
+    return 1
+  fi
+}
+
+list_json() {
+  local response id
+  response=$(run_ipc listPlugins)
+  jq -e 'type == "array" and all(.[]; type == "object" and (.id | type) == "string")' \
+    >/dev/null <<< "$response" || fail "IPC returned an invalid plugin list"
+  while IFS= read -r id; do
+    validate_id "$id"
+  done < <(jq -r '.[].id' <<< "$response")
+  printf '%s\n' "$response"
+}
+
+wait_for_discovery() {
+  local id=$1 attempt response
+  for ((attempt = 0; attempt < 40; attempt++)); do
+    response=$(list_json)
+    if jq -e --arg id "$id" 'any(.[]; .id == $id)' >/dev/null <<< "$response"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  fail "plugin was not discovered after rescan: $id"
+}
+
+install_plugin() {
+  local url=$1 expected_id=$2 enable=$3 yes=$4 id target response
+  [[ -z $expected_id ]] || validate_id "$expected_id"
+  (( yes )) || confirm_install "$url"
+  mkdir -p -- "$plugins_dir"
+  [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
+  stage_dir=$(mktemp -d "$plugins_dir/.add.XXXXXX") || fail "cannot create staging directory"
+  if ! git -c credential.helper= -c core.askPass=/bin/false clone --no-recurse-submodules -- "$url" "$stage_dir" \
+    >/dev/null 2>&1; then
+    fail "clone failed for $(redact_url "$url")"
+  fi
+  validate_plugin "$stage_dir"
+  id=$(manifest_id "$stage_dir")
+  [[ -z $expected_id ]] || [[ $id == "$expected_id" ]] || fail "expected id $expected_id, got $id"
+  find_duplicate_id "$id"
+  target=$plugins_dir/$id
+  [[ ! -e $target && ! -L $target ]] || fail "plugin target already exists: $id"
+  mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
+  installed_target=$target
+  stage_dir=
+  if ! rescan; then
+    rm -rf -- "$installed_target"
+    fail "plugin install failed during rescan"
+  fi
+  if (( enable )); then
+    wait_for_discovery "$id"
+    enable_plugin "$id" ""
+  fi
+  printf '%s\n' "$id"
+}
+
+parse_placement() {
+  local raw=${1:-} part key value section='' index='' before='' after=''
+  [[ -z $raw ]] && { jq -cn '{}'; return; }
+  IFS=',' read -ra parts <<< "$raw"
+  for part in "${parts[@]}"; do
+    [[ $part == *=* ]] || fail "placement must use key=value"
+    key=${part%%=*}; value=${part#*=}
+    case $key in
+      section) [[ $value == left || $value == center || $value == right ]] || fail "invalid placement section"; section=$value ;;
+      index) [[ $value =~ ^[0-9]+$ ]] || fail "placement index must be an integer"; index=$value ;;
+      before) [[ -z $before ]] || fail "conflicting before/after placement"; validate_id "$value"; before=$value ;;
+      after) [[ -z $after ]] || fail "conflicting before/after placement"; validate_id "$value"; after=$value ;;
+      *) fail "unknown placement field: $key" ;;
+    esac
+  done
+  [[ -z $before || -z $after ]] || fail "conflicting before/after placement"
+  jq -cn --arg section "$section" --arg index "$index" --arg before "$before" --arg after "$after" \
+    '({} + (if $section != "" then {section:$section} else {} end)
+      + (if $index != "" then {index:($index|tonumber)} else {} end)
+      + (if $before != "" then {before:$before} else {} end)
+      + (if $after != "" then {after:$after} else {} end))'
+}
+
+enable_plugin() {
+  local id=$1 raw=${2:-} placement response
+  validate_id "$id"
+  placement=$(parse_placement "$raw")
+  response=$(run_ipc enablePlugin "$id" "$placement")
+  [[ $response == ok ]] || fail "plugin enable failed: $response"
+}
+
+disable_plugin() {
+  local id=$1 response
+  validate_id "$id"
+  response=$(run_ipc setPluginEnabled "$id" false)
+  [[ $response == ok ]] || fail "plugin disable failed: $response"
+}
+
+main() {
+  local command=${1-} url expected_id='' enable=0 yes=0 id placement response
+  require_commands
+  [[ -n $command ]] || usage
+  shift
+  case $command in
+    add|install)
+      (($# >= 1)) || usage
+      url=$1; shift
+      while (($#)); do
+        case $1 in
+          --enable) enable=1 ;;
+          --yes) yes=1 ;;
+          --expected-id) (($# >= 2)) || usage; expected_id=$2; shift ;;
+          --) shift; (($# == 0)) || usage; break ;;
+          *) usage ;;
+        esac
+        shift
+      done
+      install_plugin "$url" "$expected_id" "$enable" "$yes" ;;
+    validate)
+      (($# == 1)) || usage
+      validate_plugin "$1" ;;
+    list)
+      if [[ $# == 1 && $1 == --json ]]; then list_json; else (($# == 0)) || usage; list_json | jq -r '.[] | [ .id, (if .enabled then "enabled" else "disabled" end), (.clonedFrom // ""), ((.kinds // []) | join(",")), (.name // .id) ] | @tsv'; fi ;;
+    enable)
+      (($# >= 1 && $# <= 2)) || usage; id=$1; placement=${2-}; enable_plugin "$id" "$placement" ;;
+    disable)
+      (($# == 1)) || usage; disable_plugin "$1" ;;
+    --help|-h) usage ;;
+    *) usage ;;
+  esac
+}
+
+main "$@"
