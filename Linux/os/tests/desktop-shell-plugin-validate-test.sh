@@ -93,5 +93,20 @@ expect_reject nul-entry "NUL" bash -c 'jq ".entryPoints.bar=\"Bar.qml\\u0000\"" 
 expect_reject newline-key "unsupported entry point key" bash -c 'jq ".kinds=[\"bar\"]|.entryPoints={\"bar\\nmenu\":\"Bar.qml\"}" "$TEST_DIRECTORY/manifest.json" >"$TEST_DIRECTORY/manifest.tmp" && mv "$TEST_DIRECTORY/manifest.tmp" "$TEST_DIRECTORY/manifest.json"'
 expect_reject outside-link "symbolic links are not allowed" bash -c 'printf outside >"$TEST_DIRECTORY/../outside.qml" && ln -s "$TEST_DIRECTORY/../outside.qml" "$TEST_DIRECTORY/outside-link"'
 expect_reject outside-dir-link "symbolic links are not allowed" bash -c 'ln -s /tmp "$TEST_DIRECTORY/src/outside-link"'
+
+safe_sibling="$test_root/trailing-sibling"
+unsafe_sibling="$test_root/trailing-sibling"$'\n'
+make_fixture "$safe_sibling"
+mkdir -p "$unsafe_sibling"
+unsafe_status=0
+if "$validator" "$unsafe_sibling" >"$test_root/trailing-sibling.stdout" 2>"$test_root/trailing-sibling.stderr"; then
+  fail "trailing-newline sibling was accepted through the safe sibling"
+else
+  unsafe_status=$?
+fi
+[[ "$unsafe_status" -ne 0 ]] || fail "trailing-newline sibling returned success"
+grep -Fq -- "root manifest.json is required" "$test_root/trailing-sibling.stderr" ||
+  fail "trailing-newline sibling reported the wrong error: $(<"$test_root/trailing-sibling.stderr")"
+
 [[ ! -e "$test_root/hook-ran" ]] || fail "validator executed a Git hook"
 printf 'PASS: desktop-shell plugin validator\n'

@@ -20,6 +20,16 @@ readonly -A KEY_FOR_KIND=(
   ["panel"]="panel"
   ["service"]="service"
 )
+PLUGIN_ROOT=
+ROOT_CAPTURE_FILE=
+
+cleanup() {
+  if [[ -n "$ROOT_CAPTURE_FILE" ]]; then
+    rm -f -- "$ROOT_CAPTURE_FILE"
+  fi
+}
+
+trap cleanup EXIT
 
 fail() {
   printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
@@ -28,7 +38,7 @@ fail() {
 
 require_commands() {
   local command
-  for command in find jq realpath base64; do
+  for command in find jq realpath base64 mktemp; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
   done
 }
@@ -38,14 +48,21 @@ validate_filesystem() {
   local root manifest symlink
 
   [[ -d "$plugin_dir" && ! -L "$plugin_dir" ]] || fail "a real plugin directory is required"
-  root=$(realpath -- "$plugin_dir") || fail "cannot resolve plugin directory"
+  ROOT_CAPTURE_FILE=$(mktemp) || fail "cannot create canonical root capture"
+  if ! realpath -z -- "$plugin_dir" >"$ROOT_CAPTURE_FILE"; then
+    fail "cannot resolve plugin directory"
+  fi
+  if ! IFS= read -r -d '' root <"$ROOT_CAPTURE_FILE"; then
+    fail "cannot read canonical plugin directory"
+  fi
+  [[ -n "$root" ]] || fail "canonical plugin directory is empty"
+  PLUGIN_ROOT=$root
   manifest=$root/manifest.json
   [[ -f "$manifest" && ! -L "$manifest" ]] || fail "root manifest.json is required"
 
   symlink=$(find "$root" -path "$root/.git" -prune -o -type l -print -quit)
   [[ -z "$symlink" ]] || fail "symbolic links are not allowed: $symlink"
 
-  printf '%s\n' "$root"
 }
 
 read_manifest_snapshot() {
@@ -153,13 +170,13 @@ validate_snapshot_entries() {
 }
 
 main() {
-  local plugin_dir=${1:-} root manifest
+  local plugin_dir=${1:-} manifest
   [[ $# == 1 ]] || fail "usage: $SCRIPT_NAME PLUGIN_DIRECTORY"
   require_commands
-  root=$(validate_filesystem "$plugin_dir")
-  manifest=$root/manifest.json
+  validate_filesystem "$plugin_dir"
+  manifest=$PLUGIN_ROOT/manifest.json
   read_manifest_snapshot "$manifest"
-  validate_snapshot_entries "$root"
+  validate_snapshot_entries "$PLUGIN_ROOT"
 }
 
 main "$@"
