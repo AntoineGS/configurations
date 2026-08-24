@@ -4,7 +4,15 @@ IFS=$'\n\t'
 shopt -s inherit_errexit
 
 readonly SCRIPT_NAME=${0##*/}
-readonly -A ENTRY_KEYS=(
+readonly -A KIND_FOR_KEY=(
+  ["bar"]="bar"
+  ["barWidget"]="bar-widget"
+  ["menu"]="menu"
+  ["overlay"]="overlay"
+  ["panel"]="panel"
+  ["service"]="service"
+)
+readonly -A KEY_FOR_KIND=(
   ["bar"]="bar"
   ["bar-widget"]="barWidget"
   ["menu"]="menu"
@@ -20,49 +28,70 @@ fail() {
 
 require_commands() {
   local command
-  for command in find jq realpath; do
+  for command in find jq realpath base64; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
   done
 }
 
 validate_filesystem() {
   local plugin_dir=$1
-  local manifest=$plugin_dir/manifest.json
-  local symlink
+  local root manifest symlink
 
   [[ -d "$plugin_dir" && ! -L "$plugin_dir" ]] || fail "a real plugin directory is required"
+  root=$(realpath -- "$plugin_dir") || fail "cannot resolve plugin directory"
+  manifest=$root/manifest.json
   [[ -f "$manifest" && ! -L "$manifest" ]] || fail "root manifest.json is required"
 
-  symlink=$(find "$plugin_dir" -path "$plugin_dir/.git" -prune -o -type l -print -quit)
+  symlink=$(find "$root" -path "$root/.git" -prune -o -type l -print -quit)
   [[ -z "$symlink" ]] || fail "symbolic links are not allowed: $symlink"
+
+  printf '%s\n' "$root"
 }
 
-validate_manifest_shape() {
-  local manifest=$1
+read_manifest_snapshot() {
+  local manifest=$1 snapshot
 
-  jq -e . "$manifest" >/dev/null 2>&1 || fail "invalid JSON in manifest.json"
-  jq -e 'type == "object"' "$manifest" >/dev/null 2>&1 || fail "manifest must be an object"
-  jq -e '.schemaVersion | type == "number" and . == 1' "$manifest" >/dev/null 2>&1 || fail "schemaVersion must be 1"
+  if ! snapshot=$(jq -e -r '
+    def required_string($name):
+      if (has($name) | not) then error("missing required field \u0027\($name)\u0027")
+      elif (.[$name] | type) != "string" or (.[$name] | length) == 0 then error("\($name) must be a non-empty string")
+      else .[$name]
+      end;
+    def no_nul($name):
+      if contains("\u0000") then error("\($name) must not contain NUL") else . end;
+    if type != "object" then error("manifest must be an object")
+    elif (has("schemaVersion") | not) or (.schemaVersion | type != "number" or . != 1) then error("schemaVersion must be 1")
+    elif (required_string("id") | no_nul("id") | length) == 0 then error("id must be a non-empty string")
+    elif (required_string("name") | no_nul("name") | length) == 0 then error("name must be a non-empty string")
+    elif (required_string("version") | no_nul("version") | length) == 0 then error("version must be a non-empty string")
+    elif (has("kinds") | not) then error("missing required field \u0027kinds\u0027")
+    elif (.kinds | type) != "array" or (.kinds | length) == 0 then error("kinds must be a non-empty array")
+    elif (all(.kinds[]; type == "string" and length > 0 and (contains("\u0000") | not)) | not) then error("kinds must contain non-empty strings without NUL")
+    elif (.kinds | length) != (.kinds | unique | length) then error("kinds must contain unique strings")
+    elif (has("entryPoints") | not) then error("missing required field \u0027entryPoints\u0027")
+    elif (.entryPoints | type) != "object" then error("entryPoints must be an object")
+    elif (all(.entryPoints | to_entries[]; (.value | type == "string" and length > 0 and (contains("\u0000") | not))) | not) then error("entryPoints must contain non-empty strings without NUL")
+    elif (all(.entryPoints | keys[]; (contains("\u0000") | not)) | not) then error("entry point keys must not contain NUL")
+    elif (has("barWidget") and (.barWidget | type) != "object") then error("barWidget must be an object")
+    elif (has("barWidget") and (.barWidget | has("defaultSection")) and (.barWidget.defaultSection as $section | ($section | type != "string" or (["left", "center", "right"] | index($section)) == null))) then error("barWidget.defaultSection must be left, center, or right")
+    else
+      ("I\t" + (.id | no_nul("id") | @base64)),
+      (.kinds[] | "K\t" + (no_nul("kind") | @base64)),
+      (.entryPoints | to_entries[] | "E\t" + (.key | @base64) + "\t" + (.value | @base64))
+    end
+  ' "$manifest" 2>&1); then
+    fail "manifest validation failed: $snapshot"
+  fi
 
-  local field
-  for field in id name version kinds entryPoints; do
-    jq -e --arg field "$field" 'has($field)' "$manifest" >/dev/null 2>&1 ||
-      fail "missing required field '$field'"
-  done
-  for field in id name version; do
-    jq -e --arg field "$field" '.[$field] | type == "string" and length > 0' "$manifest" >/dev/null 2>&1 ||
-      fail "$field must be a non-empty string"
-  done
-  jq -e '.kinds | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)' "$manifest" >/dev/null 2>&1 ||
-    fail "kinds must be a non-empty array of strings"
-  jq -e '.kinds | length == (unique | length)' "$manifest" >/dev/null 2>&1 ||
-    fail "kinds must contain unique strings"
-  jq -e '.entryPoints | type == "object" and all(.[]; type == "string" and length > 0)' "$manifest" >/dev/null 2>&1 ||
-    fail "entryPoints must contain non-empty string values"
-  jq -e '.barWidget == null or (.barWidget | type == "object")' "$manifest" >/dev/null 2>&1 ||
-    fail "barWidget must be an object"
-  jq -e '.barWidget == null or .barWidget.defaultSection == null or (.barWidget.defaultSection as $section | ($section | type == "string") and (["left", "center", "right"] | index($section)) != null)' "$manifest" >/dev/null 2>&1 ||
-    fail "barWidget.defaultSection must be left, center, or right"
+  MANIFEST_SNAPSHOT=$snapshot
+}
+
+decode_base64() {
+  local encoded=$1
+  DECODED=
+  if IFS= read -r -d '' DECODED < <(printf '%s' "$encoded" | base64 --decode); then
+    :
+  fi
 }
 
 validate_id() {
@@ -71,49 +100,66 @@ validate_id() {
   [[ "$id" != desktop.* && "$id" != omarchy.* ]] || fail "plugin id uses reserved namespace: $id"
 }
 
-validate_kinds_and_entries() {
-  local plugin_dir=$1
-  local manifest=$2
-  local kind key entry resolved root
-  local -a kinds entry_keys
+validate_snapshot_entries() {
+  local root=$1 record record_type first second kind key value resolved
+  local -a records kinds
+  local -A declared=() entries=()
 
-  mapfile -t kinds < <(jq -r '.kinds[]' "$manifest")
-  mapfile -t entry_keys < <(jq -r '.entryPoints | keys[]' "$manifest")
-  root=$(realpath -- "$plugin_dir")
-
-  for key in "${entry_keys[@]}"; do
-    case "$key" in
-      bar|barWidget|menu|overlay|panel|service) ;;
-      *) fail "unsupported entry point key: $key" ;;
+  mapfile -t records <<< "$MANIFEST_SNAPSHOT"
+  for record in "${records[@]}"; do
+    IFS=$'\t' read -r record_type first second <<< "$record"
+    case "$record_type" in
+      I)
+        decode_base64 "$first"
+        validate_id "$DECODED"
+        ;;
+      K)
+        decode_base64 "$first"
+        [[ -n ${KEY_FOR_KIND[$DECODED]:-} ]] || fail "unsupported kind: $DECODED"
+        kinds+=("$DECODED")
+        declared["$DECODED"]=1
+        ;;
+      E)
+        decode_base64 "$first"
+        key=$DECODED
+        decode_base64 "$second"
+        value=$DECODED
+        kind=${KIND_FOR_KEY[$key]:-}
+        [[ -n "$kind" ]] || fail "unsupported entry point key: $key"
+        [[ -n ${declared[$kind]:-} ]] || fail "entry point key '$key' has no declared kind"
+        [[ "$value" != /* && "$value" != \\* && ! "$value" =~ ^[A-Za-z]:[\\/] ]] ||
+          fail "entry point escapes plugin directory: $value"
+        resolved=
+        if IFS= read -r -d '' resolved < <(realpath -m -- "$root/$value"); then
+          :
+        fi
+        resolved=${resolved%$'\n'}
+        [[ "$resolved" == "$root/"* ]] || fail "entry point escapes plugin directory: $value"
+        [[ -e "$resolved" ]] || fail "entry point file not found: $value"
+        [[ -f "$resolved" && ! -L "$resolved" ]] || fail "entry point is not a regular file: $value"
+        entries["$kind"]=1
+        ;;
+      *)
+        fail "invalid manifest snapshot record"
+        ;;
     esac
-    entry=$(jq -r --arg key "$key" '.entryPoints[$key]' "$manifest")
-    [[ "$entry" != /* && "$entry" != \\* && ! "$entry" =~ ^[A-Za-z]:[\\/] ]] ||
-      fail "entry point escapes plugin directory: $entry"
-    resolved=$(realpath -m -- "$plugin_dir/$entry")
-    [[ "$resolved" == "$root/"* ]] || fail "entry point escapes plugin directory: $entry"
   done
 
   for kind in "${kinds[@]}"; do
-    key=${ENTRY_KEYS[$kind]:-}
+    key=${KEY_FOR_KIND[$kind]:-}
     [[ -n "$key" ]] || fail "unsupported kind: $kind"
-    jq -e --arg key "$key" '.entryPoints | has($key)' "$manifest" >/dev/null 2>&1 ||
-      fail "kind '$kind' requires entryPoints.$key"
-    entry=$(jq -r --arg key "$key" '.entryPoints[$key]' "$manifest")
-    resolved=$(realpath -m -- "$plugin_dir/$entry")
-    [[ -f "$resolved" && ! -L "$resolved" ]] || fail "entry point file not found: $entry"
+    [[ -n ${entries[$kind]:-} ]] || fail "kind '$kind' requires entryPoints.$key"
   done
 }
 
 main() {
-  local plugin_dir=${1:-}
-  local manifest
+  local plugin_dir=${1:-} root manifest
   [[ $# == 1 ]] || fail "usage: $SCRIPT_NAME PLUGIN_DIRECTORY"
   require_commands
-  validate_filesystem "$plugin_dir"
-  manifest=$plugin_dir/manifest.json
-  validate_manifest_shape "$manifest"
-  validate_id "$(jq -r '.id' "$manifest")"
-  validate_kinds_and_entries "$plugin_dir" "$manifest"
+  root=$(validate_filesystem "$plugin_dir")
+  manifest=$root/manifest.json
+  read_manifest_snapshot "$manifest"
+  validate_snapshot_entries "$root"
 }
 
 main "$@"
