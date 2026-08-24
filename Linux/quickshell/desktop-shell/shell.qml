@@ -249,6 +249,8 @@ ShellRoot {
     pluginStateDirectoryProcess.running = true
     pluginRegistry.firstPartyDir = shell.firstPartyPluginsDir
     pluginRegistry.shellConfigProvider = function() { return shell.shellConfig }
+    pluginRegistry.pluginStateProvider = function() { return shell.pluginState }
+    pluginRegistry.pluginStateWriter = function(nextState) { return shell.persistPluginState(nextState) }
     pluginRegistry.rescan()
     shell._syncServices()
   }
@@ -862,6 +864,9 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
+    function onLocalPluginChanged(id) {
+      if (String(id || "") !== "") shell.reloadPlugins()
+    }
     function onScanFinished() {
       if (shell.pluginReloadPending) {
         shell.pluginReloadPending = false
