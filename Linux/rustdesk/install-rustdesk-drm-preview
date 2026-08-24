@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PACKAGE_NAME=rustdesk-drm-preview-bin
+readonly PACKAGE_VERSION=1.4.9.drmfix1-1
+readonly PACKAGE_URL=https://github.com/AntoineGS/rustdesk/releases/download/temp-build/rustdesk-drm-preview-bin-1.4.9.drmfix1-1-x86_64.pkg.tar.zst
+readonly PACKAGE_SHA256=bafe87f47a27fd3029f7229b893bf06ea1365fa15c7d7b106a845753aedd686e
+readonly SERVICE_NAME=rustdesk.service
+readonly SERVICE_EXECUTABLE=/usr/lib/rustdesk-drm-preview/rustdesk
+
+tmp_package=
+
+cleanup() {
+  if [[ -n $tmp_package ]]; then
+    rm -f -- "$tmp_package"
+  fi
+}
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+check_installation() {
+  local installed exec_start expected_exec_start
+  installed=$(pacman -Q "$PACKAGE_NAME" 2>/dev/null) || return 1
+  [[ $installed == "$PACKAGE_NAME $PACKAGE_VERSION" ]] || return 1
+  systemctl is-enabled --quiet "$SERVICE_NAME" || return 1
+  systemctl is-active --quiet "$SERVICE_NAME" || return 1
+  exec_start=$(systemctl show "$SERVICE_NAME" --property=ExecStart --value) || return 1
+  expected_exec_start="{ path=$SERVICE_EXECUTABLE ; argv[]=$SERVICE_EXECUTABLE --service ;"
+  [[ $exec_start == "$expected_exec_start"* ]]
+}
+
+apply_installation() {
+  local required_command
+  [[ $(id -u) == 0 ]] || die 'RustDesk DRM preview installation requires root'
+  for required_command in curl sha256sum pacman systemctl mktemp; do
+    command -v "$required_command" >/dev/null || die "Required command not found: $required_command"
+  done
+
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  tmp_package=$(mktemp --tmpdir "$PACKAGE_NAME.XXXXXXXX.pkg.tar.zst")
+
+  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 \
+    --output "$tmp_package" "$PACKAGE_URL"
+  printf '%s  %s\n' "$PACKAGE_SHA256" "$tmp_package" | sha256sum --check --status -
+  pacman --noconfirm -U -- "$tmp_package"
+  check_installation || die 'RustDesk DRM preview post-install verification failed'
+}
+
+case ${1:-} in
+  --check) check_installation ;;
+  --apply) apply_installation ;;
+  *) die 'Usage: install-rustdesk-drm-preview --check|--apply' ;;
+esac

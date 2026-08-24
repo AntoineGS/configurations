@@ -498,6 +498,21 @@ applications:
         run:
           linux: ~/.config/hypr/setup-rustdesk-focus-handoff --apply
         name: enable-service
+  - name: rustdesk-drm-preview
+    description: Install the temporary RustDesk DRM preview package
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: installer
+        backup: ./Linux/rustdesk
+        files:
+          - install-rustdesk-drm-preview
+      - check:
+          linux: ~/.local/bin/install-rustdesk-drm-preview --check
+        run:
+          linux: sudo ~/.local/bin/install-rustdesk-drm-preview --apply
+        name: package
   - name: rustdesk-wayland
     description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
     when: '{{ eq .Hostname "antoinews-linux" }}'
