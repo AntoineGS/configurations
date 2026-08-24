@@ -76,7 +76,18 @@ case "${2-}" in
     fi
     ;;
   enablePlugin) printf '%s\n' "${IPC_ENABLE_RESULT:-ok}" ;;
-  setPluginEnabled) printf '%s\n' "${IPC_DISABLE_RESULT:-ok}" ;;
+  setPluginEnabled)
+    if [[ ${IPC_REPLACE_ON_DISABLE:-0} == 1 ]]; then
+      mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
+      mkdir -- "$IPC_TARGET"
+      printf 'replacement\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ ${IPC_REPLACE_ROOT_ON_DISABLE:-0} == 1 ]]; then
+      mv -- "$IPC_ROOT" "$IPC_ROOT_BACKUP"
+      ln -s -- "$IPC_REPLACEMENT_ROOT" "$IPC_ROOT"
+    fi
+    printf '%s\n' "${IPC_DISABLE_RESULT:-ok}"
+    ;;
   *) printf 'unsupported\n'; exit 1 ;;
 esac
 EOF
@@ -355,6 +366,53 @@ fi
 validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $validation_rescan_after == "$validation_rescan_before" ]] || fail "validation rollback requested rescan"
 
+signal_validator="$test_root/signal-validator"
+cat >"$signal_validator" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+kill -TERM "\$PPID"
+sleep 0.2
+exec "$validator" "\$1"
+EOF
+chmod +x -- "$signal_validator"
+signal_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+signal_status=0
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$signal_validator" "$manager" update lifecycle.widget --yes >/dev/null 2>&1 || signal_status=$?
+[[ $signal_status == 143 ]] || fail "signal after merge returned status $signal_status"
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$signal_prior" ]] || fail "signal after merge did not roll back"
+
+bulk_plugins="$test_root/bulk-plugins"
+mkdir -p -- "$bulk_plugins"
+bulk_good="$bulk_plugins/bulk-good.widget"
+bulk_bad="$bulk_plugins/bulk-bad.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$bulk_good"
+git clone -q -- "$remote_root/lifecycle.git" "$bulk_bad"
+printf 'bulk-diverged\n' >>"$bulk_bad/Widget.qml"
+git -C "$bulk_bad" add Widget.qml
+git -C "$bulk_bad" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-diverged
+printf 'bulk-update\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+bulk_good_prior=$(git -C "$bulk_good" rev-parse HEAD)
+bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
+visible_non_git="$bulk_plugins/visible.widget"
+mkdir -p -- "$visible_non_git"
+printf 'visible\n' >"$visible_non_git/marker"
+bulk_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+bulk_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$bulk_plugins" "$manager" update --yes >/dev/null 2>&1; then
+  bulk_status=0
+else
+  bulk_status=$?
+fi
+[[ $bulk_status != 0 ]] || fail "partial bulk update unexpectedly succeeded"
+[[ $(git -C "$bulk_good" rev-parse HEAD) != "$bulk_good_prior" ]] || fail "partial bulk update lost successful change"
+[[ $(git -C "$bulk_bad" rev-parse HEAD) == "$bulk_bad_prior" ]] || fail "partial bulk update changed failed plugin"
+bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $((bulk_rescan_after - bulk_rescan_before)) == 1 ]] || fail "partial bulk update did not request exactly one rescan"
+[[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
+
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "local modifications were accepted"
@@ -374,6 +432,44 @@ fi
 if env "${manager_env[@]}" "$manager" remove lifecycle.widget </dev/null >/dev/null 2>&1; then
   fail "non-interactive remove without --yes succeeded"
 fi
+
+enclosing_root="$test_root/enclosing"
+mkdir -p -- "$enclosing_root/$plugins_dir"
+git -C "$enclosing_root" init -q
+git -C "$enclosing_root" config user.name test
+git -C "$enclosing_root" config user.email test@example.invalid
+mkdir -p -- "$enclosing_root/$plugins_dir/enclosed.widget"
+printf '{}\n' >"$enclosing_root/$plugins_dir/enclosed.widget/manifest.json"
+git -C "$enclosing_root" add .
+git -C "$enclosing_root" commit -qm enclosing
+if DESKTOP_SHELL_PLUGINS_DIR="$enclosing_root/$plugins_dir" env "${manager_env[@]}" "$manager" update enclosed.widget --yes >/dev/null 2>&1; then
+  fail "enclosing Git worktree was treated as a plugin checkout"
+fi
+
+replace_dir="$plugins_dir/replace.widget"
+mkdir -p -- "$replace_dir"
+printf '{}\n' >"$replace_dir/manifest.json"
+replace_backup="$test_root/replace-backup"
+if IPC_REPLACE_ON_DISABLE=1 IPC_TARGET="$replace_dir" IPC_REPLACEMENT_BACKUP="$replace_backup" \
+  env "${manager_env[@]}" "$manager" remove replace.widget --yes >/dev/null 2>&1; then
+  fail "target replacement during disable was accepted"
+fi
+[[ -f "$replace_dir/marker" && -f "$replace_backup/manifest.json" ]] || fail "target replacement safety state was lost"
+
+root_replace_dir="$plugins_dir/root-replace.widget"
+mkdir -p -- "$root_replace_dir"
+printf '{}\n' >"$root_replace_dir/manifest.json"
+replacement_root="$test_root/replacement-root"
+mkdir -- "$replacement_root"
+root_backup="$test_root/root-backup"
+if IPC_REPLACE_ROOT_ON_DISABLE=1 IPC_ROOT="$plugins_dir" IPC_ROOT_BACKUP="$root_backup" IPC_REPLACEMENT_ROOT="$replacement_root" \
+  env "${manager_env[@]}" "$manager" remove root-replace.widget --yes >/dev/null 2>&1; then
+  fail "root replacement during disable was accepted"
+fi
+[[ -f "$root_backup/root-replace.widget/manifest.json" ]] || fail "root replacement moved original source"
+[[ -L $plugins_dir && -d $plugins_dir ]] || fail "replacement root was not preserved"
+rm -f -- "$plugins_dir"
+mv -- "$root_backup" "$plugins_dir"
 
 remove_dir="$plugins_dir/remove.widget"
 git clone -q -- "$remote_root/lifecycle.git" "$remove_dir"
