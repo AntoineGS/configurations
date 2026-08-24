@@ -19,6 +19,9 @@ export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-'ssh -oBatchMode=yes'}
 stage_dir=
 installed_target=
 installed_identity=
+rollback_dir=
+add_lock_fd=-1
+cleanup_running=0
 placement_section=
 placement_index=
 placement_before=
@@ -35,33 +38,69 @@ usage() {
     "       $script_name validate DIR" \
     "       $script_name list [--json]" \
     "       $script_name enable ID [SECTION] [--section SECTION] [--index N] [--before ID|--after ID]" \
-    "       $script_name disable ID" >&2
+    "       $script_name disable ID" \
+    "       $script_name sanitize-url URL" >&2
   exit 2
 }
 
-remove_owned_target() {
-  local current_identity
+quarantine_owned_target() {
+  local quarantine_path quarantine_identity
   [[ -n $installed_target && -n $installed_identity ]] || return 0
   [[ -d $installed_target && ! -L $installed_target ]] || return 0
-  current_identity=$(stat -c '%d:%i' -- "$installed_target" 2>/dev/null || true)
-  if [[ -n $current_identity && $current_identity == "$installed_identity" ]]; then
-    rm -rf -- "$installed_target"
+  rollback_dir=$(mktemp -d "$plugins_dir/.rollback.XXXXXX") || return 0
+  quarantine_path=$rollback_dir/plugin
+  if ! mv -T -- "$installed_target" "$quarantine_path"; then
+    rmdir -- "$rollback_dir" 2>/dev/null || true
+    rollback_dir=
+    return 0
   fi
+  quarantine_identity=$(stat -c '%d:%i' -- "$quarantine_path" 2>/dev/null || true)
+  if [[ $quarantine_identity == "$installed_identity" ]]; then
+    rm -rf -- "$quarantine_path" || true
+  elif [[ ! -e $installed_target && ! -L $installed_target ]]; then
+    mv -T -- "$quarantine_path" "$installed_target" || true
+  fi
+  rmdir -- "$rollback_dir" 2>/dev/null || true
+  rollback_dir=
   installed_target=
   installed_identity=
 }
 
 cleanup() {
+  (( cleanup_running )) && return 0
+  cleanup_running=1
+  trap - HUP INT TERM
   if [[ -n $stage_dir && -d $stage_dir ]]; then
-    rm -rf -- "$stage_dir"
+    rm -rf -- "$stage_dir" || true
   fi
-  remove_owned_target
+  quarantine_owned_target
+  if (( add_lock_fd >= 0 )); then
+    flock -u "$add_lock_fd" || true
+    exec {add_lock_fd}>&-
+    add_lock_fd=-1
+  fi
 }
-trap cleanup EXIT HUP INT TERM
+
+handle_signal() {
+  local signal=$1 status
+  case $signal in
+    HUP) status=129 ;;
+    INT) status=130 ;;
+    TERM) status=143 ;;
+    *) status=1 ;;
+  esac
+  cleanup
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'handle_signal HUP' HUP
+trap 'handle_signal INT' INT
+trap 'handle_signal TERM' TERM
 
 require_commands() {
   local command
-  for command in git jq mktemp realpath stat; do
+  for command in git jq mktemp realpath stat flock; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
   done
 }
@@ -127,7 +166,12 @@ find_duplicate_id() {
     if [[ $candidate == "$requested_id" ]]; then
       fail "plugin id already installed: $requested_id"
     fi
-  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -type f -name manifest.json -print0)
+  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -name manifest.json -print0)
+}
+
+acquire_add_lock() {
+  exec {add_lock_fd}>"$plugins_dir/.plugin-manager.lock" || fail "cannot open plugin add lock"
+  flock -x "$add_lock_fd" || fail "cannot acquire plugin add lock"
 }
 
 confirm_install() {
@@ -183,6 +227,7 @@ install_plugin() {
   (( yes )) || confirm_install "$url"
   mkdir -p -- "$plugins_dir"
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
+  acquire_add_lock
   stage_dir=$(mktemp -d "$plugins_dir/.add.XXXXXX") || fail "cannot create staging directory"
   if ! git -c credential.helper= -c core.askPass=/bin/false clone --no-recurse-submodules -- "$url" "$stage_dir" \
     >/dev/null 2>&1; then
@@ -195,9 +240,9 @@ install_plugin() {
   target=$plugins_dir/$id
   [[ ! -e $target && ! -L $target ]] || fail "plugin target already exists: $id"
   stage_identity=$(stat -c '%d:%i' -- "$stage_dir") || fail "cannot capture staging identity"
-  mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
   installed_target=$target
   installed_identity=$stage_identity
+  mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
   stage_dir=
   if ! rescan; then
     fail "plugin install failed during rescan"
@@ -229,7 +274,7 @@ enable_plugin() {
 }
 
 parse_enable_options() {
-  local positional_section=0 option value
+  local section_seen=0 option value
   placement_section=''
   placement_index=''
   placement_before=''
@@ -247,9 +292,10 @@ parse_enable_options() {
         shift 2
         case $option in
           --section)
-            [[ -z $placement_section && $positional_section == 0 ]] || fail "duplicate section placement"
+            (( section_seen == 0 )) || fail "duplicate section placement"
             [[ $value == left || $value == center || $value == right ]] || fail "invalid placement section"
             placement_section=$value
+            section_seen=1
             ;;
           --index)
             [[ -z $placement_index ]] || fail "duplicate placement index"
@@ -272,10 +318,10 @@ parse_enable_options() {
         usage
         ;;
       *)
-        [[ $positional_section == 0 ]] || usage
+        (( section_seen == 0 )) || fail "duplicate section placement"
         [[ $option == left || $option == center || $option == right ]] || fail "invalid placement section"
         placement_section=$option
-        positional_section=1
+        section_seen=1
         shift
         ;;
     esac
@@ -295,6 +341,9 @@ main() {
   [[ -n $command ]] || usage
   shift
   case $command in
+    sanitize-url)
+      (($# == 1)) || usage
+      sanitize_url "$1" ;;
     add|install)
       (($# >= 1)) || usage
       url=$1; shift

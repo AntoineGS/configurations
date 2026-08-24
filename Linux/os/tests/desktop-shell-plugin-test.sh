@@ -43,7 +43,18 @@ cat >"$ipc_stub" <<'EOF'
 set -Eeuo pipefail
 printf '%s\t%s\t%s\n' "${2-}" "${3-}" "${4-}" >>"$IPC_LOG"
 case "${2-}" in
-  rescanPlugins) printf '%s\n' "${IPC_RESCAN_RESULT:-ok}" ;;
+  rescanPlugins)
+    if [[ ${IPC_REPLACE_TARGET:-0} == 1 ]]; then
+      mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
+      mkdir -- "$IPC_TARGET"
+      printf 'replacement\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ ${IPC_SIGNAL_AFTER_RESCAN:-0} == 1 ]]; then
+      kill -TERM "$PPID"
+      sleep 0.2
+    fi
+    printf '%s\n' "${IPC_RESCAN_RESULT:-ok}"
+    ;;
   listPlugins)
     count_file="$IPC_LOG.list-count"
     count=0
@@ -52,6 +63,8 @@ case "${2-}" in
     printf '%s\n' "$count" >"$count_file"
     if [[ ${IPC_LIST_MODE:-normal} == invalid ]]; then
       printf '%s\n' 'not-json'
+    elif [[ ${IPC_LIST_MODE:-normal} == object ]]; then
+      printf '%s\n' '{"id":"not-an-array"}'
     elif [[ ${IPC_LIST_MODE:-normal} == unsafe ]]; then
       printf '%s\n' '[{"id":"../unsafe"}]'
     elif [[ ${IPC_NEVER_DISCOVER:-0} == 1 || ( ${IPC_DELAY_LIST:-0} -ge "$count" ) ]]; then
@@ -88,6 +101,10 @@ plain_output=$(env "${manager_env[@]}" "$manager" list)
 
 env "${manager_env[@]}" "$manager" enable acme.widget --section right --index 2 || fail "enable failed"
 grep -Fq $'enablePlugin\tacme.widget\t{"section":"right","index":2}' "$log_file" || fail "placement JSON is incorrect"
+env "${manager_env[@]}" "$manager" enable acme.widget --index 3 || fail "independent index enable failed"
+grep -Fq $'enablePlugin\tacme.widget\t{"index":3}' "$log_file" || fail "independent index JSON is incorrect"
+env "${manager_env[@]}" "$manager" enable acme.widget --section left || fail "independent option section enable failed"
+grep -Fq $'enablePlugin\tacme.widget\t{"section":"left"}' "$log_file" || fail "independent option section JSON is incorrect"
 env "${manager_env[@]}" "$manager" enable acme.widget right || fail "positional section enable failed"
 grep -Fq $'enablePlugin\tacme.widget\t{"section":"right"}' "$log_file" || fail "positional section JSON is incorrect"
 env "${manager_env[@]}" "$manager" enable acme.widget --before acme.other || fail "before enable failed"
@@ -105,6 +122,12 @@ if env "${manager_env[@]}" "$manager" enable acme.widget --unknown value >/dev/n
 fi
 if env "${manager_env[@]}" "$manager" enable acme.widget --section left --section right >/dev/null 2>&1; then
   fail "duplicate section option was accepted"
+fi
+if env "${manager_env[@]}" "$manager" enable acme.widget --section right left >/dev/null 2>&1; then
+  fail "option-then-positional section duplication was accepted"
+fi
+if env "${manager_env[@]}" "$manager" enable acme.widget left --section right >/dev/null 2>&1; then
+  fail "positional-then-option section duplication was accepted"
 fi
 if env "${manager_env[@]}" "$manager" add "$source_repo" --yes --expected-id other.widget >/dev/null 2>"$test_root/id.err"; then
   fail "expected-id mismatch was accepted"
@@ -170,7 +193,16 @@ if command -v script >/dev/null 2>&1; then
   prompt_output=$(printf 'n\n' | script -qefc "env ${manager_env[*]} '$manager' add 'https://user:SECRET@example.invalid/repo?token=QUERY#fragment'" /dev/null 2>&1 || true)
   [[ $prompt_output == *'https://example.invalid/repo'* ]] || fail "interactive confirmation omitted sanitized URL"
   [[ $prompt_output != *SECRET* && $prompt_output != *QUERY* && $prompt_output != *fragment* ]] || fail "interactive confirmation leaked URL credentials"
+else
+  fail "script is required for deterministic interactive sanitizer coverage"
 fi
+if command -v script >/dev/null 2>&1; then
+  scp_prompt=$(printf 'n\n' | script -qefc "env ${manager_env[*]} '$manager' add 'TOKEN@host.example:repo/path?token=QUERY#fragment'" /dev/null 2>&1 || true)
+  [[ $scp_prompt == *'host.example:repo/path'* ]] || fail "SCP-like confirmation omitted sanitized URL"
+  [[ $scp_prompt != *TOKEN* && $scp_prompt != *QUERY* && $scp_prompt != *fragment* ]] || fail "SCP-like confirmation leaked credentials"
+fi
+sanitized_scp=$("$manager" sanitize-url 'TOKEN@host.example:repo/path?token=QUERY#fragment')
+[[ $sanitized_scp == 'host.example:repo/path' ]] || fail "deterministic SCP sanitizer path failed"
 if env "${manager_env[@]}" "$manager" add "$test_root/missing-repository" --yes >/dev/null 2>&1; then
   fail "failed clone was accepted"
 fi
@@ -179,6 +211,7 @@ stages=("$plugins_dir"/.add.*)
 
 jq -n '[{"id":"acme.widget"}]' >"$IPC_LIST"
 IPC_LIST_MODE=invalid env "${manager_env[@]}" "$manager" list --json >/dev/null 2>&1 && fail "invalid list response was accepted"
+IPC_LIST_MODE=object env "${manager_env[@]}" "$manager" list --json >/dev/null 2>&1 && fail "non-array list response was accepted"
 IPC_LIST_MODE=unsafe env "${manager_env[@]}" "$manager" list --json >/dev/null 2>&1 && fail "unsafe list id was accepted"
 IPC_ENABLE_RESULT=not-ok env "${manager_env[@]}" "$manager" enable acme.widget >/dev/null 2>&1 && fail "non-ok enable response was accepted"
 IPC_DISABLE_RESULT=not-ok env "${manager_env[@]}" "$manager" disable acme.widget >/dev/null 2>&1 && fail "non-ok disable response was accepted"
@@ -209,6 +242,24 @@ if IPC_ENABLE_RESULT=failed env "${manager_env[@]}" "$manager" add "$activation_
   fail "activation failure was accepted"
 fi
 [[ ! -e "$plugins_dir/activation.widget" ]] || fail "activation failure left target"
+
+replacement_repo="$test_root/replacement"
+make_repo "$replacement_repo" replacement.widget
+replacement_backup="$test_root/replacement-backup"
+if IPC_RESCAN_RESULT=failed IPC_REPLACE_TARGET=1 IPC_TARGET="$plugins_dir/replacement.widget" \
+  IPC_REPLACEMENT_BACKUP="$replacement_backup" env "${manager_env[@]}" "$manager" add "$replacement_repo" --yes >/dev/null 2>&1; then
+  fail "replacement cleanup failure was accepted"
+fi
+[[ -f "$plugins_dir/replacement.widget/marker" ]] || fail "replacement was deleted during rollback"
+[[ -f "$replacement_backup/manifest.json" ]] || fail "original target was not preserved for replacement test"
+rm -rf -- "$plugins_dir/replacement.widget" "$replacement_backup"
+
+signal_repo="$test_root/signal"
+make_repo "$signal_repo" signal.widget
+signal_status=0
+IPC_SIGNAL_AFTER_RESCAN=1 env "${manager_env[@]}" "$manager" add "$signal_repo" --yes >/dev/null 2>&1 || signal_status=$?
+[[ $signal_status == 143 ]] || fail "TERM after move returned status $signal_status"
+[[ ! -e "$plugins_dir/signal.widget" ]] || fail "TERM after move left target"
 
 credential_error=$(env "${manager_env[@]}" "$manager" add 'https://user:SECRET@example.invalid/repo?token=QUERY#fragment' --yes 2>&1 || true)
 [[ $credential_error != *SECRET* && $credential_error != *QUERY* && $credential_error != *fragment* ]] || fail "clone diagnostics leaked URL credentials"
