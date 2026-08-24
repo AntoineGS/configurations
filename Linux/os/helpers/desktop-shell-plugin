@@ -33,6 +33,13 @@ update_target_fd=-1
 update_target_path=
 update_target_real=
 update_target_identity=
+git_fd=-1
+common_fd=-1
+git_path=
+common_path=
+git_identity=
+common_identity=
+metadata_ready=0
 update_armed=0
 update_dir=
 update_prior=
@@ -104,6 +111,7 @@ cleanup() {
   fi
   if (( target_fd >= 0 )); then
     exec {target_fd}<&-
+    [[ $update_target_fd == "$target_fd" ]] && update_target_fd=-1
     target_fd=-1
   fi
   if (( quarantine_fd >= 0 )); then
@@ -113,6 +121,14 @@ cleanup() {
   if (( update_target_fd >= 0 )); then
     exec {update_target_fd}<&-
     update_target_fd=-1
+  fi
+  if (( git_fd >= 0 )); then
+    exec {git_fd}<&-
+    git_fd=-1
+  fi
+  if (( common_fd >= 0 )); then
+    exec {common_fd}<&-
+    common_fd=-1
   fi
 }
 
@@ -466,6 +482,25 @@ capture_update_target() {
   update_target_identity=$current_identity
 }
 
+capture_git_metadata() {
+  local raw_common current_git current_common git_fd_identity common_fd_identity
+  revalidate_update_target || return 1
+  git_path=$(git -C "$update_target_path" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  raw_common=$(git -C "$update_target_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  common_path=$raw_common
+  [[ $git_path == /* && $common_path == /* ]] || return 1
+  [[ -d $git_path && ! -L $git_path && -d $common_path && ! -L $common_path ]] || return 1
+  exec {git_fd}<"$git_path" || return 1
+  exec {common_fd}<"$common_path" || return 1
+  git_fd_identity=$(path_identity "/proc/self/fd/$git_fd") || return 1
+  common_fd_identity=$(path_identity "/proc/self/fd/$common_fd") || return 1
+  [[ $git_fd_identity == "$(path_identity "$git_path")" && $common_fd_identity == "$(path_identity "$common_path")" ]] || return 1
+  [[ $git_fd_identity == "$(path_identity "$git_path")" && $common_fd_identity == "$(path_identity "$common_path")" ]] || return 1
+  git_identity=$git_fd_identity
+  common_identity=$common_fd_identity
+  metadata_ready=1
+}
+
 revalidate_update_target() {
   local current_path current_identity fd_identity
   revalidate_mutation_root || return 1
@@ -477,7 +512,30 @@ revalidate_update_target() {
   [[ $current_path == "$update_target_real" && $current_identity == "$update_target_identity" && $fd_identity == "$update_target_identity" ]]
 }
 
+revalidate_git_metadata() {
+  local current_git current_common git_fd_identity common_fd_identity path_git_identity path_common_identity raw_common
+  (( metadata_ready )) || return 1
+  revalidate_update_target || return 1
+  current_git=$(git -C "$update_target_path" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  raw_common=$(git -C "$update_target_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  current_common=$raw_common
+  [[ $current_git == /* && $current_common == /* ]] || return 1
+  [[ $current_git == "$git_path" && $current_common == "$common_path" ]] || return 1
+  git_fd_identity=$(path_identity "/proc/self/fd/$git_fd") || return 1
+  common_fd_identity=$(path_identity "/proc/self/fd/$common_fd") || return 1
+  path_git_identity=$(path_identity "$git_path") || return 1
+  path_common_identity=$(path_identity "$common_path") || return 1
+  [[ $git_fd_identity == "$git_identity" && $common_fd_identity == "$common_identity" &&
+    $path_git_identity == "$git_identity" && $path_common_identity == "$common_identity" ]]
+}
+
+stable_git() {
+  GIT_DIR="/proc/self/fd/$git_fd/." GIT_COMMON_DIR="/proc/self/fd/$common_fd/." \
+    git --work-tree="/proc/self/fd/$update_target_fd/." "$@"
+}
+
 release_update_target() {
+  (( update_armed )) && return 0
   if (( update_target_fd >= 0 && update_target_fd != target_fd )); then
     exec {update_target_fd}<&-
   fi
@@ -485,6 +543,19 @@ release_update_target() {
   update_target_path=
   update_target_real=
   update_target_identity=
+  if (( git_fd >= 0 )); then
+    exec {git_fd}<&-
+    git_fd=-1
+  fi
+  if (( common_fd >= 0 )); then
+    exec {common_fd}<&-
+    common_fd=-1
+  fi
+  metadata_ready=0
+  git_path=
+  common_path=
+  git_identity=
+  common_identity=
 }
 
 revalidate_quarantine() {
@@ -495,6 +566,17 @@ revalidate_quarantine() {
   path_identity_value=$(path_identity "$backup") || return 1
   fd_identity=$(path_identity "/proc/self/fd/$quarantine_fd") || return 1
   [[ $path_identity_value == "$target_identity" && $fd_identity == "$target_identity" ]]
+}
+
+restore_quarantine_source() {
+  local source="/proc/self/fd/$root_fd/$1" quarantine_identity source_identity fd_identity
+  [[ ! -e $source && ! -L $source ]] || return 1
+  quarantine_identity=$(path_identity "$backup") || return 1
+  fd_identity=$(path_identity "/proc/self/fd/$quarantine_fd") || return 1
+  [[ $quarantine_identity == "$fd_identity" ]] || return 1
+  mv -T -- "$backup" "$source" || return 1
+  source_identity=$(path_identity "$source") || return 1
+  [[ $source_identity == "$fd_identity" ]]
 }
 
 repo_identity_matches() {
@@ -510,8 +592,8 @@ repo_identity_matches() {
 
 restore_update_transaction() {
   (( update_armed )) || return 0
-  if repo_identity_matches "$update_dir" "$update_identity"; then
-    if ! git -C "$update_dir" reset --hard "$update_prior" >/dev/null 2>&1; then
+  if repo_identity_matches "$update_dir" "$update_identity" && revalidate_git_metadata "$update_dir"; then
+    if ! stable_git reset --hard "$update_prior" >/dev/null 2>&1; then
       printf '%s: rollback failed for %s\n' "$script_name" "$update_dir" >&2
       return 1
     fi
@@ -559,15 +641,19 @@ update_plugin() {
     return 1
   fi
   repo="/proc/self/fd/$update_target_fd/."
+  if (( ! metadata_ready )) && ! capture_git_metadata "$repo"; then
+    printf '%s: cannot capture Git metadata: %s\n' "$script_name" "$id" >&2
+    return 1
+  fi
   if ! is_git_plugin "$repo"; then
     printf '%s: plugin is not Git-managed: %s\n' "$script_name" "$id" >&2
     return 1
   fi
-  prior=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || {
+  prior=$(stable_git rev-parse HEAD 2>/dev/null) || {
     printf '%s: invalid Git HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  if status_output=$(git -C "$repo" status --porcelain --untracked-files=normal); then
+  if status_output=$(stable_git status --porcelain --untracked-files=normal); then
     :
   else
     status_code=$?
@@ -579,7 +665,7 @@ update_plugin() {
     return 1
   }
   run_test_hook update-after-status "$update_target_path"
-  origin_url=$(git -C "$repo" remote get-url origin 2>/dev/null) || {
+  origin_url=$(stable_git remote get-url origin 2>/dev/null) || {
     printf '%s: plugin has no origin: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -587,16 +673,16 @@ update_plugin() {
     printf '%s: plugin has no origin: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  revalidate_update_target || {
+  revalidate_git_metadata "$repo" || {
     printf '%s: plugin changed before fetch: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  git -C "$repo" fetch --quiet origin HEAD >/dev/null 2>&1 || {
+  stable_git fetch --quiet origin HEAD >/dev/null 2>&1 || {
     printf '%s: plugin fetch failed: %s\n' "$script_name" "$id" >&2
     return 1
   }
   run_test_hook update-after-fetch "$update_target_path"
-  remote=$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null) || {
+  remote=$(stable_git rev-parse FETCH_HEAD 2>/dev/null) || {
     printf '%s: invalid remote HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -604,7 +690,7 @@ update_plugin() {
     printf '%s: invalid remote HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  if git -C "$repo" merge-base --is-ancestor "$remote" "$prior"; then
+  if stable_git merge-base --is-ancestor "$remote" "$prior"; then
     printf '%s: %s is up to date\n' "$script_name" "$id"
     return 2
   else
@@ -614,11 +700,11 @@ update_plugin() {
       return 1
     }
   fi
-  revalidate_update_target || {
+  revalidate_git_metadata "$repo" || {
     printf '%s: plugin changed before merge: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  git -C "$repo" merge-base --is-ancestor "$prior" "$remote" || {
+  stable_git merge-base --is-ancestor "$prior" "$remote" || {
     printf '%s: plugin update is not a fast-forward: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -626,7 +712,7 @@ update_plugin() {
     printf '%s: plugin root changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  revalidate_update_target || {
+  revalidate_git_metadata "$repo" || {
     printf '%s: plugin changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -634,12 +720,12 @@ update_plugin() {
   update_dir=$repo
   update_prior=$prior
   update_identity=$update_target_identity
-  if ! git -C "$repo" merge --ff-only "$remote" >/dev/null 2>&1; then
+  if ! stable_git merge --ff-only "$remote" >/dev/null 2>&1; then
     restore_update_transaction || true
     printf '%s: plugin fast-forward failed: %s\n' "$script_name" "$id" >&2
     return 1
   fi
-  if ! revalidate_update_target; then
+  if ! revalidate_git_metadata "$repo"; then
     restore_update_transaction || true
     printf '%s: plugin changed before validation: %s\n' "$script_name" "$id" >&2
     return 1
@@ -647,6 +733,11 @@ update_plugin() {
   if ! "$validator" "$repo" >/dev/null 2>&1; then
     restore_update_transaction || true
     printf '%s: plugin update failed validation and was rolled back: %s\n' "$script_name" "$id" >&2
+    return 1
+  fi
+  if ! revalidate_git_metadata "$repo"; then
+    restore_update_transaction || true
+    printf '%s: plugin changed after validation: %s\n' "$script_name" "$id" >&2
     return 1
   fi
   update_armed=0
@@ -703,11 +794,16 @@ remove_plugin() {
   revalidate_target || fail "plugin changed before quarantine: $id"
   run_test_hook remove-before-quarantine "$target_path"
   revalidate_target || fail "plugin changed before quarantine: $id"
-  mv -T -- "$target_path" "$backup" || fail "cannot quarantine plugin: $id"
+  run_test_hook remove-after-revalidate "$target_path"
+  revalidate_target || fail "plugin changed before quarantine: $id"
+  mv -T -- "/proc/self/fd/$root_fd/$id" "$backup" || fail "cannot quarantine plugin: $id"
   exec {quarantine_fd}<"$backup" || fail "cannot open quarantined plugin: $id"
   [[ -d $backup && ! -L $backup ]] || fail "quarantined plugin path changed: $id"
   quarantine_identity=$(path_identity "$backup") || fail "cannot identify quarantined plugin: $id"
-  [[ $quarantine_identity == "$target_identity" ]] || fail "quarantined plugin identity changed: $id"
+  if [[ $quarantine_identity != "$target_identity" ]]; then
+    restore_quarantine_source "$id" || true
+    fail "quarantined plugin identity changed: $id"
+  fi
   run_test_hook quarantine-after-identity "$backup"
   revalidate_quarantine || fail "quarantined plugin changed: $id"
   quarantine_path="/proc/self/fd/$quarantine_fd/."
@@ -715,6 +811,7 @@ remove_plugin() {
     revalidate_quarantine || fail "quarantined Git plugin changed: $id"
     find "$quarantine_path" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} + ||
       fail "cannot remove Git plugin contents: $id"
+    run_test_hook quarantine-after-delete "$backup"
     revalidate_quarantine || fail "quarantined Git plugin changed during deletion: $id"
     rmdir -- "$backup" || fail "cannot remove Git plugin: $id"
   fi
@@ -773,6 +870,11 @@ main() {
       acquire_add_lock
       if [[ -n $id ]]; then
         capture_target "$id"
+        update_target_fd=$target_fd
+        update_target_path=$target_path
+        update_target_real=$target_real
+        update_target_identity=$target_identity
+        capture_git_metadata "/proc/self/fd/$update_target_fd/." || fail "cannot capture Git metadata: $id"
         (( yes )) || confirm_mutation "update $id"
         revalidate_target || fail "plugin changed before update: $id"
       else
