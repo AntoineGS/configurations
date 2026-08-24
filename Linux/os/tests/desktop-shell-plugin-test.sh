@@ -44,6 +44,9 @@ set -Eeuo pipefail
 printf '%s\t%s\t%s\n' "${2-}" "${3-}" "${4-}" >>"$IPC_LOG"
 case "${2-}" in
   rescanPlugins)
+    if [[ -n ${IPC_RESCAN_MARKER:-} ]]; then
+      : >"$IPC_RESCAN_MARKER"
+    fi
     if [[ ${IPC_REPLACE_TARGET:-0} == 1 ]]; then
       mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
       mkdir -- "$IPC_TARGET"
@@ -778,6 +781,51 @@ fi
   fail "update was not rolled back after rescan IPC replacement"
 rm -rf -- "$plugins_dir/lifecycle.widget"
 mv -- "$ipc_rescan_backup" "$plugins_dir/lifecycle.widget"
+
+rescan_rollback_bin="$test_root/rescan-rollback-bin"
+mkdir -p -- "$rescan_rollback_bin"
+rescan_rollback_git="$rescan_rollback_bin/git"
+cat >"$rescan_rollback_git" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ " $* " == *' reset --hard '* ]]; then
+  count=0
+  [[ -f $RESCAN_ROLLBACK_RESET_COUNT ]] && count=$(<"$RESCAN_ROLLBACK_RESET_COUNT")
+  printf '%s\n' "$((count + 1))" >"$RESCAN_ROLLBACK_RESET_COUNT"
+  if [[ ! -f $RESCAN_ROLLBACK_RESET_FAILED ]]; then
+    : >"$RESCAN_ROLLBACK_RESET_FAILED"
+    exit 1
+  fi
+fi
+if [[ " $* " == *' rev-parse --absolute-git-dir '* && -f $RESCAN_ROLLBACK_REVALIDATE_FAILURE ]]; then
+  rm -f -- "$RESCAN_ROLLBACK_REVALIDATE_FAILURE"
+  exit 1
+fi
+exec /usr/bin/git "$@"
+EOF
+chmod +x -- "$rescan_rollback_git"
+rescan_rollback_reset_failed="$test_root/rescan-rollback-reset-failed"
+rescan_rollback_reset_count="$test_root/rescan-rollback-reset-count"
+rescan_rollback_revalidate_failure="$test_root/rescan-rollback-revalidate-failure"
+rescan_rollback_log_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+rescan_rollback_status=0
+if env "${manager_env[@]}" PATH="$rescan_rollback_bin:$PATH" \
+  IPC_RESCAN_MARKER="$rescan_rollback_revalidate_failure" \
+  RESCAN_ROLLBACK_RESET_FAILED="$rescan_rollback_reset_failed" \
+  RESCAN_ROLLBACK_RESET_COUNT="$rescan_rollback_reset_count" \
+  RESCAN_ROLLBACK_REVALIDATE_FAILURE="$rescan_rollback_revalidate_failure" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  rescan_rollback_status=0
+else
+  rescan_rollback_status=$?
+fi
+[[ $rescan_rollback_status != 0 ]] || fail "failed retained rollback unexpectedly succeeded"
+rescan_rollback_log_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $((rescan_rollback_log_after - rescan_rollback_log_before)) == 1 ]] ||
+  fail "failed retained rollback requested a compensating rescan"
+[[ -f "$rescan_rollback_reset_failed" ]] || fail "retained rollback failure was not exercised"
+[[ $(<"$rescan_rollback_reset_count") -ge 2 ]] || fail "failed retained record was not retried during EXIT cleanup"
+[[ ! -f "$rescan_rollback_revalidate_failure" ]] || fail "post-rescan identity mismatch was not exercised"
 
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then

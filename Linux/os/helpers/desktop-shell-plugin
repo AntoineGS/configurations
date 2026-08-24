@@ -869,7 +869,7 @@ update_plugin() {
 }
 
 update_plugins() {
-  local requested_id=${1-} id directory changed=0 failed=0 boundary_failed=0 status_code
+  local requested_id=${1-} id directory changed=0 failed=0 boundary_failed=0 rollback_complete=0 status_code
   local -a directories=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
@@ -918,8 +918,11 @@ update_plugins() {
         rollback_retained_updates || true
       elif ! revalidate_retained_updates; then
         failed=1
-        rollback_retained_updates || true
-        if revalidate_retained_updates; then
+        rollback_complete=0
+        if rollback_retained_updates; then
+          rollback_complete=1
+        fi
+        if (( rollback_complete )) && revalidate_retained_updates; then
           rescan || true
         fi
       else
