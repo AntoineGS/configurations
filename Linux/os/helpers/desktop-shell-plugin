@@ -18,6 +18,11 @@ export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-'ssh -oBatchMode=yes'}
 
 stage_dir=
 installed_target=
+installed_identity=
+placement_section=
+placement_index=
+placement_before=
+placement_after=
 
 fail() {
   printf '%s: %s\n' "$script_name" "$1" >&2
@@ -29,21 +34,34 @@ usage() {
     "usage: $script_name add|install URL [--enable] [--yes] [--expected-id ID]" \
     "       $script_name validate DIR" \
     "       $script_name list [--json]" \
-    "       $script_name enable ID [section=SECTION,index=N|before=ID|after=ID]" \
+    "       $script_name enable ID [SECTION] [--section SECTION] [--index N] [--before ID|--after ID]" \
     "       $script_name disable ID" >&2
   exit 2
+}
+
+remove_owned_target() {
+  local current_identity
+  [[ -n $installed_target && -n $installed_identity ]] || return 0
+  [[ -d $installed_target && ! -L $installed_target ]] || return 0
+  current_identity=$(stat -c '%d:%i' -- "$installed_target" 2>/dev/null || true)
+  if [[ -n $current_identity && $current_identity == "$installed_identity" ]]; then
+    rm -rf -- "$installed_target"
+  fi
+  installed_target=
+  installed_identity=
 }
 
 cleanup() {
   if [[ -n $stage_dir && -d $stage_dir ]]; then
     rm -rf -- "$stage_dir"
   fi
+  remove_owned_target
 }
 trap cleanup EXIT HUP INT TERM
 
 require_commands() {
   local command
-  for command in git jq mktemp realpath; do
+  for command in git jq mktemp realpath stat; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
   done
 }
@@ -53,9 +71,31 @@ validate_id() {
   [[ $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || fail "unsafe plugin id: $id"
 }
 
-redact_url() {
+sanitize_url() {
+  local url=$1 sanitized rest authority path host
+  [[ $url != *[[:cntrl:]]* ]] || fail "URL contains control characters"
+  sanitized=${url%%\?*}
+  sanitized=${sanitized%%\#*}
+  if [[ $sanitized == *://* ]]; then
+    rest=${sanitized#*://}
+    if [[ $rest == */* ]]; then
+      authority=${rest%%/*}
+      path=/${rest#*/}
+    else
+      authority=$rest
+      path=
+    fi
+    host=${authority##*@}
+    sanitized=${sanitized%%://*}://$host$path
+  elif [[ $sanitized =~ ^[^/@:]+@[^:]+: ]]; then
+    sanitized=${sanitized#*@}
+  fi
+  printf '%s' "$sanitized"
+}
+
+validate_url() {
   local url=$1
-  printf '%s\n' "$url" | sed -E 's#^([[:alpha:]][[:alnum:]+.-]*://)[^/@]+@#\1<redacted>@#'
+  [[ $url != *[[:cntrl:]]* ]] || fail "URL contains control characters"
 }
 
 run_ipc() {
@@ -91,11 +131,12 @@ find_duplicate_id() {
 }
 
 confirm_install() {
-  local url=$1 answer
+  local url=$1 answer display_url
   if [[ ! -t 0 || ! -t 1 ]]; then
     fail "refusing non-interactive install without --yes"
   fi
-  printf 'Warning: plugins execute unsandboxed code. Install %s? [y/N] ' "$(redact_url "$url")" >&2
+  display_url=$(sanitize_url "$url")
+  printf 'Warning: plugins execute unsandboxed code. Install %s? [y/N] ' "$display_url" >&2
   IFS= read -r answer || fail "installation not confirmed"
   [[ $answer == y || $answer == Y || $answer == yes || $answer == YES ]] || fail "installation not confirmed"
 }
@@ -136,15 +177,16 @@ wait_for_discovery() {
 }
 
 install_plugin() {
-  local url=$1 expected_id=$2 enable=$3 yes=$4 id target response
+  local url=$1 expected_id=$2 enable=$3 yes=$4 id target response stage_identity
   [[ -z $expected_id ]] || validate_id "$expected_id"
+  validate_url "$url"
   (( yes )) || confirm_install "$url"
   mkdir -p -- "$plugins_dir"
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
   stage_dir=$(mktemp -d "$plugins_dir/.add.XXXXXX") || fail "cannot create staging directory"
   if ! git -c credential.helper= -c core.askPass=/bin/false clone --no-recurse-submodules -- "$url" "$stage_dir" \
     >/dev/null 2>&1; then
-    fail "clone failed for $(redact_url "$url")"
+    fail "clone failed"
   fi
   validate_plugin "$stage_dir"
   id=$(manifest_id "$stage_dir")
@@ -152,37 +194,26 @@ install_plugin() {
   find_duplicate_id "$id"
   target=$plugins_dir/$id
   [[ ! -e $target && ! -L $target ]] || fail "plugin target already exists: $id"
+  stage_identity=$(stat -c '%d:%i' -- "$stage_dir") || fail "cannot capture staging identity"
   mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
   installed_target=$target
+  installed_identity=$stage_identity
   stage_dir=
   if ! rescan; then
-    rm -rf -- "$installed_target"
     fail "plugin install failed during rescan"
   fi
   if (( enable )); then
     wait_for_discovery "$id"
     enable_plugin "$id" ""
   fi
+  installed_target=
+  installed_identity=
   printf '%s\n' "$id"
 }
 
-parse_placement() {
-  local raw=${1:-} part key value section='' index='' before='' after=''
-  [[ -z $raw ]] && { jq -cn '{}'; return; }
-  IFS=',' read -ra parts <<< "$raw"
-  for part in "${parts[@]}"; do
-    [[ $part == *=* ]] || fail "placement must use key=value"
-    key=${part%%=*}; value=${part#*=}
-    case $key in
-      section) [[ $value == left || $value == center || $value == right ]] || fail "invalid placement section"; section=$value ;;
-      index) [[ $value =~ ^[0-9]+$ ]] || fail "placement index must be an integer"; index=$value ;;
-      before) [[ -z $before ]] || fail "conflicting before/after placement"; validate_id "$value"; before=$value ;;
-      after) [[ -z $after ]] || fail "conflicting before/after placement"; validate_id "$value"; after=$value ;;
-      *) fail "unknown placement field: $key" ;;
-    esac
-  done
-  [[ -z $before || -z $after ]] || fail "conflicting before/after placement"
-  jq -cn --arg section "$section" --arg index "$index" --arg before "$before" --arg after "$after" \
+build_placement() {
+  jq -cn --arg section "$placement_section" --arg index "$placement_index" \
+    --arg before "$placement_before" --arg after "$placement_after" \
     '({} + (if $section != "" then {section:$section} else {} end)
       + (if $index != "" then {index:($index|tonumber)} else {} end)
       + (if $before != "" then {before:$before} else {} end)
@@ -190,11 +221,65 @@ parse_placement() {
 }
 
 enable_plugin() {
-  local id=$1 raw=${2:-} placement response
+  local id=$1 placement response
   validate_id "$id"
-  placement=$(parse_placement "$raw")
+  placement=$(build_placement)
   response=$(run_ipc enablePlugin "$id" "$placement")
   [[ $response == ok ]] || fail "plugin enable failed: $response"
+}
+
+parse_enable_options() {
+  local positional_section=0 option value
+  placement_section=''
+  placement_index=''
+  placement_before=''
+  placement_after=''
+  while (($#)); do
+    option=$1
+    case $option in
+      --)
+        shift
+        (($# == 0)) || usage
+        ;;
+      --section|--index|--before|--after)
+        (($# >= 2)) || usage
+        value=$2
+        shift 2
+        case $option in
+          --section)
+            [[ -z $placement_section && $positional_section == 0 ]] || fail "duplicate section placement"
+            [[ $value == left || $value == center || $value == right ]] || fail "invalid placement section"
+            placement_section=$value
+            ;;
+          --index)
+            [[ -z $placement_index ]] || fail "duplicate placement index"
+            [[ $value =~ ^[0-9]+$ ]] || fail "placement index must be an integer"
+            placement_index=$value
+            ;;
+          --before)
+            [[ -z $placement_before && -z $placement_after ]] || fail "conflicting before/after placement"
+            validate_id "$value"
+            placement_before=$value
+            ;;
+          --after)
+            [[ -z $placement_before && -z $placement_after ]] || fail "conflicting before/after placement"
+            validate_id "$value"
+            placement_after=$value
+            ;;
+        esac
+        ;;
+      -*)
+        usage
+        ;;
+      *)
+        [[ $positional_section == 0 ]] || usage
+        [[ $option == left || $option == center || $option == right ]] || fail "invalid placement section"
+        placement_section=$option
+        positional_section=1
+        shift
+        ;;
+    esac
+  done
 }
 
 disable_plugin() {
@@ -230,7 +315,11 @@ main() {
     list)
       if [[ $# == 1 && $1 == --json ]]; then list_json; else (($# == 0)) || usage; list_json | jq -r '.[] | [ .id, (if .enabled then "enabled" else "disabled" end), (.clonedFrom // ""), ((.kinds // []) | join(",")), (.name // .id) ] | @tsv'; fi ;;
     enable)
-      (($# >= 1 && $# <= 2)) || usage; id=$1; placement=${2-}; enable_plugin "$id" "$placement" ;;
+      (($# >= 1)) || usage
+      id=$1
+      shift
+      parse_enable_options "$@"
+      enable_plugin "$id" ;;
     disable)
       (($# == 1)) || usage; disable_plugin "$1" ;;
     --help|-h) usage ;;
