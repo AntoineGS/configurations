@@ -86,7 +86,7 @@ applications:
         name: config
         backup: ./Linux/opencode
       - check:
-          linux: 'herdr integration status | grep -q ''^opencode: current '''
+          linux: "herdr integration status | grep -q '^opencode: current '"
         run:
           linux: herdr integration install opencode
         name: herdr-integration
@@ -103,10 +103,10 @@ applications:
         name: enable-temp-cleanup-timer
       - check:
           linux: ~/.config/opencode/setup-context-tokenizers.sh --check
-          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Check'
+          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Check
         run:
           linux: ~/.config/opencode/setup-context-tokenizers.sh --apply
-          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Apply'
+          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Apply
         name: context-analysis tokenizers
   - package:
       managers:
@@ -173,7 +173,7 @@ applications:
         name: themes
         backup: ./Both/Nushell/themes
       - check:
-          linux: 'test -x "$HOME/.local/bin/nu" && test "$("$HOME/.local/bin/nu" --version 2>/dev/null)" = 0.113.1'
+          linux: test -x "$HOME/.local/bin/nu" && test "$("$HOME/.local/bin/nu" --version 2>/dev/null)" = 0.113.1
         run:
           linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
         name: exact-linux-version
@@ -272,16 +272,16 @@ applications:
     when: '{{ eq .OS "windows" }}'
     entries:
       - targets:
-          windows: "~/Documents/PowerShell"
+          windows: ~/Documents/PowerShell
         name: config
         backup: ./Windows/PowerShell
         files:
           - Microsoft.PowerShell_profile.ps1
           - Set-PowerShellOpenSsh.ps1
       - check:
-          windows: 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1" -Check'
+          windows: pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1" -Check
         run:
-          windows: 'pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1"'
+          windows: pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME\Documents\PowerShell\Set-PowerShellOpenSsh.ps1"
         name: openssh
   - package:
       managers:
@@ -389,8 +389,7 @@ applications:
         name: commands
         backup: ./Linux/omp/agent/commands
       - check:
-          linux: >-
-            omp plugin list --json | awk 'BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "superpowers",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'
+          linux: 'omp plugin list --json | awk ''BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "superpowers",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'''
         run:
           linux: omp plugin install github:obra/superpowers
         name: superpowers
@@ -400,8 +399,7 @@ applications:
           linux: herdr integration install omp
         name: herdr-integration
       - check:
-          linux: >-
-            omp plugin list --json | awk 'BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "@andrewjacop\/pi-herdr",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'
+          linux: 'omp plugin list --json | awk ''BEGIN { in_npm = 0; in_entry = 0; target = 0; enabled = 0; found = 0 } /^  "npm": \[$/ { in_npm = 1; next } in_npm && /^  "marketplace":/ { in_npm = 0; next } in_npm && /^    \{$/ { in_entry = 1; target = 0; enabled = 0; next } in_npm && in_entry && /^      "name": "@andrewjacop\/pi-herdr",?$/ { target = 1; next } in_npm && in_entry && /^      "enabled": true,?$/ { enabled = 1; next } in_npm && in_entry && /^      "enabled": false,?$/ { enabled = 0; next } in_npm && in_entry && /^    \},?$/ { if (target && enabled) found = 1; in_entry = 0 } END { exit !found }'''
         run:
           linux: omp plugin install @andrewjacop/pi-herdr
         name: pi-herdr
@@ -531,12 +529,7 @@ applications:
           - wayland-session.conf
         sudo: true
       - check:
-          linux: >-
-            env="$(systemctl show rustdesk --property=Environment --value)";
-            printf '%s\n' "$env" | grep -q 'WAYLAND_DISPLAY=wayland-1' &&
-            printf '%s\n' "$env" | grep -q 'XDG_RUNTIME_DIR=/run/user/155801123' &&
-            printf '%s\n' "$env" | grep -q 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/155801123/bus' &&
-            printf '%s\n' "$env" | grep -q 'XDG_SESSION_TYPE=wayland'
+          linux: env="$(systemctl show rustdesk --property=Environment --value)"; printf '%s\n' "$env" | grep -q 'WAYLAND_DISPLAY=wayland-1' && printf '%s\n' "$env" | grep -q 'XDG_RUNTIME_DIR=/run/user/155801123' && printf '%s\n' "$env" | grep -q 'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/155801123/bus' && printf '%s\n' "$env" | grep -q 'XDG_SESSION_TYPE=wayland'
         run:
           linux: systemctl daemon-reload && systemctl restart rustdesk
         name: reload-service
@@ -815,9 +808,7 @@ applications:
         files:
           - desktop-shell.service
       - check:
-          linux: >-
-            systemctl --user is-enabled --quiet desktop-shell.service &&
-            test "$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)" = no
+          linux: systemctl --user is-enabled --quiet desktop-shell.service && test "$(systemctl --user show desktop-shell.service --property=NeedDaemonReload --value)" = no
         run:
           linux: systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service
         name: enable-service
@@ -920,7 +911,7 @@ applications:
         files:
           - fzfrc
       - check:
-          windows: 'if ([Environment]::GetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", "User") -eq [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc")) { exit 0 } else { exit 1 }'
+          windows: if ([Environment]::GetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", "User") -eq [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc")) { exit 0 } else { exit 1 }
         run:
           windows: '[Environment]::SetEnvironmentVariable("FZF_DEFAULT_OPTS_FILE", [IO.Path]::Combine($HOME, ".config", "fzf", "fzfrc"), "User")'
         name: configure FZF_DEFAULT_OPTS_FILE
@@ -944,10 +935,10 @@ applications:
         backup: ./Both/ShellPicker
       - check:
           linux: ~/.config/shell-picker/setup-shell-picker.sh --check
-          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/shell-picker/setup-shell-picker.ps1" -Check'
+          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/shell-picker/setup-shell-picker.ps1" -Check
         run:
           linux: ~/.config/shell-picker/setup-shell-picker.sh --apply
-          windows: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/shell-picker/setup-shell-picker.ps1" -Apply'
+          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/shell-picker/setup-shell-picker.ps1" -Apply
         name: binary
   - package:
       managers:
@@ -1642,7 +1633,7 @@ applications:
         files:
           - .ripgreprc
       - check:
-          windows: 'if ([Environment]::GetEnvironmentVariable("RIPGREP_CONFIG_PATH", "User") -eq [IO.Path]::Combine($HOME, ".ripgreprc")) { exit 0 } else { exit 1 }'
+          windows: if ([Environment]::GetEnvironmentVariable("RIPGREP_CONFIG_PATH", "User") -eq [IO.Path]::Combine($HOME, ".ripgreprc")) { exit 0 } else { exit 1 }
         run:
           windows: '[Environment]::SetEnvironmentVariable("RIPGREP_CONFIG_PATH", [IO.Path]::Combine($HOME, ".ripgreprc"), "User")'
         name: configure RIPGREP_CONFIG_PATH
@@ -1918,7 +1909,7 @@ applications:
           - limine
         sudo: true
       - check:
-          linux: "test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf"
+          linux: test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf
         run:
           linux: limine-update
         name: rebuild-boot-config
