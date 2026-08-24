@@ -56,8 +56,10 @@ jq -e 'type == "array"' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "desktop.bar" and .firstParty == true and .canDisable == false)' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == false)' <<<"$plugins" >/dev/null
 
-quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}' >/dev/null
-quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false >/dev/null
+enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}')
+[[ -n $enable_result ]]
+set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
+[[ -n $set_result ]]
 stop_shell
 
 failure_state_file="$tmp_dir/failure-state"
@@ -80,7 +82,7 @@ for _ in {1..100}; do
   sleep 0.1
 done
 failure_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
-[[ $failure_result != ok ]]
+[[ $failure_result == "plugin state write failed: 1" ]]
 failure_health=""
 for _ in {1..100}; do
   failure_health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
