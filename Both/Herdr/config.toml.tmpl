@@ -12,7 +12,11 @@ host_cursor = "native"
 {{ end -}}
 
 [ui.toast]
+{{ if eq .OS "linux" -}}
+delivery = "off"
+{{ else -}}
 delivery = "system"
+{{ end -}}
 
 [ui.sidebar.agents]
 rows = [["state_icon", "workspace", "tab"]]

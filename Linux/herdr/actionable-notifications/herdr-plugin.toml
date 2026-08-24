@@ -1,0 +1,10 @@
+id = "local.actionable-notifications"
+name = "Actionable Notifications"
+version = "0.1.0"
+min_herdr_version = "0.8.2"
+description = "Focus the exact Herdr pane and Ghostty window from desktop notifications"
+platforms = ["linux"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "notify.mjs"]
