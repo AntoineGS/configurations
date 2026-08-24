@@ -33,6 +33,8 @@ ShellRoot {
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
+  readonly property bool testMutationEnabled: Quickshell.env("DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION") === "1"
+    && configuredPluginStatePath !== "" && testSurfaceSuppressed
   readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
@@ -992,20 +994,6 @@ ShellRoot {
       return JSON.stringify(shell.healthState)
     }
 
-    function persistPluginState(rawState: string): string {
-      var nextState
-      try {
-        nextState = JSON.parse(rawState)
-      } catch (error) {
-        return "rejected-invalid-state"
-      }
-      if (shell.persistPluginState(nextState)) return "saved"
-      if (!shell.pluginStateValid) return "rejected-invalid-state"
-      if (shell.pluginStateWriteError !== "") return "rejected-write-failed"
-      if (!shell.pluginStateDirectoryReady) return "rejected-not-ready"
-      return "pending"
-    }
-
     function reloadConfig(): string {
       defaultsFile.reload()
       return "ok"
@@ -1058,6 +1046,25 @@ ShellRoot {
 
     function call(id: string, method: string, arg: string): string {
       return shell.callIfLoaded(id, method, arg)
+    }
+  }
+
+  IpcHandler {
+    target: "desktop-shell-test"
+    enabled: shell.testMutationEnabled
+
+    function persistPluginStateForTest(rawState: string): string {
+      var nextState
+      try {
+        nextState = JSON.parse(rawState)
+      } catch (error) {
+        return "rejected-invalid-state"
+      }
+      if (shell.persistPluginState(nextState)) return "saved"
+      if (!shell.pluginStateValid) return "rejected-invalid-state"
+      if (shell.pluginStateWriteError !== "") return "rejected-write-failed"
+      if (!shell.pluginStateDirectoryReady) return "rejected-not-ready"
+      return "pending"
     }
   }
 }
