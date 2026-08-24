@@ -9,13 +9,15 @@ Item {
   property var shell: null
   property var pluginRegistry: null
   property bool loaded: true
-  readonly property int batteryThreshold: 10
-  property bool notifiedLowBattery: false
+  property var pendingWarning: null
+  readonly property int lowBatteryThreshold: 20
+  readonly property int criticalBatteryThreshold: 10
 
   PersistentProperties {
     id: persisted
     reloadableId: "desktop-battery"
-    property bool notified: false
+    property bool lowNotified: false
+    property bool criticalNotified: false
   }
 
   function reportCapability(available) {
@@ -33,30 +35,48 @@ Item {
       return
     }
     if (!envelope || envelope.available !== true || !envelope.data || !envelope.data.battery) {
-      notifiedLowBattery = false
-      persisted.notified = false
       reportCapability(false)
       return
     }
 
     reportCapability(true)
-    var result = BatteryModel.shouldWarnLowBattery(
-      envelope.data.battery.status,
-      batteryThreshold,
-      persisted.notified
+    var battery = envelope.data.battery
+    var result = BatteryModel.warningState(
+      battery.status,
+      battery.onBattery,
+      lowBatteryThreshold,
+      criticalBatteryThreshold,
+      persisted.lowNotified,
+      persisted.criticalNotified
     )
-    persisted.notified = result.notifiedLowBattery
-    notifiedLowBattery = result.notifiedLowBattery
-    if (result.notify) sendLowBatteryWarning(result.level)
+    if (result.notify) {
+      sendLowBatteryWarning(result)
+      return
+    }
+    if (battery.onBattery === false) pendingWarning = null
+    persisted.lowNotified = result.lowNotified
+    persisted.criticalNotified = result.criticalNotified
   }
 
   function refresh() {
     if (!stateProcess.running) stateProcess.running = true
   }
 
-  function sendLowBatteryWarning(level) {
+  function sendLowBatteryWarning(result) {
     if (warningProcess.running) return
-    warningProcess.command = ["battery-monitor", String(level)]
+    var critical = result.urgency === "critical"
+    pendingWarning = result
+    warningProcess.command = [
+      "notify-send",
+      "--app-name", "Desktop Shell",
+      "--urgency", critical ? "critical" : "normal",
+      "--icon", "battery-caution",
+      "--expire-time", "30000",
+      critical ? "󱐋 Time to recharge!" : "󰁹 Battery low",
+      critical
+        ? "Battery is down to " + result.level + "%"
+        : "Battery is down to " + result.level + "% - consider plugging in"
+    ]
     warningProcess.running = true
   }
 
@@ -75,7 +95,16 @@ Item {
     }
   }
 
-  Process { id: warningProcess }
+  Process {
+    id: warningProcess
+    onExited: function(exitCode) {
+      if (Number(exitCode) === 0 && root.pendingWarning) {
+        persisted.lowNotified = root.pendingWarning.lowNotified
+        persisted.criticalNotified = root.pendingWarning.criticalNotified
+      }
+      root.pendingWarning = null
+    }
+  }
 
   Timer {
     id: refreshTimer

@@ -52,7 +52,7 @@ ShellRoot {
       }
     },
     plugins: [],
-    disabledPlugins: ["desktop.battery"]
+    disabledPlugins: []
   })
 
   property var shellConfig: builtinShellConfig
