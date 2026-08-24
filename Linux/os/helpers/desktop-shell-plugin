@@ -27,6 +27,12 @@ root_identity=
 target_path=
 target_real=
 target_identity=
+target_fd=-1
+quarantine_fd=-1
+update_target_fd=-1
+update_target_path=
+update_target_real=
+update_target_identity=
 update_armed=0
 update_dir=
 update_prior=
@@ -95,6 +101,18 @@ cleanup() {
   if (( root_fd >= 0 )); then
     exec {root_fd}<&-
     root_fd=-1
+  fi
+  if (( target_fd >= 0 )); then
+    exec {target_fd}<&-
+    target_fd=-1
+  fi
+  if (( quarantine_fd >= 0 )); then
+    exec {quarantine_fd}<&-
+    quarantine_fd=-1
+  fi
+  if (( update_target_fd >= 0 )); then
+    exec {update_target_fd}<&-
+    update_target_fd=-1
   fi
 }
 
@@ -368,14 +386,28 @@ path_identity() {
   stat -Lc '%d:%i' -- "$1" 2>/dev/null
 }
 
+run_test_hook() {
+  local hook=${DESKTOP_SHELL_PLUGIN_TEST_HOOK:-}
+  [[ -z $hook ]] && return 0
+  [[ -x $hook ]] || fail "test hook is not executable"
+  "$hook" "$@"
+}
+
 capture_mutation_root() {
-  local current_identity
+  local initial_path initial_identity current_path current_identity fd_identity
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
+  initial_path=$(realpath -- "$plugins_dir") || fail "cannot resolve plugin root"
+  initial_identity=$(path_identity "$plugins_dir") || fail "cannot identify plugin root"
   exec {root_fd}<"$plugins_dir" || fail "cannot open plugin root"
-  root_path=$(realpath -- "$plugins_dir") || fail "cannot resolve plugin root"
-  root_identity=$(path_identity "/proc/self/fd/$root_fd") || fail "cannot identify plugin root"
+  run_test_hook root-open "$plugins_dir"
+  [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root changed while opening"
+  current_path=$(realpath -- "$plugins_dir") || fail "cannot resolve plugin root"
   current_identity=$(path_identity "$plugins_dir") || fail "cannot identify plugin root"
-  [[ $current_identity == "$root_identity" ]] || fail "plugin root changed while opening"
+  fd_identity=$(path_identity "/proc/self/fd/$root_fd") || fail "cannot identify plugin root"
+  [[ $initial_path == "$current_path" && $initial_identity == "$current_identity" && $current_identity == "$fd_identity" ]] ||
+    fail "plugin root changed while opening"
+  root_path=$current_path
+  root_identity=$current_identity
 }
 
 revalidate_mutation_root() {
@@ -391,25 +423,83 @@ revalidate_mutation_root() {
 }
 
 capture_target() {
-  local id=$1
+  local id=$1 initial_path initial_identity current_path current_identity fd_identity
   target_path=$(plugin_directory "$id")
-  target_real=$(realpath -- "$target_path") || fail "cannot resolve plugin directory: $id"
-  target_identity=$(path_identity "$target_path") || fail "cannot identify plugin directory: $id"
+  initial_path=$(realpath -- "$target_path") || fail "cannot resolve plugin directory: $id"
+  initial_identity=$(path_identity "$target_path") || fail "cannot identify plugin directory: $id"
+  exec {target_fd}<"$target_path" || fail "cannot open plugin directory: $id"
+  [[ -d $target_path && ! -L $target_path ]] || fail "plugin changed while opening: $id"
+  current_path=$(realpath -- "$target_path") || fail "cannot resolve plugin directory: $id"
+  current_identity=$(path_identity "$target_path") || fail "cannot identify plugin directory: $id"
+  fd_identity=$(path_identity "/proc/self/fd/$target_fd") || fail "cannot identify plugin directory: $id"
+  [[ $initial_path == "$current_path" && $initial_identity == "$current_identity" && $current_identity == "$fd_identity" ]] ||
+    fail "plugin changed while opening: $id"
+  target_real=$current_path
+  target_identity=$current_identity
 }
 
 revalidate_target() {
-  local current_identity current_real
+  local current_identity current_real fd_identity
   revalidate_mutation_root || return 1
+  (( target_fd >= 0 )) || return 1
   [[ -d $target_path && ! -L $target_path ]] || return 1
   current_identity=$(path_identity "$target_path") || return 1
   [[ $current_identity == "$target_identity" ]] || return 1
+  fd_identity=$(path_identity "/proc/self/fd/$target_fd") || return 1
+  [[ $fd_identity == "$target_identity" ]] || return 1
   current_real=$(realpath -- "$target_path") || return 1
   [[ $current_real == "$target_real" ]]
 }
 
+capture_update_target() {
+  local directory=$1 initial_path initial_identity current_path current_identity fd_identity
+  initial_path=$(realpath -- "$directory") || return 1
+  initial_identity=$(path_identity "$directory") || return 1
+  exec {update_target_fd}<"$directory" || return 1
+  [[ -d $directory && ! -L $directory ]] || return 1
+  current_path=$(realpath -- "$directory") || return 1
+  current_identity=$(path_identity "$directory") || return 1
+  fd_identity=$(path_identity "/proc/self/fd/$update_target_fd") || return 1
+  [[ $initial_path == "$current_path" && $initial_identity == "$current_identity" && $current_identity == "$fd_identity" ]] || return 1
+  update_target_path=$directory
+  update_target_real=$current_path
+  update_target_identity=$current_identity
+}
+
+revalidate_update_target() {
+  local current_path current_identity fd_identity
+  revalidate_mutation_root || return 1
+  (( update_target_fd >= 0 )) || return 1
+  [[ -d $update_target_path && ! -L $update_target_path ]] || return 1
+  current_path=$(realpath -- "$update_target_path") || return 1
+  current_identity=$(path_identity "$update_target_path") || return 1
+  fd_identity=$(path_identity "/proc/self/fd/$update_target_fd") || return 1
+  [[ $current_path == "$update_target_real" && $current_identity == "$update_target_identity" && $fd_identity == "$update_target_identity" ]]
+}
+
+release_update_target() {
+  if (( update_target_fd >= 0 && update_target_fd != target_fd )); then
+    exec {update_target_fd}<&-
+  fi
+  update_target_fd=-1
+  update_target_path=
+  update_target_real=
+  update_target_identity=
+}
+
+revalidate_quarantine() {
+  local path_identity_value fd_identity
+  revalidate_mutation_root || return 1
+  (( quarantine_fd >= 0 )) || return 1
+  [[ -d $backup && ! -L $backup ]] || return 1
+  path_identity_value=$(path_identity "$backup") || return 1
+  fd_identity=$(path_identity "/proc/self/fd/$quarantine_fd") || return 1
+  [[ $path_identity_value == "$target_identity" && $fd_identity == "$target_identity" ]]
+}
+
 repo_identity_matches() {
   local directory=$1 expected_identity=$2 current_identity top top_real directory_real
-  [[ -d $directory && ! -L $directory ]] || return 1
+  [[ -d $directory && ( $directory == /proc/self/fd/* || ! -L $directory ) ]] || return 1
   current_identity=$(path_identity "$directory") || return 1
   [[ $current_identity == "$expected_identity" ]] || return 1
   top=$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null) || return 1
@@ -450,7 +540,7 @@ plugin_directory() {
 
 is_git_plugin() {
   local directory=$1 top top_real directory_real
-  [[ -d $directory && ! -L $directory ]] || return 1
+  [[ -d $directory && ( $directory == /proc/self/fd/* || ! -L $directory ) ]] || return 1
   top=$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null) || return 1
   top_real=$(realpath -- "$top") || return 1
   directory_real=$(realpath -- "$directory") || return 1
@@ -458,17 +548,26 @@ is_git_plugin() {
 }
 
 update_plugin() {
-  local id=$1 directory=$2 prior remote origin_url status_output status_code
-  local directory_identity
-  if ! is_git_plugin "$directory"; then
+  local id=$1 directory=$2 prior remote origin_url status_output status_code repo
+  if [[ $directory == "$target_path" && $target_fd -ge 0 ]]; then
+    update_target_fd=$target_fd
+    update_target_path=$target_path
+    update_target_real=$target_real
+    update_target_identity=$target_identity
+  elif ! capture_update_target "$directory"; then
+    printf '%s: plugin changed while opening: %s\n' "$script_name" "$id" >&2
+    return 1
+  fi
+  repo="/proc/self/fd/$update_target_fd/."
+  if ! is_git_plugin "$repo"; then
     printf '%s: plugin is not Git-managed: %s\n' "$script_name" "$id" >&2
     return 1
   fi
-  prior=$(git -C "$directory" rev-parse HEAD 2>/dev/null) || {
+  prior=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || {
     printf '%s: invalid Git HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  if status_output=$(git -C "$directory" status --porcelain --untracked-files=normal); then
+  if status_output=$(git -C "$repo" status --porcelain --untracked-files=normal); then
     :
   else
     status_code=$?
@@ -479,7 +578,8 @@ update_plugin() {
     printf '%s: plugin has local changes: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  origin_url=$(git -C "$directory" remote get-url origin 2>/dev/null) || {
+  run_test_hook update-after-status "$update_target_path"
+  origin_url=$(git -C "$repo" remote get-url origin 2>/dev/null) || {
     printf '%s: plugin has no origin: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -487,11 +587,16 @@ update_plugin() {
     printf '%s: plugin has no origin: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  git -C "$directory" fetch --quiet origin HEAD >/dev/null 2>&1 || {
+  revalidate_update_target || {
+    printf '%s: plugin changed before fetch: %s\n' "$script_name" "$id" >&2
+    return 1
+  }
+  git -C "$repo" fetch --quiet origin HEAD >/dev/null 2>&1 || {
     printf '%s: plugin fetch failed: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  remote=$(git -C "$directory" rev-parse FETCH_HEAD 2>/dev/null) || {
+  run_test_hook update-after-fetch "$update_target_path"
+  remote=$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null) || {
     printf '%s: invalid remote HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -499,7 +604,7 @@ update_plugin() {
     printf '%s: invalid remote HEAD: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  if git -C "$directory" merge-base --is-ancestor "$remote" "$prior"; then
+  if git -C "$repo" merge-base --is-ancestor "$remote" "$prior"; then
     printf '%s: %s is up to date\n' "$script_name" "$id"
     return 2
   else
@@ -509,7 +614,11 @@ update_plugin() {
       return 1
     }
   fi
-  git -C "$directory" merge-base --is-ancestor "$prior" "$remote" || {
+  revalidate_update_target || {
+    printf '%s: plugin changed before merge: %s\n' "$script_name" "$id" >&2
+    return 1
+  }
+  git -C "$repo" merge-base --is-ancestor "$prior" "$remote" || {
     printf '%s: plugin update is not a fast-forward: %s\n' "$script_name" "$id" >&2
     return 1
   }
@@ -517,24 +626,25 @@ update_plugin() {
     printf '%s: plugin root changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  directory_identity=$(path_identity "$directory") || {
-    printf '%s: cannot identify plugin before update: %s\n' "$script_name" "$id" >&2
-    return 1
-  }
-  repo_identity_matches "$directory" "$directory_identity" || {
+  revalidate_update_target || {
     printf '%s: plugin changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
   update_armed=1
-  update_dir=$directory
+  update_dir=$repo
   update_prior=$prior
-  update_identity=$directory_identity
-  if ! git -C "$directory" merge --ff-only "$remote" >/dev/null 2>&1; then
+  update_identity=$update_target_identity
+  if ! git -C "$repo" merge --ff-only "$remote" >/dev/null 2>&1; then
     restore_update_transaction || true
     printf '%s: plugin fast-forward failed: %s\n' "$script_name" "$id" >&2
     return 1
   fi
-  if ! "$validator" "$directory" >/dev/null 2>&1; then
+  if ! revalidate_update_target; then
+    restore_update_transaction || true
+    printf '%s: plugin changed before validation: %s\n' "$script_name" "$id" >&2
+    return 1
+  fi
+  if ! "$validator" "$repo" >/dev/null 2>&1; then
     restore_update_transaction || true
     printf '%s: plugin update failed validation and was rolled back: %s\n' "$script_name" "$id" >&2
     return 1
@@ -557,6 +667,7 @@ update_plugins() {
       status_code=$?
       [[ $status_code == 2 ]] || failed=1
     fi
+    release_update_target
   else
     revalidate_mutation_root || fail "plugin root changed before bulk update"
     mapfile -d '' directories < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
@@ -570,6 +681,7 @@ update_plugins() {
         status_code=$?
         [[ $status_code == 2 ]] || failed=1
       fi
+      release_update_target
     done
   fi
   if (( changed )); then
@@ -579,7 +691,7 @@ update_plugins() {
 }
 
 remove_plugin() {
-  local id=$1 directory backup timestamp quarantine_identity
+  local id=$1 directory backup timestamp quarantine_identity quarantine_path
   directory=$target_path
   revalidate_target || fail "plugin changed before disable: $id"
   disable_plugin "$id"
@@ -588,11 +700,23 @@ remove_plugin() {
   backup="/proc/self/fd/$root_fd/.removed.$id.$timestamp"
   mkdir -- "$backup" 2>/dev/null || fail "removal backup already exists: $id"
   rmdir -- "$backup" || fail "cannot reserve removal backup: $id"
-  mv -T -- "/proc/self/fd/$root_fd/$id" "$backup" || fail "cannot quarantine plugin: $id"
+  revalidate_target || fail "plugin changed before quarantine: $id"
+  run_test_hook remove-before-quarantine "$target_path"
+  revalidate_target || fail "plugin changed before quarantine: $id"
+  mv -T -- "$target_path" "$backup" || fail "cannot quarantine plugin: $id"
+  exec {quarantine_fd}<"$backup" || fail "cannot open quarantined plugin: $id"
+  [[ -d $backup && ! -L $backup ]] || fail "quarantined plugin path changed: $id"
   quarantine_identity=$(path_identity "$backup") || fail "cannot identify quarantined plugin: $id"
   [[ $quarantine_identity == "$target_identity" ]] || fail "quarantined plugin identity changed: $id"
-  if is_git_plugin "$backup"; then
-    rm -rf --one-file-system -- "$backup" || fail "cannot remove Git plugin: $id"
+  run_test_hook quarantine-after-identity "$backup"
+  revalidate_quarantine || fail "quarantined plugin changed: $id"
+  quarantine_path="/proc/self/fd/$quarantine_fd/."
+  if is_git_plugin "$quarantine_path"; then
+    revalidate_quarantine || fail "quarantined Git plugin changed: $id"
+    find "$quarantine_path" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} + ||
+      fail "cannot remove Git plugin contents: $id"
+    revalidate_quarantine || fail "quarantined Git plugin changed during deletion: $id"
+    rmdir -- "$backup" || fail "cannot remove Git plugin: $id"
   fi
   rescan || fail "plugin removal failed during rescan"
 }

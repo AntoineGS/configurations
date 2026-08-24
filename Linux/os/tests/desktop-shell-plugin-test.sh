@@ -381,6 +381,99 @@ env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$signal_validator" "$mana
 [[ $signal_status == 143 ]] || fail "signal after merge returned status $signal_status"
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$signal_prior" ]] || fail "signal after merge did not roll back"
 
+race_hook="$test_root/race-hook"
+cat >"$race_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "$1" in
+  root-open)
+    [[ -n ${RACE_ROOT:-} ]] || exit 0
+    mv -- "$RACE_ROOT" "$RACE_ROOT_BACKUP"
+    ln -s -- "$RACE_REPLACEMENT" "$RACE_ROOT"
+    ;;
+  update-after-status|update-after-fetch)
+    mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+    git clone -q -- "$RACE_REMOTE" "$RACE_TARGET"
+    ;;
+  remove-before-quarantine)
+    [[ ${RACE_REMOVE_BEFORE:-0} == 1 ]] || exit 0
+    mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+    mkdir -- "$RACE_TARGET"
+    printf 'replacement\n' >"$RACE_TARGET/marker"
+    ;;
+  quarantine-after-identity)
+    mv -- "$2" "$RACE_TARGET_BACKUP"
+    git clone -q -- "$RACE_REMOTE" "$2"
+    ;;
+  *)
+    printf 'unknown race hook: %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+EOF
+chmod +x -- "$race_hook"
+
+race_root="$test_root/race-root"
+race_root_backup="$test_root/race-root-backup"
+race_replacement="$test_root/race-replacement"
+mkdir -p -- "$race_root" "$race_replacement"
+race_status=0
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$race_root" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+  RACE_ROOT="$race_root" RACE_ROOT_BACKUP="$race_root_backup" RACE_REPLACEMENT="$race_replacement" \
+  "$manager" update --yes >/dev/null 2>&1 || race_status=$?
+[[ $race_status != 0 && -L $race_root ]] || fail "root-open replacement was accepted"
+rm -f -- "$race_root"
+mv -- "$race_root_backup" "$race_root"
+
+status_race_backup="$test_root/status-race-backup"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+  RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$status_race_backup" RACE_REMOTE="$remote_root/lifecycle.git" \
+  DESKTOP_SHELL_PLUGIN_VALIDATE="$validator" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "status-to-fetch replacement was accepted"
+fi
+[[ -d "$status_race_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "status race fixture was lost"
+rm -rf -- "$status_race_backup"
+
+fetch_race_backup="$test_root/fetch-race-backup"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+  RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$fetch_race_backup" RACE_REMOTE="$remote_root/lifecycle.git" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "fetch-to-merge replacement was accepted"
+fi
+[[ -d "$fetch_race_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "fetch race fixture was lost"
+rm -rf -- "$fetch_race_backup"
+
+remove_race_target="$plugins_dir/remove-race.widget"
+mkdir -p -- "$remove_race_target"
+printf '{}\n' >"$remove_race_target/manifest.json"
+remove_race_backup="$test_root/remove-race-backup"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+  RACE_REMOVE_BEFORE=1 RACE_TARGET="$remove_race_target" RACE_TARGET_BACKUP="$remove_race_backup" \
+  "$manager" remove remove-race.widget --yes >/dev/null 2>&1; then
+  fail "revalidation-to-rename replacement was accepted"
+fi
+[[ -f "$remove_race_backup/manifest.json" && -f "$remove_race_target/marker" ]] || fail "remove rename race fixture was lost"
+
+quarantine_race_target="$plugins_dir/quarantine-race.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$quarantine_race_target"
+quarantine_race_backup="$test_root/quarantine-race-backup"
+quarantine_race_error="$test_root/quarantine-race.err"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+  RACE_TARGET="$test_root/.removed.quarantine-race.widget" RACE_TARGET_BACKUP="$quarantine_race_backup" RACE_REMOTE="$remote_root/lifecycle.git" \
+  "$manager" remove quarantine-race.widget --yes >"$quarantine_race_error" 2>&1; then
+  fail "post-quarantine identity replacement was accepted"
+fi
+quarantine_replacement="$plugins_dir/.removed.quarantine-race.widget.*"
+quarantine_matches=0
+for quarantine_path in $quarantine_replacement; do
+  [[ -d $quarantine_path ]] || continue
+  quarantine_matches=$((quarantine_matches + 1))
+done
+if [[ $quarantine_matches != 1 || ! -d $quarantine_race_backup ]]; then
+  printf 'quarantine race command output:\n%s\n' "$(<"$quarantine_race_error")" >&2
+  fail "quarantine identity race deleted or lost object"
+fi
+
 bulk_plugins="$test_root/bulk-plugins"
 mkdir -p -- "$bulk_plugins"
 bulk_good="$bulk_plugins/bulk-good.widget"
