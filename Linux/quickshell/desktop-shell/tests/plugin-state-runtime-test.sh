@@ -10,16 +10,22 @@ trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$
 start_shell() {
   local state_file=$1
   local log_file=$2
+  local allow_mutation=${3:-0}
   shell_pid=""
-  DESKTOP_SHELL_TEST_NO_SURFACES=1 \
-  DESKTOP_SHELL_STATE_PATH="$state_file" \
-  DESKTOP_SHELL_PLUGINS_DIR="$tmp_dir/plugins" \
-  DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
-  HOME="$tmp_dir/home" \
-  XDG_CONFIG_HOME="$tmp_dir/home/.config" \
-  XDG_CACHE_HOME="$tmp_dir/home/.cache" \
-  XDG_STATE_HOME="$tmp_dir/home/.local/state" \
-    quickshell -n -p "$shell_dir" >"$log_file" 2>&1 &
+  local -a launch_env=(
+    "DESKTOP_SHELL_TEST_NO_SURFACES=1"
+    "DESKTOP_SHELL_STATE_PATH=$state_file"
+    "DESKTOP_SHELL_PLUGINS_DIR=$tmp_dir/plugins"
+    "DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1"
+    "HOME=$tmp_dir/home"
+    "XDG_CONFIG_HOME=$tmp_dir/home/.config"
+    "XDG_CACHE_HOME=$tmp_dir/home/.cache"
+    "XDG_STATE_HOME=$tmp_dir/home/.local/state"
+  )
+  if [[ $allow_mutation == 1 ]]; then
+    launch_env+=("DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION=1")
+  fi
+  env "${launch_env[@]}" quickshell -n -p "$shell_dir" >"$log_file" 2>&1 &
   shell_pid=$!
 
   local config=""
@@ -68,13 +74,15 @@ jq -e '.plugins | any(.id == "acme.panel")' <<<"$config" >/dev/null
 jq -e '.bar.layout.right[0] == {"id":"acme.widget","units":"c"}' <<<"$config" >/dev/null
 health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
 jq -e '.pluginStateValid == true and .pluginStateDirectoryReady == true' <<<"$health" >/dev/null
+normal_hook_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test persistPluginStateForTest '{"version":1}' )
+[[ $normal_hook_result == "Function not found." ]]
 stop_shell
 
 first_write_file="$tmp_dir/first-write/config/desktop-shell/shell.json"
-start_shell "$first_write_file" "$tmp_dir/first-write-shell.log"
+start_shell "$first_write_file" "$tmp_dir/first-write-shell.log" 1
 wait_for_health '.pluginStateDirectoryReady == true and .pluginStateValid == true' >/dev/null
 [[ ! -e $first_write_file ]]
-write_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell persistPluginState '{"version":1,"enabledPlugins":[{"id":"acme.first-write"}]}' )
+write_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test persistPluginStateForTest '{"version":1,"enabledPlugins":[{"id":"acme.first-write"}]}' )
 if [[ $write_result != "saved" ]]; then
   printf 'unexpected first-write result: %s\n' "$write_result" >&2
   sed -n '1,180p' "$tmp_dir/first-write-shell.log" >&2
@@ -90,10 +98,10 @@ mkdir -p -- "$(dirname -- "$invalid_state_file")"
 invalid_bytes='{"version":1,"enabledPlugins":['
 printf '%s' "$invalid_bytes" >"$invalid_state_file"
 cp -- "$invalid_state_file" "$tmp_dir/invalid-before"
-start_shell "$invalid_state_file" "$tmp_dir/invalid-shell.log"
+start_shell "$invalid_state_file" "$tmp_dir/invalid-shell.log" 1
 health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
 jq -e '.pluginStateValid == false and .pluginStateError != "" and .pluginStateDirectoryReady == true' <<<"$health" >/dev/null
-invalid_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell persistPluginState '{"version":1}' )
+invalid_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test persistPluginStateForTest '{"version":1}' )
 [[ $invalid_result == "rejected-invalid-state" ]]
 config=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listShellConfig)
 jq -e '.version == 1 and (.plugins | any(.id == "acme.panel") | not)' <<<"$config" >/dev/null
@@ -101,10 +109,10 @@ cmp -- "$invalid_state_file" "$tmp_dir/invalid-before"
 stop_shell
 
 failure_state_file="$tmp_dir/failure/config/desktop-shell/shell.json"
-start_shell "$failure_state_file" "$tmp_dir/failure-shell.log"
+start_shell "$failure_state_file" "$tmp_dir/failure-shell.log" 1
 wait_for_health '.pluginStateDirectoryReady == true and .pluginStateValid == true' >/dev/null
 mkdir -p -- "$failure_state_file"
-failure_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell persistPluginState '{"version":1,"enabledPlugins":[{"id":"acme.failed-write"}]}' )
+failure_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test persistPluginStateForTest '{"version":1,"enabledPlugins":[{"id":"acme.failed-write"}]}' )
 [[ $failure_result == "rejected-write-failed" ]]
 wait_for_health '.pluginStateWritePending == false and .pluginStateWriteError != ""' >/dev/null
 [[ -d $failure_state_file ]]
