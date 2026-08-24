@@ -58,7 +58,7 @@ function validateState(state) {
       if (!isThirdPartyId(widget.id) || seen[widget.id]) return "invalid or duplicate widget id"
       if (SECTIONS.indexOf(widget.section) === -1 || !Number.isInteger(widget.index) || widget.index < 0)
         return "invalid widget placement"
-      if (!isPlainObject(widget.settings)) return "widget settings must be an object"
+      if (widget.settings !== undefined && !isPlainObject(widget.settings)) return "widget settings must be an object"
       seen[widget.id] = true
     }
   }
@@ -149,14 +149,17 @@ function upsertWidget(state, manifest, placement, effectiveConfig) {
   var position = placementFor(manifest, placement)
   if (!position) return null
   var existing = (state.barWidgets || []).find(function (widget) { return widget.id === manifest.id })
-  state.barWidgets = (state.barWidgets || []).filter(function (widget) { return widget.id !== manifest.id })
-  var limit = layoutFor(effectiveConfig, position.section).length + state.barWidgets.filter(function (widget) {
+  var remaining = (state.barWidgets || []).filter(function (widget) { return widget.id !== manifest.id })
+  var limit = layoutFor(effectiveConfig, position.section).length + remaining.filter(function (widget) {
     return widget.section === position.section
   }).length
+  var index = Math.max(0, Math.min(position.index, limit))
+  if (existing && existing.section === position.section && existing.index === index) return state
+  state.barWidgets = remaining
   state.barWidgets.push({
     id: manifest.id,
     section: position.section,
-    index: Math.max(0, Math.min(position.index, limit)),
+    index: index,
     settings: existing && existing.settings ? clone(existing.settings) : {},
   })
   return state
@@ -218,12 +221,14 @@ function inBar(state, id) {
   return !!(state && state.barWidgets && state.barWidgets.some(function (widget) { return widget.id === id }))
 }
 
-module.exports = {
-  emptyState: emptyState,
-  parseState: parseState,
-  mergeConfig: mergeConfig,
-  setEnabled: setEnabled,
-  moveWidget: moveWidget,
-  setWidget: setWidget,
-  inBar: inBar,
+if (typeof module !== "undefined") {
+  module.exports = {
+    emptyState: emptyState,
+    parseState: parseState,
+    mergeConfig: mergeConfig,
+    setEnabled: setEnabled,
+    moveWidget: moveWidget,
+    setWidget: setWidget,
+    inBar: inBar,
+  }
 }

@@ -1,5 +1,11 @@
 const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const vm = require("node:vm")
 const State = require("../services/PluginState.js")
+
+const qmlContext = {}
+vm.runInNewContext(fs.readFileSync(require.resolve("../services/PluginState.js"), "utf8"), qmlContext)
+assert.equal(qmlContext.emptyState().version, 1)
 
 const defaults = {
   version: 1,
@@ -46,6 +52,19 @@ assert.deepEqual(State.mergeConfig(changedDefaults, parsed.state).bar.layout.rig
   { id: "desktop.tray" },
   { id: "desktop.power" },
 ])
+
+const emptySettingsState = State.setEnabled(State.emptyState(), {
+  id: "acme.empty-widget",
+  kinds: ["bar-widget"],
+  barWidget: { defaultSection: "right" },
+}, true, {}, defaults).state
+assert.equal(emptySettingsState.barWidgets[0].settings, undefined)
+assert.equal(State.parseState(JSON.stringify(emptySettingsState)).valid, true)
+assert.equal(State.parseState(JSON.stringify(parsed.state)).valid, true)
+assert.equal(State.parseState(JSON.stringify(State.parseState(JSON.stringify({
+  version: 1,
+  barWidgets: [{ id: "acme.empty", section: "left", index: 0, settings: {} }],
+})).state)).valid, true)
 
 assert.equal(State.parseState(JSON.stringify({
   version: 1,
@@ -105,6 +124,29 @@ result = State.setWidget(result.state, "acme.weather", "units", "c")
 assert.deepEqual(result.state.barWidgets[0].settings, { units: "c" })
 result = State.setEnabled(result.state, widget, true, { section: "right", index: 0 }, defaults)
 assert.deepEqual(result.state.barWidgets.find((item) => item.id === "acme.weather").settings, { units: "c" })
+
+let equalIndexState = State.emptyState()
+equalIndexState = State.setEnabled(equalIndexState, {
+  id: "acme.first",
+  kinds: ["bar-widget"],
+  barWidget: { defaultSection: "left" },
+}, true, { section: "left", index: 0 }, defaults).state
+equalIndexState = State.setEnabled(equalIndexState, {
+  id: "acme.second",
+  kinds: ["bar-widget"],
+  barWidget: { defaultSection: "left" },
+}, true, { section: "left", index: 0 }, defaults).state
+const equalIndexBefore = structuredClone(equalIndexState)
+const equalIndexAfter = State.setEnabled(equalIndexState, {
+  id: "acme.first",
+  kinds: ["bar-widget"],
+  barWidget: { defaultSection: "left" },
+}, true, { section: "left", index: 0 }, defaults)
+assert.deepEqual(equalIndexAfter.state, equalIndexBefore)
+assert.deepEqual(State.mergeConfig(defaults, equalIndexAfter.state).bar.layout.left.slice(0, 2), [
+  { id: "acme.first" },
+  { id: "acme.second" },
+])
 result = State.setEnabled(result.state, fullBar, true, {}, defaults)
 assert.equal(result.state.barPluginId, "acme.bar")
 result = State.setEnabled(result.state, { id: "desktop.bar", kinds: ["bar"], __isFirstParty: true }, true, {}, defaults)
@@ -117,11 +159,23 @@ result = State.setEnabled(result.state, hybrid, true, { section: "left", index: 
 assert.equal(result.ok, true)
 assert.deepEqual(result.state.enabledPlugins, [{ id: "acme.panel" }])
 assert.equal(State.inBar(result.state, "acme.hybrid"), true)
-assert.equal(State.moveWidget(result.state, "acme.hybrid", { section: "center", index: 0 }, defaults).ok, true)
-result = State.moveWidget(result.state, "acme.hybrid", { section: "center", index: 0 }, defaults)
+assert.equal(result.state.barWidgets.find((item) => item.id === "acme.hybrid").index, 1)
+const moved = State.moveWidget(result.state, "acme.hybrid", { section: "center", index: 0 }, defaults)
+assert.equal(moved.ok, true)
+assert.deepEqual(moved.state.barWidgets.find((item) => item.id === "acme.hybrid"), {
+  id: "acme.hybrid",
+  section: "center",
+  index: 0,
+})
+result = moved
 assert.deepEqual(result.state.barWidgets.find((item) => item.id === "acme.weather").settings, { units: "c" })
-assert.equal(State.setEnabled(result.state, widget, true, { section: "bad" }, defaults).ok, false)
+const beforeInvalidPlacement = structuredClone(result.state)
+const invalidPlacement = State.setEnabled(result.state, widget, true, { section: "bad" }, defaults)
+assert.equal(invalidPlacement.ok, false)
+assert.deepEqual(result.state, beforeInvalidPlacement)
+const beforeMissingWidget = structuredClone(result.state)
 assert.equal(State.setWidget(result.state, "missing", "x", 1).ok, false)
+assert.deepEqual(result.state, beforeMissingWidget)
 assert.deepEqual(State.setWidget(result.state, "acme.hybrid", "unused", undefined).state, result.state)
 
 const beforeDisable = structuredClone(result.state)
@@ -129,7 +183,23 @@ result = State.setEnabled(result.state, widget, false, {}, defaults)
 assert.equal(result.ok, true)
 assert.equal(State.inBar(result.state, "acme.weather"), false)
 assert.deepEqual(result.state.enabledPlugins, beforeDisable.enabledPlugins)
-assert.equal(State.setEnabled(result.state, widget, true, { section: "right", index: 999 }, defaults).ok, true)
+const clamped = State.setEnabled(result.state, widget, true, { section: "right", index: 999 }, defaults)
+assert.equal(clamped.ok, true)
+assert.equal(clamped.state.barWidgets.find((item) => item.id === "acme.weather").index, 1)
+assert.equal(State.mergeConfig(defaults, clamped.state).bar.layout.right[1].id, "acme.weather")
+const beforeMissingMove = structuredClone(result.state)
 assert.equal(State.moveWidget(result.state, "missing", { section: "left", index: 0 }, defaults).ok, false)
+assert.deepEqual(result.state, beforeMissingMove)
+
+let cleanup = State.emptyState()
+cleanup = State.setEnabled(cleanup, panel, true, {}, defaults).state
+cleanup = State.setEnabled(cleanup, widget, true, { section: "right", index: 0 }, defaults).state
+cleanup = State.setEnabled(cleanup, fullBar, true, {}, defaults).state
+cleanup = State.setEnabled(cleanup, widget, false, {}, defaults).state
+assert.equal(cleanup.barWidgets, undefined)
+cleanup = State.setEnabled(cleanup, panel, false, {}, defaults).state
+assert.equal(cleanup.enabledPlugins, undefined)
+cleanup = State.setEnabled(cleanup, fullBar, false, {}, defaults).state
+assert.equal(cleanup.barPluginId, undefined)
 
 console.log("plugin state tests passed")
