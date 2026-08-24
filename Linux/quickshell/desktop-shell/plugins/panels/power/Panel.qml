@@ -24,8 +24,9 @@ Panel {
   readonly property var profiles: Array.isArray(profile.profiles) ? profile.profiles : []
   readonly property string activeProfile: String(profile.active || "")
   readonly property int batteryPercent: Model.batteryPercentage(battery.status)
+  readonly property string batteryState: String(battery.state || "")
+  readonly property var batteryOnBattery: battery.onBattery
   readonly property bool batteryAvailable: String(battery.status || "") !== ""
-  readonly property bool showPercentage: setting("showPercentage", false) === true
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -66,11 +67,6 @@ Panel {
   function activateSelectedProfile() {
     if (profileIndex < 0 || profileIndex >= profiles.length) return
     setProfile(profiles[profileIndex])
-  }
-
-  function togglePercentage() {
-    var next = Object.assign({}, settings, { showPercentage: !showPercentage })
-    if (bar && bar.shell) bar.shell.updateEntryInline(moduleName, next)
   }
 
   visible: capabilityAvailable
@@ -120,14 +116,11 @@ Panel {
     bar: root.bar
     text: !root.batteryAvailable
       ? Model.profileIcon(root.activeProfile)
-      : root.showPercentage && !vertical
-      ? root.batteryPercent + "% " + Model.batteryIcon(root.batteryPercent, root.battery.status)
-      : Model.batteryIcon(root.batteryPercent, root.battery.status)
-    slotSize: Style.bar.iconSlot * (root.showPercentage && !vertical ? 2 : 1)
-    onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) root.togglePercentage()
-      else root.toggle()
-    }
+      : Model.batteryBarText(root.batteryPercent, root.batteryState, root.batteryOnBattery)
+    slotSize: Style.bar.iconSlot * (root.batteryAvailable
+      ? Model.batteryBarSlots(root.batteryPercent, root.batteryState, root.batteryOnBattery)
+      : 1)
+    onPressed: root.toggle()
   }
 
   KeyboardPanel {
@@ -163,14 +156,14 @@ Panel {
           PanelHero {
             width: parent.width
             title: root.batteryAvailable ? "Battery" : "Power profile"
-            meta: root.batteryAvailable ? Model.modeLabel(root.battery.status) : root.activeProfile
+            meta: root.batteryAvailable ? Model.modeLabel(root.batteryState) : root.activeProfile
             detail: root.batteryAvailable && root.batteryPercent >= 0 ? root.batteryPercent + "%" : ""
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
             Text {
               text: root.batteryAvailable
-                ? Model.batteryIcon(root.batteryPercent, root.battery.status)
+                ? Model.batteryIcon(root.batteryPercent, root.batteryState)
                 : Model.profileIcon(root.activeProfile)
               color: root.foreground
               font.family: root.fontFamily

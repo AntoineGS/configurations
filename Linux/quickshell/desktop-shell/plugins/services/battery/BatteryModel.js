@@ -4,20 +4,56 @@ function batteryPercentage(status) {
   return Math.max(0, Math.min(100, Number(match[1])))
 }
 
-function isDischarging(status) {
-  var value = String(status || "").toLowerCase()
-  return value.indexOf("discharging") !== -1 || value.indexOf("on battery") !== -1
+function isDischarging(onBattery) {
+  return onBattery === true
 }
 
-function shouldWarnLowBattery(status, threshold, alreadyNotified) {
-  var level = batteryPercentage(status)
-  if (level < 0) return { level: level, notify: false, notifiedLowBattery: false }
+function isPluggedIn(onBattery) {
+  return onBattery === false
+}
 
-  var low = isDischarging(status) && level <= threshold
+function warningState(status, onBattery, lowThreshold, criticalThreshold, lowNotified, criticalNotified) {
+  var level = batteryPercentage(status)
+  var lowSent = lowNotified === true
+  var criticalSent = criticalNotified === true
+
+  if (isPluggedIn(onBattery)) {
+    return { level: level, notify: false, urgency: "", lowNotified: false, criticalNotified: false }
+  }
+  if (!isDischarging(onBattery) || level < 0) {
+    return {
+      level: level,
+      notify: false,
+      urgency: "",
+      lowNotified: lowSent,
+      criticalNotified: criticalSent
+    }
+  }
+  if (level <= criticalThreshold) {
+    return {
+      level: level,
+      notify: !criticalSent,
+      urgency: "critical",
+      lowNotified: true,
+      criticalNotified: true
+    }
+  }
+  if (level <= lowThreshold) {
+    return {
+      level: level,
+      notify: !lowSent,
+      urgency: "normal",
+      lowNotified: true,
+      criticalNotified: criticalSent
+    }
+  }
+
   return {
     level: level,
-    notify: low && !alreadyNotified,
-    notifiedLowBattery: low
+    notify: false,
+    urgency: "",
+    lowNotified: lowSent,
+    criticalNotified: criticalSent
   }
 }
 
@@ -25,6 +61,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     batteryPercentage: batteryPercentage,
     isDischarging: isDischarging,
-    shouldWarnLowBattery: shouldWarnLowBattery
+    isPluggedIn: isPluggedIn,
+    warningState: warningState
   }
 }

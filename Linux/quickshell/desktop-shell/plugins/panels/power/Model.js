@@ -15,26 +15,49 @@ function batteryPercentage(status) {
   return Math.max(0, Math.min(100, Number(match[1])))
 }
 
-function isCharging(status) {
-  var value = String(status || "").toLowerCase()
-  return value.indexOf("charging") !== -1 && value.indexOf("discharging") === -1
+function normalizedBatteryState(state) {
+  return String(state || "").trim().toLowerCase()
 }
 
-function batteryIcon(percent, status) {
+function isCharging(state) {
+  var value = normalizedBatteryState(state)
+  return value === "charging" || value === "pending-charge"
+}
+
+function isPluggedIn(onBattery) {
+  return onBattery === false
+}
+
+function isFullyCharged(percent, state, onBattery) {
+  return isPluggedIn(onBattery)
+    && (normalizedBatteryState(state) === "fully-charged" || Number(percent) >= 100)
+}
+
+function batteryIcon(percent, state) {
   var value = Number(percent)
   if (!isFinite(value) || value < 0) return "󰂑"
 
   var chargingIcons = ["󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"]
   var defaultIcons = ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
   var index = Math.max(0, Math.min(9, Math.floor(value / 10)))
-  return isCharging(status) ? chargingIcons[index] : defaultIcons[index]
+  return isCharging(state) ? chargingIcons[index] : defaultIcons[index]
 }
 
-function modeLabel(status) {
-  var value = String(status || "")
-  if (/fully charged/i.test(value)) return "Fully charged"
-  if (/charging/i.test(value) && !/discharging/i.test(value)) return "Charging"
-  if (/discharging/i.test(value)) return "On battery"
+function batteryBarText(percent, state, onBattery) {
+  if (isFullyCharged(percent, state, onBattery)) return "󰚥"
+  if (isPluggedIn(onBattery)) return batteryIcon(percent, state) + " 󰚥"
+  return batteryIcon(percent, state) + " " + percent + "%"
+}
+
+function batteryBarSlots(percent, state, onBattery) {
+  return isFullyCharged(percent, state, onBattery) ? 1 : 2
+}
+
+function modeLabel(state) {
+  var value = normalizedBatteryState(state)
+  if (value === "fully-charged") return "Fully charged"
+  if (isCharging(value)) return "Charging"
+  if (value === "discharging" || value === "pending-discharge") return "On battery"
   return "Battery"
 }
 
@@ -60,8 +83,13 @@ if (typeof module !== "undefined") {
     clampIndex: clampIndex,
     selectProfileIndex: selectProfileIndex,
     batteryPercentage: batteryPercentage,
+    normalizedBatteryState: normalizedBatteryState,
     isCharging: isCharging,
+    isPluggedIn: isPluggedIn,
+    isFullyCharged: isFullyCharged,
     batteryIcon: batteryIcon,
+    batteryBarText: batteryBarText,
+    batteryBarSlots: batteryBarSlots,
     modeLabel: modeLabel,
     parseState: parseState,
     profileIcon: profileIcon

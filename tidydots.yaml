@@ -1230,6 +1230,11 @@ applications:
         name: helper scripts
         backup: ./Linux/os/helpers
       - check:
+          linux: '! systemctl --user is-active --quiet battery-monitor.timer && ! systemctl --user is-enabled --quiet battery-monitor.timer && ! systemctl --user is-active --quiet battery-monitor.service && test ! -e "$HOME/.config/systemd/user/battery-monitor.timer" && test ! -L "$HOME/.config/systemd/user/battery-monitor.timer" && test ! -e "$HOME/.config/systemd/user/battery-monitor.service" && test ! -L "$HOME/.config/systemd/user/battery-monitor.service"'
+        run:
+          linux: systemctl --user disable --now battery-monitor.timer >/dev/null 2>&1 || true; systemctl --user stop battery-monitor.service >/dev/null 2>&1 || true; rm -f "$HOME/.config/systemd/user/battery-monitor.timer" "$HOME/.config/systemd/user/battery-monitor.service"; systemctl --user daemon-reload
+        name: remove-legacy-battery-monitor
+      - check:
           linux: ~/.local/share/helpers/setup-remmina-hostkey --check
         run:
           linux: ~/.local/share/helpers/setup-remmina-hostkey --apply
@@ -1267,18 +1272,6 @@ applications:
         name: omarchbook .desktop files
         backup: ./Linux/os/applications/omarchbook
         when: '{{ eq .Hostname "omarchbook" }}'
-      - targets:
-          linux: ~/.config/systemd/user
-        name: battery-monitor-service
-        backup: ./Linux/os/systemd
-        files:
-          - battery-monitor.service
-          - battery-monitor.timer
-      - check:
-          linux: systemctl --user is-active --quiet battery-monitor.timer
-        run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
-        name: enable-battery-monitor
   - package:
       managers:
         pacman: iwd

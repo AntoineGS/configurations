@@ -280,8 +280,12 @@ state_power() {
   local battery_available=false
   local status=0
   local battery_status=''
+  local battery_state=''
+  local battery_on_battery=''
   local battery_capacity=''
   local battery_remaining=''
+  local upower_command=''
+  local battery_device=''
   local profiles_available=false
   local active_profile=''
   local profiles='[]'
@@ -309,6 +313,15 @@ state_power() {
     fi
     if ! battery_remaining=$("$(resolve_helper battery-remaining-time)" 2>/dev/null); then
       emit_stale 'battery remaining-time helper failed'
+    fi
+    if upower_command=$(resolve_command upower); then
+      battery_on_battery=$("$upower_command" -d 2>/dev/null \
+        | awk '/^[[:space:]]*on-battery:/ { print $2; exit }') || battery_on_battery=''
+      if battery_device=$("$upower_command" -e 2>/dev/null | awk '/BAT/ { print; exit }') \
+          && [[ -n $battery_device ]]; then
+        battery_state=$("$upower_command" -i "$battery_device" 2>/dev/null \
+          | awk '/^[[:space:]]*state:/ { print $2; exit }') || battery_state=''
+      fi
     fi
   fi
 
@@ -345,10 +358,18 @@ state_power() {
     '{available: ($available == "true"), active: $active, profiles: $profiles}')
   data=$(jq -cn \
     --arg status "$battery_status" \
+    --arg state "$battery_state" \
+    --arg onBattery "$battery_on_battery" \
     --arg capacity "$battery_capacity" \
     --arg remaining "$battery_remaining" \
     --argjson profile "$profile_data" \
-    '{battery: {status: $status, capacity: $capacity, remainingTime: $remaining}, profile: $profile}')
+    '{battery: {
+      status: $status,
+      state: $state,
+      onBattery: (if $onBattery == "yes" then true elif $onBattery == "no" then false else null end),
+      capacity: $capacity,
+      remainingTime: $remaining
+    }, profile: $profile}')
   if [[ $battery_available == true || $profiles_available == true ]]; then
     emit_available "$data"
   fi
