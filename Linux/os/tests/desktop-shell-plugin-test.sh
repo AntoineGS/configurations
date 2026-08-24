@@ -423,6 +423,19 @@ case "$1" in
     mv -- "$2" "$RACE_TARGET_BACKUP"
     mkdir -- "$2"
     ;;
+  before-rescan)
+    case ${RACE_RESCAN_MODE:-} in
+      update)
+        mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+        mkdir -- "$RACE_TARGET"
+        printf 'replacement\n' >"$RACE_TARGET/marker"
+        ;;
+      remove)
+        mkdir -- "$RACE_TARGET"
+        printf 'repopulated\n' >"$RACE_TARGET/marker"
+        ;;
+    esac
+    ;;
   *)
     printf 'unknown race hook: %s\n' "$1" >&2
     exit 2
@@ -467,6 +480,34 @@ fi
 rm -rf -- "$plugins_dir/lifecycle.widget/.git"
 mv -- "$metadata_backup" "$plugins_dir/lifecycle.widget/.git"
 rm -rf -- "$metadata_replacement"
+
+rollback_metadata_validator="$test_root/rollback-metadata-validator"
+printf 'rollback-metadata\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm rollback-metadata
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+cat >"$rollback_metadata_validator" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mv -- "$RACE_TARGET/.git" "$RACE_GIT_BACKUP"
+cp -a -- "$RACE_GIT_REPLACEMENT" "$RACE_TARGET/.git"
+exit 1
+EOF
+chmod +x -- "$rollback_metadata_validator"
+rollback_metadata_backup="$test_root/rollback-metadata-backup"
+rollback_metadata_replacement="$test_root/rollback-metadata-replacement"
+git clone -q -- "$remote_root/lifecycle.git" "$rollback_metadata_replacement"
+git -C "$plugins_dir/lifecycle.widget" show HEAD:Widget.qml >"$test_root/rollback-metadata-prior-widget"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$rollback_metadata_validator" \
+  RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_GIT_BACKUP="$rollback_metadata_backup" \
+  RACE_GIT_REPLACEMENT="$rollback_metadata_replacement/.git" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "metadata replacement validation unexpectedly succeeded"
+fi
+cmp -s "$test_root/rollback-metadata-prior-widget" "$plugins_dir/lifecycle.widget/Widget.qml" ||
+  fail "captured transaction was not rolled back after metadata replacement"
+rm -rf -- "$plugins_dir/lifecycle.widget/.git"
+mv -- "$rollback_metadata_backup" "$plugins_dir/lifecycle.widget/.git"
+rm -rf -- "$rollback_metadata_replacement"
 printf 'validator-update\n' >>"$validation_repo/Widget.qml"
 git -C "$validation_repo" add Widget.qml
 git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm validator-update
@@ -591,6 +632,87 @@ bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $((bulk_rescan_after - bulk_rescan_before)) == 1 ]] || fail "partial bulk update did not request exactly one rescan"
 [[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
 
+abort_plugins="$test_root/abort-plugins"
+mkdir -p -- "$abort_plugins"
+abort_first="$abort_plugins/abort-a.widget"
+abort_second="$abort_plugins/abort-b.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$abort_first"
+git clone -q -- "$remote_root/lifecycle.git" "$abort_second"
+printf 'abort-rollback\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm abort-rollback
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+abort_validator="$test_root/abort-validator"
+cat >"$abort_validator" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+count=0
+[[ -f $ABORT_COUNT ]] && count=$(<"$ABORT_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" >"$ABORT_COUNT"
+exit 1
+EOF
+chmod +x -- "$abort_validator"
+abort_bin="$test_root/abort-bin"
+mkdir -p -- "$abort_bin"
+abort_git="$abort_bin/git"
+cat >"$abort_git" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$*" >>"$ABORT_GIT_LOG"
+if [[ " $* " == *' reset --hard '* ]]; then
+  exit 1
+fi
+exec /usr/bin/git "$@"
+EOF
+chmod +x -- "$abort_git"
+abort_hook="$test_root/abort-hook"
+cat >"$abort_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$1" >>"$ABORT_HOOK_LOG"
+EOF
+chmod +x -- "$abort_hook"
+abort_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$abort_plugins" \
+  DESKTOP_SHELL_PLUGIN_VALIDATE="$abort_validator" ABORT_COUNT="$test_root/abort-count" \
+  ABORT_GIT_LOG="$test_root/abort-git.log" \
+  DESKTOP_SHELL_PLUGIN_TEST_HOOK="$abort_hook" ABORT_HOOK_LOG="$test_root/abort-hook.log" \
+  PATH="$abort_bin:$PATH" "$manager" update --yes >/dev/null 2>&1; then
+  abort_status=0
+else
+  abort_status=$?
+fi
+[[ $abort_status != 0 ]] || fail "failed rollback bulk update unexpectedly succeeded"
+[[ $(<"$test_root/abort-count") == 1 ]] || fail "bulk update continued after failed rollback: $(<"$test_root/abort-count")"
+[[ $(grep -c 'update-after-status' "$test_root/abort-hook.log") == 1 ]] ||
+  fail "bulk update started another plugin after failed rollback: $(<"$test_root/abort-hook.log")"
+
+rescan_swap_backup="$test_root/rescan-swap-backup"
+rescan_swap_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+rescan_hook="$test_root/rescan-hook"
+cat >"$rescan_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "$1" >>"$RACE_RESCAN_LOG"
+if [[ $1 == before-rescan ]]; then
+  mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+  mkdir -- "$RACE_TARGET"
+  printf 'replacement\n' >"$RACE_TARGET/marker"
+fi
+EOF
+chmod +x -- "$rescan_hook"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$rescan_hook" \
+  RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$rescan_swap_backup" RACE_RESCAN_LOG="$test_root/rescan-hook.log" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "public target replacement before rescan was accepted: $(<"$test_root/rescan-hook.log")"
+fi
+[[ -f "$plugins_dir/lifecycle.widget/marker" ]] || fail "rescan replacement was removed"
+[[ $(git -C "$rescan_swap_backup" rev-parse HEAD) == "$rescan_swap_prior" ]] ||
+  fail "successful update was not rolled back after rescan replacement"
+rm -rf -- "$plugins_dir/lifecycle.widget"
+mv -- "$rescan_swap_backup" "$plugins_dir/lifecycle.widget"
+
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "local modifications were accepted"
@@ -654,6 +776,15 @@ git clone -q -- "$remote_root/lifecycle.git" "$remove_dir"
 env "${manager_env[@]}" "$manager" remove remove.widget --yes >/dev/null || fail "Git removal failed"
 [[ ! -e $remove_dir ]] || fail "Git removal left source directory"
 grep -Fq $'setPluginEnabled\tremove.widget\tfalse' "$log_file" || fail "Git removal did not disable first"
+
+repopulate_dir="$plugins_dir/repopulate.widget"
+mkdir -p -- "$repopulate_dir"
+printf '{}\n' >"$repopulate_dir/manifest.json"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" RACE_RESCAN_MODE=remove \
+  RACE_TARGET="$repopulate_dir" "$manager" remove repopulate.widget --yes >/dev/null 2>&1; then
+  fail "removed ID repopulation before rescan was accepted"
+fi
+[[ -f "$repopulate_dir/marker" ]] || fail "repopulated removed ID was not preserved"
 
 non_git_dir="$plugins_dir/non-git.widget"
 mkdir -p -- "$non_git_dir"
