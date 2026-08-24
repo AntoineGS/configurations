@@ -41,10 +41,23 @@ git_identity=
 common_identity=
 metadata_ready=0
 update_armed=0
+rollback_failed=0
 update_dir=
 update_prior=
 update_identity=
 cleanup_running=0
+retained_ids=()
+retained_target_fds=()
+retained_git_fds=()
+retained_common_fds=()
+retained_target_paths=()
+retained_target_reals=()
+retained_target_identities=()
+retained_prior=()
+retained_git_paths=()
+retained_common_paths=()
+retained_git_identities=()
+retained_common_identities=()
 placement_section=
 placement_index=
 placement_before=
@@ -96,6 +109,8 @@ cleanup() {
   cleanup_running=1
   trap - HUP INT TERM
   restore_update_transaction || true
+  rollback_retained_updates || true
+  release_retained_updates || true
   if [[ -n $stage_dir && -d $stage_dir ]]; then
     rm -rf -- "$stage_dir" || true
   fi
@@ -591,14 +606,21 @@ repo_identity_matches() {
 }
 
 restore_update_transaction() {
+  local target_fd_identity git_fd_identity common_fd_identity
   (( update_armed )) || return 0
-  if repo_identity_matches "$update_dir" "$update_identity" && revalidate_git_metadata "$update_dir"; then
+  target_fd_identity=$(path_identity "/proc/self/fd/$update_target_fd") || { rollback_failed=1; return 1; }
+  git_fd_identity=$(path_identity "/proc/self/fd/$git_fd") || { rollback_failed=1; return 1; }
+  common_fd_identity=$(path_identity "/proc/self/fd/$common_fd") || { rollback_failed=1; return 1; }
+  if [[ $target_fd_identity == "$update_identity" && $git_fd_identity == "$git_identity" &&
+    $common_fd_identity == "$common_identity" ]]; then
     if ! stable_git reset --hard "$update_prior" >/dev/null 2>&1; then
       printf '%s: rollback failed for %s\n' "$script_name" "$update_dir" >&2
+      rollback_failed=1
       return 1
     fi
   else
     printf '%s: refusing rollback of replaced plugin: %s\n' "$script_name" "$update_dir" >&2
+    rollback_failed=1
     return 1
   fi
   update_armed=0
@@ -606,6 +628,93 @@ restore_update_transaction() {
   update_prior=
   update_identity=
   return 0
+}
+
+retain_update_record() {
+  local id=$1 target_copy git_copy common_copy
+  exec {target_copy}<&$update_target_fd
+  exec {git_copy}<&$git_fd
+  exec {common_copy}<&$common_fd
+  retained_ids+=("$id")
+  retained_target_fds+=("$target_copy")
+  retained_git_fds+=("$git_copy")
+  retained_common_fds+=("$common_copy")
+  retained_target_paths+=("$update_target_path")
+  retained_target_reals+=("$update_target_real")
+  retained_target_identities+=("$update_target_identity")
+  retained_prior+=("$prior")
+  retained_git_paths+=("$git_path")
+  retained_common_paths+=("$common_path")
+  retained_git_identities+=("$git_identity")
+  retained_common_identities+=("$common_identity")
+}
+
+revalidate_retained_updates() {
+  local index current_git current_common current_identity current_real fd_identity
+  revalidate_mutation_root || return 1
+  for index in "${!retained_ids[@]}"; do
+    [[ -d ${retained_target_paths[index]} && ! -L ${retained_target_paths[index]} ]] || return 1
+    current_real=$(realpath -- "${retained_target_paths[index]}") || return 1
+    current_identity=$(path_identity "${retained_target_paths[index]}") || return 1
+    fd_identity=$(path_identity "/proc/self/fd/${retained_target_fds[index]}") || return 1
+    [[ $current_real == "${retained_target_reals[index]}" &&
+      $current_identity == "${retained_target_identities[index]}" && $fd_identity == "$current_identity" ]] || return 1
+    current_git=$(git -C "${retained_target_paths[index]}" rev-parse --absolute-git-dir 2>/dev/null) || return 1
+    current_common=$(git -C "${retained_target_paths[index]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+    [[ $current_git == "${retained_git_paths[index]}" && $current_common == "${retained_common_paths[index]}" ]] || return 1
+    current_identity=$(path_identity "${retained_git_paths[index]}") || return 1
+    [[ $current_identity == "${retained_git_identities[index]}" ]] || return 1
+    current_identity=$(path_identity "${retained_common_paths[index]}") || return 1
+    [[ $current_identity == "${retained_common_identities[index]}" ]] || return 1
+    fd_identity=$(path_identity "/proc/self/fd/${retained_git_fds[index]}") || return 1
+    [[ $fd_identity == "${retained_git_identities[index]}" ]] || return 1
+    fd_identity=$(path_identity "/proc/self/fd/${retained_common_fds[index]}") || return 1
+    [[ $fd_identity == "${retained_common_identities[index]}" ]] || return 1
+  done
+}
+
+release_retained_updates() {
+  local index fd
+  for index in "${!retained_ids[@]}"; do
+    fd=${retained_target_fds[index]}; exec {fd}<&-
+    fd=${retained_git_fds[index]}; exec {fd}<&-
+    fd=${retained_common_fds[index]}; exec {fd}<&-
+  done
+  retained_ids=()
+  retained_target_fds=()
+  retained_git_fds=()
+  retained_common_fds=()
+  retained_target_paths=()
+  retained_target_reals=()
+  retained_target_identities=()
+  retained_prior=()
+  retained_git_paths=()
+  retained_common_paths=()
+  retained_git_identities=()
+  retained_common_identities=()
+}
+
+rollback_retained_updates() {
+  local index failed=0
+  for index in "${!retained_ids[@]}"; do
+    update_target_fd=${retained_target_fds[index]}
+    update_target_path=${retained_target_paths[index]}
+    update_target_real=${retained_target_reals[index]}
+    update_target_identity=${retained_target_identities[index]}
+    git_fd=${retained_git_fds[index]}
+    common_fd=${retained_common_fds[index]}
+    git_path=${retained_git_paths[index]}
+    common_path=${retained_common_paths[index]}
+    git_identity=${retained_git_identities[index]}
+    common_identity=${retained_common_identities[index]}
+    metadata_ready=1
+    update_dir="/proc/self/fd/$update_target_fd/."
+    update_prior=${retained_prior[index]}
+    update_identity=${retained_target_identities[index]}
+    update_armed=1
+    restore_update_transaction || failed=1
+  done
+  (( failed == 0 ))
 }
 
 plugin_directory() {
@@ -717,6 +826,7 @@ update_plugin() {
     return 1
   }
   update_armed=1
+  rollback_failed=0
   update_dir=$repo
   update_prior=$prior
   update_identity=$update_target_identity
@@ -741,6 +851,7 @@ update_plugin() {
     return 1
   fi
   update_armed=0
+  retain_update_record "$id"
   update_dir=
   update_prior=
   update_identity=
@@ -748,7 +859,7 @@ update_plugin() {
 }
 
 update_plugins() {
-  local requested_id=${1-} id directory changed=0 failed=0 status_code
+  local requested_id=${1-} id directory changed=0 failed=0 boundary_failed=0 status_code
   local -a directories=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
@@ -758,6 +869,7 @@ update_plugins() {
       status_code=$?
       [[ $status_code == 2 ]] || failed=1
     fi
+    (( update_armed == 0 )) || failed=1
     release_update_target
   else
     revalidate_mutation_root || fail "plugin root changed before bulk update"
@@ -772,11 +884,32 @@ update_plugins() {
         status_code=$?
         [[ $status_code == 2 ]] || failed=1
       fi
+      if (( update_armed || rollback_failed )); then
+        failed=1
+        break
+      fi
       release_update_target
     done
   fi
   if (( changed )); then
-    rescan || failed=1
+    if (( update_armed )); then
+      failed=1
+      rollback_retained_updates || true
+    else
+      run_test_hook before-rescan || boundary_failed=1
+      if (( boundary_failed == 0 )) && ! revalidate_retained_updates; then
+        boundary_failed=1
+      fi
+      if (( boundary_failed )); then
+        failed=1
+        rollback_retained_updates || true
+      elif ! rescan; then
+        failed=1
+        rollback_retained_updates || true
+      else
+        release_retained_updates
+      fi
+    fi
   fi
   return "$failed"
 }
@@ -815,6 +948,10 @@ remove_plugin() {
     revalidate_quarantine || fail "quarantined Git plugin changed during deletion: $id"
     rmdir -- "$backup" || fail "cannot remove Git plugin: $id"
   fi
+  run_test_hook before-rescan
+  revalidate_mutation_root || fail "plugin root changed before removal rescan: $id"
+  [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
+    fail "removed plugin was repopulated before rescan: $id"
   rescan || fail "plugin removal failed during rescan"
 }
 
