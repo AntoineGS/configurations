@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+shopt -s inherit_errexit
+
+readonly script_name=${0##*/}
+script_path=$(realpath -- "${BASH_SOURCE[0]}")
+readonly script_path
+script_dir=$(dirname -- "$script_path")
+readonly script_dir
+readonly manager="$script_dir/desktop-shell-plugin"
+readonly ipc="$script_dir/omarchy-shell"
+readonly marketplace_url='https://github.com/Yasino55/omarchy-plugin-marketplace.git'
+readonly marketplace_id='io.yasino55.omarchy-plugin-marketplace'
+readonly plugins_dir=${DESKTOP_SHELL_PLUGINS_DIR:-$HOME/.config/omarchy/plugins}
+readonly checkout="$plugins_dir/$marketplace_id"
+readonly max_attempts=40
+
+fail() {
+  printf '%s: %s\n' "$script_name" "$1" >&2
+  exit 1
+}
+
+usage() {
+  printf 'usage: %s --check|--apply\n' "$script_name" >&2
+  exit 2
+}
+
+require_commands() {
+  local command
+  for command in git jq realpath; do
+    command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
+  done
+  [[ -x $manager ]] || fail "manager is missing or not executable: $manager"
+  [[ -x $ipc ]] || fail "IPC helper is missing or not executable: $ipc"
+}
+
+normalize_origin() {
+  local origin=$1 authority path host
+  if [[ $origin =~ ^git@github\.com:(.+)$ ]]; then
+    origin="https://github.com/${BASH_REMATCH[1]}"
+  elif [[ $origin =~ ^https?://([^/]+)(/.*)?$ ]]; then
+    authority=${BASH_REMATCH[1]}
+    path=${BASH_REMATCH[2]-}
+    host=${authority,,}
+    origin="${origin%%://*}://$host$path"
+  fi
+  [[ $origin == https://github.com/* ]] || { printf '%s' "$origin"; return 0; }
+  origin=${origin%/}
+  origin=${origin%.git}
+  printf '%s' "$origin"
+}
+
+check_checkout() {
+  local actual_origin manifest_id
+  [[ -d $checkout && ! -L $checkout ]] || return 1
+  [[ -f $checkout/manifest.json ]] || return 1
+  manifest_id=$(jq -e -r '.id | select(type == "string")' -- "$checkout/manifest.json") || return 1
+  [[ $manifest_id == "$marketplace_id" ]] || return 1
+  actual_origin=$(git -C "$checkout" remote get-url origin 2>/dev/null) || return 1
+  [[ $(normalize_origin "$actual_origin") == $(normalize_origin "$marketplace_url") ]] || return 1
+}
+
+plugin_list() {
+  "$manager" list --json
+}
+
+is_discovered() {
+  local listing
+  listing=$(plugin_list) || fail "cannot list desktop-shell plugins"
+  jq -e --arg id "$marketplace_id" 'any(.[]; .id == $id)' <<<"$listing" >/dev/null || return 1
+}
+
+is_correctly_enabled() {
+  local listing config
+  listing=$(plugin_list) || fail "cannot list desktop-shell plugins"
+  jq -e --arg id "$marketplace_id" 'any(.[]; .id == $id and .enabled == true and .firstParty == false)' <<<"$listing" >/dev/null || return 1
+  config=$("$ipc" shell listShellConfig) || fail "cannot list desktop-shell configuration"
+  jq -e --arg id "$marketplace_id" 'any(.bar.layout.right[]?; .id == $id)' <<<"$config" >/dev/null
+}
+
+check_all() {
+  check_checkout || return 1
+  is_correctly_enabled
+}
+
+start_service_if_needed() {
+  if ! systemctl --user is-active --quiet desktop-shell.service; then
+    systemctl --user start desktop-shell.service || fail "cannot start desktop-shell.service"
+  fi
+}
+
+install_if_missing() {
+  if [[ ! -e $checkout ]]; then
+    mkdir -p -- "$plugins_dir"
+    "$manager" add "$marketplace_url" --yes --expected-id "$marketplace_id" || fail "marketplace installation failed"
+  else
+    check_checkout || fail "existing marketplace checkout is invalid"
+  fi
+}
+
+wait_for_discovery() {
+  local attempt
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    is_discovered && return 0
+    sleep 0.1
+  done
+  fail "marketplace was not discovered after $max_attempts attempts"
+}
+
+apply_marketplace() {
+  local checkout_missing=0
+  if check_all >/dev/null 2>&1; then
+    return 0
+  fi
+  start_service_if_needed
+  if [[ ! -e $checkout ]]; then
+    checkout_missing=1
+  fi
+  install_if_missing
+  "$ipc" shell plugin-rescan || fail "cannot rescan desktop-shell plugins"
+  wait_for_discovery
+  if (( checkout_missing )) || ! is_correctly_enabled >/dev/null 2>&1; then
+    "$manager" enable "$marketplace_id" --section right || fail "cannot enable marketplace in right section"
+  fi
+  check_all
+}
+
+main() {
+  (($# == 1)) || usage
+  require_commands
+  case $1 in
+    --check) check_all || fail "marketplace check failed" ;;
+    --apply) apply_marketplace ;;
+    *) usage ;;
+  esac
+}
+
+main "$@"
