@@ -1005,12 +1005,87 @@ ShellRoot {
     }
 
     function rescanPlugins(): string {
-      pluginRegistry.rescan()
+      shell.reloadPlugins()
       return "ok"
     }
 
     function listPlugins(): string {
-      return JSON.stringify(pluginRegistry.installedPlugins)
+      var result = []
+      var plugins = pluginRegistry.installedPlugins || ({})
+      var ids = Object.keys(plugins).sort()
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i]
+        var manifest = plugins[id]
+        var kinds = Array.isArray(manifest.kinds) ? manifest.kinds : []
+        var isBarOption = kinds.indexOf("bar") !== -1
+        var isBarWidget = kinds.indexOf("bar-widget") !== -1
+        var active = isBarOption
+          ? shell.activeBarId === id
+          : isBarWidget ? !!shell.barWidgetFor(id) : pluginRegistry.isEnabled(id)
+        result.push({
+          id: id,
+          name: String(manifest.name || id),
+          kinds: kinds,
+          enabled: isBarOption ? active
+            : (isBarWidget ? pluginRegistry.inBar(id) : pluginRegistry.isEnabled(id)),
+          active: active,
+          canDisable: !manifest.__isFirstParty && !isBarOption,
+          firstParty: !!manifest.__isFirstParty,
+          clonedFrom: "",
+        })
+      }
+      return JSON.stringify(result)
+    }
+
+    function parseJsonValue(raw, fallback) {
+      if (raw === undefined || raw === null || String(raw).trim() === "") return { valid: true, value: fallback }
+      try {
+        return { valid: true, value: JSON.parse(String(raw)) }
+      } catch (error) {
+        return { valid: false, value: fallback }
+      }
+    }
+
+    function parseJsonObject(raw, fallback) {
+      var parsed = shell.parseJsonValue(raw, fallback)
+      return parsed.valid && parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value)
+        ? parsed.value : null
+    }
+
+    function pluginMutationResult(ok) {
+      var error = String(pluginRegistry.lastEnableError || "")
+      if (ok || error === "") return "ok"
+      if (error.indexOf("unknown plugin ") === 0) return "unknown"
+      return error
+    }
+
+    function setPluginEnabled(id: string, enabled: bool): string {
+      return shell.pluginMutationResult(pluginRegistry.setEnabled(id, enabled, {}))
+    }
+
+    function enablePlugin(id: string, placementJson: string): string {
+      var placement = shell.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shell.pluginMutationResult(pluginRegistry.setEnabled(id, true, placement))
+    }
+
+    function putBarWidget(id: string, placementJson: string): string {
+      var placement = shell.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shell.pluginMutationResult(pluginRegistry.putBarWidget(id, placement))
+    }
+
+    function moveBarWidget(id: string, placementJson: string): string {
+      var placement = shell.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shell.pluginMutationResult(pluginRegistry.moveBarWidget(id, placement))
+    }
+
+    function setBarWidget(id: string, key: string, valueJson: string, selectorJson: string): string {
+      var parsedValue = shell.parseJsonValue(valueJson, null)
+      var selector = shell.parseJsonObject(selectorJson, ({}))
+      if (!parsedValue.valid || selector === null) return "invalid widget JSON"
+      return shell.pluginMutationResult(pluginRegistry.setBarWidget(id, key, parsedValue.value))
     }
 
     // Returns the effective shell.json content as JSON. Useful for debugging

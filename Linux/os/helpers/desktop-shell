@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: desktop-shell [--pid PID] <ping|health|list-plugins|reload-config|toggle-bar|summon|hide|call> ...\n' >&2
+  printf 'usage: desktop-shell [--pid PID] <ping|health|list-plugins|reload-config|toggle-bar|summon|hide|call|plugin-rescan|plugin-list|plugin-enable|plugin-set-enabled|plugin-put|plugin-move|plugin-set-widget|toggle|list-shell-config> ...\n' >&2
 }
 
 target_pid=""
@@ -25,7 +25,7 @@ method=""
 args=()
 
 is_plugin_id() {
-  [[ "${1-}" =~ ^desktop\.[a-z0-9-]+$ ]]
+  [[ ${1-} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && ${1-} != *..* ]]
 }
 
 case "$command_name" in
@@ -37,6 +37,39 @@ case "$command_name" in
     if (($# != 0)); then usage; exit 2; fi
     method="listPlugins"
     ;;
+  plugin-rescan)
+    if (($# != 0)); then usage; exit 2; fi
+    method="rescanPlugins"
+    ;;
+  plugin-list)
+    if (($# != 0)); then usage; exit 2; fi
+    method="listPlugins"
+    ;;
+  plugin-enable)
+    if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "${2-}")
+    method="enablePlugin"
+    ;;
+  plugin-set-enabled)
+    if (($# != 2)) || ! is_plugin_id "$1" || [[ $2 != true && $2 != false ]]; then usage; exit 2; fi
+    args=("$1" "$2")
+    method="setPluginEnabled"
+    ;;
+  plugin-put)
+    if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "${2-}")
+    method="putBarWidget"
+    ;;
+  plugin-move)
+    if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "${2-}")
+    method="moveBarWidget"
+    ;;
+  plugin-set-widget)
+    if (($# < 3 || $# > 4)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "$2" "$3" "${4-}")
+    method="setBarWidget"
+    ;;
   reload-config)
     if (($# != 0)); then usage; exit 2; fi
     method="reloadConfig"
@@ -44,6 +77,15 @@ case "$command_name" in
   toggle-bar)
     (($# == 0)) || { usage; exit 2; }
     method="toggleBar"
+    ;;
+  toggle)
+    if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi
+    args=("$1" "${2-}")
+    method="toggle"
+    ;;
+  list-shell-config)
+    if (($# != 0)); then usage; exit 2; fi
+    method="listShellConfig"
     ;;
   summon)
     if (($# < 1 || $# > 2)) || ! is_plugin_id "$1"; then usage; exit 2; fi

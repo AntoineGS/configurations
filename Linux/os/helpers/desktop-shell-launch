@@ -8,6 +8,12 @@ usage() {
 
 (( $# == 0 )) || usage
 
+helper_dir="$HOME/.local/share/helpers"
+case ":$PATH:" in
+  *":$helper_dir:"*) ;;
+  *) export PATH="$helper_dir:$PATH" ;;
+esac
+
 shell_dir="$HOME/.config/quickshell/desktop-shell"
 [[ -r "$shell_dir/shell.qml" ]] || {
   printf 'desktop-shell: readable shell.qml is required: %s\n' "$shell_dir/shell.qml" >&2
