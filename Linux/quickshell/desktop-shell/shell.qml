@@ -65,6 +65,10 @@ ShellRoot {
   property bool pluginStateValid: true
   property string pluginStateError: ""
   property bool pluginStateDirectoryReady: false
+  property bool pluginStateWritePending: false
+  property string pluginStateWriteError: ""
+  property var pendingPluginState: null
+  property bool pluginStateWriteResult: false
   property var shellConfig: PluginState.mergeConfig(defaultShellConfig, pluginState)
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
@@ -76,6 +80,8 @@ ShellRoot {
     pluginStateError: shell.pluginStateError,
     pluginStatePath: shell.pluginStatePath,
     pluginStateDirectoryReady: shell.pluginStateDirectoryReady,
+    pluginStateWritePending: shell.pluginStateWritePending,
+    pluginStateWriteError: shell.pluginStateWriteError,
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
@@ -150,8 +156,16 @@ ShellRoot {
   }
 
   function persistPluginState(nextState) {
+    if (!pluginStateValid) {
+      pluginStateError = "invalid plugin state must be recovered before mutation"
+      return false
+    }
     if (!pluginStateDirectoryReady) {
       pluginStateError = "plugin state directory is not ready"
+      return false
+    }
+    if (pluginStateWritePending) {
+      pluginStateError = "plugin state write is already pending"
       return false
     }
     var parsed = PluginState.parseState(JSON.stringify(nextState || {}))
@@ -160,12 +174,13 @@ ShellRoot {
       pluginStateError = parsed.error
       return false
     }
-    pluginState = parsed.state
-    pluginStateValid = true
-    pluginStateError = ""
-    rebuildShellConfig()
+    pendingPluginState = parsed.state
+    pluginStateWritePending = true
+    pluginStateWriteError = ""
+    pluginStateWriteResult = false
+    pluginStateError = "plugin state write pending"
     pluginStateFile.setText(JSON.stringify(parsed.state, null, 2) + "\n")
-    return true
+    return pluginStateWriteResult
   }
 
   readonly property var barConfig: shellConfig && Util.isPlainObject(shellConfig.bar) ? shellConfig.bar : builtinShellConfig.bar
@@ -188,10 +203,30 @@ ShellRoot {
     path: shell.pluginStatePath
     watchChanges: true
     atomicWrites: true
+    blockWrites: true
     printErrors: false
     onLoaded: shell.applyPluginState(text())
     onLoadFailed: shell.applyPluginState("")
     onFileChanged: reload()
+    onSaved: {
+      if (shell.pluginStateWritePending) {
+        shell.pluginState = shell.pendingPluginState
+        shell.pendingPluginState = null
+        shell.pluginStateWritePending = false
+        shell.pluginStateWriteError = ""
+        shell.pluginStateWriteResult = true
+        shell.pluginStateValid = true
+        shell.pluginStateError = ""
+        shell.rebuildShellConfig()
+      }
+    }
+    onSaveFailed: function(error) {
+      shell.pendingPluginState = null
+      shell.pluginStateWritePending = false
+      shell.pluginStateWriteError = String(error || "plugin state save failed")
+      shell.pluginStateWriteResult = false
+      shell.pluginStateError = shell.pluginStateWriteError
+    }
   }
 
   Process {
@@ -955,6 +990,20 @@ ShellRoot {
 
     function health(): string {
       return JSON.stringify(shell.healthState)
+    }
+
+    function persistPluginState(rawState: string): string {
+      var nextState
+      try {
+        nextState = JSON.parse(rawState)
+      } catch (error) {
+        return "rejected-invalid-state"
+      }
+      if (shell.persistPluginState(nextState)) return "saved"
+      if (!shell.pluginStateValid) return "rejected-invalid-state"
+      if (shell.pluginStateWriteError !== "") return "rejected-write-failed"
+      if (!shell.pluginStateDirectoryReady) return "rejected-not-ready"
+      return "pending"
     }
 
     function reloadConfig(): string {
