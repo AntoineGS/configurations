@@ -22,6 +22,8 @@ QtObject {
   property var pluginErrors: []
   property string lastScanError: ""
   property string lastEnableError: ""
+  property bool watcherUnavailable: false
+  property bool watcherStopRequested: false
 
   signal pluginsChanged()
   signal scanFinished()
@@ -261,7 +263,6 @@ QtObject {
       var id = localPluginIdForPath(lines[i])
       if (!id) continue
       localPluginChanged(id)
-      watchRestartTimer.restart()
       return
     }
   }
@@ -271,8 +272,9 @@ QtObject {
     registry.pluginErrors = []
     var lines = String(text || "").split("\n")
     var firstParty = {}
-    var thirdParty = {}
+    var thirdPartyCandidates = ({})
     var thirdPartySources = ({})
+    var ambiguousThirdPartyIds = ({})
     var currentSource = null
     var currentKind = null
     var currentJson = []
@@ -288,17 +290,11 @@ QtObject {
           var validated = validateManifest(manifest, currentSource + "/manifest.json", currentKind)
           if (validated && currentKind === "firstparty") firstParty[validated.id] = validated
           if (validated && currentKind === "thirdparty") {
-            if (firstParty[validated.id]) {
-              registry.recordPluginError(validated.id, "third-party plugin shadows first-party plugin at "
-                + currentSource + "/manifest.json")
-            } else if (thirdParty[validated.id]) {
-              registry.recordPluginError(validated.id, "ambiguous third-party plugin sources: "
-                + thirdPartySources[validated.id] + ", " + currentSource)
-              delete thirdParty[validated.id]
-            } else {
-              thirdParty[validated.id] = validated
-              thirdPartySources[validated.id] = currentSource
-            }
+            if (!thirdPartySources[validated.id]) thirdPartySources[validated.id] = []
+            thirdPartySources[validated.id].push(currentSource + "/manifest.json")
+            thirdPartyCandidates[validated.id] = validated
+            if (thirdPartySources[validated.id].length > 1)
+              ambiguousThirdPartyIds[validated.id] = true
           }
         } catch (e) {
           registry.recordPluginError(currentSource + "/manifest.json", "invalid JSON: " + e)
@@ -330,6 +326,19 @@ QtObject {
 
     registry.lastScanError = ""
     registry.clearPluginError("registry")
+    var thirdParty = ({})
+    for (var candidateId in thirdPartyCandidates) {
+      var sources = thirdPartySources[candidateId]
+      if (firstParty[candidateId]) {
+        registry.recordPluginError(candidateId, "third-party plugin shadows first-party plugin at "
+          + sources.join(", "))
+      } else if (ambiguousThirdPartyIds[candidateId]) {
+        registry.recordPluginError(candidateId, "ambiguous third-party plugin sources: "
+          + sources.join(", "))
+      } else {
+        thirdParty[candidateId] = thirdPartyCandidates[candidateId]
+      }
+    }
     var merged = ({})
     for (var firstId in firstParty) merged[firstId] = firstParty[firstId]
     for (var thirdId in thirdParty) {
@@ -372,12 +381,31 @@ QtObject {
   }
 
   function initProcess() {
-    if (!registry.pluginWatchEnabled) return
+    if (!registry.pluginWatchEnabled || registry.watcherUnavailable || registry.watcherProcess.running) return
+    registry.watcherStopRequested = false
     watcherProcess.command = ["bash", "-c",
-      "command -v inotifywait >/dev/null 2>&1 || exit 0; "
+      "command -v inotifywait >/dev/null 2>&1 || exit 125; "
       + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
       registry.pluginsDir]
     watcherProcess.running = true
+  }
+
+  function handleWatcherExit(exitCode) {
+    if (registry.watcherStopRequested) {
+      registry.watcherStopRequested = false
+      return
+    }
+    if (Number(exitCode) === 125) {
+      registry.watcherUnavailable = true
+      return
+    }
+    if (registry.pluginWatchEnabled) watchRestartTimer.restart()
+  }
+
+  function stopWatcher() {
+    if (!registry.watcherProcess.running) return
+    registry.watcherStopRequested = true
+    registry.watcherProcess.running = false
   }
 
   property Process userDirProcess: Process {
@@ -387,9 +415,7 @@ QtObject {
   }
 
   property Process watcherProcess: Process {
-    onExited: function() {
-      if (registry.pluginWatchEnabled) watchRestartTimer.restart()
-    }
+    onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
     stdout: StdioCollector {
       id: watcherStdout
       waitForEnd: false
@@ -401,8 +427,7 @@ QtObject {
     interval: 1000
     repeat: false
     onTriggered: {
-      if (!registry.pluginWatchEnabled) return
-      if (registry.watcherProcess.running) registry.watcherProcess.running = false
+      if (!registry.pluginWatchEnabled || registry.watcherUnavailable || registry.watcherProcess.running) return
       registry.rescan()
     }
   }
@@ -420,7 +445,7 @@ QtObject {
       + "  cat \"$manifest\"; printf '\\n=== EOM ===\\n'; "
       + "}; "
       + "scan_firstparty() { local dir=\"$1\"; [[ -d \"$dir\" ]] || return 0; "
-      + "  while IFS= read -r manifest; do emit_manifest \"$manifest\"; done "
+      + "  while IFS= read -r manifest; do emit_manifest \"$manifest\" firstparty; done "
       + "  < <(find \"$dir\" -mindepth 2 -maxdepth 3 -type f "
       + "\\( -name manifest.json -o -name '*.manifest.json' \\) | sort); "
       + "}; "

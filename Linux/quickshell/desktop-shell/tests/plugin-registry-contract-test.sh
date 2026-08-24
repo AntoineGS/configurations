@@ -21,6 +21,8 @@ result="$tmp_dir/result.json"
 config="$tmp_dir/config"
 mkdir -p -- "$config"
 cp -- "$fixture" "$config/shell.qml"
+mkdir -p -- "$config/firstparty"
+cp -R -- "$shell_dir/plugins/." "$config/firstparty/"
 ln -s -- "$shell_dir/services" "$config/services"
 ln -s -- "$shell_dir/Commons" "$config/Commons"
 
