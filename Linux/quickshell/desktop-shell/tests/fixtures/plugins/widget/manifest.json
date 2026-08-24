@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "test.marketplace-widget",
+  "name": "Marketplace Test Widget",
+  "version": "1.0.0",
+  "description": "Disposable plugin lifecycle fixture",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Widget.qml" },
+  "barWidget": {
+    "displayName": "Marketplace Test Widget",
+    "description": "Disposable plugin lifecycle fixture",
+    "category": "Test",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
