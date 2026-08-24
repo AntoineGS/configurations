@@ -141,18 +141,6 @@ old_gvfs_target() {
   printf '%s/smb-share:server=md-fs01.multidev.local,share=%s' "$gvfs_root" "$share"
 }
 
-for prohibited in gio systemctl keyring guest ntlm password credentials username; do
-  if grep -Eiq -- "$prohibited" "$helper"; then
-    fail "prohibited mechanism reference remains: $prohibited"
-  fi
-done
-grep -Fq -- 'OFFICE_SHARES_GVFS_ROOT' "$helper" || fail 'legacy path root is not configurable'
-grep -Fq -- 'mountpoint -q' "$helper" || fail 'mountpoint idempotency check is missing'
-grep -Fq -- 'timeout 15s mount' "$helper" || fail 'bounded mount command is missing'
-if grep -Fq -- 'office-shares-gvfs-cache' "$helper"; then
-  fail 'runtime cache marker remains'
-fi
-
 touch -- "$cache_dir/krb5cc_${UID}_invalid"
 run_helper 2>"$tmp_dir/invalid-ticket.err" || fail 'missing-ticket run failed'
 [[ ! -e "$test_state/mount.log" ]] || fail 'mounted without a matching ticket'

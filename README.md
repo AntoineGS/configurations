@@ -93,9 +93,6 @@ tidydots --dir "$REPO_DIR" restore snapper -n
 Hostname-gated previews can report a condition mismatch when intentionally run
 on another host; that is the expected exclusion behavior.
 
-Run the complete read-only profile and runtime audit with
-`bash Linux/pacman/tests/all-profiles-test.sh`.
-
 ## Systemd Units Backup
 
 Daily timer to backup enabled services and timers to
