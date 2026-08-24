@@ -39,8 +39,7 @@ ElevatedSurface {
     ? Color.notifications.low : urgency === 2
       ? Color.notifications.critical : Color.notifications.background
   readonly property color inkColor: Color.notifications.text
-  readonly property string urgencyLabel: urgency === 0 ? "LOW" : urgency === 2 ? "CRITICAL" : "NORMAL"
-  readonly property string sourceLabel: String(app || "SYSTEM").toUpperCase() + " / " + urgencyLabel
+  readonly property string sourceLabel: String(app || "SYSTEM").toUpperCase()
   readonly property string timeLabel: formatTime(timestamp)
 
   signal closeRequested()
