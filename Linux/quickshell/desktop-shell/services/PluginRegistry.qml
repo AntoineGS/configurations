@@ -2,24 +2,31 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "PluginState.js" as PluginState
 
-// First-party manifest discovery for the repository-owned shell. The registry
-// deliberately has no user plugin directory or mutation API: the shell owns
-// the source tree and configuration, while later tasks add selected manifests.
 QtObject {
   id: registry
 
   property string firstPartyDir: ""
+  property string home: Quickshell.env("HOME")
+  property string configuredPluginsDir: Quickshell.env("DESKTOP_SHELL_PLUGINS_DIR")
+  property string pluginsDir: configuredPluginsDir !== ""
+    ? configuredPluginsDir : home + "/.config/omarchy/plugins"
+  property bool pluginWatchEnabled: Quickshell.env("DESKTOP_SHELL_DISABLE_PLUGIN_WATCH") !== "1"
   property var shellConfigProvider: null
+  property var pluginStateProvider: null
+  property var pluginStateWriter: null
   property var installedPlugins: ({})
   property int registryRevision: 0
   property bool scanning: false
   property var pluginErrors: []
   property string lastScanError: ""
+  property string lastEnableError: ""
 
   signal pluginsChanged()
   signal scanFinished()
   signal pluginLoadFailed(string id, string error)
+  signal localPluginChanged(string id)
 
   function recordPluginError(id, error) {
     var key = String(id)
@@ -63,7 +70,7 @@ QtObject {
     return true
   }
 
-  function validateManifest(manifest, sourcePath) {
+  function validateManifest(manifest, sourcePath, kind) {
     if (!Util.isPlainObject(manifest)) {
       return registry.rejectManifest(manifest, sourcePath, "manifest is not an object")
     }
@@ -78,7 +85,10 @@ QtObject {
       }
     }
     var id = String(manifest.id)
-    if (!/^desktop\.[a-z0-9-]+$/.test(id)) {
+    var validId = kind === "firstparty"
+      ? /^desktop\.[a-z0-9-]+$/.test(id)
+      : PluginState.isThirdPartyId(id)
+    if (!validId) {
       return registry.rejectManifest(manifest, sourcePath, "invalid plugin id '" + id + "'")
     }
     if (!Array.isArray(manifest.kinds) || manifest.kinds.length === 0) {
@@ -86,6 +96,15 @@ QtObject {
     }
     if (!Util.isPlainObject(manifest.entryPoints)) {
       return registry.rejectManifest(manifest, sourcePath, "entryPoints must be an object")
+    }
+    var allowedKinds = ["bar", "bar-widget", "menu", "overlay", "panel", "service"]
+    for (var kindIndex = 0; kindIndex < manifest.kinds.length; kindIndex++) {
+      var manifestKind = String(manifest.kinds[kindIndex])
+      var entryPointKey = manifestKind === "bar-widget" ? "barWidget" : manifestKind
+      if (allowedKinds.indexOf(manifestKind) === -1 || manifest.entryPoints[entryPointKey] === undefined) {
+        return registry.rejectManifest(manifest, sourcePath, "kind '" + manifestKind
+          + "' requires a matching entry point")
+      }
     }
     if (manifest.barWidget !== undefined && Util.isPlainObject(manifest.barWidget)
         && manifest.barWidget.defaultSection !== undefined) {
@@ -188,13 +207,72 @@ QtObject {
     return findBarLocation(config, id, "").found
   }
 
-  // Output format: ===firstparty::<absolute-source-dir>===, manifest JSON,
-  // then === EOM ===. Each first-party directory can contain one manifest or
-  // sibling *.manifest.json bar-widget manifests.
+  function applyStateResult(result) {
+    lastEnableError = result && result.error ? String(result.error) : ""
+    if (!result || !result.ok || !pluginStateWriter) return false
+    return pluginStateWriter(result.state)
+  }
+
+  function setEnabled(id, value, placement) {
+    var key = String(id || "")
+    var manifest = installedPlugins[key]
+    if (!manifest && key !== "desktop.bar") {
+      lastEnableError = "unknown plugin " + key
+      return false
+    }
+    var state = pluginStateProvider ? pluginStateProvider() : PluginState.emptyState()
+    var effective = shellConfigProvider ? shellConfigProvider() : {}
+    return applyStateResult(PluginState.setEnabled(state, manifest || {
+      id: "desktop.bar", kinds: ["bar"], __isFirstParty: true
+    }, value, placement || {}, effective))
+  }
+
+  function putBarWidget(id, section, index) {
+    var placement = Util.isPlainObject(section) ? section : { section: section, index: index }
+    return setEnabled(id, true, placement)
+  }
+
+  function moveBarWidget(id, section, index) {
+    var state = pluginStateProvider ? pluginStateProvider() : PluginState.emptyState()
+    var effective = shellConfigProvider ? shellConfigProvider() : {}
+    var placement = Util.isPlainObject(section) ? section : { section: section, index: index }
+    return applyStateResult(PluginState.moveWidget(state, String(id || ""), placement, effective))
+  }
+
+  function setBarWidget(id, key, value) {
+    var state = pluginStateProvider ? pluginStateProvider() : PluginState.emptyState()
+    return applyStateResult(PluginState.setWidget(state, String(id || ""), key, value))
+  }
+
+  function localPluginIdForPath(path) {
+    var value = String(path || "")
+    var root = pluginsDir.replace(/\/$/, "") + "/"
+    if (value.indexOf(root) !== 0) return ""
+    var relative = value.slice(root.length).split("/")
+    for (var i = 0; i < relative.length; i++) {
+      if (!relative[i] || relative[i].charAt(0) === "." || relative[i] === ".git") return ""
+    }
+    return relative.length ? relative[0] : ""
+  }
+
+  function handleWatchOutput(text) {
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var id = localPluginIdForPath(lines[i])
+      if (!id) continue
+      localPluginChanged(id)
+      watchRestartTimer.restart()
+      return
+    }
+  }
+
+  // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
   function parseScanOutput(text) {
     registry.pluginErrors = []
     var lines = String(text || "").split("\n")
     var firstParty = {}
+    var thirdParty = {}
+    var thirdPartySources = ({})
     var currentSource = null
     var currentKind = null
     var currentJson = []
@@ -202,13 +280,26 @@ QtObject {
     function flush() {
       if (!currentSource) return
       var raw = currentJson.join("\n").trim()
-      if (currentKind === "firstparty") {
+      if (currentKind === "firstparty" || currentKind === "thirdparty") {
         try {
           var manifest = JSON.parse(raw)
           manifest.__sourceDir = currentSource
-          manifest.__isFirstParty = true
-          var validated = validateManifest(manifest, currentSource + "/manifest.json")
-          if (validated) firstParty[validated.id] = validated
+          manifest.__isFirstParty = currentKind === "firstparty"
+          var validated = validateManifest(manifest, currentSource + "/manifest.json", currentKind)
+          if (validated && currentKind === "firstparty") firstParty[validated.id] = validated
+          if (validated && currentKind === "thirdparty") {
+            if (firstParty[validated.id]) {
+              registry.recordPluginError(validated.id, "third-party plugin shadows first-party plugin at "
+                + currentSource + "/manifest.json")
+            } else if (thirdParty[validated.id]) {
+              registry.recordPluginError(validated.id, "ambiguous third-party plugin sources: "
+                + thirdPartySources[validated.id] + ", " + currentSource)
+              delete thirdParty[validated.id]
+            } else {
+              thirdParty[validated.id] = validated
+              thirdPartySources[validated.id] = currentSource
+            }
+          }
         } catch (e) {
           registry.recordPluginError(currentSource + "/manifest.json", "invalid JSON: " + e)
           console.warn("PluginRegistry: bad manifest at " + currentSource + ": " + e)
@@ -239,7 +330,12 @@ QtObject {
 
     registry.lastScanError = ""
     registry.clearPluginError("registry")
-    installedPlugins = firstParty
+    var merged = ({})
+    for (var firstId in firstParty) merged[firstId] = firstParty[firstId]
+    for (var thirdId in thirdParty) {
+      if (!firstParty[thirdId]) merged[thirdId] = thirdParty[thirdId]
+    }
+    installedPlugins = merged
     registryRevision++
     scanning = false
     pluginsChanged()
@@ -248,7 +344,7 @@ QtObject {
 
   function handleScanExit(exitCode, rawOutput) {
     if (Number(exitCode) !== 0) {
-      registry.lastScanError = "first-party plugin scan failed with exit code " + String(exitCode)
+      registry.lastScanError = "plugin scan failed with exit code " + String(exitCode)
       registry.recordPluginError("registry", registry.lastScanError)
       registry.scanning = false
       console.warn("PluginRegistry: " + registry.lastScanError)
@@ -270,23 +366,79 @@ QtObject {
     }
   }
 
+  function ensureUserDir() {
+    userDirProcess.command = ["bash", "-c", "mkdir -p -- \"$0\"", registry.pluginsDir]
+    userDirProcess.running = true
+  }
+
+  function initProcess() {
+    if (!registry.pluginWatchEnabled) return
+    watcherProcess.command = ["bash", "-c",
+      "command -v inotifywait >/dev/null 2>&1 || exit 0; "
+      + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
+      registry.pluginsDir]
+    watcherProcess.running = true
+  }
+
+  property Process userDirProcess: Process {
+    onExited: function(exitCode) {
+      if (Number(exitCode) === 0) registry.initProcess()
+    }
+  }
+
+  property Process watcherProcess: Process {
+    onExited: function() {
+      if (registry.pluginWatchEnabled) watchRestartTimer.restart()
+    }
+    stdout: StdioCollector {
+      id: watcherStdout
+      waitForEnd: false
+      onTextChanged: registry.handleWatchOutput(text)
+    }
+  }
+
+  property Timer watchRestartTimer: Timer {
+    interval: 1000
+    repeat: false
+    onTriggered: {
+      if (!registry.pluginWatchEnabled) return
+      if (registry.watcherProcess.running) registry.watcherProcess.running = false
+      registry.rescan()
+    }
+  }
+
   function rescan() {
     if (scanning) return
     scanning = true
     var script = ""
       + "emit_manifest() { local manifest=\"$1\"; "
+      + "  local kind=\"$2\"; "
       + "  if [[ ${manifest##*/} == manifest.json ]]; then "
       + "    source=\"${manifest%/manifest.json}\"; "
       + "  else source=\"$(dirname -- \"$manifest\")\"; fi; "
-      + "  printf '===firstparty::%s===\\n' \"$source\"; "
+      + "  printf '===%s::%s===\\n' \"$kind\" \"$source\"; "
       + "  cat \"$manifest\"; printf '\\n=== EOM ===\\n'; "
       + "}; "
       + "scan_firstparty() { local dir=\"$1\"; [[ -d \"$dir\" ]] || return 0; "
       + "  while IFS= read -r manifest; do emit_manifest \"$manifest\"; done "
       + "  < <(find \"$dir\" -mindepth 2 -maxdepth 3 -type f "
       + "\\( -name manifest.json -o -name '*.manifest.json' \\) | sort); "
-      + "}; scan_firstparty \"$0\""
-    scanProcess.command = ["bash", "-c", script, registry.firstPartyDir]
+      + "}; "
+      + "scan_thirdparty() { local dir=\"$1\"; [[ -d \"$dir\" ]] || return 0; "
+      + "  while IFS= read -r sub; do "
+      + "    [[ -d \"$sub\" ]] || continue; "
+      + "    [[ \"$sub\" == */.* || \"$sub\" == */.git ]] && continue; "
+      + "    find \"$sub\" -path \"$sub/.git\" -prune -o -type l -print -quit | grep -q . && continue; "
+      + "    manifest=\"$sub/manifest.json\"; [[ -f \"$manifest\" && ! -L \"$manifest\" ]] || continue; "
+      + "    valid=1; while IFS= read -r entry; do "
+      + "      [[ \"$entry\" != /* && \"$entry\" != *..* && \"$entry\" != *\\\\* ]] || { valid=0; break; }; "
+      + "      file=\"$sub/$entry\"; [[ -f \"$file\" && ! -L \"$file\" ]] || { valid=0; break; }; "
+      + "    done < <(jq -r '.entryPoints // {} | .[]? // empty' \"$manifest\" 2>/dev/null); "
+      + "    [[ $valid == 1 ]] && emit_manifest \"$manifest\" thirdparty; "
+      + "  done < <(find \"$dir\" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort); "
+      + "}; scan_firstparty \"$0\"; scan_thirdparty \"$1\""
+    scanProcess.command = ["bash", "-c", script, registry.firstPartyDir, registry.pluginsDir]
     scanProcess.running = true
+    ensureUserDir()
   }
 }
