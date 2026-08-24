@@ -9,7 +9,7 @@ import {
   selectGhosttyAddress,
   sessionFromSocketPath,
 } from "./notification-policy.mjs"
-import { handleEvent, processTree } from "./notify.mjs"
+import { handleEvent, hyprFocusWindowArgs, processTree } from "./notify.mjs"
 
 const event = {
   type: "pane_agent_status_changed",
@@ -31,6 +31,37 @@ const snapshot = {
     },
   },
 }
+
+test("builds the Lua focus flow that follows a window to its workspace", () => {
+  assert.deepEqual(hyprFocusWindowArgs("0x1a2B"), [
+    "eval",
+    'hl.dispatch(hl.dsp.focus({window="address:0x1a2B"}))',
+  ])
+})
+
+test("rejects unsafe Hyprland window addresses", () => {
+  for (const address of [
+    "",
+    "558a98442130",
+    "address:0x123",
+    "0x123,workspace:2",
+    '0x123"})) ; os.execute("touch /tmp/injected") --',
+  ]) {
+    assert.throws(() => hyprFocusWindowArgs(address), /invalid Hyprland window address/)
+  }
+})
+
+test("rejects non-string Hyprland window addresses without coercion", () => {
+  const statefulAddress = {
+    toString() {
+      return this.calls++ === 0 ? "0x123" : '0x123"})) ; os.execute("touch /tmp/injected") --'
+    },
+    calls: 0,
+  }
+  for (const address of [[], ["0x123"], 0x123, null, undefined, statefulAddress]) {
+    assert.throws(() => hyprFocusWindowArgs(address), /invalid Hyprland window address/)
+  }
+})
 
 test("accepts only actionable Herdr pane events", () => {
   assert.deepEqual(parseAgentEvent(JSON.stringify(event)), event)
@@ -234,8 +265,38 @@ test("rejects a process tree when a child has a different parent", async () => {
     assert.equal(await processTree(10, async path => {
       if (!files.has(path)) throw new Error(`missing ${path}`)
       return files.get(path)
+    }, async path => {
+      if (path === "/proc/10/task") return ["10"]
+      throw new Error(`missing directory ${path}`)
     }), null)
   })
+})
+
+test("discovers children spawned by a non-main process thread", async () => {
+  const stat = (pid, ppid, startTime) => `${pid} (process) S ${ppid} ${Array(17).fill("0").join(" ")} ${startTime}`
+  const files = new Map([
+    ["/proc/10/stat", stat(10, 1, 100)],
+    ["/proc/10/task/10/children", ""],
+    ["/proc/10/task/12/children", "11\n"],
+    ["/proc/10/comm", "ghostty\n"],
+    ["/proc/10/cmdline", Buffer.from("ghostty\0")],
+    ["/proc/11/stat", stat(11, 10, 200)],
+    ["/proc/11/task/11/children", ""],
+    ["/proc/11/comm", "herdr\n"],
+    ["/proc/11/cmdline", Buffer.from("herdr\0")],
+  ])
+
+  assert.deepEqual(await processTree(10, async path => {
+    if (!files.has(path)) throw new Error(`missing ${path}`)
+    return files.get(path)
+  }, async path => {
+    if (path === "/proc/10/task") return ["10", "12"]
+    if (path === "/proc/11/task") return ["11"]
+    throw new Error(`missing directory ${path}`)
+  }), [
+    { pid: 10, comm: "ghostty", argv: ["ghostty"], identity: { pid: 10, ppid: 1, startTime: "100" } },
+    { pid: 11, comm: "herdr", argv: ["herdr"], identity: { pid: 11, ppid: 10, startTime: "200" } },
+  ])
 })
 
 test("rejects a process tree when a process start identity changes", async () => {
@@ -251,6 +312,9 @@ test("rejects a process tree when a process start identity changes", async () =>
     if (path === "/proc/10/stat") return stat(10, 1, statReads++ === 0 ? 100 : 101)
     if (!files.has(path)) throw new Error(`missing ${path}`)
     return files.get(path)
+  }, async path => {
+    if (path === "/proc/10/task") return ["10"]
+    throw new Error(`missing directory ${path}`)
   }), null)
 })
 

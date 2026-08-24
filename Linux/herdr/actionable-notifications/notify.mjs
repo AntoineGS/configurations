@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import net from "node:net"
 import { promisify } from "node:util"
 import { pathToFileURL } from "node:url"
@@ -117,9 +117,10 @@ function sameProcessIdentity(left, right) {
  * throughout traversal. A null result is a fail-closed inconsistent tree.
  * @param {number|string} rootPid Ghostty process identifier.
  * @param {Function} read Injectable `/proc` reader for testing.
+ * @param {Function} readDir Injectable `/proc` directory reader for testing.
  * @returns {Promise<Array|null>}
  */
-export async function processTree(rootPid, read = readFile) {
+export async function processTree(rootPid, read = readFile, readDir = readdir) {
   const queue = [{ pid: Number(rootPid), parent: null }]
   const seen = new Set()
   const result = []
@@ -134,17 +135,22 @@ export async function processTree(rootPid, read = readFile) {
         const parentBefore = await processIdentity(parent.pid, read)
         if (!sameProcessIdentity(parentBefore, parent) || identityBefore.ppid !== parent.pid) return null
       }
-      const [children, comm, cmdline] = await Promise.all([
-        read(`/proc/${pid}/task/${pid}/children`, "utf8"),
+      const [taskIds, comm, cmdline] = await Promise.all([
+        readDir(`/proc/${pid}/task`),
         read(`/proc/${pid}/comm`, "utf8"),
         read(`/proc/${pid}/cmdline`),
       ])
+      const children = new Set((await Promise.all(
+        taskIds
+          .filter(taskId => /^\d+$/.test(String(taskId)))
+          .map(taskId => read(`/proc/${pid}/task/${taskId}/children`, "utf8")),
+      )).flatMap(raw => String(raw).trim().split(/\s+/).filter(Boolean)))
       const identityAfter = await processIdentity(pid, read)
       if (!sameProcessIdentity(identityBefore, identityAfter)) return null
       if (parent && !sameProcessIdentity(await processIdentity(parent.pid, read), parent)) return null
       const argv = cmdline.toString("utf8").split("\0").filter(Boolean)
       result.push({ pid, comm: String(comm).trim(), argv, identity: identityBefore })
-      for (const child of String(children).trim().split(/\s+/).filter(Boolean)) {
+      for (const child of children) {
         queue.push({ pid: Number(child), parent: identityBefore })
       }
     } catch {
@@ -216,6 +222,16 @@ async function socketRequest(socketPath, request) {
   })
 }
 
+export function hyprFocusWindowArgs(address) {
+  if (typeof address !== "string" || !/^0x[0-9a-fA-F]+$/.test(address)) {
+    throw new Error("invalid Hyprland window address")
+  }
+  return [
+    "eval",
+    `hl.dispatch(hl.dsp.focus({window="address:${address}"}))`,
+  ]
+}
+
 async function main() {
   const socketPath = process.env.HERDR_SOCKET_PATH
   if (!socketPath) throw new Error("HERDR_SOCKET_PATH is unavailable")
@@ -230,7 +246,7 @@ async function main() {
     diagnose: message => console.error(`actionable-notifications: ${message}`),
     notify: showNotification,
     focusPane: paneId => socketRequest(socketPath, paneFocusRequest(paneId, requestId)),
-    focusWindow: address => execFileAsync("hyprctl", ["dispatch", "focuswindow", `address:${address}`], {
+    focusWindow: address => execFileAsync("hyprctl", hyprFocusWindowArgs(address), {
       encoding: "utf8",
       timeout: 3000,
     }),
