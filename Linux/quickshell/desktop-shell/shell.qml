@@ -9,6 +9,7 @@ import qs.Commons
 import "plugins/bar"
 import "plugins/osd/OsdModel.js" as OsdModel
 import "services"
+import "services/PluginState.js" as PluginState
 
 ShellRoot {
   id: shell
@@ -24,7 +25,11 @@ ShellRoot {
 
   readonly property string shellPath: Quickshell.shellDir
   readonly property string firstPartyPluginsDir: shellPath + "/plugins"
-  readonly property string configPath: shellPath + "/config/shell.json"
+  readonly property string defaultConfigPath: shellPath + "/config/shell.json"
+  readonly property string configPath: defaultConfigPath
+  readonly property string configuredPluginStatePath: Quickshell.env("DESKTOP_SHELL_STATE_PATH")
+  readonly property string pluginStatePath: configuredPluginStatePath !== ""
+    ? configuredPluginStatePath : home + "/.config/desktop-shell/shell.json"
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
@@ -55,13 +60,22 @@ ShellRoot {
     disabledPlugins: []
   })
 
-  property var shellConfig: builtinShellConfig
+  property var defaultShellConfig: builtinShellConfig
+  property var pluginState: PluginState.emptyState()
+  property bool pluginStateValid: true
+  property string pluginStateError: ""
+  property bool pluginStateDirectoryReady: false
+  property var shellConfig: PluginState.mergeConfig(defaultShellConfig, pluginState)
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
   readonly property var notificationService: shell.serviceFor("desktop.notifications")
   readonly property var polkitService: shell.serviceFor("desktop.polkit")
   readonly property var healthState: ({
     configValid: shell.configValid,
+    pluginStateValid: shell.pluginStateValid,
+    pluginStateError: shell.pluginStateError,
+    pluginStatePath: shell.pluginStatePath,
+    pluginStateDirectoryReady: shell.pluginStateDirectoryReady,
     pluginErrors: shell.pluginErrors,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
@@ -91,7 +105,8 @@ ShellRoot {
     var text = String(raw || "").trim()
     if (!text) {
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config missing, using builtin fallback")
       return
     }
@@ -99,38 +114,66 @@ ShellRoot {
       var parsed = JSON.parse(text)
       if (Util.isPlainObject(parsed) && parsed.version === 1) {
         configValid = true
-        shellConfig = parsed
+        defaultShellConfig = parsed
+        rebuildShellConfig()
         return
       }
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config missing version: 1, using builtin fallback")
     } catch (e) {
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config parse failed, using builtin fallback:", e)
     }
   }
 
-  function persistShellConfig(nextConfig) {
-    if (!shell.configValid) {
-      console.warn("shell config is invalid; refusing to overwrite it")
+  function rebuildShellConfig() {
+    shellConfig = PluginState.mergeConfig(defaultShellConfig, pluginState)
+  }
+
+  function applyPluginState(raw) {
+    var parsed = PluginState.parseState(raw)
+    if (!parsed.valid) {
+      pluginStateValid = false
+      pluginStateError = parsed.error
+      pluginState = PluginState.emptyState()
+      rebuildShellConfig()
+      return
+    }
+    pluginState = parsed.state
+    pluginStateValid = true
+    pluginStateError = ""
+    rebuildShellConfig()
+  }
+
+  function persistPluginState(nextState) {
+    if (!pluginStateDirectoryReady) {
+      pluginStateError = "plugin state directory is not ready"
       return false
     }
-    var payload = JSON.parse(JSON.stringify(nextConfig))
-    payload.version = 1
-    shellConfig = payload
-    configFile.setText(JSON.stringify(payload, null, 2) + "\n")
+    var parsed = PluginState.parseState(JSON.stringify(nextState || {}))
+    if (!parsed.valid) {
+      pluginStateValid = false
+      pluginStateError = parsed.error
+      return false
+    }
+    pluginState = parsed.state
+    pluginStateValid = true
+    pluginStateError = ""
+    rebuildShellConfig()
+    pluginStateFile.setText(JSON.stringify(parsed.state, null, 2) + "\n")
     return true
   }
 
   readonly property var barConfig: shellConfig && Util.isPlainObject(shellConfig.bar) ? shellConfig.bar : builtinShellConfig.bar
   onBarConfigChanged: if (bar && "barConfig" in bar) bar.barConfig = shell.barConfig
   FileView {
-    id: configFile
-    path: shell.configPath
+    id: defaultsFile
+    path: shell.defaultConfigPath
     watchChanges: true
-    atomicWrites: true
     printErrors: false
     onLoaded: shell.applyShellConfig(text())
     onLoadFailed: function(error) {
@@ -140,21 +183,37 @@ ShellRoot {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: pluginStateFile
+    path: shell.pluginStatePath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: shell.applyPluginState(text())
+    onLoadFailed: shell.applyPluginState("")
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: pluginStateDirectoryProcess
+    onExited: function(exitCode) {
+      shell.pluginStateDirectoryReady = Number(exitCode) === 0
+      if (!shell.pluginStateDirectoryReady) shell.pluginStateError = "plugin state directory could not be created"
+    }
+  }
+
   Component.onCompleted: {
     console.log("desktop-shell paths",
       "shellDir=" + Quickshell.shellDir,
       "firstPartyPluginsDir=" + shell.firstPartyPluginsDir,
-      "configPath=" + shell.configPath)
+      "configPath=" + shell.configPath,
+      "pluginStatePath=" + shell.pluginStatePath)
+    pluginStateDirectoryProcess.command = ["bash", "-c", "mkdir -p -- \"$(dirname -- \"$0\")\"", shell.pluginStatePath]
+    pluginStateDirectoryProcess.running = true
     pluginRegistry.firstPartyDir = shell.firstPartyPluginsDir
     pluginRegistry.shellConfigProvider = function() { return shell.shellConfig }
     pluginRegistry.rescan()
     shell._syncServices()
-  }
-
-  function mutateShellConfig(mutator) {
-    var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
-    mutator(copy)
-    persistShellConfig(copy)
   }
 
   // Exposed as a property so child plugins (notifications, future panels)
@@ -358,49 +417,19 @@ ShellRoot {
     function onPluginsChanged() { if (!shell.pluginReloading) shell._syncServices() }
   }
 
-  // Writes inline settings to a bar layout entry or top-level plugin entry in
-  // shell.json. moduleName is the entry id; settings is the merged plugin
-  // state. Returns true if anything actually changed. Compute the proposed
-  // new shellConfig in a local clone, and only persist if anything actually
-  // changed so reactive bindings do not dirty shell.json unnecessarily.
+  // Writes inline settings to a mutable bar-widget state entry. Returns true
+  // if anything actually changed.
   function updateEntryInline(moduleName, settings) {
     var stripped = Util.canonicalWidgetId(moduleName)
-    var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
-    if (!Util.isPlainObject(copy.bar)) copy.bar = { layout: { left: [], center: [], right: [] } }
-    if (!Util.isPlainObject(copy.bar.layout)) copy.bar.layout = { left: [], center: [], right: [] }
-    if (!Array.isArray(copy.plugins)) copy.plugins = []
-
-    var sections = ["left", "center", "right"]
-    var foundInLayout = false
-    var dirty = false
-    for (var s = 0; s < sections.length; s++) {
-      var arr = copy.bar.layout[sections[s]] || []
-      for (var i = 0; i < arr.length; i++) {
-        if (arr[i] && Util.canonicalWidgetId(arr[i].id) === stripped) {
-          var next = { id: stripped }
-          for (var k in settings) if (k !== "id") next[k] = settings[k]
-          if (JSON.stringify(arr[i]) !== JSON.stringify(next)) {
-            arr[i] = next
-            dirty = true
-          }
-          foundInLayout = true
-        }
-      }
+    var copy = JSON.parse(JSON.stringify(pluginState || PluginState.emptyState()))
+    var widget = (copy.barWidgets || []).find(function (item) { return item.id === stripped })
+    if (!widget) return false
+    var before = JSON.stringify(copy)
+    for (var key in settings) {
+      if (key !== "id") copy = PluginState.setWidget(copy, stripped, key, settings[key]).state
     }
-    if (!foundInLayout) {
-      for (var j = 0; j < copy.plugins.length; j++) {
-        if (copy.plugins[j] && copy.plugins[j].id === stripped) {
-          var pnext = { id: stripped }
-          for (var pk in settings) if (pk !== "id") pnext[pk] = settings[pk]
-          if (JSON.stringify(copy.plugins[j]) !== JSON.stringify(pnext)) {
-            copy.plugins[j] = pnext
-            dirty = true
-          }
-        }
-      }
-    }
-    if (!dirty) return false
-    return persistShellConfig(copy)
+    if (JSON.stringify(copy) === before) return false
+    return persistPluginState(copy)
   }
 
   // ---------------------------------------------------------- on-demand panels
@@ -929,7 +958,7 @@ ShellRoot {
     }
 
     function reloadConfig(): string {
-      configFile.reload()
+      defaultsFile.reload()
       return "ok"
     }
 
