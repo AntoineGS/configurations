@@ -277,4 +277,129 @@ if env "${manager_env[@]}" "$manager" add "$source_repo" --yes >/dev/null 2>&1; 
 fi
 rm -rf -- "$duplicate_root"
 
+# Task 7 lifecycle fixtures use only local bare Git remotes.
+remote_root="$test_root/remote"
+remote_seed="$test_root/remote-seed"
+mkdir -p -- "$remote_root"
+cp -a -- "$source_repo" "$remote_seed"
+jq --arg id lifecycle.widget '.id=$id' "$remote_seed/manifest.json" >"$remote_seed/manifest.tmp"
+mv -- "$remote_seed/manifest.tmp" "$remote_seed/manifest.json"
+git -C "$remote_seed" add manifest.json
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm lifecycle
+git clone -q --bare -- "$remote_seed" "$remote_root/lifecycle.git"
+git clone -q -- "$remote_root/lifecycle.git" "$plugins_dir/lifecycle.widget"
+git -C "$plugins_dir/lifecycle.widget" remote set-head origin -a >/dev/null 2>&1 || true
+
+rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "up-to-date update failed"
+rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $rescan_after == "$rescan_before" ]] || fail "up-to-date update requested rescan"
+
+git -C "$remote_seed" checkout -q -b main
+printf 'updated\n' >"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+git -C "$remote_root/lifecycle.git" symbolic-ref HEAD refs/heads/main
+prior_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "fast-forward update failed"
+updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+[[ $updated_commit != "$prior_commit" ]] || fail "fast-forward update did not advance"
+grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "successful update did not request rescan"
+hidden_dir="$plugins_dir/.hidden.widget"
+mkdir -p -- "$hidden_dir"
+env "${manager_env[@]}" "$manager" update --yes >/dev/null || fail "bulk update failed"
+if env "${manager_env[@]}" "$manager" update missing.widget --yes >/dev/null 2>&1; then
+  fail "unknown update ID was accepted"
+fi
+
+non_git_update="$plugins_dir/non-git-update.widget"
+mkdir -p -- "$non_git_update"
+if env "${manager_env[@]}" "$manager" update non-git-update.widget --yes >/dev/null 2>&1; then
+  fail "non-Git update was accepted"
+fi
+
+no_origin="$plugins_dir/no-origin.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$no_origin"
+git -C "$no_origin" remote remove origin
+if env "${manager_env[@]}" "$manager" update no-origin.widget --yes >/dev/null 2>&1; then
+  fail "missing-origin update was accepted"
+fi
+
+invalid_remote="$test_root/invalid.git"
+invalid_head="$plugins_dir/invalid-head.widget"
+git init -q --bare "$invalid_remote"
+git init -q "$invalid_head"
+git -C "$invalid_head" config user.name test
+git -C "$invalid_head" config user.email test@example.invalid
+git -C "$invalid_head" remote add origin "$invalid_remote"
+printf 'invalid-head\n' >"$invalid_head/data"
+git -C "$invalid_head" add .
+git -C "$invalid_head" commit -qm invalid-head
+if env "${manager_env[@]}" "$manager" update invalid-head.widget --yes >/dev/null 2>&1; then
+  fail "invalid remote HEAD update was accepted"
+fi
+
+validation_repo="$test_root/validation"
+cp -a -- "$remote_seed" "$validation_repo"
+printf 'invalid\n' >"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm invalid-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+validation_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+validation_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "validation-failing update was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$validation_prior" ]] || fail "validation rollback changed commit"
+validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $validation_rescan_after == "$validation_rescan_before" ]] || fail "validation rollback requested rescan"
+
+printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "local modifications were accepted"
+fi
+git -C "$plugins_dir/lifecycle.widget" reset --hard -q "$validation_prior"
+git -C "$plugins_dir/lifecycle.widget" checkout -q --detach "$validation_prior"
+printf 'diverged\n' >"$plugins_dir/lifecycle.widget/Widget.qml"
+git -C "$plugins_dir/lifecycle.widget" add Widget.qml
+git -C "$plugins_dir/lifecycle.widget" -c user.name=test -c user.email=test@example.invalid commit -qm divergent
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "divergent update was accepted"
+fi
+
+if env "${manager_env[@]}" "$manager" update lifecycle.widget </dev/null >/dev/null 2>&1; then
+  fail "non-interactive update without --yes succeeded"
+fi
+if env "${manager_env[@]}" "$manager" remove lifecycle.widget </dev/null >/dev/null 2>&1; then
+  fail "non-interactive remove without --yes succeeded"
+fi
+
+remove_dir="$plugins_dir/remove.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$remove_dir"
+env "${manager_env[@]}" "$manager" remove remove.widget --yes >/dev/null || fail "Git removal failed"
+[[ ! -e $remove_dir ]] || fail "Git removal left source directory"
+grep -Fq $'setPluginEnabled\tremove.widget\tfalse' "$log_file" || fail "Git removal did not disable first"
+
+non_git_dir="$plugins_dir/non-git.widget"
+mkdir -p -- "$non_git_dir"
+printf '{}\n' >"$non_git_dir/manifest.json"
+printf 'keep\n' >"$non_git_dir/data"
+env "${manager_env[@]}" "$manager" remove non-git.widget --yes >/dev/null || fail "non-Git removal failed"
+backup_count=0
+for backup in "$plugins_dir"/.removed.non-git.widget.*; do
+  [[ -d $backup ]] || continue
+  backup_count=$((backup_count + 1))
+  [[ -f $backup/data ]] || fail "non-Git backup lost source data"
+done
+[[ $backup_count == 1 && ! -e $non_git_dir ]] || fail "non-Git removal backup was unsafe"
+
+disable_dir="$plugins_dir/disable-failure.widget"
+mkdir -p -- "$disable_dir"
+printf '{}\n' >"$disable_dir/manifest.json"
+if IPC_DISABLE_RESULT=failed env "${manager_env[@]}" "$manager" remove disable-failure.widget --yes >/dev/null 2>&1; then
+  fail "disable failure was accepted"
+fi
+[[ -d $disable_dir ]] || fail "disable failure touched source directory"
+
 printf 'PASS: desktop-shell plugin manager\n'

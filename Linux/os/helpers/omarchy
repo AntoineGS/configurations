@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+helper_dir=$(dirname -- "$(realpath -- "$0")")
+self=$(realpath -- "$0")
+
+resolve_native_omarchy() {
+  local candidate resolved
+  local -a candidates=()
+  [[ -n ${DESKTOP_SHELL_NATIVE_OMARCHY:-} ]] && candidates+=("$DESKTOP_SHELL_NATIVE_OMARCHY")
+  [[ -n ${OMARCHY_PATH:-} ]] && candidates+=("$OMARCHY_PATH/bin/omarchy")
+  mapfile -t candidates < <(
+    printf '%s\n' "${candidates[@]}"
+    type -aP omarchy 2>/dev/null || true
+  )
+  for candidate in "${candidates[@]}"; do
+    [[ -n $candidate && -x $candidate ]] || continue
+    resolved=$(realpath -- "$candidate" 2>/dev/null) || continue
+    [[ $resolved != "$self" ]] || continue
+    printf '%s' "$resolved"
+    return 0
+  done
+  return 1
+}
+
+if [[ ${1:-} == plugin ]]; then
+  shift
+  exec "$helper_dir/desktop-shell-plugin" "$@"
+fi
+
+native=$(resolve_native_omarchy) || {
+  printf 'omarchy: unsupported without a native Omarchy installation: %s\n' "${1:-<none>}" >&2
+  exit 127
+}
+exec "$native" "$@"

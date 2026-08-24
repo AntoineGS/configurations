@@ -39,6 +39,8 @@ usage() {
     "       $script_name list [--json]" \
     "       $script_name enable ID [SECTION] [--section SECTION] [--index N] [--before ID|--after ID]" \
     "       $script_name disable ID" \
+    "       $script_name update [ID] [--yes]" \
+    "       $script_name remove ID [--yes]" \
     "       $script_name sanitize-url URL" >&2
   exit 2
 }
@@ -183,6 +185,16 @@ confirm_install() {
   printf 'Warning: plugins execute unsandboxed code. Install %s? [y/N] ' "$display_url" >&2
   IFS= read -r answer || fail "installation not confirmed"
   [[ $answer == y || $answer == Y || $answer == yes || $answer == YES ]] || fail "installation not confirmed"
+}
+
+confirm_mutation() {
+  local action=$1 answer
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    fail "refusing non-interactive $action without --yes"
+  fi
+  printf 'Warning: plugins execute unsandboxed code. %s? [y/N] ' "$action" >&2
+  IFS= read -r answer || fail "$action not confirmed"
+  [[ $answer == y || $answer == Y || $answer == yes || $answer == YES ]] || fail "$action not confirmed"
 }
 
 rescan() {
@@ -335,6 +347,89 @@ disable_plugin() {
   [[ $response == ok ]] || fail "plugin disable failed: $response"
 }
 
+plugin_directory() {
+  local id=$1 directory root_real directory_real
+  validate_id "$id"
+  [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
+  directory=$plugins_dir/$id
+  [[ -d $directory && ! -L $directory ]] || fail "plugin not found: $id"
+  root_real=$(realpath -- "$plugins_dir") || fail "cannot resolve plugin root"
+  directory_real=$(realpath -- "$directory") || fail "cannot resolve plugin directory: $id"
+  [[ $directory_real == "$root_real"/* ]] || fail "plugin directory escapes plugin root: $id"
+  printf '%s' "$directory"
+}
+
+is_git_plugin() {
+  local directory=$1
+  git -C "$directory" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+update_plugin() {
+  local id=$1 directory=$2 prior remote origin_url
+  is_git_plugin "$directory" || fail "plugin is not Git-managed: $id"
+  prior=$(git -C "$directory" rev-parse HEAD 2>/dev/null) || fail "invalid Git HEAD: $id"
+  [[ -z $(git -C "$directory" status --porcelain --untracked-files=normal) ]] || fail "plugin has local changes: $id"
+  origin_url=$(git -C "$directory" remote get-url origin 2>/dev/null) || fail "plugin has no origin: $id"
+  [[ -n $origin_url ]] || fail "plugin has no origin: $id"
+  git -C "$directory" fetch --quiet origin HEAD >/dev/null 2>&1 || fail "plugin fetch failed: $id"
+  remote=$(git -C "$directory" rev-parse FETCH_HEAD 2>/dev/null) || fail "invalid remote HEAD: $id"
+  [[ -n $remote ]] || fail "invalid remote HEAD: $id"
+  if git -C "$directory" merge-base --is-ancestor "$remote" "$prior"; then
+    return 1
+  fi
+  git -C "$directory" merge-base --is-ancestor "$prior" "$remote" || fail "plugin update is not a fast-forward: $id"
+  git -C "$directory" merge --ff-only "$remote" >/dev/null 2>&1 || fail "plugin fast-forward failed: $id"
+  if ! "$validator" "$directory" >/dev/null 2>&1; then
+    git -C "$directory" reset --hard "$prior" >/dev/null 2>&1 || fail "validation failed and rollback to $prior failed: $id"
+    fail "plugin update failed validation and was rolled back: $id"
+  fi
+  return 0
+}
+
+update_plugins() {
+  local requested_id=${1-} yes=$2 id directory changed=0
+  local -a directories=()
+  if [[ -n $requested_id ]]; then
+    directory=$(plugin_directory "$requested_id")
+    if update_plugin "$requested_id" "$directory"; then
+      changed=1
+    else
+      [[ $? == 1 ]]
+    fi
+  else
+    [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
+    mapfile -d '' directories < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
+    for directory in "${directories[@]}"; do
+      id=${directory##*/}
+      [[ $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || continue
+      is_git_plugin "$directory" || continue
+      if update_plugin "$id" "$directory"; then
+        changed=1
+      else
+        [[ $? == 1 ]]
+      fi
+    done
+  fi
+  if (( changed )); then
+    rescan || fail "plugin update failed during rescan"
+  fi
+}
+
+remove_plugin() {
+  local id=$1 yes=$2 directory backup timestamp
+  directory=$(plugin_directory "$id")
+  disable_plugin "$id"
+  if is_git_plugin "$directory"; then
+    rm -rf --one-file-system -- "$directory" || fail "cannot remove Git plugin: $id"
+  else
+    timestamp=$(date -u +%Y%m%dT%H%M%SZ) || fail "cannot create removal timestamp"
+    backup=$plugins_dir/.removed.$id.$timestamp
+    [[ ! -e $backup && ! -L $backup ]] || fail "removal backup already exists: $id"
+    mv -T -- "$directory" "$backup" || fail "cannot move removed plugin to backup: $id"
+  fi
+  rescan || fail "plugin removal failed during rescan"
+}
+
 main() {
   local command=${1-} url expected_id='' enable=0 yes=0 id placement response
   require_commands
@@ -371,6 +466,36 @@ main() {
       enable_plugin "$id" ;;
     disable)
       (($# == 1)) || usage; disable_plugin "$1" ;;
+    update)
+      (($# <= 2)) || usage
+      id=''
+      while (($#)); do
+        case $1 in
+          --yes) yes=1 ;;
+          --) shift; (($# == 0)) || usage; break ;;
+          -*) usage ;;
+          *) [[ -z $id ]] || usage; id=$1 ;;
+        esac
+        shift
+      done
+      (( yes )) || confirm_mutation update
+      mkdir -p -- "$plugins_dir"
+      acquire_add_lock
+      update_plugins "$id" "$yes" ;;
+    remove)
+      (($# >= 1 && $# <= 2)) || usage
+      id=$1; shift
+      while (($#)); do
+        case $1 in
+          --yes) yes=1 ;;
+          --) shift; (($# == 0)) || usage; break ;;
+          *) usage ;;
+        esac
+        shift
+      done
+      (( yes )) || confirm_mutation remove
+      acquire_add_lock
+      remove_plugin "$id" "$yes" ;;
     --help|-h) usage ;;
     *) usage ;;
   esac
