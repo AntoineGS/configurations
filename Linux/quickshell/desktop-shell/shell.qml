@@ -984,6 +984,7 @@ ShellRoot {
   // ---------------------------------------------------------- shell IPC
 
   IpcHandler {
+    id: shellIpc
     target: "desktop-shell"
 
     function toggleBar(): string {
@@ -1047,7 +1048,7 @@ ShellRoot {
     }
 
     function parseJsonObject(raw, fallback) {
-      var parsed = shell.parseJsonValue(raw, fallback)
+      var parsed = shellIpc.parseJsonValue(raw, fallback)
       return parsed.valid && parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value)
         ? parsed.value : null
     }
@@ -1057,38 +1058,38 @@ ShellRoot {
       if (ok) return "ok"
       if (error.indexOf("unknown plugin ") === 0) return "unknown"
       if (error !== "") return error
-      if (shell.pluginStateWriteError !== "") return shell.pluginStateWriteError
+      if (shell.pluginStateWriteError !== "") return "plugin state write failed: " + shell.pluginStateWriteError
       if (shell.pluginStateError !== "") return shell.pluginStateError
       return "plugin state write failed"
     }
 
     function setPluginEnabled(id: string, enabled: bool): string {
-      return shell.pluginMutationResult(pluginRegistry.setEnabled(id, enabled, {}))
+      return shellIpc.pluginMutationResult(pluginRegistry.setEnabled(id, enabled, {}))
     }
 
     function enablePlugin(id: string, placementJson: string): string {
-      var placement = shell.parseJsonObject(placementJson, ({}))
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
       if (placement === null) return "invalid placement JSON"
-      return shell.pluginMutationResult(pluginRegistry.setEnabled(id, true, placement))
+      return shellIpc.pluginMutationResult(pluginRegistry.setEnabled(id, true, placement))
     }
 
     function putBarWidget(id: string, placementJson: string): string {
-      var placement = shell.parseJsonObject(placementJson, ({}))
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
       if (placement === null) return "invalid placement JSON"
-      return shell.pluginMutationResult(pluginRegistry.putBarWidget(id, placement))
+      return shellIpc.pluginMutationResult(pluginRegistry.putBarWidget(id, placement))
     }
 
     function moveBarWidget(id: string, placementJson: string): string {
-      var placement = shell.parseJsonObject(placementJson, ({}))
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
       if (placement === null) return "invalid placement JSON"
-      return shell.pluginMutationResult(pluginRegistry.moveBarWidget(id, placement))
+      return shellIpc.pluginMutationResult(pluginRegistry.moveBarWidget(id, placement))
     }
 
     function setBarWidget(id: string, key: string, valueJson: string, selectorJson: string): string {
-      var parsedValue = shell.parseJsonValue(valueJson, null)
-      var selector = shell.parseJsonObject(selectorJson, ({}))
+      var parsedValue = shellIpc.parseJsonValue(valueJson, null)
+      var selector = shellIpc.parseJsonObject(selectorJson, ({}))
       if (!parsedValue.valid || selector === null) return "invalid widget JSON"
-      return shell.pluginMutationResult(pluginRegistry.setBarWidget(id, key, parsedValue.value))
+      return shellIpc.pluginMutationResult(pluginRegistry.setBarWidget(id, key, parsedValue.value))
     }
 
     // Returns the effective shell.json content as JSON. Useful for debugging
