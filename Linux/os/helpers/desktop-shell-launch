@@ -9,10 +9,26 @@ usage() {
 (( $# == 0 )) || usage
 
 helper_dir="$HOME/.local/share/helpers"
-case ":$PATH:" in
-  *":$helper_dir:"*) ;;
-  *) export PATH="$helper_dir:$PATH" ;;
-esac
+path_entries=()
+remaining_path=${PATH-}
+while :; do
+  if [[ $remaining_path == *:* ]]; then
+    path_entry=${remaining_path%%:*}
+    remaining_path=${remaining_path#*:}
+  else
+    path_entry=$remaining_path
+    remaining_path=""
+    last_path_entry=1
+  fi
+  [[ $path_entry == "$helper_dir" ]] || path_entries+=("$path_entry")
+  [[ ${last_path_entry-0} == 1 ]] && break
+done
+
+normalized_path="$helper_dir"
+for path_entry in "${path_entries[@]}"; do
+  normalized_path+=":$path_entry"
+done
+export PATH="$normalized_path"
 
 shell_dir="$HOME/.config/quickshell/desktop-shell"
 [[ -r "$shell_dir/shell.qml" ]] || {

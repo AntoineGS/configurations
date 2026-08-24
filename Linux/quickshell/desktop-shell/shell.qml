@@ -1054,9 +1054,12 @@ ShellRoot {
 
     function pluginMutationResult(ok) {
       var error = String(pluginRegistry.lastEnableError || "")
-      if (ok || error === "") return "ok"
+      if (ok) return "ok"
       if (error.indexOf("unknown plugin ") === 0) return "unknown"
-      return error
+      if (error !== "") return error
+      if (shell.pluginStateWriteError !== "") return shell.pluginStateWriteError
+      if (shell.pluginStateError !== "") return shell.pluginStateError
+      return "plugin state write failed"
     }
 
     function setPluginEnabled(id: string, enabled: bool): string {
