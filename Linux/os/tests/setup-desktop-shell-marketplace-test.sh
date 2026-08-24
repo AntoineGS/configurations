@@ -37,7 +37,8 @@ printf 'ipc %s\n' "$*" >>"$CALL_LOG"
 case ${1-} in
   shell) case ${2-} in
     listShellConfig) printf '%s\n' "$SHELL_CONFIG" ;;
-    *) printf 'ok\n' ;;
+    rescanPlugins) printf 'ok\n' ;;
+    *) exit 2 ;;
   esac ;;
   *) exit 2 ;;
 esac
@@ -46,7 +47,10 @@ cat >"$bin_dir/systemctl" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf 'systemctl %s\n' "$*" >>"$CALL_LOG"
-[[ ${1-} == --user && ${2-} == is-active ]] && exit 1
+if [[ ${1-} == --user && ${2-} == is-active ]]; then
+  [[ ${SYSTEMCTL_ACTIVE:-0} == 1 ]] && exit 0
+  exit 1
+fi
 exit 0
 EOF
 cp -- "$source_helper" "$helper_dir/setup-desktop-shell-marketplace"
@@ -76,7 +80,7 @@ if ! PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply
 fi
 grep -Fq 'manager add https://github.com/Yasino55/omarchy-plugin-marketplace.git --yes --expected-id io.yasino55.omarchy-plugin-marketplace' "$log_file" || fail "apply did not install with expected arguments"
 grep -Fq 'manager enable io.yasino55.omarchy-plugin-marketplace --section right' "$log_file" || fail "apply did not explicitly enable right section"
-grep -Fq 'ipc shell plugin-rescan' "$log_file" || fail "apply did not request plugin rescan"
+grep -Fq 'ipc shell rescanPlugins' "$log_file" || fail "apply did not request plugin rescan"
 grep -Fq 'systemctl --user start desktop-shell.service' "$log_file" || fail "apply did not start service"
 pass "apply installs, waits, and enables right section"
 
@@ -87,6 +91,31 @@ pass "repeated check is idempotent"
 PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply || fail "repeated apply failed"
 ! grep -Fq 'manager add ' "$log_file" || fail "repeated apply recloned checkout"
 pass "repeated apply does not update or reclone"
+
+: >"$log_file"
+SYSTEMCTL_ACTIVE=0 PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply || fail "stopped-service recovery apply failed"
+grep -Fq 'systemctl --user start desktop-shell.service' "$log_file" || fail "stopped service was not started before state recheck"
+pass "existing checkout starts stopped service before rechecking"
+
+: >"$log_file"
+SYSTEMCTL_ACTIVE=1 PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply || fail "active-service apply failed"
+! grep -Fq 'systemctl --user start desktop-shell.service' "$log_file" || fail "active service was redundantly started"
+pass "active service is not redundantly started"
+
+rm -rf -- "$plugins_dir/io.yasino55.omarchy-plugin-marketplace"
+ln -s -- "$test_root/missing-checkout" "$plugins_dir/io.yasino55.omarchy-plugin-marketplace"
+: >"$log_file"
+if PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply >/dev/null 2>&1; then fail "dangling checkout symlink was accepted"; fi
+! grep -Fq 'manager add ' "$log_file" || fail "dangling symlink triggered installation"
+pass "dangling checkout symlink is rejected without installation"
+rm -f -- "$plugins_dir/io.yasino55.omarchy-plugin-marketplace"
+mkdir -p -- "$plugins_dir/io.yasino55.omarchy-plugin-marketplace"
+printf '%s\n' '{"id":"io.yasino55.omarchy-plugin-marketplace"}' >"$plugins_dir/io.yasino55.omarchy-plugin-marketplace/manifest.json"
+git -C "$plugins_dir/io.yasino55.omarchy-plugin-marketplace" init -q
+git -C "$plugins_dir/io.yasino55.omarchy-plugin-marketplace" remote add origin 'https://github.com/Yasino55/omarchy-plugin-marketplace.git'
+
+if "$helper_dir/omarchy-shell" shell plugin-rescan >/dev/null 2>&1; then fail "unsupported IPC method was accepted"; fi
+pass "IPC stub rejects unsupported method names"
 
 git -C "$plugins_dir/io.yasino55.omarchy-plugin-marketplace" remote set-url origin 'https://github.com/other-owner/other-repository.git'
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "wrong origin passed check"; fi
