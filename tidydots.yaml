@@ -74,7 +74,7 @@ applications:
           linux: npm install -g opencode-with-claude
           windows: npm install -g opencode-with-claude
         name: claude-plugin
-        when: '{{ eq .Hostname "ANTOINEWS" }}'
+        when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
         run:
