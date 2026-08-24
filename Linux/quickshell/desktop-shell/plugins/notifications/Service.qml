@@ -1723,7 +1723,7 @@ Item {
 
       readonly property var popupPlacement: NotificationLogic.popupPlacement(
         service.barPosition, service.barClearance, Style.gapsOut)
-      readonly property int placementInset: Style.space(56)
+      readonly property int placementInset: Style.space(24)
 
       anchors { top: true; bottom: true; left: true; right: true }
 
