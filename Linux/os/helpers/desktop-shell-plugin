@@ -695,24 +695,34 @@ release_retained_updates() {
 }
 
 rollback_retained_updates() {
-  local index failed=0
+  local index failed=0 target_fd_identity git_fd_identity common_fd_identity
   for index in "${!retained_ids[@]}"; do
-    update_target_fd=${retained_target_fds[index]}
-    update_target_path=${retained_target_paths[index]}
-    update_target_real=${retained_target_reals[index]}
-    update_target_identity=${retained_target_identities[index]}
-    git_fd=${retained_git_fds[index]}
-    common_fd=${retained_common_fds[index]}
-    git_path=${retained_git_paths[index]}
-    common_path=${retained_common_paths[index]}
-    git_identity=${retained_git_identities[index]}
-    common_identity=${retained_common_identities[index]}
-    metadata_ready=1
-    update_dir="/proc/self/fd/$update_target_fd/."
-    update_prior=${retained_prior[index]}
-    update_identity=${retained_target_identities[index]}
-    update_armed=1
-    restore_update_transaction || failed=1
+    target_fd_identity=$(path_identity "/proc/self/fd/${retained_target_fds[index]}" 2>/dev/null) || {
+      failed=1
+      continue
+    }
+    git_fd_identity=$(path_identity "/proc/self/fd/${retained_git_fds[index]}" 2>/dev/null) || {
+      failed=1
+      continue
+    }
+    common_fd_identity=$(path_identity "/proc/self/fd/${retained_common_fds[index]}" 2>/dev/null) || {
+      failed=1
+      continue
+    }
+    if [[ $target_fd_identity != "${retained_target_identities[index]}" ||
+      $git_fd_identity != "${retained_git_identities[index]}" ||
+      $common_fd_identity != "${retained_common_identities[index]}" ]]; then
+      printf '%s: refusing rollback of replaced plugin: %s\n' "$script_name" "${retained_ids[index]}" >&2
+      failed=1
+      continue
+    fi
+    if ! GIT_DIR="/proc/self/fd/${retained_git_fds[index]}/." \
+      GIT_COMMON_DIR="/proc/self/fd/${retained_common_fds[index]}/." \
+      git --work-tree="/proc/self/fd/${retained_target_fds[index]}/." \
+      reset --hard "${retained_prior[index]}" >/dev/null 2>&1; then
+      printf '%s: rollback failed for %s\n' "$script_name" "${retained_ids[index]}" >&2
+      failed=1
+    fi
   done
   (( failed == 0 ))
 }
@@ -906,6 +916,12 @@ update_plugins() {
       elif ! rescan; then
         failed=1
         rollback_retained_updates || true
+      elif ! revalidate_retained_updates; then
+        failed=1
+        rollback_retained_updates || true
+        if revalidate_retained_updates; then
+          rescan || true
+        fi
       else
         release_retained_updates
       fi
@@ -953,6 +969,9 @@ remove_plugin() {
   [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
     fail "removed plugin was repopulated before rescan: $id"
   rescan || fail "plugin removal failed during rescan"
+  revalidate_mutation_root || fail "plugin root changed during removal rescan: $id"
+  [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
+    fail "removed plugin was repopulated during rescan: $id"
 }
 
 main() {

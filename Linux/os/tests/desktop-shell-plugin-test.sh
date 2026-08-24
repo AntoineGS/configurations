@@ -53,6 +53,15 @@ case "${2-}" in
       kill -TERM "$PPID"
       sleep 0.2
     fi
+    if [[ ${IPC_RESCAN_REPLACE_TARGET:-0} == 1 ]]; then
+      mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
+      mkdir -- "$IPC_TARGET"
+      printf 'replacement-during-ipc\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ ${IPC_RESCAN_REPOPULATE:-0} == 1 ]]; then
+      mkdir -- "$IPC_TARGET"
+      printf 'repopulated-during-ipc\n' >"$IPC_TARGET/marker"
+    fi
     printf '%s\n' "${IPC_RESCAN_RESULT:-ok}"
     ;;
   listPlugins)
@@ -688,6 +697,50 @@ fi
 [[ $(grep -c 'update-after-status' "$test_root/abort-hook.log") == 1 ]] ||
   fail "bulk update started another plugin after failed rollback: $(<"$test_root/abort-hook.log")"
 
+retained_abort_plugins="$test_root/retained-abort-plugins"
+mkdir -p -- "$retained_abort_plugins"
+retained_abort_a="$retained_abort_plugins/retained-a.widget"
+retained_abort_b="$retained_abort_plugins/retained-b.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$retained_abort_a"
+git clone -q -- "$remote_root/lifecycle.git" "$retained_abort_b"
+printf 'retained-abort-update\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm retained-abort-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+retained_abort_validator="$test_root/retained-abort-validator"
+cat >"$retained_abort_validator" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+count=0
+[[ -f $RETAINED_ABORT_COUNT ]] && count=$(<"$RETAINED_ABORT_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" >"$RETAINED_ABORT_COUNT"
+if [[ $count == 1 ]]; then
+  exec "$RETAINED_ABORT_REAL_VALIDATOR" "$1"
+fi
+exit 1
+EOF
+chmod +x -- "$retained_abort_validator"
+retained_abort_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+retained_abort_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$retained_abort_plugins" \
+  DESKTOP_SHELL_PLUGIN_VALIDATE="$retained_abort_validator" RETAINED_ABORT_COUNT="$test_root/retained-abort-count" \
+  RETAINED_ABORT_REAL_VALIDATOR="$validator" ABORT_GIT_LOG="$test_root/retained-abort-git.log" \
+  DESKTOP_SHELL_PLUGIN_TEST_HOOK="$abort_hook" ABORT_HOOK_LOG="$test_root/retained-abort-hook.log" \
+  PATH="$abort_bin:$PATH" "$manager" update --yes >/dev/null 2>&1; then
+  retained_abort_status=0
+else
+  retained_abort_status=$?
+fi
+[[ $retained_abort_status != 0 ]] || fail "retained success/current failure unexpectedly succeeded"
+[[ $(<"$test_root/retained-abort-count") == 2 ]] || fail "bulk update began after current rollback failure"
+[[ $(grep -c 'update-after-status' "$test_root/retained-abort-hook.log") == 2 ]] ||
+  fail "retained rollback scenario started an unexpected plugin"
+[[ $(grep -c ' reset --hard ' "$test_root/retained-abort-git.log") -ge 3 ]] ||
+  fail "armed current transaction was not available for cleanup retry"
+retained_abort_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $retained_abort_after == "$retained_abort_before" ]] || fail "rescan occurred before rollback was safe"
+
 rescan_swap_backup="$test_root/rescan-swap-backup"
 rescan_swap_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 rescan_hook="$test_root/rescan-hook"
@@ -712,6 +765,19 @@ fi
   fail "successful update was not rolled back after rescan replacement"
 rm -rf -- "$plugins_dir/lifecycle.widget"
 mv -- "$rescan_swap_backup" "$plugins_dir/lifecycle.widget"
+
+ipc_rescan_backup="$test_root/ipc-rescan-backup"
+ipc_rescan_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" IPC_RESCAN_REPLACE_TARGET=1 IPC_TARGET="$plugins_dir/lifecycle.widget" \
+  IPC_REPLACEMENT_BACKUP="$ipc_rescan_backup" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "public target replacement during rescan IPC was accepted"
+fi
+[[ -f "$plugins_dir/lifecycle.widget/marker" && -d "$ipc_rescan_backup" ]] ||
+  fail "rescan IPC replacement fixture was lost"
+[[ $(git -C "$ipc_rescan_backup" rev-parse HEAD) == "$ipc_rescan_prior" ]] ||
+  fail "update was not rolled back after rescan IPC replacement"
+rm -rf -- "$plugins_dir/lifecycle.widget"
+mv -- "$ipc_rescan_backup" "$plugins_dir/lifecycle.widget"
 
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
@@ -776,6 +842,15 @@ git clone -q -- "$remote_root/lifecycle.git" "$remove_dir"
 env "${manager_env[@]}" "$manager" remove remove.widget --yes >/dev/null || fail "Git removal failed"
 [[ ! -e $remove_dir ]] || fail "Git removal left source directory"
 grep -Fq $'setPluginEnabled\tremove.widget\tfalse' "$log_file" || fail "Git removal did not disable first"
+
+ipc_repopulate_dir="$plugins_dir/ipc-repopulate.widget"
+mkdir -p -- "$ipc_repopulate_dir"
+printf '{}\n' >"$ipc_repopulate_dir/manifest.json"
+if env "${manager_env[@]}" IPC_RESCAN_REPOPULATE=1 IPC_TARGET="$ipc_repopulate_dir" \
+  "$manager" remove ipc-repopulate.widget --yes >/dev/null 2>&1; then
+  fail "removed ID repopulation during rescan IPC was accepted"
+fi
+[[ -f "$ipc_repopulate_dir/marker" ]] || fail "rescan IPC repopulation was not detected"
 
 repopulate_dir="$plugins_dir/repopulate.widget"
 mkdir -p -- "$repopulate_dir"
