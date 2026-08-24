@@ -385,6 +385,7 @@ race_hook="$test_root/race-hook"
 cat >"$race_hook" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+[[ -z ${RACE_HOOK_LOG:-} ]] || printf '%s\n' "$1" >>"$RACE_HOOK_LOG"
 case "$1" in
   root-open)
     [[ -n ${RACE_ROOT:-} ]] || exit 0
@@ -392,8 +393,13 @@ case "$1" in
     ln -s -- "$RACE_REPLACEMENT" "$RACE_ROOT"
     ;;
   update-after-status|update-after-fetch)
-    mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
-    git clone -q -- "$RACE_REMOTE" "$RACE_TARGET"
+    if [[ ${RACE_METADATA_SWAP:-0} == 1 ]]; then
+      mv -- "$RACE_GIT_DIR" "$RACE_GIT_BACKUP"
+      cp -a -- "$RACE_GIT_REPLACEMENT" "$RACE_GIT_DIR"
+    else
+      mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+      git clone -q -- "$RACE_REMOTE" "$RACE_TARGET"
+    fi
     ;;
   remove-before-quarantine)
     [[ ${RACE_REMOVE_BEFORE:-0} == 1 ]] || exit 0
@@ -401,9 +407,21 @@ case "$1" in
     mkdir -- "$RACE_TARGET"
     printf 'replacement\n' >"$RACE_TARGET/marker"
     ;;
+  remove-after-revalidate)
+    [[ ${RACE_REMOVE_AFTER:-0} == 1 ]] || exit 0
+    mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+    mkdir -- "$RACE_TARGET"
+    printf 'replacement\n' >"$RACE_TARGET/marker"
+    ;;
   quarantine-after-identity)
+    [[ ${RACE_IDENTITY_AFTER:-0} == 1 ]] || exit 0
     mv -- "$2" "$RACE_TARGET_BACKUP"
     git clone -q -- "$RACE_REMOTE" "$2"
+    ;;
+  quarantine-after-delete)
+    [[ ${RACE_DELETE_AFTER:-0} == 1 ]] || exit 0
+    mv -- "$2" "$RACE_TARGET_BACKUP"
+    mkdir -- "$2"
     ;;
   *)
     printf 'unknown race hook: %s\n' "$1" >&2
@@ -434,6 +452,47 @@ fi
 [[ -d "$status_race_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "status race fixture was lost"
 rm -rf -- "$status_race_backup"
 
+metadata_replacement="$test_root/metadata-replacement"
+git clone -q -- "$remote_root/lifecycle.git" "$metadata_replacement"
+metadata_backup="$test_root/metadata-backup"
+metadata_error="$test_root/metadata-race.err"
+metadata_hook_log="$test_root/metadata-race.log"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" RACE_METADATA_SWAP=1 \
+  RACE_GIT_DIR="$plugins_dir/lifecycle.widget/.git" RACE_GIT_BACKUP="$metadata_backup" \
+  RACE_GIT_REPLACEMENT="$metadata_replacement/.git" RACE_HOOK_LOG="$metadata_hook_log" "$manager" update lifecycle.widget --yes >"$metadata_error" 2>&1; then
+  printf 'metadata race command output:\n%s\nhooks:\n%s\n' "$(<"$metadata_error")" "$(<"$metadata_hook_log")" >&2
+  fail "Git metadata replacement was accepted"
+fi
+[[ -d "$metadata_backup" && -d "$plugins_dir/lifecycle.widget/.git" ]] || fail "Git metadata race fixture was lost"
+rm -rf -- "$plugins_dir/lifecycle.widget/.git"
+mv -- "$metadata_backup" "$plugins_dir/lifecycle.widget/.git"
+rm -rf -- "$metadata_replacement"
+printf 'validator-update\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm validator-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+
+validator_swap="$test_root/validator-swap"
+validator_swap_backup="$test_root/validator-swap-backup"
+validator_swap_error="$test_root/validator-swap.err"
+cat >"$validator_swap" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mv -- "$RACE_TARGET" "$RACE_TARGET_BACKUP"
+git clone -q -- "$RACE_REMOTE" "$RACE_TARGET"
+exec "$RACE_VALIDATOR" "$1"
+EOF
+chmod +x -- "$validator_swap"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$validator_swap" \
+  RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$validator_swap_backup" \
+  RACE_REMOTE="$remote_root/lifecycle.git" RACE_VALIDATOR="$validator" \
+  "$manager" update lifecycle.widget --yes >"$validator_swap_error" 2>&1; then
+  printf 'validator race command output:\n%s\n' "$(<"$validator_swap_error")" >&2
+  fail "public target replacement during validation was accepted"
+fi
+[[ -d "$validator_swap_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "validator target race fixture was lost"
+rm -rf -- "$validator_swap_backup"
+
 fetch_race_backup="$test_root/fetch-race-backup"
 if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
   RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$fetch_race_backup" RACE_REMOTE="$remote_root/lifecycle.git" \
@@ -454,11 +513,22 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
 fi
 [[ -f "$remove_race_backup/manifest.json" && -f "$remove_race_target/marker" ]] || fail "remove rename race fixture was lost"
 
+anchor_race_target="$plugins_dir/anchor-race.widget"
+mkdir -p -- "$anchor_race_target"
+printf '{}\n' >"$anchor_race_target/manifest.json"
+anchor_race_backup="$test_root/anchor-race-backup"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" RACE_REMOVE_AFTER=1 \
+  RACE_TARGET="$anchor_race_target" RACE_TARGET_BACKUP="$anchor_race_backup" \
+  "$manager" remove anchor-race.widget --yes >/dev/null 2>&1; then
+  fail "final check-to-quarantine replacement was accepted"
+fi
+[[ -f "$anchor_race_backup/manifest.json" && -f "$anchor_race_target/marker" ]] || fail "quarantine restoration fixture was lost"
+
 quarantine_race_target="$plugins_dir/quarantine-race.widget"
 git clone -q -- "$remote_root/lifecycle.git" "$quarantine_race_target"
 quarantine_race_backup="$test_root/quarantine-race-backup"
 quarantine_race_error="$test_root/quarantine-race.err"
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" \
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" RACE_IDENTITY_AFTER=1 \
   RACE_TARGET="$test_root/.removed.quarantine-race.widget" RACE_TARGET_BACKUP="$quarantine_race_backup" RACE_REMOTE="$remote_root/lifecycle.git" \
   "$manager" remove quarantine-race.widget --yes >"$quarantine_race_error" 2>&1; then
   fail "post-quarantine identity replacement was accepted"
@@ -473,6 +543,21 @@ if [[ $quarantine_matches != 1 || ! -d $quarantine_race_backup ]]; then
   printf 'quarantine race command output:\n%s\n' "$(<"$quarantine_race_error")" >&2
   fail "quarantine identity race deleted or lost object"
 fi
+
+post_delete_target="$plugins_dir/post-delete-race.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$post_delete_target"
+post_delete_backup="$test_root/post-delete-backup"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$race_hook" RACE_DELETE_AFTER=1 \
+  RACE_TARGET_BACKUP="$post_delete_backup" "$manager" remove post-delete-race.widget --yes >/dev/null 2>&1; then
+  fail "post-delete quarantine replacement was accepted"
+fi
+post_delete_path="$plugins_dir/.removed.post-delete-race.widget.*"
+post_delete_matches=0
+for quarantine_path in $post_delete_path; do
+  [[ -d $quarantine_path ]] || continue
+  post_delete_matches=$((post_delete_matches + 1))
+done
+[[ $post_delete_matches == 1 && -d "$post_delete_backup" ]] || fail "post-delete quarantine replacement was removed"
 
 bulk_plugins="$test_root/bulk-plugins"
 mkdir -p -- "$bulk_plugins"
