@@ -827,6 +827,59 @@ rescan_rollback_log_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $(<"$rescan_rollback_reset_count") -ge 2 ]] || fail "failed retained record was not retried during EXIT cleanup"
 [[ ! -f "$rescan_rollback_revalidate_failure" ]] || fail "post-rescan identity mismatch was not exercised"
 
+rescan_compensation_bin="$test_root/rescan-compensation-bin"
+mkdir -p -- "$rescan_compensation_bin"
+rescan_compensation_git="$rescan_compensation_bin/git"
+cat >"$rescan_compensation_git" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ " $* " == *' reset --hard '* ]]; then
+  count=0
+  [[ -f $RESCAN_COMPENSATION_RESET_COUNT ]] && count=$(<"$RESCAN_COMPENSATION_RESET_COUNT")
+  printf '%s\n' "$((count + 1))" >"$RESCAN_COMPENSATION_RESET_COUNT"
+fi
+if [[ $* == *absolute-git-dir* && -f $RESCAN_COMPENSATION_REVALIDATE_FAILURE ]]; then
+  count=0
+  [[ -f $RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT ]] && count=$(<"$RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT")
+  printf '%s\n' "$((count + 1))" >"$RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT"
+  rm -f -- "$RESCAN_COMPENSATION_REVALIDATE_FAILURE"
+  exit 1
+fi
+exec /usr/bin/git "$@"
+EOF
+chmod +x -- "$rescan_compensation_git"
+printf 'compensation-update\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm compensation-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
+rescan_compensation_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+rescan_compensation_reset_count="$test_root/rescan-compensation-reset-count"
+rescan_compensation_revalidate_failure="$test_root/rescan-compensation-revalidate-failure"
+rescan_compensation_revalidate_failure_count="$test_root/rescan-compensation-revalidate-failure-count"
+rescan_compensation_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+rescan_compensation_status=0
+if env "${manager_env[@]}" PATH="$rescan_compensation_bin:$PATH" \
+  IPC_RESCAN_MARKER="$rescan_compensation_revalidate_failure" \
+  RESCAN_COMPENSATION_RESET_COUNT="$rescan_compensation_reset_count" \
+  RESCAN_COMPENSATION_REVALIDATE_FAILURE="$rescan_compensation_revalidate_failure" \
+  RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT="$rescan_compensation_revalidate_failure_count" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  rescan_compensation_status=0
+else
+  rescan_compensation_status=$?
+fi
+[[ $rescan_compensation_status != 0 ]] || fail "compensating-rescan update unexpectedly succeeded"
+rescan_compensation_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $((rescan_compensation_after - rescan_compensation_before)) == 2 ]] ||
+  fail "successful retained rollback did not request exactly one compensating rescan"
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$rescan_compensation_prior" ]] ||
+  fail "compensating-rescan rollback did not restore the prior revision"
+[[ $(<"$rescan_compensation_reset_count") -ge 2 ]] ||
+  fail "retained cleanup did not safely retry the successful rollback"
+[[ $(<"$rescan_compensation_revalidate_failure_count") == 1 ]] ||
+  fail "initial post-rescan identity mismatch did not occur exactly once"
+[[ -f "$rescan_compensation_revalidate_failure" ]] || fail "compensating rescan did not occur"
+
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "local modifications were accepted"
