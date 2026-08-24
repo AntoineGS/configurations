@@ -15,11 +15,6 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("systemctl --user import-environment $(env | cut -d'=' -f 1)")
 	hl.exec_cmd("dbus-update-activation-environment --systemd --all")
 
-	-- Extra autostart processes
-	hl.exec_cmd("hyprpm reload -n")
-	hl.exec_cmd("signal-desktop")
-	hl.exec_cmd("teams-for-linux")
-
 	-- Ensure all persistent workspaces are on the correct host-specific monitors.
 	-- Legacy `hyprctl dispatch <name> <args>` strings are rejected by the Lua parser; route through `hyprctl eval`.
 	-- `hl.dsp.*` calls return dispatcher closures -- they only fire when wrapped in `hl.dispatch(...)`.
@@ -28,6 +23,9 @@ hl.on("hyprland.start", function()
 			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-1"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
+		hl.exec_cmd("hyprpm reload -n")
+		hl.exec_cmd("signal-desktop")
+		hl.exec_cmd("teams-for-linux")
 		hl.exec_cmd(
 			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
 		)
