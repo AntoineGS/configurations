@@ -67,15 +67,15 @@ plugin_list() {
 
 is_discovered() {
   local listing
-  listing=$(plugin_list) || fail "cannot list desktop-shell plugins"
+  listing=$(plugin_list) || return 1
   jq -e --arg id "$marketplace_id" 'any(.[]; .id == $id)' <<<"$listing" >/dev/null || return 1
 }
 
 is_correctly_enabled() {
   local listing config
-  listing=$(plugin_list) || fail "cannot list desktop-shell plugins"
+  listing=$(plugin_list) || return 1
   jq -e --arg id "$marketplace_id" 'any(.[]; .id == $id and .enabled == true and .firstParty == false)' <<<"$listing" >/dev/null || return 1
-  config=$("$ipc" shell listShellConfig) || fail "cannot list desktop-shell configuration"
+  config=$("$ipc" shell listShellConfig) || return 1
   jq -e --arg id "$marketplace_id" 'any(.bar.layout.right[]?; .id == $id)' <<<"$config" >/dev/null
 }
 
@@ -91,7 +91,7 @@ start_service_if_needed() {
 }
 
 install_if_missing() {
-  if [[ ! -e $checkout ]]; then
+  if [[ ! -e $checkout && ! -L $checkout ]]; then
     mkdir -p -- "$plugins_dir"
     "$manager" add "$marketplace_url" --yes --expected-id "$marketplace_id" || fail "marketplace installation failed"
   else
@@ -110,15 +110,15 @@ wait_for_discovery() {
 
 apply_marketplace() {
   local checkout_missing=0
+  start_service_if_needed
   if check_all >/dev/null 2>&1; then
     return 0
   fi
-  start_service_if_needed
-  if [[ ! -e $checkout ]]; then
+  if [[ ! -e $checkout && ! -L $checkout ]]; then
     checkout_missing=1
   fi
   install_if_missing
-  "$ipc" shell plugin-rescan || fail "cannot rescan desktop-shell plugins"
+  "$ipc" shell rescanPlugins || fail "cannot rescan desktop-shell plugins"
   wait_for_discovery
   if (( checkout_missing )) || ! is_correctly_enabled >/dev/null 2>&1; then
     "$manager" enable "$marketplace_id" --section right || fail "cannot enable marketplace in right section"
