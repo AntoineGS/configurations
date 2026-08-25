@@ -36,7 +36,10 @@ is_rustdesk_remote() {
 }
 
 count_rustdesk_remote_windows() {
-  hyprctl clients -j | jq '[.[] | select(.class | test("rustdesk"; "i")) | select(.title | test("Remote Desktop"; "i"))] | length'
+  local clients_json=$1
+
+  jq '[.[] | select(.class | test("rustdesk"; "i")) | select(.title | test("Remote Desktop"; "i"))] | length' \
+    <<<"$clients_json"
 }
 
 rightmost_monitor_from_json() {
@@ -494,6 +497,7 @@ handle_hyprland_event() {
   local clean_state_name=$2
   local -n clean_state=$clean_state_name
   local window_addr window_class window_event window_title
+  local clients_json fullscreen_restore fullscreen_window_addr fullscreen_internal fullscreen_client
   local count
   local monitors_json
   local rightmost_monitor
@@ -510,8 +514,29 @@ handle_hyprland_event() {
   # Move 2nd+ RustDesk Remote Desktop windows to the rightmost monitor.
   if printf '%s\n' "$evline" | grep -qi "^openwindow>>" && is_rustdesk_remote "$evline"; then
     window_addr=$(printf '%s\n' "$evline" | sed 's/^openwindow>>//I' | cut -d',' -f1)
-    count=$(count_rustdesk_remote_windows)
-    if [[ $count -gt 1 ]] &&
+    if clients_json=$(hyprctl clients -j); then
+      count=$(count_rustdesk_remote_windows "$clients_json")
+      fullscreen_restore=$(jq -r --arg address "0x${window_addr}" '
+        (.[] | select(.address == $address)) as $opened
+        | [
+            .[]
+            | select(.address != $address)
+            | select(.workspace.id == $opened.workspace.id)
+            | select((.class // "") | test("rustdesk"; "i"))
+            | select((.title // "") | test("Remote Desktop"; "i"))
+          ]
+        | sort_by(.focusHistoryID // 2147483647)
+        | .[0] as $displaced
+        | select($displaced != null)
+        | ([($opened.fullscreen // 0), ($displaced.fullscreen // 0)] | max) as $internal
+        | ([($opened.fullscreenClient // 0), ($displaced.fullscreenClient // 0)] | max) as $client
+        | select(($internal > 0) or ($client > 0))
+        | [$displaced.address, $internal, $client]
+        | @tsv
+      ' <<<"$clients_json")
+      IFS=$'\t' read -r fullscreen_window_addr fullscreen_internal fullscreen_client <<<"$fullscreen_restore"
+    fi
+    if [[ ${count:-0} -gt 1 ]] &&
       monitors_json=$(hyprctl monitors -j) &&
       rightmost_monitor=$(rightmost_monitor_from_json "$monitors_json") &&
       [[ -n $rightmost_monitor ]]; then
@@ -519,6 +544,12 @@ handle_hyprland_event() {
         '.[] | select(.name == $name) | .activeWorkspace.id // empty' \
         <<<"$monitors_json") && [[ -n $target_ws ]]; then
         hyprctl eval "hl.dispatch(hl.dsp.window.move({workspace=${target_ws}, follow=false, window=\"address:0x${window_addr}\"}))"
+        if [[ $fullscreen_window_addr =~ ^0x[0-9a-fA-F]+$ && $fullscreen_internal =~ ^[0-2]$ && $fullscreen_client =~ ^[0-2]$ ]]; then
+          hyprctl eval \
+            "hl.dispatch(hl.dsp.window.fullscreen_state({internal=${fullscreen_internal}, client=${fullscreen_client}, action=\"set\", window=\"address:0x${window_addr}\"}))"
+          hyprctl eval \
+            "hl.dispatch(hl.dsp.window.fullscreen_state({internal=${fullscreen_internal}, client=${fullscreen_client}, action=\"set\", window=\"address:${fullscreen_window_addr}\"}))"
+        fi
       fi
     fi
   fi
@@ -646,6 +677,7 @@ watch_hyprland_events() {
 
 main() {
   local socat_command=${SOCAT:-socat}
+  # shellcheck disable=SC2034 # Passed by name to a nameref in the event loop.
   local activated_clean_workspace=false
   local hypr_dir
   local sig=""
