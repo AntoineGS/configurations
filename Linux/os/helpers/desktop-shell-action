@@ -25,6 +25,7 @@ case "$action" in
   trigger.toggle.nightlight)       argv=(toggle-nightlight) ;;
   trigger.toggle.idle-lock)        argv=(toggle-idle) ;;
   trigger.turn-off-screens)        argv=(turn-off-screens 2) ;;
+  trigger.start-all-terminals)     argv=(start-all-terminals) ;;
 
   setup.audio)              argv=(desktop-shell summon desktop.audio '{}') ;;
   setup.wifi)               argv=(desktop-shell summon desktop.network '{}') ;;

@@ -18,6 +18,7 @@
   "trigger.toggle.nightlight": { "label": "Toggle nightlight", "action": "trigger.toggle.nightlight" },
   "trigger.toggle.idle-lock": { "label": "Toggle idle lock", "action": "trigger.toggle.idle-lock" },
   "trigger.turn-off-screens": { "label": "Turn off screens", "action": "trigger.turn-off-screens" },
+  "trigger.start-all-terminals": { "label": "Start all terminals", "action": "trigger.start-all-terminals" },
 
   "setup": { "label": "Setup" },
   "setup.audio": { "label": "Audio", "action": "setup.audio" },
