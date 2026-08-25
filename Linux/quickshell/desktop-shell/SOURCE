@@ -16,3 +16,5 @@ selected_launcher_commit=b86d4505c11b71f90b7bd14d6a80676863a70775
 selected_launcher_paths=shell/services/AppLibrary.qml shell/services/AppSearch.js shell/services/hidden-entries.sh shell/plugins/menu/Menu.qml bin/omarchy-menu-input bin/omarchy-menu-select
 selected_clipboard_commit=b86d4505c11b71f90b7bd14d6a80676863a70775
 selected_clipboard_paths=shell/plugins/clipboard/manifest.json shell/plugins/clipboard/Clipboard.qml shell/plugins/clipboard/ClipboardHistory.js shell/plugins/clipboard/capture.sh bin/omarchy-clipboard-paste-text bin/omarchy-clipboard-paste-file bin/omarchy-clipboard-open
+selected_emojis_commit=b86d4505c11b71f90b7bd14d6a80676863a70775
+selected_emojis_paths=shell/plugins/emojis/manifest.json shell/plugins/emojis/Emojis.qml shell/plugins/emojis/EmojiSearch.js shell/plugins/emojis/emojis.json bin/omarchy-menu-emoji-insert
