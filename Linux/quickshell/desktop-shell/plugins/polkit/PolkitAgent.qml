@@ -26,20 +26,12 @@ Item {
 
   property string fontFamily: Style.font.family
   property color accent: Color.polkit.accent
-  property color background: Color.polkit.background
-  property color foreground: Color.polkit.text
-  property color border: Color.polkit.border
+  property color foreground: Color.barPanels.text
   property color borderError: Color.polkit.borderError
-  property var borderSpec: Border.surfaceSpec(
-    "polkit",
-    root.errorFlash ? "border-error" : "border",
-    root.errorFlash ? root.borderError : root.border,
-    Math.max(1, Style.space(2)),
-    "border-alpha"
-  )
+  property var borderSpec: root.errorFlash
+    ? Border.surfaceSpec("polkit", "border-error", root.borderError, Math.max(1, Style.space(2)), "border-alpha")
+    : Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, Math.max(1, Style.space(2)))
   property color scrim: Color.polkit.scrim
-  readonly property int cornerRadius: Style.cornerRadius
-  property int contentMargin: Style.spacing.panelPadding
   property int fieldHeight: Math.max(Style.space(42), Style.spacing.controlHeight)
 
   property var screenList: Quickshell.screens
@@ -78,8 +70,8 @@ Item {
   readonly property bool fingerprintMode: (root.fingerprintConfigured || root.fingerprintPrompt)
     && root.dialogVisible && !root.responseRequired && !root.submitted && !root.errorFlash
   readonly property int cardHeight: panel.height > 0
-    ? Math.min(root.fieldHeight + root.contentMargin * 2, panel.height - Style.gapsOut * 2)
-    : root.fieldHeight + root.contentMargin * 2
+    ? Math.min(root.fieldHeight + Style.spacing.popupPadding * 2, panel.height - Style.gapsOut * 2)
+    : root.fieldHeight + Style.spacing.popupPadding * 2
   readonly property int cardWidth: root.fingerprintMode
     ? root.cardHeight
     : Math.min(
@@ -498,7 +490,6 @@ Item {
       anchors.centerIn: parent
       anchors.horizontalCenterOffset: root.shakeOffset
       borderSpec: root.borderSpec
-      padding: root.contentMargin
       revealed: root.dialogVisible
 
       MouseArea { anchors.fill: parent; onClicked: root.refocus() }
