@@ -1299,8 +1299,7 @@ ShellRoot {
           id: id,
           name: String(manifest.name || id),
           kinds: kinds,
-          enabled: isBarOption ? active
-            : (isBarWidget ? pluginRegistry.inBar(id) : pluginRegistry.isEnabled(id)),
+          enabled: pluginRegistry.isEnabled(id),
           active: active,
           canDisable: !manifest.__isFirstParty && !isBarOption,
           firstParty: !!manifest.__isFirstParty,
