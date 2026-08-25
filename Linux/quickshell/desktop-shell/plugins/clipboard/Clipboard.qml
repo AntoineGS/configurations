@@ -186,6 +186,11 @@ Item {
     resultList.positionViewAtIndex(selectedIndex, ListView.Contain)
   }
 
+  function selectHalfPage(delta) {
+    var visibleRows = Math.max(1, Math.floor(resultList.height / (root.rowHeight + resultList.spacing)))
+    root.select(delta * Math.max(1, Math.floor(visibleRows / 2)))
+  }
+
   function selectAbsolute(index) {
     if (displayModel.count === 0) return
     root.disarmPointer()
@@ -437,7 +442,20 @@ Item {
               return
             }
 
-            if (event.key === Qt.Key_Escape) {
+            var control = event.modifiers & Qt.ControlModifier
+            if (control && event.key === Qt.Key_J) {
+              root.select(1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_K) {
+              root.select(-1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_U) {
+              root.selectHalfPage(-1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_D) {
+              root.selectHalfPage(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Escape) {
               if (root.filterText) root.setFilter("")
               else root.close()
               event.accepted = true
