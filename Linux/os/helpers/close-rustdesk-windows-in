@@ -88,8 +88,8 @@ if ! close_at=$(date --date="+$minutes minutes" "+%H:%M"); then
 fi
 
 helper_path=$(readlink -f -- "$0")
-systemctl --user stop vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
-systemctl --user reset-failed vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
+systemctl --user stop desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
+systemctl --user reset-failed desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
 
 if ! systemd-run --user --unit=desktop-shell-close-rustdesk-windows --on-active="${minutes}m" --collect "$helper_path" --close-now; then
   exec {lock_fd}>&-

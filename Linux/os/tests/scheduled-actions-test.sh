@@ -51,8 +51,8 @@ run_env=(
 )
 
 env "${run_env[@]}" "$suspend_helper" 15
-grep -Fqx 'systemctl --user stop vicinae-suspend.timer vicinae-suspend.service desktop-shell-suspend.timer desktop-shell-suspend.service' "$call_log" || fail "suspend did not replace old and new units"
-grep -Fqx 'systemctl --user reset-failed vicinae-suspend.timer vicinae-suspend.service desktop-shell-suspend.timer desktop-shell-suspend.service' "$call_log" || fail "suspend did not reset old and new units"
+grep -Fqx 'systemctl --user stop desktop-shell-suspend.timer desktop-shell-suspend.service' "$call_log" || fail "suspend did not replace its desktop-shell unit"
+grep -Fqx 'systemctl --user reset-failed desktop-shell-suspend.timer desktop-shell-suspend.service' "$call_log" || fail "suspend did not reset its desktop-shell unit"
 grep -Fqx 'systemd-run --user --unit=desktop-shell-suspend --on-active=15m --collect systemctl suspend' "$call_log" || fail "suspend used the wrong transient unit"
 [[ -f $runtime/desktop-shell-suspend.lock ]] || fail "suspend used the wrong lock path"
 grep -F -- '-a desktop-shell' "$notify_log" >/dev/null || fail "suspend notifications use the wrong app name"
@@ -60,8 +60,8 @@ grep -F -- '-a desktop-shell' "$notify_log" >/dev/null || fail "suspend notifica
 : >"$call_log"
 : >"$notify_log"
 env "${run_env[@]}" "$rustdesk_helper" 30
-grep -Fqx 'systemctl --user stop vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service' "$call_log" || fail "RustDesk did not replace old and new units"
-grep -Fqx 'systemctl --user reset-failed vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service' "$call_log" || fail "RustDesk did not reset old and new units"
+grep -Fqx 'systemctl --user stop desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service' "$call_log" || fail "RustDesk did not replace its desktop-shell unit"
+grep -Fqx 'systemctl --user reset-failed desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service' "$call_log" || fail "RustDesk did not reset its desktop-shell unit"
 grep -Fqx "systemd-run --user --unit=desktop-shell-close-rustdesk-windows --on-active=30m --collect $rustdesk_helper --close-now" "$call_log" || fail "RustDesk used the wrong transient unit"
 [[ -f $runtime/desktop-shell-close-rustdesk-windows.lock ]] || fail "RustDesk used the wrong lock path"
 grep -F -- '-a desktop-shell' "$notify_log" >/dev/null || fail "RustDesk notifications use the wrong app name"

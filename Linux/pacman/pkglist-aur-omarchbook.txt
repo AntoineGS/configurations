@@ -23,7 +23,6 @@ ttf-ia-writer
 typora
 tzupdate
 ufw-docker
-vicinae-bin
 xdg-terminal-exec
 yaru-icon-theme
 yay-bin
