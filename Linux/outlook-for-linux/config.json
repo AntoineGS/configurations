@@ -1,3 +1,4 @@
 {
-  "menubar": "hidden"
+  "menubar": "hidden",
+  "vimMode": true
 }
