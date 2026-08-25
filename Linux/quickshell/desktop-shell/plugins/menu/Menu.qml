@@ -27,8 +27,14 @@ Item {
   property string calculatorPendingQuery: ""
   property string calculatorResult: ""
   property string calculatorResultQuery: ""
+  property string menuMode: "menu"
+  property string dmenuPrompt: ""
+  property var dmenuOptions: []
+  property string requestDir: ""
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+  readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
+  readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
 
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
@@ -134,6 +140,14 @@ Item {
     var commandRows = []
     var query = root.filterText.trim()
 
+    if (root.dmenuActive) {
+      var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
+      for (var dmenuIndex = 0; dmenuIndex < dmenuRows.length; dmenuIndex++) displayModel.append(dmenuRows[dmenuIndex])
+      root.settleCursor()
+      if (root.menuMode === "input") root.cursorActive = false
+      return
+    }
+
     if (query) {
       for (var i = 0; i < root.itemOrder.length; i++) {
         var entry = root.item(root.itemOrder[i])
@@ -190,7 +204,7 @@ Item {
     root.filterText = String(nextFilter || "")
     root.selectedIndex = 0
     root.cursorActive = true
-    root.scheduleCalculator(root.filterText)
+    if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
     root.rebuildDisplay()
   }
 
@@ -234,6 +248,8 @@ Item {
     var row = displayModel.get(index)
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true)
+    } else if (row.kind === "dmenu") {
+      root.finishRequest(row.selection)
     } else if (row.kind === "application") {
       root.opened = false
       root.filterText = ""
@@ -267,6 +283,11 @@ Item {
   }
 
   function openExistingMenu(initialMenu) {
+    if (root.requestActive) root.finishRequest(null)
+    root.menuMode = "menu"
+    root.dmenuPrompt = ""
+    root.dmenuOptions = []
+    root.requestDir = ""
     root.activeMenu = root.item(initialMenu) ? initialMenu : "root"
     root.navStack = []
     root.filterText = ""
@@ -276,6 +297,36 @@ Item {
     root.rebuildDisplay()
     if (root.appLibrary) root.appLibrary.refreshIcons()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function openDmenu(payload) {
+    if (root.requestActive) root.finishRequest(null)
+    root.menuMode = payload.mode === "input" ? "input" : "select"
+    root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
+    root.dmenuOptions = Array.isArray(payload.options) ? payload.options : []
+    root.requestDir = String(payload.requestDir || "")
+    if (!root.requestDir) return "unknown"
+    root.activeMenu = "root"
+    root.navStack = []
+    root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
+    root.selectedIndex = 0
+    root.cursorActive = root.menuMode === "select"
+    root.opened = true
+    root.rebuildDisplay()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    return "ok"
+  }
+
+  function finishRequest(selection) {
+    if (!root.requestActive) return
+    var activeRequestDir = root.requestDir
+    root.requestDir = ""
+    root.opened = false
+    root.filterText = ""
+    if (selection === null || selection === undefined)
+      Quickshell.execDetached(["desktop-shell-menu-result", activeRequestDir, "cancel"])
+    else
+      Quickshell.execDetached(["desktop-shell-menu-result", activeRequestDir, "value", String(selection)])
   }
 
   function openRoute(initialMenu) {
@@ -294,14 +345,18 @@ Item {
   function open(payloadJson) {
     var payload = ({})
     try { payload = JSON.parse(String(payloadJson || "{}")) } catch (error) { payload = ({}) }
+    if (payload.mode === "input" || payload.mode === "select") return root.openDmenu(payload)
     root.calculatorFocused = payload.mode === "calculator"
     return root.openRoute(payload.initialMenu || payload.menu || "root")
   }
 
   function close() {
+    if (root.requestActive) root.finishRequest(null)
     root.opened = false
     root.filterText = ""
     root.calculatorFocused = false
+    root.menuMode = "menu"
+    root.requestDir = ""
     root.scheduleCalculator("")
   }
 
@@ -463,7 +518,8 @@ Item {
             root.select(1)
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
-            if (root.cursorActive) root.activateIndex(root.selectedIndex)
+            if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
+            else if (root.cursorActive) root.activateIndex(root.selectedIndex)
             else root.settleCursor()
             event.accepted = true
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32
@@ -481,7 +537,7 @@ Item {
           Text {
             width: parent.width
             height: Style.space(34)
-            text: root.filterText || (root.calculatorFocused ? "Calculate…"
+            text: root.filterText || (root.dmenuActive ? root.dmenuPrompt : root.calculatorFocused ? "Calculate…"
               : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…"))
             color: root.foreground
             opacity: root.filterText ? 1 : 0.62
@@ -516,6 +572,7 @@ Item {
                 required property string detail
                 required property string path
                 required property string action
+                required property string selection
                 required property int childCount
                 required property bool disabled
                 required property string desktopId
@@ -574,7 +631,7 @@ Item {
 
                     Text {
                       width: parent.width
-                      visible: row.detail !== "" && root.filterText !== ""
+                      visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
                       text: row.detail
                       color: root.foreground
                       opacity: 0.5
@@ -612,7 +669,7 @@ Item {
 
             Text {
               anchors.centerIn: parent
-              visible: displayModel.count === 0
+              visible: displayModel.count === 0 && root.menuMode !== "input"
               text: root.filterText ? "No matches" : "Nothing here yet"
               color: root.foreground
               opacity: 0.65

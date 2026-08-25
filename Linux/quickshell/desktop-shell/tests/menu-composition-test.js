@@ -14,3 +14,9 @@ assert.equal(app.kind, "application")
 assert.equal(app.action, "")
 assert.equal(app.desktopId, "org.example.lock")
 assert.equal(calculator.requestSerial, 7)
+
+assert.deepEqual(model.dmenuRows(["One", "Two\tSecond option"], "two").map(row => ({
+  label: row.label,
+  detail: row.detail,
+  selection: row.selection,
+})), [{ label: "Two", detail: "Second option", selection: "Two\tSecond option" }])

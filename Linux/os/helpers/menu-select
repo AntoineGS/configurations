@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+usage() {
+  printf 'usage: %s PROMPT [OPTION...]\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# >= 1 )) || usage
+prompt=$1
+shift
+options=("$@")
+
+if (( ${#options[@]} == 0 )) && [[ ! -t 0 ]]; then
+  mapfile -t options
+fi
+(( ${#options[@]} > 0 )) || usage
+
+[[ -n ${XDG_RUNTIME_DIR:-} ]] || usage
+timeout_seconds=${DESKTOP_SHELL_MENU_TIMEOUT:-120}
+[[ $timeout_seconds =~ ^[1-9][0-9]*$ ]] || usage
+
+runtime_root=$XDG_RUNTIME_DIR/desktop-shell-menu
+install -d -m 700 -- "$runtime_root"
+[[ -d $runtime_root && ! -L $runtime_root ]] || usage
+[[ $(stat -c '%u' -- "$runtime_root") == "$(id -u)" ]] || usage
+[[ $(stat -c '%a' -- "$runtime_root") == 700 ]] || usage
+
+request_dir=$(mktemp -d "$runtime_root/request.XXXXXX")
+chmod 700 -- "$request_dir"
+trap 'rm -rf -- "$request_dir"' EXIT
+
+options_json=$(jq -cn --args '$ARGS.positional' "${options[@]}")
+payload=$(jq -cn --arg prompt "$prompt" --argjson options "$options_json" --arg requestDir "$request_dir" \
+  '{mode:"select", prompt:$prompt, options:$options, requestDir:$requestDir}')
+
+desktop-shell summon desktop.menu "$payload" >/dev/null
+
+SECONDS=0
+while [[ ! -e $request_dir/done ]]; do
+  desktop-shell ping >/dev/null 2>&1 || exit 1
+  (( SECONDS < timeout_seconds )) || exit 1
+  sleep 0.05
+done
+
+[[ ! -L $request_dir/done && -f $request_dir/done ]] || exit 1
+[[ $(<"$request_dir/done") == selected ]] || exit 1
+[[ ! -L $request_dir/selection && -f $request_dir/selection ]] || exit 1
+cat -- "$request_dir/selection"

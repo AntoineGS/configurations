@@ -326,6 +326,7 @@ function displayRow(items, itemOrder, checkedResults, disabledResults, entry, de
     childCount: (entry.kind === "menu" || entry.kind === "link") ? childCount(items, itemOrder, target) : 0,
     desktopId: "",
     action: entry.action || "",
+    selection: "",
     requestSerial: 0,
     score: score || 0,
     section: section || ""
@@ -347,6 +348,7 @@ function applicationRow(entry, appLibrary, score) {
     childCount: 0,
     desktopId: String((entry && entry.id) || ""),
     action: "",
+    selection: "",
     score: 20000 - Number(score || 0),
     section: "apps"
   }
@@ -367,6 +369,7 @@ function calculatorRow(query, result, serial) {
     childCount: 0,
     desktopId: "",
     action: "",
+    selection: "",
     requestSerial: Number(serial || 0),
     score: -1000,
     section: "calculator"
@@ -381,6 +384,40 @@ function composeSearchResults(commandRows, appRows, calculatorResult) {
     if (left.score !== right.score) return left.score - right.score
     return String(left.label).localeCompare(String(right.label))
   })
+  return rows
+}
+
+function dmenuRows(options, query) {
+  var values = Array.isArray(options) ? options : []
+  var needle = String(query || "").trim().toLowerCase()
+  var rows = []
+  for (var i = 0; i < values.length; i++) {
+    var selection = String(values[i] || "")
+    if (!selection) continue
+    var parts = selection.split("\t")
+    var label = parts.shift() || ""
+    var detail = parts.join("\t")
+    if (needle && (label + " " + detail).toLowerCase().indexOf(needle) < 0) continue
+    rows.push({
+      itemId: "dmenu:" + String(i),
+      disabled: false,
+      kind: "dmenu",
+      icon: "",
+      iconFont: "",
+      appIcon: "",
+      label: label,
+      target: "",
+      detail: detail,
+      path: "",
+      childCount: 0,
+      desktopId: "",
+      action: "",
+      selection: selection,
+      requestSerial: 0,
+      score: i,
+      section: "dmenu"
+    })
+  }
   return rows
 }
 
@@ -415,6 +452,7 @@ if (typeof module !== "undefined") {
     displayRow: displayRow,
     applicationRow: applicationRow,
     calculatorRow: calculatorRow,
-    composeSearchResults: composeSearchResults
+    composeSearchResults: composeSearchResults,
+    dmenuRows: dmenuRows
   }
 }
