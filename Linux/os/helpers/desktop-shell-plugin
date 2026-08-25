@@ -21,6 +21,18 @@ installed_target=
 installed_identity=
 rollback_dir=
 candidate_dir=
+candidate_fd=-1
+candidate_identity=
+candidate_real=
+candidate_name=
+record_path=
+publication_armed=0
+publication_public_name=
+publication_rollback_name=
+publication_rejected_name=
+publication_old_identity=
+publication_new_identity=
+publication_public_fd=-1
 add_lock_fd=-1
 root_fd=-1
 root_path=
@@ -92,8 +104,21 @@ cleanup() {
   (( cleanup_running )) && return 0
   cleanup_running=1
   trap - HUP INT TERM
-  if [[ -n $stage_dir && -d $stage_dir ]]; then
-    rm -rf -- "$stage_dir" || true
+  if (( publication_armed )); then
+    restore_armed_publication || true
+  fi
+  if [[ -n $stage_dir ]]; then
+    if ! safe_remove_artifact_path "$stage_dir" "$candidate_identity"; then
+      printf '%s: warning: retaining staging artifact: %s\n' "$script_name" "$stage_dir" >&2
+    fi
+  fi
+  if (( candidate_fd >= 0 )); then
+    exec {candidate_fd}<&-
+    candidate_fd=-1
+  fi
+  if (( publication_public_fd >= 0 )); then
+    exec {publication_public_fd}<&-
+    publication_public_fd=-1
   fi
   quarantine_owned_target
   if (( add_lock_fd >= 0 )); then
@@ -650,121 +675,319 @@ is_git_plugin() {
   [[ $top_real == "$directory_real" ]]
 }
 
+root_name_path() {
+  printf '/proc/self/fd/%s/%s' "$root_fd" "$1"
+}
+
+artifact_identity() {
+  path_identity "$1"
+}
+
+safe_remove_artifact_path() {
+  local path=$1 expected_identity=${2-} fd=-1 identity fd_path
+  [[ -n $path ]] || return 0
+  revalidate_mutation_root || return 1
+  [[ -d $path && ! -L $path ]] || return 1
+  exec {fd}<"$path" || return 1
+  identity=$(artifact_identity "/proc/self/fd/$fd") || { exec {fd}<&-; return 1; }
+  [[ -z $expected_identity || $identity == "$expected_identity" ]] || { exec {fd}<&-; return 1; }
+  run_test_hook artifact-after-open "$path" || { exec {fd}<&-; return 1; }
+  revalidate_mutation_root || { exec {fd}<&-; return 1; }
+  [[ $(artifact_identity "$path") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  fd_path="/proc/self/fd/$fd/."
+  find "$fd_path" -mindepth 1 -maxdepth 1 -exec rm -rf --one-file-system -- {} + || { exec {fd}<&-; return 1; }
+  revalidate_mutation_root || { exec {fd}<&-; return 1; }
+  [[ $(artifact_identity "$path") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  rmdir -- "$path" || { exec {fd}<&-; return 1; }
+  exec {fd}<&-
+}
+
+safe_remove_record_path() {
+  local path=$1 fd=-1 identity
+  revalidate_mutation_root || return 1
+  [[ -f $path && ! -L $path ]] || return 1
+  exec {fd}<"$path" || return 1
+  identity=$(artifact_identity "/proc/self/fd/$fd") || { exec {fd}<&-; return 1; }
+  run_test_hook artifact-after-open "$path" || { exec {fd}<&-; return 1; }
+  revalidate_mutation_root || { exec {fd}<&-; return 1; }
+  [[ $(artifact_identity "$path") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  rm -- "$path" || { exec {fd}<&-; return 1; }
+  exec {fd}<&-
+}
+
+move_verified_directory() {
+  local source=$1 destination=$2 expected_identity=$3 fd=-1 identity
+  revalidate_mutation_root || return 1
+  [[ -d $source && ! -L $source && ! -e $destination && ! -L $destination ]] || return 1
+  exec {fd}<"$source" || return 1
+  identity=$(artifact_identity "/proc/self/fd/$fd") || { exec {fd}<&-; return 1; }
+  [[ $identity == "$expected_identity" ]] || { exec {fd}<&-; return 1; }
+  run_test_hook artifact-before-rename "$source" "$destination" || { exec {fd}<&-; return 1; }
+  revalidate_mutation_root || { exec {fd}<&-; return 1; }
+  [[ $(artifact_identity "$source") == "$identity" && ! -e $destination && ! -L $destination ]] || { exec {fd}<&-; return 1; }
+  mv -T -- "$source" "$destination" || { exec {fd}<&-; return 1; }
+  [[ $(artifact_identity "$destination") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  exec {fd}<&-
+}
+
+capture_candidate() {
+  local path=$1 initial_path initial_identity current_path current_identity fd_identity
+  initial_path=$(realpath -- "$path") || return 1
+  initial_identity=$(artifact_identity "$path") || return 1
+  exec {candidate_fd}<"$path" || return 1
+  current_path=$(realpath -- "$path") || return 1
+  current_identity=$(artifact_identity "$path") || return 1
+  fd_identity=$(artifact_identity "/proc/self/fd/$candidate_fd") || return 1
+  [[ -d $path && ! -L $path && $initial_path == "$current_path" && $initial_identity == "$current_identity" &&
+    $current_identity == "$fd_identity" ]] || return 1
+  candidate_dir=$path
+  candidate_real=$current_path
+  candidate_identity=$current_identity
+  candidate_name=${path##*/}
+}
+
+revalidate_candidate() {
+  local current_path current_identity fd_identity
+  revalidate_mutation_root || return 1
+  (( candidate_fd >= 0 )) || return 1
+  [[ -d $candidate_dir && ! -L $candidate_dir ]] || return 1
+  current_path=$(realpath -- "$candidate_dir") || return 1
+  current_identity=$(artifact_identity "$candidate_dir") || return 1
+  fd_identity=$(artifact_identity "/proc/self/fd/$candidate_fd") || return 1
+  [[ $current_path == "$candidate_real" && $current_identity == "$candidate_identity" && $fd_identity == "$candidate_identity" ]]
+}
+
+record_value() {
+  jq -e -r --arg key "$2" '.[$key] | select(type == "string" and length > 0)' -- "$1"
+}
+
+validate_transaction_record() {
+  local path=$1 id=$2 record_id stage_name rollback_name rejected_name
+  [[ -f $path && ! -L $path ]] || return 1
+  record_id=$(record_value "$path" id) || return 1
+  [[ $record_id == "$id" ]] || return 1
+  jq -e --arg id "$id" '
+    .version == 1 and .id == $id and
+    (.old_commit | test("^[0-9a-f]{40}$")) and (.new_commit | test("^[0-9a-f]{40}$")) and
+    (.old_identity | test("^[0-9]+:[0-9]+$")) and (.new_identity | test("^[0-9]+:[0-9]+$")) and
+    (.old_origin | type == "string" and length > 0) and (.new_origin | type == "string" and length > 0) and
+    (.stage_name | type == "string" and test("^\\.update\\." + $id + "\\.[A-Za-z0-9]+$")) and
+    (.rollback_name | type == "string" and test("^\\.rollback\\." + $id + "\\.[A-Za-z0-9]+$")) and
+    (.rejected_name | type == "string" and test("^\\.rejected\\." + $id + "\\.[A-Za-z0-9]+$"))' \
+    -- "$path" >/dev/null || return 1
+  stage_name=$(record_value "$path" stage_name) || return 1
+  rollback_name=$(record_value "$path" rollback_name) || return 1
+  rejected_name=$(record_value "$path" rejected_name) || return 1
+  [[ $stage_name == .update."$id".* && $rollback_name == .rollback."$id".* && $rejected_name == .rejected."$id".* ]]
+}
+
+write_transaction_record() {
+  local id=$1 old_commit=$2 new_commit=$3 old_origin=$4 new_origin=$5 old_identity=$6 new_identity=$7
+  local stage_name=$8 rollback_name=$9 rejected_name=${10} tmp
+  record_path=$(root_name_path ".transaction.$id")
+  tmp=$(mktemp "$(root_name_path ".transaction.$id.tmp.XXXXXX")") || fail "cannot create transaction record: $id"
+  jq -n --arg id "$id" --arg old_commit "$old_commit" --arg new_commit "$new_commit" \
+    --arg old_origin "$old_origin" --arg new_origin "$new_origin" --arg old_identity "$old_identity" \
+    --arg new_identity "$new_identity" --arg stage_name "$stage_name" --arg rollback_name "$rollback_name" \
+    --arg rejected_name "$rejected_name" \
+    '{version:1,id:$id,old_commit:$old_commit,new_commit:$new_commit,old_origin:$old_origin,new_origin:$new_origin,
+      old_identity:$old_identity,new_identity:$new_identity,stage_name:$stage_name,rollback_name:$rollback_name,
+      rejected_name:$rejected_name}' >"$tmp" || fail "cannot write transaction record: $id"
+  mv -T -- "$tmp" "$record_path" || fail "cannot publish transaction record: $id"
+  artifact_identity "$record_path" >/dev/null || fail "cannot identify transaction record: $id"
+}
+
 valid_recovery_checkout() {
-  local directory=$1 id=$2 require_git=${3:-1} validate_contents=${4:-1} current_id origin status_output top
+  local directory=$1 id=$2 expected_commit=$3 expected_origin=$4 expected_identity=$5 current_id origin status_output top
   [[ -d $directory && ! -L $directory ]] || return 1
-  if (( require_git )) && ! is_git_plugin "$directory"; then
-    return 1
-  fi
-  if is_git_plugin "$directory"; then
-    top=$(realpath -- "$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null)") || return 1
-    [[ $top == "$(realpath -- "$directory")" ]] || return 1
-  fi
+  [[ $(artifact_identity "$directory") == "$expected_identity" ]] || return 1
+  top=$(realpath -- "$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null)") || return 1
+  [[ $top == "$(realpath -- "$directory")" ]] || return 1
   current_id=$(jq -e -r '.id | select(type == "string" and length > 0)' -- "$directory/manifest.json" 2>/dev/null) || return 1
   [[ $current_id == "$id" ]] || return 1
-  if is_git_plugin "$directory"; then
-    origin=$(git -C "$directory" remote get-url origin 2>/dev/null) || return 1
-    [[ -n $origin ]] || return 1
-    status_output=$(git -C "$directory" status --porcelain --untracked-files=normal 2>/dev/null) || return 1
-    [[ -z $status_output ]] || return 1
-    git -C "$directory" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
-  fi
-  if (( validate_contents )); then
-    "$validator" "$directory" >/dev/null 2>&1 || return 1
-  fi
+  [[ $(git -C "$directory" rev-parse HEAD) == "$expected_commit" ]] || return 1
+  origin=$(git -C "$directory" remote get-url origin 2>/dev/null) || return 1
+  [[ $origin == "$expected_origin" ]] || return 1
+  status_output=$(git -C "$directory" status --porcelain --untracked-files=all 2>/dev/null) || return 1
+  [[ -z $status_output ]] || return 1
+  "$validator" "$directory" >/dev/null 2>&1 || return 1
 }
 
 recover_plugin_artifacts() {
-  local id=$1 artifact
-  local public_dir=$plugins_dir/$id
-  local -a stages=() rollbacks=() artifacts=()
+  local id=$1 artifact record stage rollback rejected
+  local old_commit new_commit old_origin new_origin old_identity new_identity
+  local stage_name rollback_name rejected_name public_path
+  local -a stages=() rollbacks=() rejecteds=()
   validate_safe_id "$id"
+  record=$(root_name_path ".transaction.$id")
+  public_path=$(root_name_path "$id")
   while IFS= read -r -d '' artifact; do
-    [[ -d $artifact && ! -L $artifact ]] || continue
-    artifacts+=("$artifact")
+    [[ -d $artifact && ! -L $artifact ]] || fail "invalid transaction artifact type: $artifact"
     case ${artifact##*/} in
       .update."$id".*) stages+=("$artifact") ;;
       .rollback."$id".*) rollbacks+=("$artifact") ;;
+      .rejected."$id".*) rejecteds+=("$artifact") ;;
     esac
-  done < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 \( -name ".update.$id.*" -o -name ".rollback.$id.*" \) -print0)
-  if ((${#rollbacks[@]} > 1 || ${#stages[@]} > 1)); then
-    fail "ambiguous plugin artifacts for $id: ${artifacts[*]}"
+  done < <(find "$root_path" -mindepth 1 -maxdepth 1 \( -name ".update.$id.*" -o -name ".rollback.$id.*" -o -name ".rejected.$id.*" \) -print0)
+  [[ -e $record || -L $record || ${#stages[@]} -gt 0 || ${#rollbacks[@]} -gt 0 || ${#rejecteds[@]} -gt 0 ]] || return 0
+  validate_transaction_record "$record" "$id" || fail "invalid or missing transaction record: $record"
+  old_commit=$(record_value "$record" old_commit); new_commit=$(record_value "$record" new_commit)
+  old_origin=$(record_value "$record" old_origin); new_origin=$(record_value "$record" new_origin)
+  old_identity=$(record_value "$record" old_identity); new_identity=$(record_value "$record" new_identity)
+  stage_name=$(record_value "$record" stage_name); rollback_name=$(record_value "$record" rollback_name); rejected_name=$(record_value "$record" rejected_name)
+  stage=$(root_name_path "$stage_name"); rollback=$(root_name_path "$rollback_name"); rejected=$(root_name_path "$rejected_name")
+  [[ ${#stages[@]} -le 1 && ${#rollbacks[@]} -le 1 && ${#rejecteds[@]} -le 1 ]] || fail "ambiguous plugin artifacts for $id"
+  for artifact in "${stages[@]}" "${rollbacks[@]}" "${rejecteds[@]}"; do
+    [[ ${artifact##*/} == "$stage_name" || ${artifact##*/} == "$rollback_name" || ${artifact##*/} == "$rejected_name" ]] ||
+      fail "unexpected transaction artifact: $artifact"
+  done
+  [[ ! -e $stage || ${#stages[@]} == 1 ]] || fail "transaction stage evidence is missing: $stage"
+  [[ ! -e $stage ]] || valid_recovery_checkout "$stage" "$id" "$new_commit" "$new_origin" "$new_identity" ||
+    fail "invalid stage evidence: $stage"
+  [[ ! -e $rejected ]] || valid_recovery_checkout "$rejected" "$id" "$new_commit" "$new_origin" "$new_identity" ||
+    fail "invalid rejected evidence: $rejected"
+  if [[ -e $rollback ]]; then
+    valid_recovery_checkout "$rollback" "$id" "$old_commit" "$old_origin" "$old_identity" || fail "invalid rollback evidence: $rollback"
   fi
-  ((${#artifacts[@]} > 0)) || return 0
-  if [[ ! -e $public_dir && ! -L $public_dir && ${#rollbacks[@]} == 1 ]]; then
-    valid_recovery_checkout "${rollbacks[0]}" "$id" 1 ||
-      fail "invalid rollback artifact for $id: ${rollbacks[0]}"
-    mv -T -- "${rollbacks[0]}" "$public_dir" || fail "cannot recover plugin rollback: $id"
-    printf '%s: recovered plugin artifact: %s\n' "$script_name" "$public_dir" >&2
-    rollbacks=()
-  elif [[ -e $public_dir || -L $public_dir ]]; then
-    valid_recovery_checkout "$public_dir" "$id" 0 0 ||
-      fail "invalid public plugin checkout for $id: $public_dir"
-    if ((${#rollbacks[@]} == 1)); then
-      valid_recovery_checkout "${rollbacks[0]}" "$id" 1 ||
-        fail "invalid rollback artifact for $id: ${rollbacks[0]}"
-      rm -rf -- "${rollbacks[0]}" || fail "cannot remove stale rollback artifact: ${rollbacks[0]}"
+  if [[ -e $public_path ]]; then
+    if valid_recovery_checkout "$public_path" "$id" "$new_commit" "$new_origin" "$new_identity"; then
+      [[ ! -e $rollback ]] || safe_remove_artifact_path "$rollback" "$old_identity" || fail "cannot remove stale rollback: $rollback"
+      [[ ! -e $stage ]] || safe_remove_artifact_path "$stage" "$new_identity" || fail "cannot remove stale stage: $stage"
+    elif valid_recovery_checkout "$public_path" "$id" "$old_commit" "$old_origin" "$old_identity"; then
+      [[ ! -e $stage ]] || safe_remove_artifact_path "$stage" "$new_identity" || fail "cannot remove stale stage: $stage"
+    else
+      fail "invalid public recovery evidence: $public_path"
     fi
+  elif [[ -e $rollback ]]; then
+    move_verified_directory "$rollback" "$public_path" "$old_identity" || fail "cannot recover rollback: $id"
+    [[ ! -e $stage ]] || safe_remove_artifact_path "$stage" "$new_identity" || fail "cannot remove stale stage: $stage"
+    printf '%s: recovered plugin artifact: %s\n' "$script_name" "$public_path" >&2
+  else
+    fail "transaction evidence is missing public and rollback objects: $id"
   fi
-  if ((${#stages[@]} == 1)); then
-    rm -rf -- "${stages[0]}" || fail "cannot remove stale update artifact: ${stages[0]}"
-  fi
+  [[ ! -e $rejected ]] || safe_remove_artifact_path "$rejected" "$new_identity" || fail "cannot remove rejected artifact: $rejected"
+  safe_remove_record_path "$record" || fail "cannot remove transaction record: $record"
 }
 
 build_update_candidate() {
-  local id=$1 public_dir=$2 remote_commit=$3 origin_url candidate transfer_ref clone_status
-  origin_url=$(git -C "$public_dir" remote get-url origin 2>/dev/null) ||
-    fail "plugin has no origin: $id"
+  local id=$1 public_dir=$2 remote_commit=$3 origin_url candidate transfer_ref clone_status descriptor source_dir
+  origin_url=$(stable_git remote get-url origin 2>/dev/null) || fail "plugin has no origin: $id"
   [[ -n $origin_url ]] || fail "plugin has no origin: $id"
-  stage_dir=$(mktemp -d "$plugins_dir/.update.$id.XXXXXX") || fail "cannot create update staging directory: $id"
+  stage_dir=$(mktemp -d "$(root_name_path ".update.$id.XXXXXX")") || fail "cannot create update staging directory: $id"
   candidate=$stage_dir
+  source_dir="/proc/self/fd/$update_target_fd/."
   transfer_ref="refs/omarchy/update/$id"
   stable_git update-ref "$transfer_ref" "$remote_commit" || fail "cannot stage fetched update commit: $id"
   git -c credential.helper= -c core.askPass=/bin/false clone --no-local --no-checkout --no-recurse-submodules \
-    -- "$public_dir" "$candidate" >/dev/null 2>&1 || clone_status=$?
+    -- "$source_dir" "$candidate" >/dev/null 2>&1 || clone_status=$?
   stable_git update-ref -d "$transfer_ref" || true
-  if [[ ${clone_status:-0} != 0 ]]; then
-    fail "cannot clone update candidate: $id"
-  fi
+  [[ ${clone_status:-0} == 0 ]] || fail "cannot clone update candidate: $id"
   git -C "$candidate" remote set-url origin "$origin_url" || fail "cannot restore candidate origin: $id"
-  git -C "$candidate" fetch --quiet --no-tags -- "$public_dir" "$remote_commit" || fail "cannot transfer update commit: $id"
+  git -C "$candidate" fetch --quiet --no-tags -- "$source_dir" "$remote_commit" || fail "cannot transfer update commit: $id"
   git -C "$candidate" checkout --detach --quiet "$remote_commit" || fail "cannot checkout update candidate: $id"
-  [[ -z $(git -C "$candidate" status --porcelain --untracked-files=normal) ]] || fail "candidate checkout is dirty: $id"
-  is_git_plugin "$candidate" || fail "candidate Git root is invalid: $id"
-  [[ $(git -C "$candidate" rev-parse HEAD) == "$remote_commit" ]] || fail "candidate commit is invalid: $id"
-  [[ $(git -C "$candidate" remote get-url origin) == "$origin_url" ]] || fail "candidate origin is invalid: $id"
-  validate_plugin "$candidate"
-  [[ $(manifest_id "$candidate") == "$id" ]] || fail "plugin update changed manifest ID: $id"
+  capture_candidate "$candidate" || fail "cannot capture update candidate: $id"
+  descriptor="/proc/self/fd/$candidate_fd/."
+  [[ -z $(git -C "$descriptor" status --porcelain --untracked-files=all) ]] || fail "candidate checkout is dirty: $id"
+  is_git_plugin "$descriptor" || fail "candidate Git root is invalid: $id"
+  [[ $(git -C "$descriptor" rev-parse HEAD) == "$remote_commit" ]] || fail "candidate commit is invalid: $id"
+  [[ $(git -C "$descriptor" remote get-url origin) == "$origin_url" ]] || fail "candidate origin is invalid: $id"
+  validate_plugin "$descriptor"
+  [[ $(manifest_id "$descriptor") == "$id" ]] || fail "plugin update changed manifest ID: $id"
   find_duplicate_id "$id" "$public_dir" || fail "plugin update duplicated an installed manifest ID: $id"
+  run_test_hook candidate-after-validation "$candidate"
+  revalidate_candidate || fail "candidate changed after validation: $id"
   candidate_dir=$candidate
+}
+
+reserve_hidden_name() {
+  local pattern=$1 path
+  path=$(mktemp -d "$(root_name_path "$pattern")") || return 1
+  rmdir -- "$path" || return 1
+  printf '%s' "${path##*/}"
+}
+
+restore_armed_publication() {
+  local public_path rollback_path rejected_path public_identity
+  (( publication_armed )) || return 0
+  revalidate_mutation_root || return 1
+  public_path=$(root_name_path "$publication_public_name")
+  rollback_path=$(root_name_path "$publication_rollback_name")
+  rejected_path=$(root_name_path "$publication_rejected_name")
+  if [[ -e $public_path || -L $public_path ]]; then
+    public_identity=$(artifact_identity "$public_path") || return 1
+    [[ $public_identity == "$publication_new_identity" ]] || return 1
+    mv -T -- "$public_path" "$rejected_path" || return 1
+    [[ $(artifact_identity "$rejected_path") == "$publication_new_identity" ]] || return 1
+  fi
+  [[ ! -e $public_path && ! -L $public_path ]] || return 1
+  [[ -d $rollback_path && ! -L $rollback_path ]] || return 1
+  [[ $(artifact_identity "$rollback_path") == "$publication_old_identity" ]] || return 1
+  mv -T -- "$rollback_path" "$public_path" || return 1
+  [[ $(artifact_identity "$public_path") == "$publication_old_identity" ]] || return 1
+  publication_armed=0
+  safe_remove_artifact_path "$rejected_path" "$publication_new_identity" || true
+  safe_remove_record_path "$record_path" || true
+  return 0
 }
 
 publish_update_candidate() {
   local id=$1 stage=$2 public_dir=$3 expected_commit=$4 origin_url=$5
-  rollback_dir=$(mktemp -d "$plugins_dir/.rollback.$id.XXXXXX") || fail "cannot reserve rollback path: $id"
-  rmdir -- "$rollback_dir" || fail "cannot reserve rollback path: $id"
-  mv -T -- "$public_dir" "$rollback_dir" || fail "cannot move current plugin for publication: $id"
-  if ! mv -T -- "$stage" "$public_dir"; then
-    mv -T -- "$rollback_dir" "$public_dir" || fail "publication failed and previous checkout could not be restored: $id"
-    fail "plugin update publication failed: $id"
-  fi
-  [[ $(path_identity "$public_dir") != "$(path_identity "$rollback_dir" 2>/dev/null || true)" ]] ||
-    fail "publication did not replace plugin directory: $id"
-  [[ $(git -C "$public_dir" rev-parse --show-toplevel) == "$(realpath -- "$public_dir")" ]] || fail "published Git root is invalid: $id"
-  [[ $(git -C "$public_dir" rev-parse HEAD) == "$expected_commit" ]] || fail "published commit is invalid: $id"
-  [[ $(git -C "$public_dir" remote get-url origin) == "$origin_url" ]] || fail "published origin is invalid: $id"
-  [[ -z $(git -C "$public_dir" status --porcelain --untracked-files=normal) ]] || fail "published checkout is dirty: $id"
-  [[ $(manifest_id "$public_dir") == "$id" ]] || fail "published manifest ID is invalid: $id"
-  if ! rm -rf -- "$rollback_dir"; then
-    printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_dir" >&2
-  fi
+  local rollback_name rejected_name public_name descriptor current_identity old_commit
+  revalidate_mutation_root || fail "plugin root changed before publication: $id"
+  revalidate_update_target || fail "plugin changed before publication: $id"
+  revalidate_candidate || fail "candidate changed before publication: $id"
+  rollback_name=$(reserve_hidden_name ".rollback.$id.XXXXXX") || fail "cannot reserve rollback path: $id"
+  rejected_name=$(reserve_hidden_name ".rejected.$id.XXXXXX") || fail "cannot reserve rejected path: $id"
+  public_name=${public_dir##*/}
+  old_commit=$(stable_git rev-parse HEAD) || fail "cannot identify current plugin commit: $id"
+  write_transaction_record "$id" "$old_commit" "$expected_commit" "$origin_url" "$origin_url" "$target_identity" "$candidate_identity" \
+    "$candidate_name" "$rollback_name" "$rejected_name"
+  publication_armed=1
+  publication_public_name=$public_name
+  publication_rollback_name=$rollback_name
+  publication_rejected_name=$rejected_name
+  publication_old_identity=$target_identity
+  publication_new_identity=$candidate_identity
+  revalidate_mutation_root || fail "plugin root changed before publication: $id"
+  revalidate_update_target || fail "plugin changed before publication: $id"
+  revalidate_candidate || fail "candidate changed before publication: $id"
+  run_test_hook before-publication
+  revalidate_mutation_root || fail "plugin root changed at publication boundary: $id"
+  revalidate_update_target || fail "plugin changed at publication boundary: $id"
+  revalidate_candidate || fail "candidate changed at publication boundary: $id"
+  mv -T -- "$(root_name_path "$public_name")" "$(root_name_path "$rollback_name")" || fail "cannot move current plugin for publication: $id"
+  revalidate_mutation_root || fail "plugin root changed during publication: $id"
+  revalidate_candidate || fail "candidate changed during publication: $id"
+  [[ ! -e $(root_name_path "$public_name") && ! -L $(root_name_path "$public_name") ]] || fail "public target was repopulated during publication: $id"
+  mv -T -- "$(root_name_path "$candidate_name")" "$(root_name_path "$public_name")" || fail "plugin update publication failed: $id"
+  descriptor=$(root_name_path "$public_name")
+  current_identity=$(artifact_identity "$descriptor") || fail "cannot identify published plugin: $id"
+  [[ $current_identity == "$candidate_identity" ]] || fail "published plugin identity mismatch: $id"
+  exec {publication_public_fd}<"$descriptor" || fail "cannot open published plugin: $id"
+  [[ $(artifact_identity "/proc/self/fd/$publication_public_fd") == "$candidate_identity" ]] || fail "published plugin changed: $id"
+  is_git_plugin "/proc/self/fd/$publication_public_fd/." || fail "published Git root is invalid: $id"
+  [[ $(git -C "/proc/self/fd/$publication_public_fd/." rev-parse HEAD) == "$expected_commit" ]] || fail "published commit is invalid: $id"
+  [[ $(git -C "/proc/self/fd/$publication_public_fd/." remote get-url origin) == "$origin_url" ]] || fail "published origin is invalid: $id"
+  [[ -z $(git -C "/proc/self/fd/$publication_public_fd/." status --porcelain --untracked-files=all) ]] || fail "published checkout is dirty: $id"
+  validate_plugin "/proc/self/fd/$publication_public_fd/."
+  [[ $(artifact_identity "$descriptor") == "$candidate_identity" &&
+    $(artifact_identity "/proc/self/fd/$publication_public_fd") == "$candidate_identity" ]] ||
+    fail "published plugin changed during verification: $id"
+  [[ $(manifest_id "/proc/self/fd/$publication_public_fd/.") == "$id" ]] || fail "published manifest ID is invalid: $id"
+  publication_armed=0
+  exec {publication_public_fd}<&-
+  publication_public_fd=-1
+  safe_remove_artifact_path "$(root_name_path "$rollback_name")" "$target_identity" ||
+    printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_name" >&2
+  safe_remove_artifact_path "$(root_name_path "$rejected_name")" "$candidate_identity" || true
+  safe_remove_record_path "$record_path" || printf '%s: warning: retaining transaction record: %s\n' "$script_name" "$record_path" >&2
   rollback_dir=
   stage_dir=
   candidate_dir=
 }
 
 update_plugin() {
-  local id=$1 directory=$2 expected_id=${3-} prior remote origin_url status_output status_code repo
+  local id=$1 directory=$2 expected_id=${3-} prior remote origin_url status_output status_code repo current_id
   if [[ $directory == "$target_path" && $target_fd -ge 0 ]]; then
     update_target_fd=$target_fd
     update_target_path=$target_path
@@ -774,6 +997,9 @@ update_plugin() {
     printf '%s: plugin changed while opening: %s\n' "$script_name" "$id" >&2
     return 1
   fi
+  target_path=$directory
+  target_real=$update_target_real
+  target_identity=$update_target_identity
   repo="/proc/self/fd/$update_target_fd/."
   if (( ! metadata_ready )) && ! capture_git_metadata "$repo"; then
     printf '%s: cannot capture Git metadata: %s\n' "$script_name" "$id" >&2
@@ -785,6 +1011,14 @@ update_plugin() {
   fi
   prior=$(stable_git rev-parse HEAD 2>/dev/null) || {
     printf '%s: invalid Git HEAD: %s\n' "$script_name" "$id" >&2
+    return 1
+  }
+  current_id=$(manifest_id "$repo") || {
+    printf '%s: invalid public manifest: %s\n' "$script_name" "$id" >&2
+    return 1
+  }
+  [[ $current_id == "$expected_id" ]] || {
+    printf '%s: public manifest ID changed: %s\n' "$script_name" "$id" >&2
     return 1
   }
   if status_output=$(stable_git status --porcelain --untracked-files=normal); then
@@ -855,26 +1089,51 @@ update_plugin() {
   return 0
 }
 
+run_update_plugin() {
+  trap cleanup EXIT
+  trap 'handle_signal HUP' HUP
+  trap 'handle_signal INT' INT
+  trap 'handle_signal TERM' TERM
+  update_plugin "$@"
+}
+
 update_plugins() {
-  local requested_id=${1-} id directory changed=0 failed=0 status_code
-  local -a directories=()
+  local requested_id=${1-} id directory record_path_for_id changed=0 failed=0 status_code return_status=0
+  local -a directories=() records=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
-    if update_plugin "$requested_id" "$directory" "$requested_id"; then
+    if (run_update_plugin "$requested_id" "$directory" "$requested_id"); then
       changed=1
     else
       status_code=$?
-      [[ $status_code == 2 ]] || failed=1
+      if [[ $status_code != 2 ]]; then
+        failed=1
+        [[ $status_code == 129 || $status_code == 130 || $status_code == 143 ]] && return_status=$status_code
+      fi
     fi
     release_update_target
   else
     revalidate_mutation_root || fail "plugin root changed before bulk update"
-    mapfile -d '' directories < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
+    mapfile -d '' records < <(find "$root_path" -mindepth 1 -maxdepth 1 -name '.transaction.*' -print0)
+    for record_path_for_id in "${records[@]}"; do
+      id=${record_path_for_id##*/}
+      id=${id#.transaction.}
+      validate_safe_id "$id" >/dev/null 2>&1 || { failed=1; continue; }
+      if ! (recover_plugin_artifacts "$id"); then
+        failed=1
+        continue
+      fi
+    done
+    mapfile -d '' directories < <(find "$root_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
     for directory in "${directories[@]}"; do
       id=${directory##*/}
       validate_safe_id "$id" >/dev/null 2>&1 || continue
       is_git_plugin "$directory" || continue
-      if update_plugin "$id" "$directory" "$id"; then
+      if ! (recover_plugin_artifacts "$id"); then
+        failed=1
+        continue
+      fi
+      if (run_update_plugin "$id" "$directory" "$id"); then
         changed=1
       else
         status_code=$?
@@ -885,8 +1144,11 @@ update_plugins() {
   fi
   if (( changed )); then
     run_test_hook before-rescan || true
-    rescan || failed=1
+    if ! rescan; then
+      printf '%s: warning: plugin reload failed after publication\n' "$script_name" >&2
+    fi
   fi
+  (( return_status == 0 )) || return "$return_status"
   return "$failed"
 }
 
