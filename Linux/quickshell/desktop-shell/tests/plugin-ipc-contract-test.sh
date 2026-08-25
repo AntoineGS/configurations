@@ -86,8 +86,8 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $widget_ready == ready ]]
-token_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadTokenProbe 2>/dev/null || true)
-jq -e '.staleIgnored == true and .distinctTokens == true and .outstanding == 0' <<<"$token_probe" >/dev/null
+token_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test loaderTokenProbe 2>/dev/null || true)
+jq -e '.nullTerminal == true and .destructionTerminal == true and .duplicateIgnored == true and .outstanding == 0' <<<"$token_probe" >/dev/null
 serial_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test guardSerialProbe 2>/dev/null || true)
 jq -e '.staleReleaseIgnored == true and .matchingReleaseAccepted == true' <<<"$serial_probe" >/dev/null
 
@@ -157,7 +157,6 @@ env \
   XDG_CACHE_HOME="$tmp_dir/home/.cache" \
   XDG_STATE_HOME="$tmp_dir/home/.local/state" \
   DESKTOP_SHELL_TEST_NO_SURFACES=1 \
-  DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION=1 \
   DESKTOP_SHELL_STATE_PATH="$failure_state_file" \
   DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" \
   DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
@@ -177,6 +176,10 @@ for _ in {1..100}; do
   sleep 0.1
 done
 jq -e '.pluginStateWriteError != ""' <<<"$failure_health" >/dev/null
+disabled_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test loaderTokenProbe 2>/dev/null || true)
+[[ $disabled_probe == "Target not found." ]]
+disabled_queue=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test queuePluginChangeForTest /tmp/disabled 2>/dev/null || true)
+[[ $disabled_queue == "Target not found." ]]
 stop_shell
 
 stub_bin="$tmp_dir/bin"

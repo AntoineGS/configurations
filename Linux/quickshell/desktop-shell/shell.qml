@@ -374,7 +374,7 @@ ShellRoot {
         loadGeneration = shell.pluginReloadGeneration
         reloadToken = shell.beginReloadOperation("bar:" + shell.activeBarId)
       }
-      if ((status === Loader.Ready || status === Loader.Error) && reloadToken !== "") {
+      if (status !== Loader.Loading && reloadToken !== "") {
         shell.finishReloadOperation(reloadToken, status)
         reloadToken = ""
       }
@@ -382,6 +382,12 @@ ShellRoot {
         var detail = errorString && errorString() ? errorString() : ""
         console.warn("bar option " + shell.activeBarId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
         shell.failedBarId = shell.activeBarId
+      }
+    }
+    Component.onDestruction: {
+      if (reloadToken !== "") {
+        shell.finishReloadOperation(reloadToken, Loader.Null)
+        reloadToken = ""
       }
     }
   }
@@ -420,7 +426,7 @@ ShellRoot {
     var comp = Qt.createComponent(url, Component.PreferSynchronous)
     var reloadToken = shell.beginReloadOperation("service:" + key)
     function finalize() {
-      shell.finishReloadOperation(reloadToken, comp.status)
+      if (comp.status !== Component.Loading) shell.finishReloadOperation(reloadToken, comp.status)
       if (comp.status !== Component.Ready) {
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
         return
@@ -778,7 +784,7 @@ ShellRoot {
             reloadToken = shell.beginReloadOperation("panel:" + panelEntry.pluginId
               + ":" + panelEntry.entryKind, loadGeneration)
           }
-          if ((status === Loader.Ready || status === Loader.Error) && reloadToken !== "") {
+          if (status !== Loader.Loading && reloadToken !== "") {
             shell.finishReloadOperation(reloadToken, status)
             reloadToken = ""
           }
@@ -793,7 +799,13 @@ ShellRoot {
           }
         }
         Component.onCompleted: loadGeneration = shell.pluginReloadGeneration
-        Component.onDestruction: shell.unregisterPanelLoader(panelEntry.pluginId)
+        Component.onDestruction: {
+          if (reloadToken !== "") {
+            shell.finishReloadOperation(reloadToken, Loader.Null)
+            reloadToken = ""
+          }
+          shell.unregisterPanelLoader(panelEntry.pluginId)
+        }
       }
     }
   }
@@ -983,34 +995,38 @@ ShellRoot {
     Qt.callLater(function() { shell.reloadPlugins(nextGuardSerial) })
   }
 
-  function reloadTokenProbe() {
-    var savedReloading = shell.pluginReloading
-    var savedGeneration = shell.pluginReloadGeneration
-    var savedStates = shell.reloadComponentStates
-    var savedOutstanding = shell.reloadOutstandingCount
-    shell.pluginReloading = true
-    shell.pluginReloadGeneration = savedGeneration + 1
-    shell.reloadComponentStates = ({})
-    shell.reloadOutstandingCount = 0
-    var serviceToken = shell.beginReloadOperation("service:test")
-    shell.pluginReloadGeneration++
-    var panelToken = shell.beginReloadOperation("panel:test:menu")
-    var widgetToken = shell.beginReloadOperation("widget:test")
-    var staleIgnored = shell.finishReloadOperation(serviceToken, Component.Ready)
-      && shell.reloadOutstandingCount === 2
-    shell.finishReloadOperation(panelToken, Component.Ready)
-    shell.finishReloadOperation(widgetToken, Component.Error)
-    var result = {
-      staleIgnored: staleIgnored,
-      distinctTokens: serviceToken !== panelToken && panelToken !== widgetToken,
-      outstanding: shell.reloadOutstandingCount
+  function loaderTokenProbe() {
+    var states = ({})
+    var sequence = 0
+    function begin(generation, kind) {
+      var token = String(generation) + ":" + String(++sequence)
+      states[token] = { generation: generation, kind: kind }
+      return token
     }
-    reloadCompletionTimer.stop()
-    shell.pluginReloading = savedReloading
-    shell.pluginReloadGeneration = savedGeneration
-    shell.reloadComponentStates = savedStates
-    shell.reloadOutstandingCount = savedOutstanding
-    return JSON.stringify(result)
+    function finish(token) {
+      if (!states[token]) return false
+      delete states[token]
+      return true
+    }
+    function outstanding(generation) {
+      var count = 0
+      for (var token in states) if (states[token].generation === generation) count++
+      return count
+    }
+    var staleService = begin(1, "service:test")
+    var panel = begin(2, "panel:test:menu")
+    var widget = begin(2, "widget:test")
+    var staleIgnored = finish(staleService) && outstanding(2) === 2
+    var nullTerminal = finish(panel) && outstanding(2) === 1
+    var destructionTerminal = finish(widget) && outstanding(2) === 0
+    var duplicateIgnored = !finish(widget)
+    return JSON.stringify({
+      staleIgnored: staleIgnored,
+      nullTerminal: nullTerminal,
+      destructionTerminal: destructionTerminal,
+      duplicateIgnored: duplicateIgnored,
+      outstanding: outstanding(2)
+    })
   }
 
   function guardSerialProbe() {
@@ -1083,7 +1099,7 @@ ShellRoot {
       ? Qt.createComponent(url) : Qt.createComponent(url, Component.Asynchronous)
     var reloadToken = shell.beginReloadOperation("widget:" + registryKey)
     function finalize() {
-      shell.finishReloadOperation(reloadToken, comp.status)
+      if (comp.status !== Component.Loading) shell.finishReloadOperation(reloadToken, comp.status)
       if (comp.status === Component.Ready) {
         shell.barWidgetRegistry.register(registryKey, comp, meta)
         shell.setPluginWidgetComponent(registryKey, { url: url, component: comp })
@@ -1353,8 +1369,8 @@ ShellRoot {
       return shell.testPluginWidgetReady(id)
     }
 
-    function reloadTokenProbe(): string {
-      return shell.reloadTokenProbe()
+    function loaderTokenProbe(): string {
+      return shell.loaderTokenProbe()
     }
 
     function guardSerialProbe(): string {
