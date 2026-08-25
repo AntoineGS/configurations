@@ -934,13 +934,81 @@ bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $bulk_rescan_after == "$bulk_rescan_before" ]] || fail "global artifact block requested a rescan"
 [[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
 
+sentinel_plugins="$test_root/sentinel-plugins"
+mkdir -p -- "$sentinel_plugins"
+sentinel_target_remote="$test_root/sentinel-target.git"
+sentinel_target_seed="$test_root/sentinel-target-seed"
+sentinel_target="$sentinel_plugins/sentinel-target.widget"
+sentinel_peer_remote="$test_root/sentinel-peer.git"
+sentinel_peer_seed="$test_root/sentinel-peer-seed"
+sentinel_peer="$sentinel_plugins/sentinel-peer.widget"
+make_identity_plugin "$sentinel_target_remote" "$sentinel_target_seed" "$sentinel_target" sentinel-target.widget
+make_identity_plugin "$sentinel_peer_remote" "$sentinel_peer_seed" "$sentinel_peer" sentinel-peer.widget
+commit_identity_remote_change "$sentinel_target_seed" sentinel-target-update
+commit_identity_remote_change "$sentinel_peer_seed" sentinel-peer-update
+sentinel_target_prior=$(git -C "$sentinel_target" rev-parse HEAD)
+sentinel_peer_prior=$(git -C "$sentinel_peer" rev-parse HEAD)
+sentinel_artifact="$sentinel_plugins/.plugin-artifacts/_unassigned/rollback.sentinel"
+mkdir -p -- "${sentinel_artifact%/*}"
+mkdir -- "$sentinel_artifact"
+sentinel_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+sentinel_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$sentinel_plugins" "$manager" update --yes >/dev/null 2>&1; then
+  sentinel_status=0
+else
+  sentinel_status=$?
+fi
+[[ $sentinel_status != 0 ]] || fail "reserved _unassigned bulk artifact was accepted"
+[[ $(git -C "$sentinel_target" rev-parse HEAD) == "$sentinel_target_prior" ]] || fail "_unassigned artifact changed target"
+[[ $(git -C "$sentinel_peer" rev-parse HEAD) == "$sentinel_peer_prior" ]] || fail "_unassigned artifact changed peer"
+[[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$sentinel_rescan_before" ]] || fail "_unassigned artifact requested rescan"
+[[ -d "$sentinel_artifact" ]] || fail "_unassigned artifact evidence was deleted"
+
+malformed_plugins="$test_root/malformed-plugins"
+mkdir -p -- "$malformed_plugins"
+malformed_target_remote="$test_root/malformed-target.git"
+malformed_target_seed="$test_root/malformed-target-seed"
+malformed_target="$malformed_plugins/malformed-target.widget"
+malformed_peer_remote="$test_root/malformed-peer.git"
+malformed_peer_seed="$test_root/malformed-peer-seed"
+malformed_peer="$malformed_plugins/malformed-peer.widget"
+make_identity_plugin "$malformed_target_remote" "$malformed_target_seed" "$malformed_target" malformed-target.widget
+make_identity_plugin "$malformed_peer_remote" "$malformed_peer_seed" "$malformed_peer" malformed-peer.widget
+commit_identity_remote_change "$malformed_target_seed" malformed-target-update
+commit_identity_remote_change "$malformed_peer_seed" malformed-peer-update
+malformed_target_prior=$(git -C "$malformed_target" rev-parse HEAD)
+malformed_peer_prior=$(git -C "$malformed_peer" rev-parse HEAD)
+malformed_artifact="$malformed_plugins/.plugin-artifacts/malformed-target.widget/nested/record"
+mkdir -p -- "${malformed_artifact%/*}"
+: >"$malformed_artifact"
+malformed_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+malformed_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$malformed_plugins" "$manager" update --yes >/dev/null 2>&1; then
+  malformed_status=0
+else
+  malformed_status=$?
+fi
+[[ $malformed_status != 0 ]] || fail "malformed depth-two artifact was accepted"
+[[ $(git -C "$malformed_target" rev-parse HEAD) == "$malformed_target_prior" ]] || fail "malformed artifact changed target"
+[[ $(git -C "$malformed_peer" rev-parse HEAD) == "$malformed_peer_prior" ]] || fail "malformed artifact changed peer"
+[[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$malformed_rescan_before" ]] || fail "malformed artifact requested rescan"
+[[ -f "$malformed_artifact" ]] || fail "malformed artifact evidence was deleted"
+
+sort_plugins="$test_root/sort-plugins"
+mkdir -p -- "$sort_plugins"
+sort_target_remote="$test_root/sort-target.git"
+sort_target_seed="$test_root/sort-target-seed"
+sort_target="$sort_plugins/sort-target.widget"
 sort_peer_remote="$test_root/sort-peer.git"
 sort_peer_seed="$test_root/sort-peer-seed"
-sort_peer="$bulk_plugins/sort-peer.widget"
+sort_peer="$sort_plugins/sort-peer.widget"
+make_identity_plugin "$sort_target_remote" "$sort_target_seed" "$sort_target" sort-target.widget
 make_identity_plugin "$sort_peer_remote" "$sort_peer_seed" "$sort_peer" sort-peer.widget
+commit_identity_remote_change "$sort_target_seed" sort-target-update
 commit_identity_remote_change "$sort_peer_seed" sort-peer-update
+sort_target_prior=$(git -C "$sort_target" rev-parse HEAD)
 sort_peer_prior=$(git -C "$sort_peer" rev-parse HEAD)
-sort_artifact="$bulk_plugins/.plugin-artifacts/bulk-good.widget/update.sort"
+sort_artifact="$sort_plugins/.plugin-artifacts/sort-target.widget/update.sort"
 mkdir -p -- "${sort_artifact%/*}"
 mkdir -- "$sort_artifact"
 sort_fail_bin="$test_root/sort-fail-bin"
@@ -956,14 +1024,17 @@ exec /usr/bin/sort "$@"
 EOF
 chmod +x -- "$sort_fail_bin/sort"
 sort_status=0
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$bulk_plugins" PATH="$sort_fail_bin:$PATH" \
+sort_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$sort_plugins" PATH="$sort_fail_bin:$PATH" \
   "$manager" update --yes >/dev/null 2>&1; then
   sort_status=0
 else
   sort_status=$?
 fi
 [[ $sort_status != 0 ]] || fail "per-ID diagnostic sorting failure was accepted"
+[[ $(git -C "$sort_target" rev-parse HEAD) == "$sort_target_prior" ]] || fail "sorting failure changed target"
 [[ $(git -C "$sort_peer" rev-parse HEAD) == "$sort_peer_prior" ]] || fail "sorting failure allowed a peer update"
+[[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$sort_rescan_before" ]] || fail "sorting failure requested rescan"
 [[ -d "$sort_artifact" ]] || fail "sorting failure deleted artifact evidence"
 rm -rf -- "$sort_artifact"
 
@@ -1159,6 +1230,14 @@ if [[ $1 == quarantine-after-delete ]]; then
     [[ -e $LOCK_PROBE_MARKER ]] && break
     sleep 0.05
   done
+  if [[ ! -e $LOCK_PROBE_MARKER ]]; then
+    kill -TERM "$probe_pid" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL "$probe_pid" 2>/dev/null || true
+    wait "$probe_pid" 2>/dev/null || true
+    printf 'cooperating manager did not acquire lock before timeout\n' >&2
+    exit 1
+  fi
   wait "$probe_pid"
 fi
 EOF
