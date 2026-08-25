@@ -114,7 +114,7 @@ end
 
 hl.bind(
 	"SUPER + V",
-	hl.dsp.exec_cmd("vicinae vicinae://launch/clipboard/history"),
+	hl.dsp.exec_cmd("desktop-shell summon desktop.clipboard '{}'"),
 	{ description = "Clipboard history" }
 )
 hl.bind(
