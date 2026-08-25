@@ -46,7 +46,6 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    root.disarmPointer()
     root.rebuildDisplay()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
@@ -109,7 +108,6 @@ Item {
 
   function cancelClearHistory() {
     root.clearConfirmOpen = false
-    root.disarmPointer()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
@@ -121,7 +119,6 @@ Item {
       Quickshell.execDetached(["desktop-shell-clipboard-cleanup", "--remove"].concat(removedImages))
     root.selectedIndex = 0
     root.cursorActive = false
-    root.disarmPointer()
     root.clearConfirmOpen = false
     root.rebuildDisplay()
     Qt.callLater(function() { searchField.forceActiveFocus() })
@@ -144,7 +141,6 @@ Item {
       root.selectedIndex = displayModel.count - 2
     }
 
-    root.disarmPointer()
     root.rebuildDisplay()
   }
 
@@ -176,7 +172,6 @@ Item {
 
   function select(delta) {
     if (displayModel.count === 0) return
-    root.disarmPointer()
     if (!cursorActive) {
       cursorActive = true
       selectedIndex = delta < 0 ? displayModel.count - 1 : 0
@@ -193,7 +188,6 @@ Item {
 
   function selectAbsolute(index) {
     if (displayModel.count === 0) return
-    root.disarmPointer()
     root.cursorActive = true
     root.selectedIndex = Math.max(0, Math.min(index, displayModel.count - 1))
     resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -203,18 +197,7 @@ Item {
     root.filterText = nextFilter
     root.selectedIndex = 0
     root.cursorActive = true
-    root.disarmPointer()
     root.rebuildDisplay()
-  }
-
-  function disarmPointer() {
-    pointerGate.reset()
-  }
-
-  function selectFromPointer(index, item, mouse) {
-    if (!pointerGate.moved(item, mouse)) return
-    root.cursorActive = true
-    root.selectedIndex = index
   }
 
   function activateIndex(index) {
@@ -292,11 +275,6 @@ Item {
   }
 
   ListModel { id: displayModel }
-
-  PointerMoveGate {
-    id: pointerGate
-    referenceItem: card
-  }
 
   FileView {
     id: historyFile
@@ -378,15 +356,11 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
+    mask: Region {}
 
     Rectangle {
       anchors.fill: parent
       color: root.scrim
-    }
-
-    MouseArea {
-      anchors.fill: parent
-      onClicked: root.close()
     }
 
     PanelSurface {
@@ -397,8 +371,6 @@ Item {
       padding: root.contentMargin
       revealed: root.opened
       entranceY: -Style.space(6)
-
-      MouseArea { anchors.fill: parent; onClicked: {} }
 
       ConfirmDialog {
         id: clearConfirm
@@ -556,20 +528,6 @@ Item {
                       elide: Text.ElideRight
                       wrapMode: Text.NoWrap
                       verticalAlignment: Text.AlignVCenter
-                    }
-                  }
-
-                  MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onPositionChanged: function(mouse) {
-                      root.selectFromPointer(row.index, row, mouse)
-                    }
-                    onClicked: {
-                      root.cursorActive = true
-                      root.selectedIndex = row.index
-                      root.activateIndex(row.index)
                     }
                   }
                 }
