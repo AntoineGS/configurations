@@ -12,3 +12,5 @@ selected_battery_paths=shell/plugins/services/battery/manifest.json shell/plugin
 selected_notifications_paths=shell/plugins/notifications/manifest.json shell/plugins/notifications/Service.qml shell/plugins/notifications/NotificationLogic.js shell/plugins/notifications/components/NotificationCard.qml
 selected_osd_paths=shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js
 selected_polkit_paths=shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js
+selected_launcher_commit=b86d4505c11b71f90b7bd14d6a80676863a70775
+selected_launcher_paths=shell/services/AppLibrary.qml shell/services/AppSearch.js shell/services/hidden-entries.sh shell/plugins/menu/Menu.qml bin/omarchy-menu-input bin/omarchy-menu-select
