@@ -1,7 +1,8 @@
-1password-beta
+1password
 1password-cli
 adbmanager
 asdcontrol
+balena-cli-bin
 brave-bin
 caffeine-ng-git
 carapace
@@ -23,14 +24,15 @@ libfprint-cs9711-git-debug
 limine-snapper-sync
 nvidia-580xx-dkms
 oh-my-zsh-git
+opencode-vim-bin
 openssl-1.1
-pinta
+outlook-for-linux
 posting
 python-curl-cffi-git
 python-lnxlink
 python-terminaltexteffects
 qmk-git
-rustdesk-bin
+rustdesk-drm-preview-bin
 teams-for-linux-electron-bin
 tidydots-git
 tio
