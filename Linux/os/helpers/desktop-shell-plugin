@@ -651,7 +651,7 @@ artifact_identity() {
 }
 
 safe_remove_artifact_path() {
-  local path=$1 expected_identity=${2-} hook_name=${3-} fd=-1 identity fd_path mount_output mount_target
+  local path=$1 expected_identity=${2-} hook_name=${3-} fd=-1 identity fd_path mount_output mount_target canonical_path
   [[ -n $path && -n $expected_identity ]] || return 1
   revalidate_mutation_root || return 1
   [[ -d $path && ! -L $path ]] || return 1
@@ -663,9 +663,10 @@ safe_remove_artifact_path() {
   fi
   revalidate_mutation_root || { exec {fd}<&-; return 1; }
   [[ $(artifact_identity "$path") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  canonical_path=$(realpath -- "$path") || { exec {fd}<&-; return 1; }
   local -a mount_targets=()
   mount_output=$(mktemp) || { exec {fd}<&-; return 1; }
-  if ! findmnt -R -n -o TARGET --target "$path" >"$mount_output"; then
+  if ! findmnt -R -n -o TARGET --target "$canonical_path" >"$mount_output"; then
     rm -f -- "$mount_output"
     exec {fd}<&-
     return 1
@@ -677,7 +678,8 @@ safe_remove_artifact_path() {
   }
   rm -f -- "$mount_output"
   for mount_target in "${mount_targets[@]}"; do
-    [[ -z $mount_target || $mount_target == / || $mount_target == "$path" || $path == "$mount_target"/* ]] || {
+    [[ -z $mount_target || $mount_target == / || $mount_target == "$canonical_path" ||
+      $canonical_path == "$mount_target"/* ]] || {
       exec {fd}<&-
       return 1
     }

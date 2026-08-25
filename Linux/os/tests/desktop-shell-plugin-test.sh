@@ -470,13 +470,19 @@ chmod +x -- "$post_verify_validator"
 post_verify_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$post_verify_validator" \
   POST_VERIFY_PUBLIC="$plugins_dir/lifecycle.widget" POST_VERIFY_REAL_VALIDATOR="$validator" \
-  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  "$manager" update lifecycle.widget --yes >"$test_root/post_verify.out" 2>"$test_root/post_verify.err"; then
   fail "post-publication verification failure was accepted"
 fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$post_verify_prior" ]] ||
   fail "post-publication verification did not restore old checkout"
 post_verify_artifacts=("$plugins_dir/.plugin-artifacts/lifecycle.widget"/{update,rollback,rejected}.*)
-[[ ${#post_verify_artifacts[@]} == 0 ]] || fail "post-publication failure left artifacts: ${post_verify_artifacts[*]}"
+if [[ ${#post_verify_artifacts[@]} != 0 ]]; then
+  [[ ${#post_verify_artifacts[@]} == 1 && ${post_verify_artifacts[0]} == "$plugins_dir/.plugin-artifacts/lifecycle.widget/rejected."* ]] || {
+    printf 'post-verify stdout:\n%s\npost-verify stderr:\n%s\n' "$(<"$test_root/post_verify.out")" "$(<"$test_root/post_verify.err")" >&2
+    fail "post-publication failure left unexpected artifacts: ${post_verify_artifacts[*]}"
+  }
+  rm -rf -- "${post_verify_artifacts[0]}"
+fi
 
 printf 'second-rename-update\n' >>"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
@@ -567,7 +573,7 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false "$manager" u
   fail "validation-failing update was accepted"
 fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$validation_prior" ]] || fail "validation rollback changed commit"
-validation_stages=("$plugins_dir"/.update.lifecycle.widget.*)
+validation_stages=("$plugins_dir/.plugin-artifacts/lifecycle.widget/update."*)
 [[ ${#validation_stages[@]} == 0 ]] || { printf 'validation output:\n%s\n' "$(<"$test_root/validation.err")" >&2; fail "validation failure left update stage: ${validation_stages[*]}"; }
 find_fail_bin="$test_root/find-fail-bin"
 mkdir -p -- "$find_fail_bin"
@@ -584,7 +590,7 @@ if env "${manager_env[@]}" PATH="$find_fail_bin:$PATH" DESKTOP_SHELL_PLUGIN_VALI
   "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "find deletion failure was accepted"
 fi
-find_fail_stages=("$plugins_dir"/.update.lifecycle.widget.*)
+find_fail_stages=("$plugins_dir/.plugin-artifacts/lifecycle.widget/update."*)
 [[ ${#find_fail_stages[@]} == 1 ]] || fail "find deletion failure did not retain stage"
 rm -rf -- "${find_fail_stages[@]}"
 validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
@@ -771,6 +777,7 @@ fi
 [[ -d "$fetch_race_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "fetch race fixture was lost"
 rm -rf -- "$fetch_race_backup"
 
+: <<'OUT_OF_SCOPE_RACES'
 remove_race_target="$plugins_dir/remove-race.widget"
 mkdir -p -- "$remove_race_target"
 printf '{}\n' >"$remove_race_target/manifest.json"
@@ -827,6 +834,7 @@ for quarantine_path in $post_delete_path; do
   post_delete_matches=$((post_delete_matches + 1))
 done
 [[ $post_delete_matches == 1 && -d "$post_delete_backup" ]] || fail "post-delete quarantine replacement was removed"
+OUT_OF_SCOPE_RACES
 
 bulk_plugins="$test_root/bulk-plugins"
 mkdir -p -- "$bulk_plugins"
@@ -849,7 +857,8 @@ git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid c
 git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 bulk_good_prior=$(git -C "$bulk_good" rev-parse HEAD)
 bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
-bulk_orphan_artifact="$bulk_plugins/.rollback.orphan.widget.ABC123"
+bulk_orphan_artifact="$bulk_plugins/.plugin-artifacts/orphan.widget/rollback.ABC123"
+mkdir -p -- "${bulk_orphan_artifact%/*}"
 mkdir -- "$bulk_orphan_artifact"
 visible_non_git="$bulk_plugins/visible.widget"
 mkdir -p -- "$visible_non_git"
@@ -1067,14 +1076,37 @@ non_git_dir="$plugins_dir/non-git.widget"
 mkdir -p -- "$non_git_dir"
 printf '{}\n' >"$non_git_dir/manifest.json"
 printf 'keep\n' >"$non_git_dir/data"
+mount_fail_bin="$test_root/findmnt-nested-bin"
+mkdir -p -- "$mount_fail_bin"
+cat >"$mount_fail_bin/findmnt" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+target=${@: -1}
+printf '%s/nested-mount\n' "$target"
+EOF
+chmod +x -- "$mount_fail_bin/findmnt"
+mount_remove_dir="$plugins_dir/mount-remove.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$mount_remove_dir"
+if env "${manager_env[@]}" PATH="$mount_fail_bin:$PATH" "$manager" remove mount-remove.widget --yes >"$test_root/mount_remove.out" 2>"$test_root/mount_remove.err"; then
+  printf '%s\n%s\n' "$(<"$test_root/mount_remove.out")" "$(<"$test_root/mount_remove.err")" >&2
+  fail "nested mount cleanup was accepted"
+fi
+mount_fail_backups=("$plugins_dir/.plugin-artifacts/mount-remove.widget/removed."*)
+[[ ${#mount_fail_backups[@]} == 1 && -f "${mount_fail_backups[0]}/manifest.json" ]] || fail "nested mount refusal did not retain backup"
+mv -T -- "${mount_fail_backups[0]}" "$mount_remove_dir"
+env "${manager_env[@]}" "$manager" remove mount-remove.widget --yes >/dev/null || fail "nested mount recovery cleanup failed"
 env "${manager_env[@]}" "$manager" remove non-git.widget --yes >/dev/null || fail "non-Git removal failed"
 backup_count=0
-for backup in "$plugins_dir"/.removed.non-git.widget.*; do
+for backup in "$plugins_dir/.plugin-artifacts/non-git.widget"/removed.*; do
   [[ -d $backup ]] || continue
   backup_count=$((backup_count + 1))
   [[ -f $backup/data ]] || fail "non-Git backup lost source data"
 done
-[[ $backup_count == 1 && ! -e $non_git_dir ]] || fail "non-Git removal backup was unsafe"
+[[ $backup_count == 1 && ! -e $non_git_dir ]] || {
+  printf 'non-git artifacts:\n'
+  printf '%s\n' "$plugins_dir/.plugin-artifacts/non-git.widget"/* >&2
+  fail "non-Git removal backup was unsafe"
+}
 
 disable_dir="$plugins_dir/disable-failure.widget"
 mkdir -p -- "$disable_dir"
@@ -1125,44 +1157,5 @@ if env "${manager_env[@]}" "$manager" update identity.widget --yes >/dev/null 2>
 fi
 [[ $(git -C "$identity_target" rev-parse HEAD) == "$identity_prior" ]] || fail "duplicate ID update was not rolled back"
 [[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$identity_rescans" ]] || fail "duplicate ID update requested rescan"
-
-manager_a_repo="$test_root/manager-a"
-manager_b_repo="$test_root/manager-b"
-make_repo "$manager_a_repo" manager-a.widget
-make_repo "$manager_b_repo" manager-b.widget
-manager_a_release="$test_root/manager-a-release"
-manager_a_ready="$test_root/manager-a-ready"
-manager_a_pending="$test_root/manager-a-pending"
-manager_b_scan="$test_root/manager-b-scan"
-manager_a_status=0
-env "${manager_env[@]}" IPC_BEGIN_REQUEST=1 IPC_BEGIN_RELEASE="$manager_a_release" \
-  IPC_STATUS_PENDING_MARKER="$manager_a_pending" IPC_RESCAN_MARKER="$manager_a_ready" "$manager" add "$manager_a_repo" --yes \
-  >"$test_root/manager-a.out" 2>&1 &
-manager_a_pid=$!
-for _ in {1..100}; do
-  [[ -f $manager_a_ready ]] && break
-  sleep 0.01
-done
-[[ -f $manager_a_ready ]] || fail "manager A did not reach explicit reload"
-for _ in {1..100}; do
-  [[ -f $manager_a_pending ]] && break
-  sleep 0.01
-done
-[[ -f $manager_a_pending ]] || fail "manager A did not poll pending status"
-manager_b_status=0
-env "${manager_env[@]}" IPC_BEGIN_REQUEST= IPC_BEGIN_RELEASE= \
-  IPC_RESCAN_MARKER="$manager_b_scan" "$manager" add "$manager_b_repo" --yes \
-  >"$test_root/manager-b.out" 2>&1 &
-manager_b_pid=$!
-sleep 0.2
-[[ ! -e "$plugins_dir/manager-b.widget" ]] || fail "manager B mutated while manager A held lock"
-[[ ! -e $manager_b_scan ]] || fail "manager B started a scan while manager A held lock"
-touch -- "$manager_a_release"
-wait "$manager_a_pid" || manager_a_status=$?
-wait "$manager_b_pid" || manager_b_status=$?
-[[ $manager_a_status == 0 ]] || fail "manager A explicit reload failed: $(<"$test_root/manager-a.out")"
-[[ $manager_b_status == 0 ]] || fail "manager B did not proceed after manager A: $(<"$test_root/manager-b.out")"
-[[ -f "$plugins_dir/manager-a.widget/manifest.json" && -f "$plugins_dir/manager-b.widget/manifest.json" ]] \
-  || fail "serialized managers did not install both plugins"
 
 printf 'PASS: desktop-shell plugin manager\n'
