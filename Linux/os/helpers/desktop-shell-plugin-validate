@@ -113,8 +113,9 @@ decode_base64() {
 
 validate_id() {
   local id=$1
-  [[ "$id" =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || fail "unsafe plugin id: $id"
-  [[ "$id" != desktop.* && "$id" != omarchy.* ]] || fail "plugin id uses reserved namespace: $id"
+  [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "unsafe plugin id: $id"
+  [[ "$id" != *..* && "$id" != desktop.* && "$id" != omarchy.* ]] || \
+    fail "plugin id uses reserved namespace or invalid path: $id"
 }
 
 validate_snapshot_entries() {

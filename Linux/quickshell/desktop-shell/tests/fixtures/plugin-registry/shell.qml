@@ -11,6 +11,7 @@ ShellRoot {
   property string resultPath: Quickshell.env("PLUGIN_REGISTRY_RESULT")
   property string firstPartyRoot: Quickshell.shellDir + "/firstparty"
   property bool rescanChecked: false
+  property string changedId: ""
   property PluginRegistry registry: PluginRegistry { }
   property var state: PluginState.emptyState()
   property var config: ({
@@ -77,9 +78,7 @@ ShellRoot {
     scan += block("firstparty", "/first/clock", manifest("desktop.clock", ["bar-widget"], { barWidget: "Widget.qml" }))
     scan += block("firstparty", "/first/menu", manifest("desktop.menu", ["menu"], { menu: "Menu.qml" }))
     scan += block("thirdparty", "/third/panel", manifest("acme.panel", ["panel"], { panel: "Panel.qml" }))
-    scan += block("thirdparty", "/third/widget", manifest("acme.widget", ["bar-widget"], { barWidget: "Widget.qml" }, {
-      barWidget: { defaultSection: "right" }
-    }))
+    scan += block("thirdparty", "/third/widget", manifest("acme.widget", ["bar-widget"], { barWidget: "Widget.qml" }))
     scan += block("thirdparty", "/third/bar", manifest("acme.bar", ["bar"], { bar: "Bar.qml" }))
     scan += block("thirdparty", "/third/desktop-shadow", manifest("desktop.clock", ["panel"], { panel: "Panel.qml" }))
     scan += block("thirdparty", "/third/omarchy-reserved", manifest("omarchy.fake", ["panel"], { panel: "Panel.qml" }))
@@ -142,6 +141,7 @@ ShellRoot {
     check(registry.isEnabled("acme.panel") === false, "panel disabled")
     check(registry.setEnabled("acme.widget", true) === true, "widget activation")
     check(registry.inBar("acme.widget") === true, "widget placement")
+    check(root.state.barWidgets[0].section === "center", "widget default center placement")
     check(registry.setBarWidget("acme.widget", "units", "c") === true, "widget settings")
     check(root.state.barWidgets[0].settings.units === "c", "widget settings persisted")
     check(registry.moveBarWidget("acme.widget", "left", 0) === true, "widget move")
@@ -155,6 +155,10 @@ ShellRoot {
     check(registry.setEnabled("acme.missing", true) === false, "unknown plugin rejected")
     check(registry.lastEnableError.indexOf("unknown plugin") !== -1, "unknown plugin error detail")
     check(registry.registryRevision === revision, "mutations do not fake scan revision")
+
+    registry.pluginsDir = "/tmp/plugins"
+    registry.handleWatchOutput("/tmp/plugins/acme.widget/Widget.qml")
+    check(root.changedId === "acme.widget", "watcher change notification delivery")
 
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
@@ -171,6 +175,7 @@ ShellRoot {
 
   Connections {
     target: root.registry
+    function onLocalPluginChanged(id) { root.changedId = id }
     function onScanFinished() { root.runRescanAssertions() }
   }
 

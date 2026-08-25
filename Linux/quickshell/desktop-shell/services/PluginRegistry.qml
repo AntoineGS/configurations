@@ -384,8 +384,11 @@ QtObject {
     if (!registry.pluginWatchEnabled || registry.watcherUnavailable || registry.watcherProcess.running) return
     registry.watcherStopRequested = false
     watcherProcess.command = ["bash", "-c",
-      "command -v inotifywait >/dev/null 2>&1 || exit 125; "
-      + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
+      "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
+      + "exec 9>\"$0/.plugin-manager.lock\"; "
+      + "inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\" | "
+      + "while IFS= read -r path; do while ! flock -n 9; do sleep 0.05; done; "
+      + "flock -u 9; printf '%s\\n' \"$path\"; done",
       registry.pluginsDir]
     watcherProcess.running = true
   }

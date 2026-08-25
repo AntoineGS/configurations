@@ -109,6 +109,7 @@ const widget = {
   kinds: ["bar-widget"],
   barWidget: { defaultSection: "right" },
 }
+const widgetWithoutDefault = { id: "weather", kinds: ["bar-widget"] }
 const hybrid = { id: "acme.hybrid", kinds: ["panel", "bar-widget"] }
 const fullBar = { id: "acme.bar", kinds: ["bar"] }
 let state = State.emptyState()
@@ -116,6 +117,10 @@ let result = State.setEnabled(state, panel, true, {}, defaults)
 assert.equal(result.ok, true)
 assert.deepEqual(result.state.enabledPlugins, [{ id: "acme.panel" }])
 assert.deepEqual(state, { version: 1 })
+
+const fallbackResult = State.setEnabled(State.emptyState(), widgetWithoutDefault, true, {}, defaults)
+assert.equal(fallbackResult.ok, true)
+assert.deepEqual(fallbackResult.state.barWidgets[0], { id: "weather", section: "center", index: 0 })
 
 result = State.setEnabled(result.state, widget, true, { section: "right", index: 0 }, defaults)
 assert.equal(result.ok, true)

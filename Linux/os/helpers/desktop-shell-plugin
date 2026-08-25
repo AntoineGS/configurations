@@ -173,7 +173,8 @@ require_commands() {
 
 validate_id() {
   local id=$1
-  [[ $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || fail "unsafe plugin id: $id"
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "unsafe plugin id: $id"
+  [[ $id != *..* && $id != desktop.* && $id != omarchy.* ]] || fail "unsafe plugin id: $id"
 }
 
 sanitize_url() {
@@ -224,15 +225,21 @@ manifest_id() {
 }
 
 find_duplicate_id() {
-  local requested_id=$1 manifest candidate
+  local requested_id=$1 exclude_dir=${2-} manifest candidate
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || return 0
   while IFS= read -r -d '' manifest; do
     [[ $manifest == "$stage_dir/manifest.json" ]] && continue
+    if [[ ${manifest%/manifest.json} == "$plugins_dir/$requested_id" ]] || \
+      { [[ -n $exclude_dir ]] && [[ $(realpath -- "${manifest%/manifest.json}") == "$(realpath -- "$exclude_dir")" ]]; }; then
+      continue
+    fi
     candidate=$(jq -r '.id // empty' -- "$manifest" 2>/dev/null || true)
     if [[ $candidate == "$requested_id" ]]; then
-      fail "plugin id already installed: $requested_id"
+      printf '%s: plugin id already installed: %s\n' "$script_name" "$requested_id" >&2
+      return 1
     fi
-  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -name manifest.json -print0)
+  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -name manifest.json \
+    -not -path "$plugins_dir/.*" -print0)
 }
 
 acquire_add_lock() {
@@ -314,7 +321,7 @@ install_plugin() {
   validate_plugin "$stage_dir"
   id=$(manifest_id "$stage_dir")
   [[ -z $expected_id ]] || [[ $id == "$expected_id" ]] || fail "expected id $expected_id, got $id"
-  find_duplicate_id "$id"
+  find_duplicate_id "$id" || fail "plugin id already installed: $id"
   target=$plugins_dir/$id
   [[ ! -e $target && ! -L $target ]] || fail "plugin target already exists: $id"
   stage_identity=$(stat -c '%d:%i' -- "$stage_dir") || fail "cannot capture staging identity"
@@ -749,7 +756,7 @@ is_git_plugin() {
 }
 
 update_plugin() {
-  local id=$1 directory=$2 prior remote origin_url status_output status_code repo
+  local id=$1 directory=$2 expected_id=${3-} prior remote origin_url status_output status_code repo updated_id
   if [[ $directory == "$target_path" && $target_fd -ge 0 ]]; then
     update_target_fd=$target_fd
     update_target_path=$target_path
@@ -855,6 +862,19 @@ update_plugin() {
     printf '%s: plugin update failed validation and was rolled back: %s\n' "$script_name" "$id" >&2
     return 1
   fi
+  if [[ -n $expected_id ]]; then
+    if ! updated_id=$(manifest_id "$repo") || [[ $updated_id != "$expected_id" ]]; then
+      restore_update_transaction || true
+      printf '%s: plugin update changed manifest ID and was rolled back: %s\n' "$script_name" "$id" >&2
+      return 1
+    fi
+    if ! find_duplicate_id "$updated_id" "$update_target_path"; then
+      restore_update_transaction || true
+      printf '%s: plugin update duplicated an installed manifest ID and was rolled back: %s\n' \
+        "$script_name" "$id" >&2
+      return 1
+    fi
+  fi
   if ! revalidate_git_metadata "$repo"; then
     restore_update_transaction || true
     printf '%s: plugin changed after validation: %s\n' "$script_name" "$id" >&2
@@ -873,7 +893,7 @@ update_plugins() {
   local -a directories=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
-    if update_plugin "$requested_id" "$directory"; then
+    if update_plugin "$requested_id" "$directory" "$requested_id"; then
       changed=1
     else
       status_code=$?
@@ -886,7 +906,7 @@ update_plugins() {
     mapfile -d '' directories < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
     for directory in "${directories[@]}"; do
       id=${directory##*/}
-      [[ $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]] || continue
+      validate_id "$id" >/dev/null 2>&1 || continue
       is_git_plugin "$directory" || continue
       if update_plugin "$id" "$directory"; then
         changed=1
