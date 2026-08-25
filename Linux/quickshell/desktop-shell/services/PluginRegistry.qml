@@ -19,6 +19,7 @@ QtObject {
   property var installedPlugins: ({})
   property int registryRevision: 0
   property bool scanning: false
+  property bool scanAbortRequested: false
   property var pluginErrors: []
   property string lastScanError: ""
   property string lastEnableError: ""
@@ -430,6 +431,13 @@ QtObject {
   }
 
   function handleScanExit(exitCode, rawOutput) {
+    if (registry.scanAbortRequested) {
+      registry.scanAbortRequested = false
+      registry.scanning = false
+      registry.scanFinishedCount++
+      registry.scanFinished()
+      return false
+    }
     if (Number(exitCode) !== 0) {
       registry.lastScanError = "plugin scan failed with exit code " + String(exitCode)
       registry.recordPluginError("registry", registry.lastScanError)
@@ -579,6 +587,7 @@ QtObject {
 
   function rescan() {
     if (scanning) return
+    registry.scanAbortRequested = false
     scanning = true
     var script = ""
       + "emit_manifest() { local manifest=\"$1\"; "
@@ -610,5 +619,12 @@ QtObject {
     scanProcess.command = ["bash", "-c", script, registry.firstPartyDir, registry.pluginsDir]
     scanProcess.running = true
     ensureUserDir()
+  }
+
+  function cancelScan() {
+    if (!registry.scanning) return
+    registry.scanAbortRequested = true
+    registry.scanProcess.running = false
+    registry.scanning = false
   }
 }

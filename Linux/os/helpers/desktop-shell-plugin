@@ -276,15 +276,35 @@ confirm_mutation() {
 }
 
 rescan() {
-  local response
-  if ! response=$("$ipc" shell rescanPlugins); then
+  local request status
+  if ! request=$("$ipc" shell beginPluginRescan); then
     printf '%s: plugin rescan IPC failed\n' "$script_name" >&2
     return 1
   fi
-  if [[ $response != ok ]]; then
-    printf '%s: plugin rescan failed: %s\n' "$script_name" "$response" >&2
+  [[ $request =~ ^[0-9]+:[0-9]+$ ]] || {
+    printf '%s: plugin rescan returned an invalid request ID\n' "$script_name" >&2
     return 1
-  fi
+  }
+  for ((attempt = 0; attempt < 150; attempt++)); do
+    if ! status=$("$ipc" shell pluginRescanStatus "$request"); then
+      printf '%s: plugin rescan status IPC failed\n' "$script_name" >&2
+      return 1
+    fi
+    case $status in
+      pending) sleep 0.1 ;;
+      ok) return 0 ;;
+      error:*)
+        printf '%s: plugin rescan failed: %s\n' "$script_name" "${status#error: }" >&2
+        return 1
+        ;;
+      *)
+        printf '%s: plugin rescan returned an invalid status\n' "$script_name" >&2
+        return 1
+        ;;
+    esac
+  done
+  printf '%s: plugin rescan timed out\n' "$script_name" >&2
+  return 1
 }
 
 list_json() {
