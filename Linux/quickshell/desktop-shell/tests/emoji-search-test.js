@@ -18,3 +18,11 @@ assert.deepEqual(search.filterEmojis(fixture, "  JOY  ").map(item => item.e), ["
 assert.deepEqual(search.filterEmojis(fixture, "", 2).map(item => item.e), ["a", "b"])
 assert.deepEqual(search.filterEmojis(fixture, "", 0), [])
 assert.equal(search.filterEmojis(data, "face with tears")[0].e, "😂")
+
+assert.deepEqual(search.parseRecentEmojis('["😂","😂","","👍",3]', 8), ["😂", "👍"])
+assert.deepEqual(search.parseRecentEmojis("{", 8), [])
+
+const recent = ["😂", "👍", "🔥", "❤️", "🎉", "✅", "👀", "🤔"]
+assert.deepEqual(search.addRecentEmoji(recent, "🔥", 8), ["🔥", "😂", "👍", "❤️", "🎉", "✅", "👀", "🤔"])
+assert.deepEqual(search.addRecentEmoji(recent, "🚀", 8), ["🚀", "😂", "👍", "🔥", "❤️", "🎉", "✅", "👀"])
+assert.deepEqual(search.addRecentEmoji(recent, "", 8), recent)

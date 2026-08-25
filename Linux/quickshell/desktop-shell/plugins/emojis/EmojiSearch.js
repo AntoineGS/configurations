@@ -35,10 +35,38 @@ function filterEmojis(emojis, query, limit) {
   return out
 }
 
+function normalizeRecentEmojis(values, limit) {
+  var source = Array.isArray(values) ? values : []
+  var max = Number(limit)
+  if (isNaN(max)) max = 8
+  max = Math.max(0, max)
+
+  var out = []
+  for (var i = 0; i < source.length && out.length < max; i++) {
+    var emoji = typeof source[i] === "string" ? source[i] : ""
+    if (emoji && out.indexOf(emoji) < 0) out.push(emoji)
+  }
+  return out
+}
+
+function parseRecentEmojis(raw, limit) {
+  try {
+    return normalizeRecentEmojis(JSON.parse(String(raw || "")), limit)
+  } catch (e) {
+    return []
+  }
+}
+
+function addRecentEmoji(values, emoji, limit) {
+  return normalizeRecentEmojis([emoji].concat(Array.isArray(values) ? values : []), limit)
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     parseEmojis: parseEmojis,
     normalizedQuery: normalizedQuery,
-    filterEmojis: filterEmojis
+    filterEmojis: filterEmojis,
+    parseRecentEmojis: parseRecentEmojis,
+    addRecentEmoji: addRecentEmoji
   }
 }

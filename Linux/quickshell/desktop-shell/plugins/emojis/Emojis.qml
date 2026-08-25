@@ -17,8 +17,19 @@ Item {
   property string filterText: ""
   property int selectedIndex: 0
   property bool cursorActive: false
+  property bool selectingRecent: false
   property var emojis: []
   property var filteredEmojis: []
+  property var recentEmojis: []
+  property var pendingRecentEmojis: []
+  property bool stateReady: false
+  property bool recentLoaded: false
+
+  readonly property int recentLimit: 8
+  readonly property bool showRecents: root.filterText === "" && recentModel.count > 0
+  readonly property string stateRoot: (Quickshell.env("XDG_STATE_HOME")
+    || Quickshell.env("HOME") + "/.local/state") + "/desktop-shell"
+  readonly property string recentPath: root.stateRoot + "/emoji-history.json"
 
   property color foreground: Color.barPanels.text
   property color secondaryForeground: Color.barPanels.secondaryText
@@ -40,6 +51,7 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
+    root.selectingRecent = root.recentEmojis.length > 0
     root.rebuildDisplay()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
@@ -73,36 +85,89 @@ Item {
       displayModel.append({ emoji: out[j].e, index: j })
     }
 
-    if (displayModel.count === 0) selectedIndex = 0
-    else if (selectedIndex >= displayModel.count) selectedIndex = displayModel.count - 1
+    var activeCount = root.selectingRecent && root.showRecents ? recentModel.count : displayModel.count
+    if (activeCount === 0) selectedIndex = 0
+    else if (selectedIndex >= activeCount) selectedIndex = activeCount - 1
     else if (selectedIndex < 0) selectedIndex = 0
-    cursorActive = displayModel.count > 0
+    cursorActive = activeCount > 0
 
     Qt.callLater(function() {
-      if (displayModel.count > 0) resultGrid.positionViewAtIndex(root.selectedIndex, GridView.Contain)
+      if (!root.selectingRecent && displayModel.count > 0)
+        resultGrid.positionViewAtIndex(root.selectedIndex, GridView.Contain)
     })
   }
 
+  function loadRecentEmojis(raw) {
+    var merged = EmojiSearch.parseRecentEmojis(raw, root.recentLimit)
+    var hadPending = root.pendingRecentEmojis.length > 0
+    for (var i = root.pendingRecentEmojis.length - 1; i >= 0; i--)
+      merged = EmojiSearch.addRecentEmoji(merged, root.pendingRecentEmojis[i], root.recentLimit)
+
+    root.recentEmojis = merged
+    root.pendingRecentEmojis = []
+    root.recentLoaded = true
+    recentModel.clear()
+    for (var j = 0; j < root.recentEmojis.length; j++)
+      recentModel.append({ emoji: root.recentEmojis[j] })
+
+    if (hadPending)
+      recentFile.setText(JSON.stringify(root.recentEmojis) + "\n")
+
+    if (root.opened && root.filterText === "") {
+      root.selectingRecent = recentModel.count > 0
+      root.selectedIndex = 0
+      root.cursorActive = recentModel.count > 0 || displayModel.count > 0
+    }
+  }
+
+  function saveRecentEmoji(emoji) {
+    root.recentEmojis = EmojiSearch.addRecentEmoji(root.recentEmojis, emoji, root.recentLimit)
+    if (!root.recentLoaded)
+      root.pendingRecentEmojis = EmojiSearch.addRecentEmoji(root.pendingRecentEmojis, emoji, root.recentLimit)
+    recentModel.clear()
+    for (var i = 0; i < root.recentEmojis.length; i++)
+      recentModel.append({ emoji: root.recentEmojis[i] })
+    if (root.recentLoaded)
+      recentFile.setText(JSON.stringify(root.recentEmojis) + "\n")
+  }
+
   function select(delta) {
-    if (displayModel.count === 0) return
+    var count = root.selectingRecent && root.showRecents ? recentModel.count : displayModel.count
+    if (count === 0) return
     if (!cursorActive) {
       cursorActive = true
-      selectedIndex = delta < 0 ? displayModel.count - 1 : 0
+      selectedIndex = delta < 0 ? count - 1 : 0
     } else {
-      selectedIndex = (selectedIndex + delta + displayModel.count) % displayModel.count
+      selectedIndex = (selectedIndex + delta + count) % count
     }
-    resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+    if (!root.selectingRecent)
+      resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
   }
 
   function selectRow(delta) {
-    if (displayModel.count === 0) return
+    if (recentModel.count === 0 && displayModel.count === 0) return
     if (!cursorActive) {
       cursorActive = true
-      selectedIndex = delta < 0 ? displayModel.count - 1 : 0
-      resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+      root.selectingRecent = root.showRecents && delta < 0
+      selectedIndex = root.selectingRecent ? recentModel.count - 1 : 0
+      if (!root.selectingRecent && displayModel.count > 0)
+        resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+      return
+    }
+    if (root.selectingRecent) {
+      if (delta > 0 && displayModel.count > 0) {
+        root.selectingRecent = false
+        selectedIndex = Math.min(selectedIndex, displayModel.count - 1)
+        resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+      }
       return
     }
     var newIndex = selectedIndex + delta * columns
+    if (newIndex < 0 && root.showRecents) {
+      root.selectingRecent = true
+      selectedIndex = Math.min(selectedIndex % columns, recentModel.count - 1)
+      return
+    }
     if (newIndex < 0) newIndex = 0
     if (newIndex >= displayModel.count) newIndex = displayModel.count - 1
     selectedIndex = newIndex
@@ -110,16 +175,31 @@ Item {
   }
 
   function selectPage(delta, halfPage) {
-    if (displayModel.count === 0) return
+    if (recentModel.count === 0 && displayModel.count === 0) return
     if (!cursorActive) {
       cursorActive = true
-      selectedIndex = delta < 0 ? displayModel.count - 1 : 0
-      resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+      root.selectingRecent = root.showRecents && delta < 0
+      selectedIndex = root.selectingRecent ? recentModel.count - 1 : 0
+      if (!root.selectingRecent && displayModel.count > 0)
+        resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
       return
     }
     var visibleRows = Math.max(1, Math.floor(resultGrid.height / cellHeight))
     var pageRows = halfPage ? Math.max(1, Math.floor(visibleRows / 2)) : visibleRows
+    if (root.selectingRecent) {
+      if (delta > 0 && displayModel.count > 0) {
+        root.selectingRecent = false
+        selectedIndex = Math.min(selectedIndex + columns * (pageRows - 1), displayModel.count - 1)
+        resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
+      }
+      return
+    }
     var newIndex = selectedIndex + delta * columns * pageRows
+    if (newIndex < 0 && root.showRecents) {
+      root.selectingRecent = true
+      selectedIndex = Math.min(selectedIndex % columns, recentModel.count - 1)
+      return
+    }
     if (newIndex < 0) newIndex = 0
     if (newIndex >= displayModel.count) newIndex = displayModel.count - 1
     selectedIndex = newIndex
@@ -130,22 +210,47 @@ Item {
     root.filterText = nextFilter
     root.selectedIndex = 0
     root.cursorActive = true
+    root.selectingRecent = nextFilter === "" && recentModel.count > 0
     root.rebuildDisplay()
   }
 
   function activateIndex(index) {
-    if (index < 0 || index >= displayModel.count) return
-    var row = displayModel.get(index)
+    var model = root.selectingRecent && root.showRecents ? recentModel : displayModel
+    if (index < 0 || index >= model.count) return
+    var row = model.get(index)
     root.applySelected(row.emoji)
   }
 
   function applySelected(emoji) {
     if (!emoji) return
+    root.saveRecentEmoji(emoji)
     root.dismiss()
     Quickshell.execDetached(["desktop-shell-emoji-insert", emoji])
   }
 
   ListModel { id: displayModel }
+  ListModel { id: recentModel }
+
+  Component.onCompleted: stateDirectoryProcess.running = true
+
+  Process {
+    id: stateDirectoryProcess
+    command: ["mkdir", "-p", "--", root.stateRoot]
+    onExited: function(exitCode) {
+      if (Number(exitCode) === 0) root.stateReady = true
+      else console.warn("emoji history directory could not be created")
+    }
+  }
+
+  FileView {
+    id: recentFile
+    path: root.stateReady ? root.recentPath : ""
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadRecentEmojis(text())
+    onLoadFailed: root.loadRecentEmojis("[]")
+    onSaveFailed: function(error) { console.warn("emoji history save failed: " + error) }
+  }
 
   FileView {
     path: root.pluginPath + "/emojis.json"
@@ -247,8 +352,42 @@ Item {
         }
 
         Item {
+          id: recentSection
           width: parent.width
-          height: parent.height - root.headerHeight - root.contentSpacing
+          height: root.showRecents ? root.cellHeight : 0
+          visible: root.showRecents
+
+          GridView {
+            anchors.fill: parent
+            model: recentModel
+            interactive: false
+            cellWidth: root.cellWidth
+            cellHeight: root.cellHeight
+
+            delegate: CursorSurface {
+              required property int index
+              required property string emoji
+
+              width: root.cellWidth
+              height: root.cellHeight
+              hasCursor: root.cursorActive && root.selectingRecent && index === root.selectedIndex
+              foreground: root.foreground
+              accent: root.accent
+
+              Text {
+                anchors.centerIn: parent
+                text: parent.emoji
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.display
+              }
+            }
+          }
+        }
+
+        Item {
+          width: parent.width
+          height: parent.height - root.headerHeight - recentSection.height
+            - root.contentSpacing * (root.showRecents ? 2 : 1)
 
           GridView {
             id: resultGrid
@@ -265,7 +404,7 @@ Item {
 
               width: root.cellWidth
               height: root.cellHeight
-              hasCursor: root.cursorActive && index === root.selectedIndex
+              hasCursor: root.cursorActive && !root.selectingRecent && index === root.selectedIndex
               foreground: root.foreground
               accent: root.accent
 
