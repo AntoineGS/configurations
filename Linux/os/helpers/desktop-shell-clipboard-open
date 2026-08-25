@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+usage() {
+  printf 'usage: %s --history-index INDEX\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 2 )) || usage
+[[ $1 == --history-index ]] || usage
+index=$2
+[[ $index =~ ^[0-9]+$ ]] || usage
+
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell
+history_file=$state_root/clipboard-history.json
+image_dir=$state_root/clipboard-images
+[[ -f $history_file && ! -L $history_file ]] || exit 1
+entry=$(jq -ec --argjson index "$index" '.[$index] | select(.type == "text" or .type == "image")' "$history_file")
+type=$(jq -r '.type' <<<"$entry")
+
+if [[ $type == image ]]; then
+  path=$(jq -r '.path' <<<"$entry")
+  [[ -d $image_dir && ! -L $image_dir ]] || exit 1
+  [[ -f $path && ! -L $path ]] || exit 1
+  image_root=$(realpath -e -- "$image_dir")
+  resolved=$(realpath -e -- "$path")
+  [[ $resolved == "$image_root"/* ]] || exit 1
+  exec xdg-open "$resolved"
+fi
+
+text=$(jq -jr '.text' <<<"$entry")
+if [[ $text =~ ^https?://[^[:space:]]+$ ]]; then
+  exec xdg-open "$text"
+fi
+if [[ $text == file://* && $text != *$'\n'* ]]; then
+  exec xdg-open "$text"
+fi
+
+open_dir=$state_root/clipboard-open
+install -d -m 700 -- "$open_dir"
+find "$open_dir" -type f -mmin +1440 -delete 2>/dev/null || true
+text_file=$(mktemp --tmpdir="$open_dir" clipboard.XXXXXX.txt)
+chmod 600 -- "$text_file"
+printf '%s' "$text" >"$text_file"
+exec launch-editor "$text_file"
