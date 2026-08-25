@@ -926,6 +926,21 @@ applications:
         backup: ./Linux/outlook-for-linux
         files:
           - config.json
+  - name: outlook-for-linux-preview
+    description: Install the temporary Outlook for Linux preview package
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: installer
+        backup: ./Linux/outlook-for-linux
+        files:
+          - install-outlook-preview
+      - check:
+          linux: ~/.local/bin/install-outlook-preview --check
+        run:
+          linux: pkexec ~/.local/bin/install-outlook-preview --apply
+        name: package
   - package:
       managers:
         brew: fzf
