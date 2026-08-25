@@ -866,13 +866,12 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
-    function onLocalPluginChanged(id) {
-      if (String(id || "") !== "") shell.reloadPlugins()
+    function onWatchReloadReady() {
+      shell.reloadPlugins()
     }
     function onScanFinished() {
       if (shell.pluginReloadPending) {
         shell.pluginReloadPending = false
-        shell.pluginReloading = false
         Qt.callLater(shell.reloadPlugins)
         return
       }
@@ -880,6 +879,7 @@ ShellRoot {
       shell._syncServices()
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
+      shell.pluginRegistry.releaseWatchReloadGuard()
     }
   }
 

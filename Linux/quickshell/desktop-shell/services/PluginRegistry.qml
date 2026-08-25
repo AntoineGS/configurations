@@ -24,11 +24,17 @@ QtObject {
   property string lastEnableError: ""
   property bool watcherUnavailable: false
   property bool watcherStopRequested: false
+  property bool guardHeld: false
+  property bool guardStarting: false
+  property bool guardReleaseRequested: false
+  property bool guardTimedOut: false
+  property var pendingWatchIds: ({})
 
   signal pluginsChanged()
   signal scanFinished()
   signal pluginLoadFailed(string id, string error)
   signal localPluginChanged(string id)
+  signal watchReloadReady()
 
   function recordPluginError(id, error) {
     var key = String(id)
@@ -257,14 +263,44 @@ QtObject {
     return relative.length ? relative[0] : ""
   }
 
+  function queueLocalPluginChange(value) {
+    var candidate = localPluginIdForPath(value)
+    var id = candidate || String(value || "")
+    if (!id) return
+    var next = ({})
+    for (var existing in registry.pendingWatchIds) next[existing] = true
+    next[id] = true
+    registry.pendingWatchIds = next
+    if (!registry.guardHeld && !registry.guardStarting) registry.startWatchReloadGuard()
+  }
+
   function handleWatchOutput(text) {
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
       var id = localPluginIdForPath(lines[i])
       if (!id) continue
-      localPluginChanged(id)
+      registry.queueLocalPluginChange(id)
       return
     }
+  }
+
+  function startWatchReloadGuard() {
+    if (registry.guardHeld || registry.guardStarting || Object.keys(registry.pendingWatchIds).length === 0)
+      return
+    registry.guardStarting = true
+    registry.guardReleaseRequested = false
+    registry.guardTimedOut = false
+    guardProcess.command = ["bash", "-c",
+      "command -v flock >/dev/null 2>&1 || exit 125; "
+      + "exec 9>\"$0/.plugin-manager.lock\"; "
+      + "flock 9; printf 'ready\\n'; IFS= read -r _", registry.pluginsDir]
+    guardProcess.running = true
+  }
+
+  function releaseWatchReloadGuard() {
+    if (!registry.guardHeld) return
+    registry.guardReleaseRequested = true
+    guardProcess.write("release\n")
   }
 
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
@@ -385,10 +421,7 @@ QtObject {
     registry.watcherStopRequested = false
     watcherProcess.command = ["bash", "-c",
       "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
-      + "exec 9>\"$0/.plugin-manager.lock\"; "
-      + "inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\" | "
-      + "while IFS= read -r path; do while ! flock -n 9; do sleep 0.05; done; "
-      + "flock -u 9; printf '%s\\n' \"$path\"; done",
+      + "inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
       registry.pluginsDir]
     watcherProcess.running = true
   }
@@ -423,6 +456,44 @@ QtObject {
       id: watcherStdout
       waitForEnd: false
       onTextChanged: registry.handleWatchOutput(text)
+    }
+  }
+
+  property Process guardProcess: Process {
+    stdinEnabled: true
+    onExited: {
+      guardFailSafeTimer.stop()
+      var failed = Number(exitCode) !== 0 && !registry.guardReleaseRequested
+      registry.guardHeld = false
+      registry.guardStarting = false
+      registry.guardReleaseRequested = false
+      if (failed) registry.recordPluginError("registry", "plugin watcher lock guard failed with exit code " + String(exitCode))
+      if (!registry.guardTimedOut && Object.keys(registry.pendingWatchIds).length > 0)
+        registry.startWatchReloadGuard()
+    }
+    stdout: StdioCollector {
+      waitForEnd: false
+      onTextChanged: {
+        if (registry.guardHeld || text.indexOf("ready\n") === -1) return
+        registry.guardStarting = false
+        registry.guardHeld = true
+        var queued = registry.pendingWatchIds
+        registry.pendingWatchIds = ({})
+        for (var id in queued) registry.localPluginChanged(id)
+        registry.watchReloadReady()
+        guardFailSafeTimer.restart()
+      }
+    }
+  }
+
+  property Timer guardFailSafeTimer: Timer {
+    interval: 15000
+    repeat: false
+    onTriggered: {
+      registry.recordPluginError("registry", "plugin watcher reload guard timed out")
+      registry.guardTimedOut = true
+      registry.guardReleaseRequested = true
+      guardProcess.running = false
     }
   }
 
