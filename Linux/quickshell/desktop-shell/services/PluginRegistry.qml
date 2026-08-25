@@ -19,23 +19,12 @@ QtObject {
   property var installedPlugins: ({})
   property int registryRevision: 0
   property bool scanning: false
-  property bool scanAbortRequested: false
-  property bool scanExitAcknowledged: true
   property var pluginErrors: []
   property string lastScanError: ""
   property string lastEnableError: ""
   property bool watcherUnavailable: false
   property bool watcherStopRequested: false
-  property bool guardHeld: false
-  property bool guardStarting: false
-  property bool guardReleaseRequested: false
-  property bool guardTimedOut: false
-  property int guardSerial: 0
-  property int activeGuardSerial: 0
-  property int guardProcessSerial: 0
-  property int guardReleaseSerial: 0
   property var pendingWatchIds: ({})
-  property var activeGuardIds: ({})
   property string watcherGuardError: ""
   property int guardRetryCount: 0
   property int guardRetryLimit: 3
@@ -47,7 +36,7 @@ QtObject {
   signal scanFinished()
   signal pluginLoadFailed(string id, string error, int generation)
   signal localPluginChanged(string id)
-  signal watchReloadReady(int serial)
+  signal watchReloadReady()
 
   function recordPluginError(id, error) {
     var key = String(id)
@@ -284,7 +273,7 @@ QtObject {
     for (var existing in registry.pendingWatchIds) next[existing] = true
     next[id] = true
     registry.pendingWatchIds = next
-    if (!registry.guardHeld && !registry.guardStarting) registry.startWatchReloadGuard()
+    if (!registry.guardProcess.running) registry.startWatchReloadGuard()
   }
 
   function handleWatchOutput(text) {
@@ -297,28 +286,17 @@ QtObject {
   }
 
   function startWatchReloadGuard() {
-    if (registry.guardHeld || registry.guardStarting || Object.keys(registry.pendingWatchIds).length === 0)
+    if (registry.guardProcess.running || Object.keys(registry.pendingWatchIds).length === 0)
       return
     if (registry.guardRetryTimer.running) registry.guardRetryTimer.stop()
-    registry.guardStarting = true
-    registry.guardSerial++
-    registry.activeGuardSerial = registry.guardSerial
-    registry.guardProcessSerial = registry.activeGuardSerial
-    registry.guardReleaseRequested = false
-    registry.guardTimedOut = false
+    var ids = []
+    for (var id in registry.pendingWatchIds) ids.push(id)
+    registry.pendingWatchIds = ({})
     guardProcess.command = ["bash", "-c",
       "command -v flock >/dev/null 2>&1 || exit 125; "
       + "exec 9>\"$0/.plugin-manager.lock\"; "
-      + "flock 9; printf 'ready\\n'; IFS= read -r _", registry.pluginsDir]
+      + "flock 9; flock -u 9; printf '%s\\n' \"${@:2}\"", registry.pluginsDir, "--"].concat(ids)
     guardProcess.running = true
-  }
-
-  function requeueActiveGuardIds() {
-    var next = ({})
-    for (var pendingId in registry.pendingWatchIds) next[pendingId] = true
-    for (var activeId in registry.activeGuardIds) next[activeId] = true
-    registry.pendingWatchIds = next
-    registry.activeGuardIds = ({})
   }
 
   function scheduleGuardRetry(detail) {
@@ -331,19 +309,6 @@ QtObject {
     registry.guardRetryTimer.interval = Math.min(
       registry.guardRetryBaseDelay * Math.pow(2, registry.guardRetryCount - 1), 2000)
     registry.guardRetryTimer.restart()
-  }
-
-  function releaseWatchReloadGuard(serial) {
-    var requestedSerial = Number(serial)
-    if (!registry.guardHeld || requestedSerial !== registry.activeGuardSerial) return false
-    registry.guardReleaseRequested = true
-    registry.guardReleaseSerial = requestedSerial
-    guardProcess.write("release\n")
-    return true
-  }
-
-  function guardSerialMatches(serial) {
-    return registry.guardHeld && Number(serial) === registry.activeGuardSerial
   }
 
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
@@ -432,14 +397,6 @@ QtObject {
   }
 
   function handleScanExit(exitCode, rawOutput) {
-    registry.scanExitAcknowledged = true
-    if (registry.scanAbortRequested) {
-      registry.scanAbortRequested = false
-      registry.scanning = false
-      registry.scanFinishedCount++
-      registry.scanFinished()
-      return false
-    }
     if (Number(exitCode) !== 0) {
       registry.lastScanError = "plugin scan failed with exit code " + String(exitCode)
       registry.recordPluginError("registry", registry.lastScanError)
@@ -513,62 +470,27 @@ QtObject {
   }
 
   property Process guardProcess: Process {
-    stdinEnabled: true
     onExited: function(exitCode) {
-      guardFailSafeTimer.stop()
-      var serial = registry.guardProcessSerial
-      if (serial !== registry.activeGuardSerial) return
-      var successfulRelease = Number(exitCode) === 0
-        && registry.guardReleaseRequested && registry.guardReleaseSerial === serial
-        && !registry.guardTimedOut
-      var failed = !successfulRelease
-      registry.guardHeld = false
-      registry.guardStarting = false
-      registry.activeGuardSerial = 0
-      if (failed) {
-        registry.requeueActiveGuardIds()
-        registry.scheduleGuardRetry(registry.guardTimedOut
-          ? "plugin watcher reload guard timed out"
-          : "plugin watcher lock guard failed with exit code " + String(exitCode))
+      if (Number(exitCode) !== 0) {
+        registry.scheduleGuardRetry("plugin watcher lock wait failed with exit code " + String(exitCode))
       } else {
-        registry.activeGuardIds = ({})
         registry.watcherGuardError = ""
         registry.guardRetryCount = 0
-        if (Object.keys(registry.pendingWatchIds).length > 0)
-          registry.startWatchReloadGuard()
       }
-      registry.guardReleaseRequested = false
-      registry.guardReleaseSerial = 0
-      registry.guardTimedOut = false
+      if (Object.keys(registry.pendingWatchIds).length > 0) registry.startWatchReloadGuard()
     }
     stdout: StdioCollector {
-      waitForEnd: false
+      waitForEnd: true
       onTextChanged: {
-        if (registry.guardHeld || text.indexOf("ready\n") === -1) return
-        registry.guardStarting = false
-        registry.guardHeld = true
-        var queued = registry.pendingWatchIds
-        registry.pendingWatchIds = ({})
-        registry.activeGuardIds = queued
-        for (var id in queued) {
+        var lines = String(text || "").split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          var id = lines[i]
+          if (!id) continue
           registry.watchChangeCount++
           registry.localPluginChanged(id)
         }
-        registry.watchReloadReady(registry.activeGuardSerial)
-        guardFailSafeTimer.restart()
+        if (lines.length > 0) registry.watchReloadReady()
       }
-    }
-  }
-
-  property Timer guardFailSafeTimer: Timer {
-    interval: 15000
-    repeat: false
-    onTriggered: {
-      registry.recordPluginError("registry", "plugin watcher reload guard timed out")
-      registry.guardTimedOut = true
-      registry.guardReleaseRequested = true
-      registry.guardReleaseSerial = registry.activeGuardSerial
-      guardProcess.running = false
     }
   }
 
@@ -589,8 +511,6 @@ QtObject {
 
   function rescan() {
     if (scanning) return
-    registry.scanAbortRequested = false
-    registry.scanExitAcknowledged = false
     scanning = true
     var script = ""
       + "emit_manifest() { local manifest=\"$1\"; "
@@ -624,9 +544,4 @@ QtObject {
     ensureUserDir()
   }
 
-  function cancelScan() {
-    if (!registry.scanning) return
-    registry.scanAbortRequested = true
-    registry.scanProcess.running = false
-  }
 }

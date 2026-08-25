@@ -41,15 +41,6 @@ case "$command_name" in
     if (($# != 0)); then usage; exit 2; fi
     method="rescanPlugins"
     ;;
-  plugin-rescan-begin)
-    if (($# != 0)); then usage; exit 2; fi
-    method="beginPluginRescan"
-    ;;
-  plugin-rescan-status)
-    if (($# != 1)); then usage; exit 2; fi
-    args=("$1")
-    method="pluginRescanStatus"
-    ;;
   plugin-list)
     if (($# != 0)); then usage; exit 2; fi
     method="listPlugins"

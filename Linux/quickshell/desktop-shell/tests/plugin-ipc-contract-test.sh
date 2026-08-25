@@ -74,32 +74,18 @@ enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePl
 [[ -n $enable_result ]]
 legacy_rescan=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins)
 [[ $legacy_rescan == ok ]]
-explicit_request=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan)
-[[ $explicit_request =~ ^[0-9]+:[0-9]+$ ]]
-coalesced_request=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan)
-[[ $coalesced_request =~ ^[0-9]+:[0-9]+$ && $coalesced_request != "$explicit_request" ]]
-explicit_status=""
-for _ in {1..100}; do
-  explicit_status=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus "$explicit_request" 2>/dev/null || true)
-  if [[ $explicit_status == ok || $explicit_status == error:* ]]; then break; fi
-  [[ $explicit_status == pending ]] || { printf 'unexpected explicit status: %s\n' "$explicit_status" >&2; exit 1; }
-  sleep 0.1
-done
-[[ $explicit_status == ok ]]
-coalesced_status=""
-for _ in {1..100}; do
-  coalesced_status=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus "$coalesced_request" 2>/dev/null || true)
-  if [[ $coalesced_status == ok || $coalesced_status == error:* ]]; then break; fi
-  [[ $coalesced_status == pending ]] || { printf 'unexpected coalesced status: %s\n' "$coalesced_status" >&2; exit 1; }
-  sleep 0.1
-done
-[[ $coalesced_status == ok ]]
+begin_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan 2>/dev/null || true)
+[[ $begin_result != ok && $begin_result != pending && $begin_result != error:* ]] \
+  || { printf 'beginPluginRescan is still exposed: %s\n' "$begin_result" >&2; exit 1; }
+status_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus unknown 2>/dev/null || true)
+[[ $status_result != ok && $status_result != pending && $status_result != error:* ]] \
+  || { printf 'pluginRescanStatus is still exposed: %s\n' "$status_result" >&2; exit 1; }
 for _ in {1..100}; do
   health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
-  if jq -e '.reloadScanTerminal == true and .reloadOutstandingCount == 0 and .reloadComponentsActive == false' <<<"$health" >/dev/null 2>&1; then break; fi
+  if jq -e '.scanFinishedCount >= 2' <<<"$health" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
-jq -e '.reloadScanTerminal == true and .reloadOutstandingCount == 0 and .reloadComponentsActive == false' <<<"$health" >/dev/null
+jq -e '.scanFinishedCount >= 2' <<<"$health" >/dev/null
 widget_ready=""
 for _ in {1..100}; do
   widget_ready=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget 2>/dev/null || true)
@@ -107,17 +93,6 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $widget_ready == ready ]]
-token_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test loaderTokenProbe 2>/dev/null || true)
-jq -e '.nullTerminal == true and .destructionTerminal == true and .duplicateIgnored == true and .outstanding == 0' <<<"$token_probe" >/dev/null
-serial_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test guardSerialProbe 2>/dev/null || true)
-jq -e '.staleReleaseIgnored == true and .matchingReleaseAccepted == true' <<<"$serial_probe" >/dev/null
-terminal_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadTerminalProbe 2>/dev/null || true)
-jq -e '.scanExitRequired == true and .cancelledFinalizersInert == true and .queuedRequestsSettled == true' <<<"$terminal_probe" >/dev/null
-error_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadErrorAttributionProbe 2>/dev/null || true)
-jq -e '.service == true and .bar == true and .panel == true and .widget == true and .staleIgnored == true' <<<"$error_probe" >/dev/null
-cache_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test requestCacheProbe 2>/dev/null || true)
-jq -e '.terminalRecords == 64 and .pendingPreserved == true' <<<"$cache_probe" >/dev/null
-
 lock_release="$tmp_dir/release-manager-lock"
 lock_held="$tmp_dir/manager-lock-held"
 sleep 0.2
@@ -138,36 +113,33 @@ health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
 before_generation=$(jq -r '.reloadGeneration' <<<"$health")
 before_scan_count=$(jq -r '.scanFinishedCount' <<<"$health")
 before_change_count=$(jq -r '.watchChangeCount' <<<"$health")
-before_attempt_count=$(jq -r '.reloadComponentAttemptCount' <<<"$health")
 printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":' >"$plugins_dir/acme.widget/manifest.json"
 queue_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test queuePluginChangeForTest "$plugins_dir/acme.widget/manifest.json")
 [[ $queue_result == queued ]]
 sleep 0.2
 locked_health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
 if ! jq -e --arg generation "$before_generation" --arg scan "$before_scan_count" \
-  --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
-  '.watcherGuardHeld == false and .reloadGeneration == ($generation | tonumber)
+  --arg change "$before_change_count" \
+   '.reloadGeneration == ($generation | tonumber)
    and .scanFinishedCount == ($scan | tonumber)
    and .watchChangeCount == ($change | tonumber)
-   and .reloadComponentAttemptCount == ($attempts | tonumber)' <<<"$locked_health" >/dev/null; then
+   ' <<<"$locked_health" >/dev/null; then
   printf 'locked health changed: %s\n' "$locked_health" >&2
   exit 1
 fi
 touch "$lock_release"
 for _ in {1..100}; do
   health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
-  if jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
-    '.watcherGuardHeld == false and .watcherGuardError == "" and .reloadOutstandingCount == 0
-     and .scanFinishedCount > ($scan | tonumber)
-     and .watchChangeCount > ($change | tonumber)
-     and .reloadComponentAttemptCount > ($attempts | tonumber)' <<<"$health" >/dev/null 2>&1; then break; fi
+  if jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" \
+     '.watcherGuardError == ""
+      and .scanFinishedCount > ($scan | tonumber)
+      and .watchChangeCount > ($change | tonumber)' <<<"$health" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
-jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
-  '.watcherGuardHeld == false and .watcherGuardError == "" and .reloadOutstandingCount == 0
+jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" \
+  '.watcherGuardError == ""
    and .scanFinishedCount > ($scan | tonumber)
-   and .watchChangeCount > ($change | tonumber)
-   and .reloadComponentAttemptCount > ($attempts | tonumber)' <<<"$health" >/dev/null
+   and .watchChangeCount > ($change | tonumber)' <<<"$health" >/dev/null
 wait "$holder_pid"
 holder_pid=""
 jq -e 'any(.[]; .id == "acme.widget")' <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins)" >/dev/null
@@ -203,8 +175,6 @@ for _ in {1..100}; do
   sleep 0.1
 done
 jq -e '.pluginStateWriteError != ""' <<<"$failure_health" >/dev/null
-disabled_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test loaderTokenProbe 2>/dev/null || true)
-[[ $disabled_probe == "Target not found." ]]
 disabled_queue=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test queuePluginChangeForTest /tmp/disabled 2>/dev/null || true)
 [[ $disabled_queue == "Target not found." ]]
 stop_shell

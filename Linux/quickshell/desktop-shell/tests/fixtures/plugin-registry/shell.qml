@@ -15,12 +15,7 @@ ShellRoot {
   property string pluginsRoot: Quickshell.env("PLUGIN_REGISTRY_PLUGINS_DIR")
   property string externalReleasePath: Quickshell.env("PLUGIN_REGISTRY_RELEASE_EXTERNAL")
   property int watchReloadReadyCount: 0
-  property int activeGuardSerial: 0
   property int scanFinishedCount: 0
-  property bool scanObservedBeforeRelease: false
-  property bool guardProbeBlocked: false
-  property bool guardProbeReleased: false
-  property bool guardProbeStarted: false
   property bool guardAssertionsStarted: false
   property var observedIds: ({})
   property PluginRegistry registry: PluginRegistry { }
@@ -52,16 +47,6 @@ ShellRoot {
     command: ["bash", "-c", "touch -- \"$0\"", root.externalReleasePath]
   }
 
-  Process {
-    id: lockProbeProcess
-    property bool afterRelease: false
-    onExited: {
-      if (afterRelease) root.guardProbeReleased = Number(exitCode) === 0
-      else root.guardProbeBlocked = Number(exitCode) !== 0
-      if (afterRelease) root.finishGuardAssertions()
-    }
-  }
-
   function manifest(id, kinds, entryPoints, options) {
     var result = {
       schemaVersion: 1,
@@ -90,23 +75,15 @@ ShellRoot {
     if (!condition) fail(message)
   }
 
-  function probeGuardLock(afterRelease) {
-    lockProbeProcess.afterRelease = afterRelease
-    lockProbeProcess.command = ["bash", "-c",
-      "exec 9>\"$0/.plugin-manager.lock\"; flock -n 9", root.pluginsRoot]
-    lockProbeProcess.running = true
-  }
-
   function finishGuardAssertions() {
-    check(root.guardProbeReleased, "competing flock succeeds after guard release")
-    check(root.watchReloadReadyCount === 2, "batched and held events emit two guarded reloads")
+    check(root.watchReloadReadyCount === 2, "queued swaps emit coalesced reloads")
     check(root.observedIds["acme.widget"] && root.observedIds["acme.other"]
-      && root.observedIds["acme.late"], "all batched and held IDs observed")
-    check(root.scanFinishedCount === 3, "expected guarded scan count")
+      && root.observedIds["acme.late"], "all batched IDs observed")
+    check(root.scanFinishedCount === 3, "expected asynchronous scan count")
     check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
       "restored valid tree installs only valid IDs")
     check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
-    check(registry.watcherGuardError === "", "successful guard clears durable error")
+    check(registry.watcherGuardError === "", "successful watcher clears durable error")
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
   }
@@ -175,9 +152,6 @@ ShellRoot {
     check(registry.watcherGuardError.indexOf("retry limit reached") !== -1,
       "guard failure reaches bounded retry limit")
     check(!registry.guardRetryTimer.running, "retry limit does not spawn a tight loop")
-    registry.activeGuardIds = ({ "acme.retry": true })
-    registry.requeueActiveGuardIds()
-    check(registry.pendingWatchIds["acme.retry"] === true, "failed generation requeues active IDs")
     registry.pendingWatchIds = ({})
     registry.watcherStopRequested = true
     registry.handleWatcherExit(0)
@@ -249,22 +223,16 @@ ShellRoot {
     }
     function onWatchReloadReady(serial) {
       root.watchReloadReadyCount++
-      root.activeGuardSerial = Number(serial)
       if (root.watchReloadReadyCount === 1) {
         registry.queueLocalPluginChange("acme.late")
         registry.rescan()
-      } else {
-        registry.releaseWatchReloadGuard(root.activeGuardSerial)
+      } else if (root.watchReloadReadyCount === 2) {
+        root.finishGuardAssertions()
       }
     }
     function onScanFinished() {
       root.scanFinishedCount++
       root.runRescanAssertions()
-      if (root.watchReloadReadyCount > 0 && registry.guardHeld && !root.guardProbeStarted) {
-        root.scanObservedBeforeRelease = true
-        root.guardProbeStarted = true
-        root.probeGuardLock(false)
-      }
     }
   }
 
@@ -279,27 +247,9 @@ ShellRoot {
     repeat: false
     onTriggered: {
       check(root.watchReloadReadyCount === 0, "manager lock suppresses reload-ready")
-      check(root.scanFinishedCount === 2, "manager lock suppresses guarded scan")
+      check(root.scanFinishedCount === 2, "manager lock suppresses watcher scan")
       check(Object.keys(root.observedIds).length === 0, "manager lock suppresses change notifications")
       externalReleaseProcess.running = true
-    }
-  }
-
-  Timer {
-    interval: 300
-    repeat: false
-    running: root.guardProbeBlocked
-    onTriggered: {
-      check(root.scanObservedBeforeRelease, "scan/change notifications observed before guard release")
-      registry.releaseWatchReloadGuard(root.activeGuardSerial)
-      var waitForRelease = Qt.createQmlObject('import QtQuick; Timer { interval: 50; repeat: true }', root)
-      waitForRelease.triggered.connect(function() {
-        if (root.watchReloadReadyCount === 2 && !registry.guardHeld && !lockProbeProcess.running) {
-          waitForRelease.stop()
-          root.probeGuardLock(true)
-        }
-      })
-      waitForRelease.start()
     }
   }
 
@@ -307,8 +257,7 @@ ShellRoot {
     interval: 5000
     repeat: false
     running: true
-    onTriggered: fail("guard timeout ready=" + root.watchReloadReadyCount
-      + " held=" + registry.guardHeld + " starting=" + registry.guardStarting
+    onTriggered: fail("watcher timeout ready=" + root.watchReloadReadyCount
       + " retry=" + registry.guardRetryCount + " error=" + registry.watcherGuardError)
   }
 }

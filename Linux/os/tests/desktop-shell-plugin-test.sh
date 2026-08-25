@@ -180,6 +180,13 @@ env "${manager_env[@]}" "$manager" add "$source_repo" --yes >/dev/null || fail "
 [[ -f "$plugins_dir/acme.widget/manifest.json" ]] || fail "plugin was not installed under manifest id"
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "add did not request rescan"
 
+failed_rescan_repo="$test_root/failed-rescan"
+make_repo "$failed_rescan_repo" failed-rescan.widget
+rescan_warning=$(IPC_RESCAN_RESULT=not-ok env "${manager_env[@]}" "$manager" add "$failed_rescan_repo" --yes 2>&1)
+[[ -d "$plugins_dir/failed-rescan.widget" ]] || fail "rescan IPC failure rolled back publication"
+[[ $rescan_warning == *"warning"* && $rescan_warning == *"reload"* ]] \
+  || fail "rescan IPC failure omitted actionable warning"
+
 jq -n '[
   {id:"desktop.bar",name:"Desktop Bar",kinds:["bar"],enabled:true,firstParty:true},
   {id:"Acme_Widget",name:"Acme Widget",kinds:["bar-widget"],enabled:false,clonedFrom:"local"},
@@ -326,6 +333,13 @@ list_count=$(<"$IPC_LOG.list-count")
 enable_line=$(grep -n $'enablePlugin\tdelayed.widget' "$log_file" | cut -d: -f1)
 last_list_line=$(grep -n $'listPlugins\t' "$log_file" | tail -n 1 | cut -d: -f1)
 [[ $enable_line -gt $last_list_line ]] || fail "activation preceded discovery"
+
+failed_enable_repo="$test_root/failed-enable"
+make_repo "$failed_enable_repo" failed-enable.widget
+enable_warning=$(IPC_ENABLE_RESULT=not-ok env "${manager_env[@]}" "$manager" add "$failed_enable_repo" --yes --enable 2>&1 || true)
+[[ -d "$plugins_dir/failed-enable.widget" ]] || fail "enable failure rolled back publication"
+[[ $enable_warning == *"not enabled"* || $enable_warning == *"installed"* ]] \
+  || fail "enable failure omitted installed-but-not-enabled warning"
 
 signal_repo="$test_root/signal"
 make_repo "$signal_repo" signal.widget
