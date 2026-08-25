@@ -9,6 +9,21 @@ assert.deepEqual(history.parseHistoryResult('["one",{"type":"text","text":"two"}
 })
 assert.deepEqual(history.parseHistoryResult(JSON.stringify([" ", { type: "text", text: "\t" }])), { valid: true, history: [] })
 
+const imageRoot = "/state/clipboard-images"
+const hashedImage = `${imageRoot}/${"a".repeat(64)}.png`
+assert.deepEqual(history.parseHistoryResult(JSON.stringify([{ type: "image", path: hashedImage, mime: "image/png" }]), imageRoot), {
+  valid: true,
+  history: [{ type: "image", path: hashedImage, mime: "image/png" }],
+})
+assert.deepEqual(history.parseHistoryResult(JSON.stringify([{ type: "image", path: "/tmp/outside.png", mime: "image/png" }]), imageRoot), {
+  valid: true,
+  history: [],
+})
+assert.deepEqual(history.parseHistoryResult(JSON.stringify([{ type: "image", path: `${imageRoot}/nested/a.png`, mime: "image/png" }]), imageRoot), {
+  valid: true,
+  history: [],
+})
+
 const oversized = Array.from({ length: 501 }, (_, index) => `entry-${index}`)
 assert.equal(history.parseHistoryResult(JSON.stringify(oversized)).history.length, 500)
 

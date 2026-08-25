@@ -21,9 +21,12 @@ Item {
   property bool historyValid: false
   property int watchRestartDelay: 1000
   property bool shuttingDown: false
+  property bool stateReady: false
+  property bool captureStarted: false
 
   property string stateRoot: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/desktop-shell"
   property string historyPath: root.stateRoot + "/clipboard-history.json"
+  property string imageDir: root.stateRoot + "/clipboard-images"
   property string captureScript: root.shellPath + "/plugins/clipboard/capture.sh"
   // Shares the [menu] surface tokens — themes that style the menu also
   // style the clipboard. Selected-row colors composed in the
@@ -74,10 +77,16 @@ Item {
   }
 
   function loadHistory(raw) {
-    var result = ClipboardHistory.parseHistoryResult(raw)
+    var result = ClipboardHistory.parseHistoryResult(raw, root.imageDir)
     root.historyValid = result.valid
     root.history = result.history
     if (root.historyValid) Quickshell.execDetached(["desktop-shell-clipboard-cleanup", "--prune"])
+    if (root.opened) root.rebuildDisplay()
+  }
+
+  function historyLoadFailed() {
+    root.historyValid = false
+    root.history = []
     if (root.opened) root.rebuildDisplay()
   }
 
@@ -87,16 +96,16 @@ Item {
   }
 
   function addClipboardEntry(entry) {
-    var normalized = ClipboardHistory.normalizeEntry(entry)
+    var normalized = ClipboardHistory.normalizeEntry(entry, root.imageDir)
     if (!normalized) return
 
-    root.history = ClipboardHistory.addEntry(root.history, normalized, root.historyLimit)
+    root.history = ClipboardHistory.addEntry(root.history, normalized, root.historyLimit, root.imageDir)
     root.saveHistory()
     if (root.opened) root.rebuildDisplay()
   }
 
   function addClipboardJson(line) {
-    root.addClipboardEntry(ClipboardHistory.parseEntryJson(line))
+    root.addClipboardEntry(ClipboardHistory.parseEntryJson(line, root.imageDir))
   }
 
   function requestClearHistory() {
@@ -261,6 +270,13 @@ Item {
     watchStableTimer.restart()
   }
 
+  function startCapture() {
+    if (root.captureStarted || root.shuttingDown) return
+    root.captureStarted = true
+    currentProc.running = true
+    root.startWatchers()
+  }
+
   function scheduleWatcherRestart() {
     if (root.shuttingDown) return
     watchStableTimer.stop()
@@ -270,8 +286,7 @@ Item {
   }
 
   Component.onCompleted: {
-    currentProc.running = true
-    root.startWatchers()
+    stateInitProc.running = true
   }
 
   Component.onDestruction: {
@@ -287,13 +302,31 @@ Item {
 
   FileView {
     id: historyFile
-    path: root.historyPath
+    path: root.stateReady ? root.historyPath : ""
     watchChanges: true
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadHistory(text())
-    onLoadFailed: root.loadHistory("[]")
+    onLoaded: {
+      root.loadHistory(text())
+      root.startCapture()
+    }
+    onLoadFailed: {
+      root.historyLoadFailed()
+      root.startCapture()
+    }
     onFileChanged: reload()
+  }
+
+  Process {
+    id: stateInitProc
+    command: [root.captureScript, "--init"]
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0) {
+        console.warn("clipboard state initialization failed")
+        return
+      }
+      root.stateReady = true
+    }
   }
 
   Process {
@@ -317,7 +350,7 @@ Item {
 
   Process {
     id: imageWatchProc
-    command: ["setpriv", "--pdeathsig", "TERM", "wl-paste", "--type", "image/png", "--watch", root.captureScript, "image/png"]
+    command: ["setpriv", "--pdeathsig", "TERM", "wl-paste", "--type", "image", "--watch", root.captureScript, "image"]
     onExited: root.scheduleWatcherRestart()
     Component.onDestruction: if (running) signal(15)
     stdout: SplitParser {

@@ -29,6 +29,19 @@ fi
 EOF
 chmod +x "$bin/wl-paste"
 
+install -d -m 700 "$state/desktop-shell" "$state/desktop-shell/clipboard-images"
+printf '[]\n' >"$state/desktop-shell/clipboard-history.json"
+chmod 644 "$state/desktop-shell/clipboard-history.json"
+PATH="$bin:$PATH" XDG_STATE_HOME="$state" "$capture" --init
+[[ $(stat -c '%a' "$state/desktop-shell/clipboard-history.json") == 600 ]] || fail "state initialization did not repair history permissions"
+
+symlink_state=$test_root/symlink-state
+install -d -m 700 "$symlink_state" "$test_root/state-target"
+ln -s "$test_root/state-target" "$symlink_state/desktop-shell"
+if PATH="$bin:$PATH" XDG_STATE_HOME="$symlink_state" "$capture" --init >/dev/null 2>&1; then
+  fail "state initialization accepted a symlinked state root"
+fi
+
 capture_output=$(printf 'normal text' | PATH="$bin:$PATH" XDG_STATE_HOME="$state" "$capture" text)
 [[ $capture_output == '{"type":"text","text":"normal text"}' ]] || fail "watched text was not captured"
 
@@ -63,6 +76,12 @@ jq -e '.type == "image" and .mime == "image/png" and (.capturedAt | type == "str
 
 duplicate_output=$(printf 'png-data' | PATH="$bin:$PATH" XDG_STATE_HOME="$state" "$capture" image/png)
 [[ $(jq -er '.path' <<<"$duplicate_output") == "$image_path" ]] || fail "equal images were not deduplicated"
+
+generic_output=$(printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=' \
+  | base64 -d \
+  | PATH="$bin:$PATH" XDG_STATE_HOME="$state" "$capture" image)
+jq -e '.type == "image" and .mime == "image/png" and (.path | endswith(".png"))' <<<"$generic_output" >/dev/null \
+  || fail "generic image capture did not detect PNG content"
 
 jpeg_output=$(printf 'jpeg-data' | PATH="$bin:$PATH" XDG_STATE_HOME="$state" "$capture" image/jpeg)
 [[ $(jq -er '.path' <<<"$jpeg_output") == *.jpg ]] || fail "JPEG extension was not normalized"
