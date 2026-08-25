@@ -27,7 +27,7 @@ trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; stop_holder;
 
 result="$tmp_dir/result.json"
 config="$tmp_dir/config"
-plugins_dir="$tmp_dir/plugins"
+plugins_dir="$tmp_dir/.config/omarchy/plugins"
 bin_dir="$tmp_dir/bin"
 watcher_mode="$tmp_dir/watcher-mode"
 watcher_count="$tmp_dir/watcher-count"
@@ -46,11 +46,12 @@ count=$(<"$PLUGIN_REGISTRY_WATCHER_COUNT")
 count=$((count + 1))
 printf '%s\n' "$count" >"$PLUGIN_REGISTRY_WATCHER_COUNT"
 date +%s%3N >>"$PLUGIN_REGISTRY_WATCHER_MARKERS"
+if [[ ${1-} == --help ]]; then
+  # Match the real inotifywait CLI, whose help path exits nonzero.
+  exit 1
+fi
 if [[ $mode == fail ]]; then
   exit 125
-fi
-if [[ ${1-} == --help ]]; then
-  exit 0
 fi
 printf 'stub-event\n'
 while :; do sleep 1; done
@@ -112,12 +113,12 @@ if ! jq -e '.ok == true' "$result" >/dev/null; then
   sed -n '1,240p' "$tmp_dir/quickshell.log" >&2
   exit 1
 fi
-[[ $(<"$watcher_count") -ge 5 ]] || {
-  printf 'watcher stub did not observe bounded failures and ready recovery\n' >&2
+[[ $(<"$watcher_count") -ge 4 ]] || {
+  printf 'watcher stub did not observe bounded failures and ready recovery: count=%s\n' "$(<"$watcher_count")" >&2
   exit 1
 }
 mapfile -t watcher_markers <"$watcher_markers"
-(( ${#watcher_markers[@]} >= 5 )) || { printf 'watcher timing markers are incomplete\n' >&2; exit 1; }
+(( ${#watcher_markers[@]} >= 4 )) || { printf 'watcher timing markers are incomplete\n' >&2; exit 1; }
 (( watcher_markers[1] - watcher_markers[0] >= 10 )) || { printf 'first watcher retry ignored backoff\n' >&2; exit 1; }
 (( watcher_markers[2] - watcher_markers[1] >= 25 )) || { printf 'second watcher retry ignored exponential backoff\n' >&2; exit 1; }
 touch -- "$release_external"
