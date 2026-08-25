@@ -31,11 +31,13 @@ plugins_dir="$tmp_dir/plugins"
 bin_dir="$tmp_dir/bin"
 watcher_mode="$tmp_dir/watcher-mode"
 watcher_count="$tmp_dir/watcher-count"
+watcher_markers="$tmp_dir/watcher-markers"
 release_external="$tmp_dir/release-external"
 mkdir -p -- "$config"
 mkdir -p -- "$bin_dir"
 printf '%s\n' fail >"$watcher_mode"
 printf '0\n' >"$watcher_count"
+: >"$watcher_markers"
 cat >"$bin_dir/inotifywait" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -43,8 +45,8 @@ mode=$(<"$PLUGIN_REGISTRY_WATCHER_MODE")
 count=$(<"$PLUGIN_REGISTRY_WATCHER_COUNT")
 count=$((count + 1))
 printf '%s\n' "$count" >"$PLUGIN_REGISTRY_WATCHER_COUNT"
+date +%s%3N >>"$PLUGIN_REGISTRY_WATCHER_MARKERS"
 if [[ $mode == fail ]]; then
-  if (( count >= 3 )); then printf '%s\n' ready >"$PLUGIN_REGISTRY_WATCHER_MODE"; fi
   exit 125
 fi
 if [[ ${1-} == --help ]]; then
@@ -85,6 +87,7 @@ env \
     DESKTOP_SHELL_WATCHER_LIFECYCLE_TEST=1 \
     PLUGIN_REGISTRY_WATCHER_MODE="$watcher_mode" \
     PLUGIN_REGISTRY_WATCHER_COUNT="$watcher_count" \
+    PLUGIN_REGISTRY_WATCHER_MARKERS="$watcher_markers" \
     DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
   PLUGIN_REGISTRY_PLUGINS_DIR="$plugins_dir" \
   PLUGIN_REGISTRY_RELEASE_EXTERNAL="$release_external" \
@@ -113,6 +116,10 @@ fi
   printf 'watcher stub did not observe bounded failures and ready recovery\n' >&2
   exit 1
 }
+mapfile -t watcher_markers <"$watcher_markers"
+(( ${#watcher_markers[@]} >= 5 )) || { printf 'watcher timing markers are incomplete\n' >&2; exit 1; }
+(( watcher_markers[1] - watcher_markers[0] >= 10 )) || { printf 'first watcher retry ignored backoff\n' >&2; exit 1; }
+(( watcher_markers[2] - watcher_markers[1] >= 25 )) || { printf 'second watcher retry ignored exponential backoff\n' >&2; exit 1; }
 touch -- "$release_external"
 wait "$holder_pid"
 holder_pid=""

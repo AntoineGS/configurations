@@ -59,6 +59,16 @@ ShellRoot {
     id: swapProcess
   }
 
+  Process {
+    id: watcherReadyProcess
+    command: ["bash", "-c", "printf 'ready\\n' >\"$0\"", root.watcherModePath]
+    onExited: {
+      registry.pluginWatchEnabled = true
+      registry.initProcess()
+      root.watcherLifecyclePhase = 3
+    }
+  }
+
   Timer {
     id: firstSwapTimer
     interval: 500
@@ -186,6 +196,22 @@ ShellRoot {
   function runWatcherLifecycleAssertions() {
     if (root.watcherLifecyclePhase === 0) {
       if (registry.scanning) return
+      registry.watcherRetryPending = true
+      registry.watcherRetryProcessStopped = false
+      registry.watcherRetryElapsed = false
+      registry.markWatcherRetryElapsed()
+      check(registry.watcherRetryPending && !registry.watcherRetryProcessStopped,
+        "elapsed-first retry waits for stopped process")
+      registry.markWatcherProcessStopped()
+      check(!registry.watcherRetryPending, "elapsed-first retry starts once both conditions hold")
+      registry.watcherRetryPending = true
+      registry.watcherRetryProcessStopped = false
+      registry.watcherRetryElapsed = false
+      registry.markWatcherProcessStopped()
+      check(registry.watcherRetryPending && !registry.watcherRetryElapsed,
+        "stopped-first retry waits for elapsed backoff")
+      registry.markWatcherRetryElapsed()
+      check(!registry.watcherRetryPending, "stopped-first retry starts once both conditions hold")
       registry.pluginWatchEnabled = true
       registry.watcherRetryLimit = 2
       registry.watcherRetryBaseDelay = 20
@@ -197,19 +223,17 @@ ShellRoot {
       if (registry.watcherRetryCount < registry.watcherRetryLimit
           || !registry.watcherUnavailable
           || !hasError("registry", "dependencies are unavailable", "watcher")) return
-      registry.parseScanOutput(block("thirdparty", root.pluginsRoot + "/acme.widget", manifest(
-        "acme.widget", ["bar-widget"], { barWidget: "Widget.qml" })))
-      check(hasError("registry", "dependencies are unavailable", "watcher"),
-        "successful registry scan preserves terminal watcher error")
-      registry.initProcess()
+      registry.pluginWatchEnabled = false
+      registry.rescan()
       root.watcherLifecyclePhase = 2
       return
     }
-    if (root.watcherLifecyclePhase === 2 && registry.watcherReady) {
+    if (root.watcherLifecyclePhase === 3 && registry.watcherReady) {
       check(!registry.watcherUnavailable && registry.watcherRetryCount === 0,
         "explicit ready clears retry health")
       check(!hasError("registry", "dependencies are unavailable", "watcher"),
         "explicit ready clears watcher error")
+      check(registry.watcherProcess.running, "ready watcher remains alive")
       registry.stopWatcher()
       resultFile.setText(JSON.stringify({ ok: true }))
       Qt.exit(0)
@@ -402,7 +426,11 @@ ShellRoot {
     }
     function onScanFinished() {
       if (root.watcherLifecycleMode) {
-        root.runWatcherLifecycleAssertions()
+        if (root.watcherLifecyclePhase === 2) {
+          check(hasError("registry", "dependencies are unavailable", "watcher"),
+            "real post-failure scan preserves terminal watcher error")
+          watcherReadyProcess.running = true
+        }
         return
       }
       root.scanFinishedCount++
