@@ -413,6 +413,19 @@ for manual_artifact in "${manual_artifacts[@]}"; do
   [[ -d "$manual_artifact" ]] || fail "hidden artifact was changed: $manual_artifact"
   rmdir -- "$manual_artifact"
 done
+manual_guidance_rollback="$plugins_dir/.rollback.lifecycle.widget.guidance"
+mv -T -- "$plugins_dir/lifecycle.widget" "$manual_guidance_rollback"
+manual_guidance_output=$(env "${manager_env[@]}" "$manager" update lifecycle.widget --yes 2>&1 || true)
+printf -v manual_guidance_mv 'mv -T -- %q %q' "$manual_guidance_rollback" "$plugins_dir/lifecycle.widget"
+[[ $manual_guidance_output == *"$manual_guidance_mv"* && $manual_guidance_output != */proc/self/fd/* ]] || {
+  printf 'manual guidance:\n%s\nexpected:\n%s\n' "$manual_guidance_output" "$manual_guidance_mv" >&2
+  fail "single rollback manual guidance was not canonical and exact"
+}
+mv -T -- "$manual_guidance_rollback" "$plugins_dir/lifecycle.widget"
+mkdir -- "$plugins_dir/.rollback.lifecycle.widget.guidance-a" "$plugins_dir/.rollback.lifecycle.widget.guidance-b"
+manual_multiple_output=$(env "${manager_env[@]}" "$manager" update lifecycle.widget --yes 2>&1 || true)
+[[ $manual_multiple_output != *'mv -T --'* ]] || fail "multiple rollback guidance suggested ambiguous restoration"
+rmdir -- "$plugins_dir"/.rollback.lifecycle.widget.guidance-*
 ln -s -- "$plugins_dir/lifecycle.widget" "$plugins_dir/.update.lifecycle.widget.invalid-type"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "invalid recovery artifact type was accepted"
@@ -573,6 +586,86 @@ if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2
 fi
 rm -rf -- "${cleanup_rollback[@]}" "$cleanup_race_backup"
 
+printf 'final-public-race-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm final-public-race-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+final_public_race_hook="$test_root/final-public-race-hook"
+final_public_race_backup="$test_root/final-public-race-backup"
+cat >"$final_public_race_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == after-candidate-publication ]]; then
+  mv -- "$FINAL_PUBLIC_RACE_TARGET" "$FINAL_PUBLIC_RACE_BACKUP"
+  mkdir -- "$FINAL_PUBLIC_RACE_TARGET"
+  printf 'unknown-public\n' >"$FINAL_PUBLIC_RACE_TARGET/marker"
+fi
+EOF
+chmod +x -- "$final_public_race_hook"
+final_public_race_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$final_public_race_hook" \
+  FINAL_PUBLIC_RACE_TARGET="$plugins_dir/lifecycle.widget" FINAL_PUBLIC_RACE_BACKUP="$final_public_race_backup" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "final public replacement was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$final_public_race_prior" ]] ||
+  fail "final public replacement did not restore rollback"
+[[ -f "$final_public_race_backup/manifest.json" ]] || fail "final public race lost candidate object"
+rm -rf -- "$final_public_race_backup"
+
+printf 'restoration-failure-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm restoration-failure-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+restore_fail_bin="$test_root/restore-fail-bin"
+mkdir -p -- "$restore_fail_bin"
+cat >"$restore_fail_bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ ${3-} == *'/.rollback.lifecycle.widget.'* && ${4-} == *'/lifecycle.widget' ]]; then
+  exit 1
+fi
+exec /bin/mv "$@"
+EOF
+chmod +x -- "$restore_fail_bin/mv"
+restore_fail_err="$test_root/restore-fail.err"
+if env "${manager_env[@]}" PATH="$restore_fail_bin:$PATH" \
+  DESKTOP_SHELL_PLUGIN_VALIDATE="$post_verify_validator" POST_VERIFY_PUBLIC="$plugins_dir/lifecycle.widget" \
+  POST_VERIFY_REAL_VALIDATOR="$validator" "$manager" update lifecycle.widget --yes >"$test_root/restore-fail.out" 2>"$restore_fail_err"; then
+  fail "restoration failure was accepted"
+fi
+grep -Fq 'publication restoration failed' "$restore_fail_err" || fail "restoration failure diagnostic was missing"
+restore_fail_rollback=("$plugins_dir"/.rollback.lifecycle.widget.*)
+[[ ${#restore_fail_rollback[@]} == 1 ]] || fail "restoration failure did not retain rollback evidence"
+[[ ! -e "$plugins_dir/lifecycle.widget" ]] || fail "restoration failure left uncertain public object"
+/bin/mv -T -- "${restore_fail_rollback[0]}" "$plugins_dir/lifecycle.widget"
+rm -rf -- "$plugins_dir"/.rejected.lifecycle.widget.* "$plugins_dir"/.update.lifecycle.widget.*
+
+printf 'wrong-rollback-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm wrong-rollback-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+wrong_rollback_hook="$test_root/wrong-rollback-hook"
+wrong_rollback_backup="$test_root/wrong-rollback-backup"
+cat >"$wrong_rollback_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == after-first-publication-rename ]]; then
+  mv -- "$2" "$WRONG_ROLLBACK_BACKUP"
+  mkdir -- "$2"
+  printf 'wrong-object\n' >"$2/marker"
+fi
+EOF
+chmod +x -- "$wrong_rollback_hook"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$wrong_rollback_hook" \
+  WRONG_ROLLBACK_BACKUP="$wrong_rollback_backup" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "wrong rollback object was accepted"
+fi
+[[ -f "$plugins_dir/lifecycle.widget/marker" && -f "$wrong_rollback_backup/manifest.json" ]] ||
+  fail "wrong rollback object was not preserved and restored"
+rm -rf -- "$plugins_dir/lifecycle.widget"
+/bin/mv -T -- "$wrong_rollback_backup" "$plugins_dir/lifecycle.widget"
+
 printf 'reload-warning-update\n' >>"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
 git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm reload-warning-update
@@ -651,6 +744,24 @@ fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$validation_prior" ]] || fail "validation rollback changed commit"
 validation_stages=("$plugins_dir"/.update.lifecycle.widget.*)
 [[ ${#validation_stages[@]} == 0 ]] || { printf 'validation output:\n%s\n' "$(<"$test_root/validation.err")" >&2; fail "validation failure left update stage: ${validation_stages[*]}"; }
+find_fail_bin="$test_root/find-fail-bin"
+mkdir -p -- "$find_fail_bin"
+cat >"$find_fail_bin/find" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $* == *' -xdev '* ]]; then
+  exit 1
+fi
+exec /usr/bin/find "$@"
+EOF
+chmod +x -- "$find_fail_bin/find"
+if env "${manager_env[@]}" PATH="$find_fail_bin:$PATH" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "find deletion failure was accepted"
+fi
+find_fail_stages=("$plugins_dir"/.update.lifecycle.widget.*)
+[[ ${#find_fail_stages[@]} == 1 ]] || fail "find deletion failure did not retain stage"
+rm -rf -- "${find_fail_stages[@]}"
 validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $validation_rescan_after == "$validation_rescan_before" ]] || fail "validation rollback requested rescan"
 
@@ -711,7 +822,7 @@ case "$1" in
     mv -- "$2" "$RACE_TARGET_BACKUP"
     mkdir -- "$2"
     ;;
-  before-publication)
+  before-publication|after-first-publication-rename)
     exit 0
     ;;
   before-rescan)
