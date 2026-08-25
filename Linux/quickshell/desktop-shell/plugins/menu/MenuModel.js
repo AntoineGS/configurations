@@ -318,15 +318,70 @@ function displayRow(items, itemOrder, checkedResults, disabledResults, entry, de
     kind: entry.kind,
     icon: entry.icon,
     iconFont: entry.iconFont || "",
+    appIcon: "",
     label: labelFor(entry, checkedResults, disabledResults),
     target: target,
     detail: detail || "",
     path: pathFor(items, entry.id),
     childCount: (entry.kind === "menu" || entry.kind === "link") ? childCount(items, itemOrder, target) : 0,
+    desktopId: "",
     action: entry.action || "",
+    requestSerial: 0,
     score: score || 0,
     section: section || ""
   }
+}
+
+function applicationRow(entry, appLibrary, score) {
+  return {
+    itemId: "app:" + String((entry && entry.id) || ""),
+    disabled: false,
+    kind: "application",
+    icon: "",
+    iconFont: "",
+    appIcon: String((entry && entry.icon) || ""),
+    label: appLibrary.entryName(entry),
+    target: "",
+    detail: appLibrary.entrySubtext(entry),
+    path: "",
+    childCount: 0,
+    desktopId: String((entry && entry.id) || ""),
+    action: "",
+    score: 20000 - Number(score || 0),
+    section: "apps"
+  }
+}
+
+function calculatorRow(query, result, serial) {
+  return {
+    itemId: "calculator",
+    disabled: false,
+    kind: "calculator",
+    icon: "=",
+    iconFont: "",
+    appIcon: "",
+    label: String(result || ""),
+    target: "",
+    detail: String(query || ""),
+    path: "",
+    childCount: 0,
+    desktopId: "",
+    action: "",
+    requestSerial: Number(serial || 0),
+    score: -1000,
+    section: "calculator"
+  }
+}
+
+function composeSearchResults(commandRows, appRows, calculatorResult) {
+  var rows = []
+  if (calculatorResult) rows.push(calculatorResult)
+  rows = rows.concat(commandRows || [], appRows || [])
+  rows.sort(function(left, right) {
+    if (left.score !== right.score) return left.score - right.score
+    return String(left.label).localeCompare(String(right.label))
+  })
+  return rows
 }
 
 if (typeof module !== "undefined") {
@@ -357,6 +412,9 @@ if (typeof module !== "undefined") {
     descriptionTextMatches: descriptionTextMatches,
     matchesQuery: matchesQuery,
     searchScore: searchScore,
-    displayRow: displayRow
+    displayRow: displayRow,
+    applicationRow: applicationRow,
+    calculatorRow: calculatorRow,
+    composeSearchResults: composeSearchResults
   }
 }

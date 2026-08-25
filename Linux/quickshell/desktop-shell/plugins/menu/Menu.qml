@@ -22,6 +22,8 @@ Item {
   property int selectedIndex: 0
   property bool cursorActive: false
 
+  readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
     "setup.monitors": "desktop.monitor"
@@ -123,7 +125,7 @@ Item {
 
     var active = root.item(root.activeMenu) ? root.activeMenu : "root"
     root.activeMenu = active
-    var rows = []
+    var commandRows = []
     var query = root.filterText.trim()
 
     if (query) {
@@ -132,9 +134,9 @@ Item {
         if (!entry || entry.id === "root" || !root.isVisible(entry)) continue
         if (!MenuModel.isDescendantOf(root.items, entry.id, active)) continue
         if (!MenuModel.matchesQuery(entry, query, !root.isDisabled(entry))) continue
-        rows.push(root.displayRow(entry, root.parentPath(entry.id), MenuModel.searchScore(root.items, entry, query), "search"))
+        commandRows.push(root.displayRow(entry, root.parentPath(entry.id), MenuModel.searchScore(root.items, entry, query), "search"))
       }
-      rows.sort(function(left, right) {
+      commandRows.sort(function(left, right) {
         if (left.score !== right.score) return left.score - right.score
         return left.path.localeCompare(right.path)
       })
@@ -142,10 +144,20 @@ Item {
       for (var j = 0; j < root.itemOrder.length; j++) {
         var child = root.item(root.itemOrder[j])
         if (!child || child.parent !== active || !root.isVisible(child)) continue
-        rows.push(root.displayRow(child, child.description, child.order, ""))
+        commandRows.push(root.displayRow(child, child.description, child.order, ""))
       }
     }
 
+    var appRows = []
+    if (query && active === "root" && root.appLibrary) {
+      var applications = root.appLibrary.sortedEntries(query)
+      for (var appIndex = 0; appIndex < applications.length; appIndex++) {
+        var application = applications[appIndex]
+        appRows.push(MenuModel.applicationRow(application.entry, root.appLibrary, application.score))
+      }
+    }
+
+    var rows = MenuModel.composeSearchResults(commandRows, appRows, null)
     for (var k = 0; k < rows.length; k++) displayModel.append(rows[k])
     root.settleCursor()
   }
@@ -200,6 +212,10 @@ Item {
     var row = displayModel.get(index)
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true)
+    } else if (row.kind === "application") {
+      root.opened = false
+      root.filterText = ""
+      if (root.appLibrary) root.appLibrary.launch(row.desktopId, row.label)
     } else {
       root.applySelected(row.action)
     }
@@ -232,6 +248,7 @@ Item {
     root.cursorActive = true
     root.opened = true
     root.rebuildDisplay()
+    if (root.appLibrary) root.appLibrary.refreshIcons()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -260,6 +277,13 @@ Item {
   }
 
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
+
+  Connections {
+    target: root.appLibrary
+    function onAppsChanged() {
+      if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay()
+    }
+  }
 
   // The menu is loaded on demand in preview, so keep its health probe with the
   // single menu instance instead of adding a handler to each bar screen.
@@ -409,6 +433,7 @@ Item {
                 required property string kind
                 required property string icon
                 required property string iconFont
+                required property string appIcon
                 required property string label
                 required property string target
                 required property string detail
@@ -416,6 +441,7 @@ Item {
                 required property string action
                 required property int childCount
                 required property bool disabled
+                required property string desktopId
 
                 width: ListView.view.width
                 height: root.rowHeight
@@ -430,14 +456,30 @@ Item {
                   anchors.rightMargin: Style.space(8)
                   spacing: Style.space(8)
 
-                  Text {
+                  Item {
                     width: Style.space(28)
-                    text: row.icon
-                    color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
-                    font.family: row.iconFont || root.fontFamily
-                    font.pixelSize: Style.font.icon
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                    height: parent.height
+
+                    Text {
+                      anchors.fill: parent
+                      visible: row.kind !== "application"
+                      text: row.icon
+                      color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
+                      font.family: row.iconFont || root.fontFamily
+                      font.pixelSize: Style.font.icon
+                      horizontalAlignment: Text.AlignHCenter
+                      verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Image {
+                      anchors.fill: parent
+                      anchors.margins: Style.space(2)
+                      visible: row.kind === "application"
+                      source: visible && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
+                      fillMode: Image.PreserveAspectFit
+                      asynchronous: true
+                      smooth: true
+                    }
                   }
 
                   Column {
