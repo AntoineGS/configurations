@@ -42,7 +42,6 @@ tpack-bin
 ttf-ia-writer
 tzupdate
 ufw-docker
-vicinae-bin
 wol-systemd
 xdg-terminal-exec
 yaru-icon-theme

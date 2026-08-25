@@ -13,32 +13,32 @@ close_rustdesk_windows() {
   local -a addresses=()
 
   if ! instances=$(hyprctl instances -j); then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "Could not discover Hyprland instances." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "Could not discover Hyprland instances." || true
     return 1
   fi
 
   if ! instance=$(jq -r 'sort_by(.time) | last | .instance // empty' <<<"$instances"); then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "Could not select a Hyprland instance." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "Could not select a Hyprland instance." || true
     return 1
   fi
 
   if [[ -z $instance ]]; then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "No active Hyprland instance was found." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "No active Hyprland instance was found." || true
     return 1
   fi
 
   if ! clients=$(hyprctl -i "$instance" clients -j); then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "Could not enumerate Hyprland clients." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "Could not enumerate Hyprland clients." || true
     return 1
   fi
 
   if ! addresses_output=$(jq -r '.[] | select(.class | test("rustdesk"; "i")) | .address' <<<"$clients"); then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "Could not identify RustDesk windows." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "Could not identify RustDesk windows." || true
     return 1
   fi
 
   if [[ -z $addresses_output ]]; then
-    notify-send -a "vicinae" "RustDesk windows closed" "No RustDesk windows were open." || true
+    notify-send -a "desktop-shell" "RustDesk windows closed" "No RustDesk windows were open." || true
     return 0
   fi
 
@@ -52,11 +52,11 @@ close_rustdesk_windows() {
   done
 
   if (( close_failed )); then
-    notify-send -a "vicinae" -u critical "RustDesk windows not closed" "Closed $closed_count RustDesk windows; one or more windows could not be closed." || true
+    notify-send -a "desktop-shell" -u critical "RustDesk windows not closed" "Closed $closed_count RustDesk windows; one or more windows could not be closed." || true
     return 1
   fi
 
-  notify-send -a "vicinae" "RustDesk windows closed" "Closed $closed_count RustDesk windows." || true
+  notify-send -a "desktop-shell" "RustDesk windows closed" "Closed $closed_count RustDesk windows." || true
 }
 
 if (( $# == 1 )) && [[ $1 == "--close-now" ]]; then
@@ -67,35 +67,35 @@ fi
 minutes=${1:-}
 
 if (( $# != 1 )) || [[ ! $minutes =~ ^0*[1-9][0-9]*$ ]]; then
-  notify-send -a "vicinae" -u critical "Close not scheduled" "Enter a positive whole number of minutes."
+  notify-send -a "desktop-shell" -u critical "Close not scheduled" "Enter a positive whole number of minutes."
   exit 1
 fi
 
 if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
-  notify-send -a "vicinae" -u critical "Close not scheduled" "Could not lock the RustDesk close timer."
+  notify-send -a "desktop-shell" -u critical "Close not scheduled" "Could not lock the RustDesk close timer."
   exit 1
 fi
 
-if ! exec {lock_fd}>"$XDG_RUNTIME_DIR/vicinae-close-rustdesk-windows.lock" || ! flock "$lock_fd"; then
-  notify-send -a "vicinae" -u critical "Close not scheduled" "Could not lock the RustDesk close timer."
+if ! exec {lock_fd}>"$XDG_RUNTIME_DIR/desktop-shell-close-rustdesk-windows.lock" || ! flock "$lock_fd"; then
+  notify-send -a "desktop-shell" -u critical "Close not scheduled" "Could not lock the RustDesk close timer."
   exit 1
 fi
 
 if ! close_at=$(date --date="+$minutes minutes" "+%H:%M"); then
   exec {lock_fd}>&-
-  notify-send -a "vicinae" -u critical "Close not scheduled" "The requested delay is too large."
+  notify-send -a "desktop-shell" -u critical "Close not scheduled" "The requested delay is too large."
   exit 1
 fi
 
 helper_path=$(readlink -f -- "$0")
-systemctl --user stop vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service 2>/dev/null || true
-systemctl --user reset-failed vicinae-close-rustdesk-windows.timer vicinae-close-rustdesk-windows.service 2>/dev/null || true
+systemctl --user stop desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
+systemctl --user reset-failed desktop-shell-close-rustdesk-windows.timer desktop-shell-close-rustdesk-windows.service 2>/dev/null || true
 
-if ! systemd-run --user --unit=vicinae-close-rustdesk-windows --on-active="${minutes}m" --collect "$helper_path" --close-now; then
+if ! systemd-run --user --unit=desktop-shell-close-rustdesk-windows --on-active="${minutes}m" --collect "$helper_path" --close-now; then
   exec {lock_fd}>&-
-  notify-send -a "vicinae" -u critical "Close not scheduled" "Could not create the RustDesk close timer."
+  notify-send -a "desktop-shell" -u critical "Close not scheduled" "Could not create the RustDesk close timer."
   exit 1
 fi
 
 exec {lock_fd}>&-
-notify-send -a "vicinae" "RustDesk close scheduled" "Closing all RustDesk windows in $minutes minutes, at $close_at." || true
+notify-send -a "desktop-shell" "RustDesk close scheduled" "Closing all RustDesk windows in $minutes minutes, at $close_at." || true

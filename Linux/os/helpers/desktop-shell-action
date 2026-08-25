@@ -11,6 +11,21 @@ usage() {
 action=$1
 argv=()
 
+wait_for_menu_dismissal() {
+  local attempt
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    if ! hyprctl layers -j 2>/dev/null \
+      | jq -e '.. | objects | select(.namespace? == "desktop-menu")' >/dev/null; then
+      sleep 0.05
+      return 0
+    fi
+    sleep 0.01
+  done
+
+  sleep 0.05
+}
+
 case "$action" in
   trigger.screenshot)       argv=(cmd-screenshot) ;;
   trigger.screenrecord)     argv=(cmd-screenrecord) ;;
@@ -18,6 +33,14 @@ case "$action" in
   trigger.share-clipboard)  argv=(cmd-share clipboard) ;;
   trigger.share-file)       argv=(launch-tui-large cmd-share file) ;;
   trigger.share-folder)     argv=(launch-tui-large cmd-share folder) ;;
+  trigger.toggle.top-bar)          argv=(toggle-desktop-shell-bar) ;;
+  trigger.toggle.window-gaps)      argv=(hyprland-window-gaps-toggle) ;;
+  trigger.toggle.window-ratio)     argv=(hyprland-window-single-square-aspect-toggle) ;;
+  trigger.toggle.workspace-layout) argv=(hyprland-workspace-layout-toggle) ;;
+  trigger.toggle.nightlight)       argv=(toggle-nightlight) ;;
+  trigger.toggle.idle-lock)        argv=(toggle-idle) ;;
+  trigger.turn-off-screens)        argv=(turn-off-screens 2) ;;
+  trigger.start-all-terminals)     argv=(start-all-terminals) ;;
 
   setup.audio)              argv=(desktop-shell summon desktop.audio '{}') ;;
   setup.wifi)               argv=(desktop-shell summon desktop.network '{}') ;;
@@ -28,6 +51,11 @@ case "$action" in
   setup.security)           argv=(launch-tui-large setup-fingerprint) ;;
   setup.shell-config)       argv=(launch-editor "$HOME/.config/quickshell/desktop-shell/config/shell.json") ;;
   setup.shell-health)       argv=(launch-tui-large watch -n 2 desktop-shell health) ;;
+  setup.keybindings)           argv=(menu-keybindings) ;;
+  setup.cycle-display-scaling) argv=(hyprland-monitor-scaling-cycle) ;;
+  setup.audio-tui)             argv=(launch-audio) ;;
+  setup.wifi-tui)              argv=(launch-wifi) ;;
+  setup.bluetooth-tui)         argv=(launch-bluetooth) ;;
 
   install.package)          argv=(launch-tui-large pkg-install) ;;
   install.aur)              argv=(launch-tui-large pkg-aur-install) ;;
@@ -41,11 +69,17 @@ case "$action" in
 
   system.lock)              argv=(lock-screen) ;;
   system.suspend)           argv=(systemctl suspend) ;;
+  system.suspend-in)        argv=(desktop-shell-prompt-action system.suspend-in) ;;
+  system.close-rustdesk-in) argv=(desktop-shell-prompt-action system.close-rustdesk-in) ;;
   system.hibernate)         argv=(systemctl hibernate) ;;
   system.logout)            argv=(system-logout) ;;
   system.reboot)            argv=(system-reboot) ;;
   system.shutdown)          argv=(system-shutdown) ;;
   *)                        usage ;;
+esac
+
+case $action in
+  trigger.screenshot | trigger.screenrecord | trigger.color) wait_for_menu_dismissal ;;
 esac
 
 if ! "${argv[@]}"; then

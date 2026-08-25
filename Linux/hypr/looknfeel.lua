@@ -44,14 +44,6 @@ hl.config({
 	},
 })
 
--- Vicinae overlay blur
-hl.layer_rule({
-	name = "layerrule-1",
-	match = { namespace = "vicinae" },
-	blur = true,
-	ignore_alpha = 0,
-})
-
 -- https://wiki.hypr.land/Configuring/Variables/#group
 hl.config({
 	group = {

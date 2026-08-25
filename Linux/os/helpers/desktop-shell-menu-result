@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+usage() {
+  printf 'usage: %s REQUEST_DIR cancel\n' "${0##*/}" >&2
+  printf '       %s REQUEST_DIR value VALUE\n' "${0##*/}" >&2
+  exit 2
+}
+
+[[ -n ${XDG_RUNTIME_DIR:-} ]] || usage
+(( $# >= 2 )) || usage
+
+requested_dir=$1
+mode=$2
+runtime_path=$XDG_RUNTIME_DIR/desktop-shell-menu
+tmp_file=""
+
+cleanup() {
+  [[ -z $tmp_file ]] || rm -f -- "$tmp_file"
+}
+trap cleanup EXIT
+
+[[ -d $runtime_path && ! -L $runtime_path ]] || usage
+[[ -d $requested_dir && ! -L $requested_dir ]] || usage
+
+runtime_root=$(realpath -e -- "$runtime_path") || usage
+request_dir=$(realpath -e -- "$requested_dir") || usage
+[[ $(dirname -- "$request_dir") == "$runtime_root" ]] || usage
+[[ ${request_dir##*/} == request.* ]] || usage
+
+user_id=$(id -u)
+[[ $(stat -c '%u' -- "$runtime_root") == "$user_id" ]] || usage
+[[ $(stat -c '%a' -- "$runtime_root") == 700 ]] || usage
+[[ $(stat -c '%u' -- "$request_dir") == "$user_id" ]] || usage
+[[ $(stat -c '%a' -- "$request_dir") == 700 ]] || usage
+
+atomic_write() {
+  local target=$1
+  local content=$2
+
+  tmp_file=$(mktemp --tmpdir="$request_dir" .result.XXXXXX)
+  chmod 600 -- "$tmp_file"
+  printf '%s\n' "$content" >"$tmp_file"
+  mv -Tf -- "$tmp_file" "$target"
+  tmp_file=""
+}
+
+case $mode in
+  cancel)
+    (( $# == 2 )) || usage
+    rm -f -- "$request_dir/selection"
+    atomic_write "$request_dir/done" cancelled
+    ;;
+  value)
+    (( $# == 3 )) || usage
+    atomic_write "$request_dir/selection" "$3"
+    atomic_write "$request_dir/done" selected
+    ;;
+  *) usage ;;
+esac

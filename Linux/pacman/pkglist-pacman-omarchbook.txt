@@ -38,6 +38,7 @@ kdenlive
 lazydocker
 lazygit
 libmspack
+libqalculate
 libreoffice-fresh
 luacheck
 luarocks

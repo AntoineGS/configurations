@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "MenuModel.js" as MenuModel
+import "../../services/CalculatorProvider.js" as CalculatorProvider
 
 Item {
   id: root
@@ -21,6 +22,20 @@ Item {
   property string filterText: ""
   property int selectedIndex: 0
   property bool cursorActive: false
+  property bool calculatorFocused: false
+  property int calculatorSerial: 0
+  property string calculatorPendingQuery: ""
+  property string calculatorResult: ""
+  property string calculatorResultQuery: ""
+  property string menuMode: "menu"
+  property string dmenuPrompt: ""
+  property var dmenuOptions: []
+  property string requestDir: ""
+  property string pendingAction: ""
+
+  readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+  readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
+  readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
 
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
@@ -123,8 +138,16 @@ Item {
 
     var active = root.item(root.activeMenu) ? root.activeMenu : "root"
     root.activeMenu = active
-    var rows = []
+    var commandRows = []
     var query = root.filterText.trim()
+
+    if (root.dmenuActive) {
+      var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
+      for (var dmenuIndex = 0; dmenuIndex < dmenuRows.length; dmenuIndex++) displayModel.append(dmenuRows[dmenuIndex])
+      root.settleCursor()
+      if (root.menuMode === "input") root.cursorActive = false
+      return
+    }
 
     if (query) {
       for (var i = 0; i < root.itemOrder.length; i++) {
@@ -132,9 +155,9 @@ Item {
         if (!entry || entry.id === "root" || !root.isVisible(entry)) continue
         if (!MenuModel.isDescendantOf(root.items, entry.id, active)) continue
         if (!MenuModel.matchesQuery(entry, query, !root.isDisabled(entry))) continue
-        rows.push(root.displayRow(entry, root.parentPath(entry.id), MenuModel.searchScore(root.items, entry, query), "search"))
+        commandRows.push(root.displayRow(entry, root.parentPath(entry.id), MenuModel.searchScore(root.items, entry, query), "search"))
       }
-      rows.sort(function(left, right) {
+      commandRows.sort(function(left, right) {
         if (left.score !== right.score) return left.score - right.score
         return left.path.localeCompare(right.path)
       })
@@ -142,10 +165,24 @@ Item {
       for (var j = 0; j < root.itemOrder.length; j++) {
         var child = root.item(root.itemOrder[j])
         if (!child || child.parent !== active || !root.isVisible(child)) continue
-        rows.push(root.displayRow(child, child.description, child.order, ""))
+        commandRows.push(root.displayRow(child, child.description, child.order, ""))
       }
     }
 
+    var appRows = []
+    if (query && active === "root" && root.appLibrary) {
+      var applications = root.appLibrary.sortedEntries(query)
+      for (var appIndex = 0; appIndex < applications.length; appIndex++) {
+        var application = applications[appIndex]
+        appRows.push(MenuModel.applicationRow(application.entry, root.appLibrary, application.score))
+      }
+    }
+
+    var calculatorResult = null
+    if (query && active === "root" && root.calculatorResult && root.calculatorResultQuery === query)
+      calculatorResult = MenuModel.calculatorRow(query, root.calculatorResult, root.calculatorSerial)
+
+    var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
     for (var k = 0; k < rows.length; k++) displayModel.append(rows[k])
     root.settleCursor()
   }
@@ -168,7 +205,19 @@ Item {
     root.filterText = String(nextFilter || "")
     root.selectedIndex = 0
     root.cursorActive = true
+    if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
     root.rebuildDisplay()
+  }
+
+  function scheduleCalculator(query) {
+    root.calculatorSerial += 1
+    root.calculatorPendingQuery = String(query || "").trim()
+    root.calculatorResult = ""
+    root.calculatorResultQuery = ""
+    calculatorDebounce.stop()
+    calculatorTimeout.stop()
+    if (calculatorProcess.running) calculatorProcess.signal(15)
+    if (CalculatorProvider.isExpressionLike(root.calculatorPendingQuery)) calculatorDebounce.restart()
   }
 
   function setActiveMenu(id, pushHistory) {
@@ -200,15 +249,27 @@ Item {
     var row = displayModel.get(index)
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true)
+    } else if (row.kind === "dmenu") {
+      root.finishRequest(row.selection)
+    } else if (row.kind === "application") {
+      root.opened = false
+      root.filterText = ""
+      if (root.appLibrary) root.appLibrary.launch(row.desktopId, row.label)
+    } else if (row.kind === "calculator") {
+      root.opened = false
+      root.filterText = ""
+      Quickshell.execDetached(["wl-copy", "--type", "text/plain", row.label])
     } else {
       root.applySelected(row.action)
     }
   }
 
   function applySelected(action) {
-    if (!root.runAction(action)) return
+    if (!MenuModel.isOpaqueActionId(action) || actionProcess.running || root.pendingAction) return
+    root.pendingAction = String(action)
     root.opened = false
     root.filterText = ""
+    actionDelay.restart()
   }
 
   function runAction(action) {
@@ -225,6 +286,11 @@ Item {
   }
 
   function openExistingMenu(initialMenu) {
+    if (root.requestActive) root.finishRequest(null)
+    root.menuMode = "menu"
+    root.dmenuPrompt = ""
+    root.dmenuOptions = []
+    root.requestDir = ""
     root.activeMenu = root.item(initialMenu) ? initialMenu : "root"
     root.navStack = []
     root.filterText = ""
@@ -232,7 +298,38 @@ Item {
     root.cursorActive = true
     root.opened = true
     root.rebuildDisplay()
+    if (root.appLibrary) root.appLibrary.refreshIcons()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function openDmenu(payload) {
+    if (root.requestActive) root.finishRequest(null)
+    root.menuMode = payload.mode === "input" ? "input" : "select"
+    root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
+    root.dmenuOptions = Array.isArray(payload.options) ? payload.options : []
+    root.requestDir = String(payload.requestDir || "")
+    if (!root.requestDir) return "unknown"
+    root.activeMenu = "root"
+    root.navStack = []
+    root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
+    root.selectedIndex = 0
+    root.cursorActive = root.menuMode === "select"
+    root.opened = true
+    root.rebuildDisplay()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    return "ok"
+  }
+
+  function finishRequest(selection) {
+    if (!root.requestActive) return
+    var activeRequestDir = root.requestDir
+    root.requestDir = ""
+    root.opened = false
+    root.filterText = ""
+    if (selection === null || selection === undefined)
+      Quickshell.execDetached(["desktop-shell-menu-result", activeRequestDir, "cancel"])
+    else
+      Quickshell.execDetached(["desktop-shell-menu-result", activeRequestDir, "value", String(selection)])
   }
 
   function openRoute(initialMenu) {
@@ -251,15 +348,29 @@ Item {
   function open(payloadJson) {
     var payload = ({})
     try { payload = JSON.parse(String(payloadJson || "{}")) } catch (error) { payload = ({}) }
+    if (payload.mode === "input" || payload.mode === "select") return root.openDmenu(payload)
+    root.calculatorFocused = payload.mode === "calculator"
     return root.openRoute(payload.initialMenu || payload.menu || "root")
   }
 
   function close() {
+    if (root.requestActive) root.finishRequest(null)
     root.opened = false
     root.filterText = ""
+    root.calculatorFocused = false
+    root.menuMode = "menu"
+    root.requestDir = ""
+    root.scheduleCalculator("")
   }
 
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
+
+  Connections {
+    target: root.appLibrary
+    function onAppsChanged() {
+      if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay()
+    }
+  }
 
   // The menu is loaded on demand in preview, so keep its health probe with the
   // single menu instance instead of adding a handler to each bar screen.
@@ -283,6 +394,63 @@ Item {
     command: []
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
+  }
+
+  Timer {
+    id: actionDelay
+    interval: 100
+    onTriggered: {
+      var action = root.pendingAction
+      root.pendingAction = ""
+      root.runAction(action)
+    }
+  }
+
+  Timer {
+    id: calculatorDebounce
+    interval: 150
+    onTriggered: {
+      if (calculatorProcess.running) {
+        calculatorDebounce.restart()
+        return
+      }
+      calculatorProcess.requestSerial = root.calculatorSerial
+      calculatorProcess.requestQuery = root.calculatorPendingQuery
+      calculatorProcess.command = ["qalc", "-t", calculatorProcess.requestQuery]
+      calculatorProcess.running = true
+      calculatorTimeout.restart()
+    }
+  }
+
+  Timer {
+    id: calculatorTimeout
+    interval: 1500
+    onTriggered: if (calculatorProcess.running) calculatorProcess.signal(15)
+  }
+
+  Process {
+    id: calculatorProcess
+    property int requestSerial: 0
+    property string requestQuery: ""
+    property string output: ""
+    command: []
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (calculatorProcess.output.length <= 4096)
+          calculatorProcess.output += (calculatorProcess.output ? "\n" : "") + line
+      }
+    }
+    stderr: StdioCollector { waitForEnd: true }
+    onStarted: output = ""
+    onExited: function(exitCode) {
+      calculatorTimeout.stop()
+      var result = Number(exitCode) === 0 ? CalculatorProvider.normalizeResult(output, 4096) : ""
+      if (!result || !CalculatorProvider.shouldAcceptResult(requestSerial, root.calculatorSerial,
+          requestQuery, root.filterText.trim())) return
+      root.calculatorResult = result
+      root.calculatorResultQuery = requestQuery
+      if (root.opened) root.rebuildDisplay()
+    }
   }
 
   FileView {
@@ -363,7 +531,8 @@ Item {
             root.select(1)
             event.accepted = true
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
-            if (root.cursorActive) root.activateIndex(root.selectedIndex)
+            if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
+            else if (root.cursorActive) root.activateIndex(root.selectedIndex)
             else root.settleCursor()
             event.accepted = true
           } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32
@@ -381,7 +550,8 @@ Item {
           Text {
             width: parent.width
             height: Style.space(34)
-            text: root.filterText || ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
+            text: root.filterText || (root.dmenuActive ? root.dmenuPrompt : root.calculatorFocused ? "Calculate…"
+              : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…"))
             color: root.foreground
             opacity: root.filterText ? 1 : 0.62
             font.family: root.fontFamily
@@ -409,13 +579,16 @@ Item {
                 required property string kind
                 required property string icon
                 required property string iconFont
+                required property string appIcon
                 required property string label
                 required property string target
                 required property string detail
                 required property string path
                 required property string action
+                required property string selection
                 required property int childCount
                 required property bool disabled
+                required property string desktopId
 
                 width: ListView.view.width
                 height: root.rowHeight
@@ -430,14 +603,30 @@ Item {
                   anchors.rightMargin: Style.space(8)
                   spacing: Style.space(8)
 
-                  Text {
+                  Item {
                     width: Style.space(28)
-                    text: row.icon
-                    color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
-                    font.family: row.iconFont || root.fontFamily
-                    font.pixelSize: Style.font.icon
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                    height: parent.height
+
+                    Text {
+                      anchors.fill: parent
+                      visible: row.kind !== "application"
+                      text: row.icon
+                      color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
+                      font.family: row.iconFont || root.fontFamily
+                      font.pixelSize: Style.font.icon
+                      horizontalAlignment: Text.AlignHCenter
+                      verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Image {
+                      anchors.fill: parent
+                      anchors.margins: Style.space(2)
+                      visible: row.kind === "application"
+                      source: visible && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
+                      fillMode: Image.PreserveAspectFit
+                      asynchronous: true
+                      smooth: true
+                    }
                   }
 
                   Column {
@@ -455,7 +644,7 @@ Item {
 
                     Text {
                       width: parent.width
-                      visible: row.detail !== "" && root.filterText !== ""
+                      visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
                       text: row.detail
                       color: root.foreground
                       opacity: 0.5
@@ -493,7 +682,7 @@ Item {
 
             Text {
               anchors.centerIn: parent
-              visible: displayModel.count === 0
+              visible: displayModel.count === 0 && root.menuMode !== "input"
               text: root.filterText ? "No matches" : "Nothing here yet"
               color: root.foreground
               opacity: 0.65

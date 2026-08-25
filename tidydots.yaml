@@ -788,6 +788,12 @@ applications:
     entries: []
   - package:
       managers:
+        pacman: libqalculate
+    name: libqalculate
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: quickshell
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -1041,27 +1047,6 @@ applications:
           linux: ~/.config/wiremix
         name: config
         backup: ./Linux/wiremix
-  - package:
-      managers:
-        yay: vicinae-bin
-    name: vicinae
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries:
-      - targets:
-          linux: ~/.config/vicinae
-        name: config
-        backup: ./Linux/vicinae
-        files:
-          - settings.json
-      - targets:
-          linux: ~/.local/share/vicinae/scripts
-        name: scripts
-        backup: ./Linux/vicinae/scripts
-      - check:
-          linux: systemctl --user is-enabled --quiet vicinae.service
-        run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now vicinae.service
-        name: enable-service
   - name: autostart
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
