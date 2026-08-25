@@ -20,6 +20,7 @@ stage_dir=
 installed_target=
 installed_identity=
 rollback_dir=
+candidate_dir=
 add_lock_fd=-1
 root_fd=-1
 root_path=
@@ -40,24 +41,7 @@ common_path=
 git_identity=
 common_identity=
 metadata_ready=0
-update_armed=0
-rollback_failed=0
-update_dir=
-update_prior=
-update_identity=
 cleanup_running=0
-retained_ids=()
-retained_target_fds=()
-retained_git_fds=()
-retained_common_fds=()
-retained_target_paths=()
-retained_target_reals=()
-retained_target_identities=()
-retained_prior=()
-retained_git_paths=()
-retained_common_paths=()
-retained_git_identities=()
-retained_common_identities=()
 placement_section=
 placement_index=
 placement_before=
@@ -108,9 +92,6 @@ cleanup() {
   (( cleanup_running )) && return 0
   cleanup_running=1
   trap - HUP INT TERM
-  restore_update_transaction || true
-  rollback_retained_updates || true
-  release_retained_updates || true
   if [[ -n $stage_dir && -d $stage_dir ]]; then
     rm -rf -- "$stage_dir" || true
   fi
@@ -357,6 +338,7 @@ install_plugin() {
   validate_plugin "$stage_dir"
   id=$(manifest_id "$stage_dir")
   [[ -z $expected_id ]] || [[ $id == "$expected_id" ]] || fail "expected id $expected_id, got $id"
+  recover_plugin_artifacts "$id"
   find_duplicate_id "$id" || fail "plugin id already installed: $id"
   target=$plugins_dir/$id
   [[ ! -e $target && ! -L $target ]] || fail "plugin target already exists: $id"
@@ -593,7 +575,6 @@ stable_git() {
 }
 
 release_update_target() {
-  (( update_armed )) && return 0
   if (( update_target_fd >= 0 && update_target_fd != target_fd )); then
     exec {update_target_fd}<&-
   fi
@@ -648,128 +629,6 @@ repo_identity_matches() {
   [[ $top_real == "$directory_real" ]]
 }
 
-restore_update_transaction() {
-  local target_fd_identity git_fd_identity common_fd_identity
-  (( update_armed )) || return 0
-  target_fd_identity=$(path_identity "/proc/self/fd/$update_target_fd") || { rollback_failed=1; return 1; }
-  git_fd_identity=$(path_identity "/proc/self/fd/$git_fd") || { rollback_failed=1; return 1; }
-  common_fd_identity=$(path_identity "/proc/self/fd/$common_fd") || { rollback_failed=1; return 1; }
-  if [[ $target_fd_identity == "$update_identity" && $git_fd_identity == "$git_identity" &&
-    $common_fd_identity == "$common_identity" ]]; then
-    if ! stable_git reset --hard "$update_prior" >/dev/null 2>&1; then
-      printf '%s: rollback failed for %s\n' "$script_name" "$update_dir" >&2
-      rollback_failed=1
-      return 1
-    fi
-  else
-    printf '%s: refusing rollback of replaced plugin: %s\n' "$script_name" "$update_dir" >&2
-    rollback_failed=1
-    return 1
-  fi
-  update_armed=0
-  update_dir=
-  update_prior=
-  update_identity=
-  return 0
-}
-
-retain_update_record() {
-  local id=$1 target_copy git_copy common_copy
-  exec {target_copy}<&$update_target_fd
-  exec {git_copy}<&$git_fd
-  exec {common_copy}<&$common_fd
-  retained_ids+=("$id")
-  retained_target_fds+=("$target_copy")
-  retained_git_fds+=("$git_copy")
-  retained_common_fds+=("$common_copy")
-  retained_target_paths+=("$update_target_path")
-  retained_target_reals+=("$update_target_real")
-  retained_target_identities+=("$update_target_identity")
-  retained_prior+=("$prior")
-  retained_git_paths+=("$git_path")
-  retained_common_paths+=("$common_path")
-  retained_git_identities+=("$git_identity")
-  retained_common_identities+=("$common_identity")
-}
-
-revalidate_retained_updates() {
-  local index current_git current_common current_identity current_real fd_identity
-  revalidate_mutation_root || return 1
-  for index in "${!retained_ids[@]}"; do
-    [[ -d ${retained_target_paths[index]} && ! -L ${retained_target_paths[index]} ]] || return 1
-    current_real=$(realpath -- "${retained_target_paths[index]}") || return 1
-    current_identity=$(path_identity "${retained_target_paths[index]}") || return 1
-    fd_identity=$(path_identity "/proc/self/fd/${retained_target_fds[index]}") || return 1
-    [[ $current_real == "${retained_target_reals[index]}" &&
-      $current_identity == "${retained_target_identities[index]}" && $fd_identity == "$current_identity" ]] || return 1
-    current_git=$(git -C "${retained_target_paths[index]}" rev-parse --absolute-git-dir 2>/dev/null) || return 1
-    current_common=$(git -C "${retained_target_paths[index]}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-    [[ $current_git == "${retained_git_paths[index]}" && $current_common == "${retained_common_paths[index]}" ]] || return 1
-    current_identity=$(path_identity "${retained_git_paths[index]}") || return 1
-    [[ $current_identity == "${retained_git_identities[index]}" ]] || return 1
-    current_identity=$(path_identity "${retained_common_paths[index]}") || return 1
-    [[ $current_identity == "${retained_common_identities[index]}" ]] || return 1
-    fd_identity=$(path_identity "/proc/self/fd/${retained_git_fds[index]}") || return 1
-    [[ $fd_identity == "${retained_git_identities[index]}" ]] || return 1
-    fd_identity=$(path_identity "/proc/self/fd/${retained_common_fds[index]}") || return 1
-    [[ $fd_identity == "${retained_common_identities[index]}" ]] || return 1
-  done
-}
-
-release_retained_updates() {
-  local index fd
-  for index in "${!retained_ids[@]}"; do
-    fd=${retained_target_fds[index]}; exec {fd}<&-
-    fd=${retained_git_fds[index]}; exec {fd}<&-
-    fd=${retained_common_fds[index]}; exec {fd}<&-
-  done
-  retained_ids=()
-  retained_target_fds=()
-  retained_git_fds=()
-  retained_common_fds=()
-  retained_target_paths=()
-  retained_target_reals=()
-  retained_target_identities=()
-  retained_prior=()
-  retained_git_paths=()
-  retained_common_paths=()
-  retained_git_identities=()
-  retained_common_identities=()
-}
-
-rollback_retained_updates() {
-  local index failed=0 target_fd_identity git_fd_identity common_fd_identity
-  for index in "${!retained_ids[@]}"; do
-    target_fd_identity=$(path_identity "/proc/self/fd/${retained_target_fds[index]}" 2>/dev/null) || {
-      failed=1
-      continue
-    }
-    git_fd_identity=$(path_identity "/proc/self/fd/${retained_git_fds[index]}" 2>/dev/null) || {
-      failed=1
-      continue
-    }
-    common_fd_identity=$(path_identity "/proc/self/fd/${retained_common_fds[index]}" 2>/dev/null) || {
-      failed=1
-      continue
-    }
-    if [[ $target_fd_identity != "${retained_target_identities[index]}" ||
-      $git_fd_identity != "${retained_git_identities[index]}" ||
-      $common_fd_identity != "${retained_common_identities[index]}" ]]; then
-      printf '%s: refusing rollback of replaced plugin: %s\n' "$script_name" "${retained_ids[index]}" >&2
-      failed=1
-      continue
-    fi
-    if ! GIT_DIR="/proc/self/fd/${retained_git_fds[index]}/." \
-      GIT_COMMON_DIR="/proc/self/fd/${retained_common_fds[index]}/." \
-      git --work-tree="/proc/self/fd/${retained_target_fds[index]}/." \
-      reset --hard "${retained_prior[index]}" >/dev/null 2>&1; then
-      printf '%s: rollback failed for %s\n' "$script_name" "${retained_ids[index]}" >&2
-      failed=1
-    fi
-  done
-  (( failed == 0 ))
-}
-
 plugin_directory() {
   local id=$1 directory root_real directory_real
   validate_safe_id "$id"
@@ -791,8 +650,121 @@ is_git_plugin() {
   [[ $top_real == "$directory_real" ]]
 }
 
+valid_recovery_checkout() {
+  local directory=$1 id=$2 require_git=${3:-1} validate_contents=${4:-1} current_id origin status_output top
+  [[ -d $directory && ! -L $directory ]] || return 1
+  if (( require_git )) && ! is_git_plugin "$directory"; then
+    return 1
+  fi
+  if is_git_plugin "$directory"; then
+    top=$(realpath -- "$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null)") || return 1
+    [[ $top == "$(realpath -- "$directory")" ]] || return 1
+  fi
+  current_id=$(jq -e -r '.id | select(type == "string" and length > 0)' -- "$directory/manifest.json" 2>/dev/null) || return 1
+  [[ $current_id == "$id" ]] || return 1
+  if is_git_plugin "$directory"; then
+    origin=$(git -C "$directory" remote get-url origin 2>/dev/null) || return 1
+    [[ -n $origin ]] || return 1
+    status_output=$(git -C "$directory" status --porcelain --untracked-files=normal 2>/dev/null) || return 1
+    [[ -z $status_output ]] || return 1
+    git -C "$directory" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
+  fi
+  if (( validate_contents )); then
+    "$validator" "$directory" >/dev/null 2>&1 || return 1
+  fi
+}
+
+recover_plugin_artifacts() {
+  local id=$1 artifact
+  local public_dir=$plugins_dir/$id
+  local -a stages=() rollbacks=() artifacts=()
+  validate_safe_id "$id"
+  while IFS= read -r -d '' artifact; do
+    [[ -d $artifact && ! -L $artifact ]] || continue
+    artifacts+=("$artifact")
+    case ${artifact##*/} in
+      .update."$id".*) stages+=("$artifact") ;;
+      .rollback."$id".*) rollbacks+=("$artifact") ;;
+    esac
+  done < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 \( -name ".update.$id.*" -o -name ".rollback.$id.*" \) -print0)
+  if ((${#rollbacks[@]} > 1 || ${#stages[@]} > 1)); then
+    fail "ambiguous plugin artifacts for $id: ${artifacts[*]}"
+  fi
+  ((${#artifacts[@]} > 0)) || return 0
+  if [[ ! -e $public_dir && ! -L $public_dir && ${#rollbacks[@]} == 1 ]]; then
+    valid_recovery_checkout "${rollbacks[0]}" "$id" 1 ||
+      fail "invalid rollback artifact for $id: ${rollbacks[0]}"
+    mv -T -- "${rollbacks[0]}" "$public_dir" || fail "cannot recover plugin rollback: $id"
+    printf '%s: recovered plugin artifact: %s\n' "$script_name" "$public_dir" >&2
+    rollbacks=()
+  elif [[ -e $public_dir || -L $public_dir ]]; then
+    valid_recovery_checkout "$public_dir" "$id" 0 0 ||
+      fail "invalid public plugin checkout for $id: $public_dir"
+    if ((${#rollbacks[@]} == 1)); then
+      valid_recovery_checkout "${rollbacks[0]}" "$id" 1 ||
+        fail "invalid rollback artifact for $id: ${rollbacks[0]}"
+      rm -rf -- "${rollbacks[0]}" || fail "cannot remove stale rollback artifact: ${rollbacks[0]}"
+    fi
+  fi
+  if ((${#stages[@]} == 1)); then
+    rm -rf -- "${stages[0]}" || fail "cannot remove stale update artifact: ${stages[0]}"
+  fi
+}
+
+build_update_candidate() {
+  local id=$1 public_dir=$2 remote_commit=$3 origin_url candidate transfer_ref clone_status
+  origin_url=$(git -C "$public_dir" remote get-url origin 2>/dev/null) ||
+    fail "plugin has no origin: $id"
+  [[ -n $origin_url ]] || fail "plugin has no origin: $id"
+  stage_dir=$(mktemp -d "$plugins_dir/.update.$id.XXXXXX") || fail "cannot create update staging directory: $id"
+  candidate=$stage_dir
+  transfer_ref="refs/omarchy/update/$id"
+  stable_git update-ref "$transfer_ref" "$remote_commit" || fail "cannot stage fetched update commit: $id"
+  git -c credential.helper= -c core.askPass=/bin/false clone --no-local --no-checkout --no-recurse-submodules \
+    -- "$public_dir" "$candidate" >/dev/null 2>&1 || clone_status=$?
+  stable_git update-ref -d "$transfer_ref" || true
+  if [[ ${clone_status:-0} != 0 ]]; then
+    fail "cannot clone update candidate: $id"
+  fi
+  git -C "$candidate" remote set-url origin "$origin_url" || fail "cannot restore candidate origin: $id"
+  git -C "$candidate" fetch --quiet --no-tags -- "$public_dir" "$remote_commit" || fail "cannot transfer update commit: $id"
+  git -C "$candidate" checkout --detach --quiet "$remote_commit" || fail "cannot checkout update candidate: $id"
+  [[ -z $(git -C "$candidate" status --porcelain --untracked-files=normal) ]] || fail "candidate checkout is dirty: $id"
+  is_git_plugin "$candidate" || fail "candidate Git root is invalid: $id"
+  [[ $(git -C "$candidate" rev-parse HEAD) == "$remote_commit" ]] || fail "candidate commit is invalid: $id"
+  [[ $(git -C "$candidate" remote get-url origin) == "$origin_url" ]] || fail "candidate origin is invalid: $id"
+  validate_plugin "$candidate"
+  [[ $(manifest_id "$candidate") == "$id" ]] || fail "plugin update changed manifest ID: $id"
+  find_duplicate_id "$id" "$public_dir" || fail "plugin update duplicated an installed manifest ID: $id"
+  candidate_dir=$candidate
+}
+
+publish_update_candidate() {
+  local id=$1 stage=$2 public_dir=$3 expected_commit=$4 origin_url=$5
+  rollback_dir=$(mktemp -d "$plugins_dir/.rollback.$id.XXXXXX") || fail "cannot reserve rollback path: $id"
+  rmdir -- "$rollback_dir" || fail "cannot reserve rollback path: $id"
+  mv -T -- "$public_dir" "$rollback_dir" || fail "cannot move current plugin for publication: $id"
+  if ! mv -T -- "$stage" "$public_dir"; then
+    mv -T -- "$rollback_dir" "$public_dir" || fail "publication failed and previous checkout could not be restored: $id"
+    fail "plugin update publication failed: $id"
+  fi
+  [[ $(path_identity "$public_dir") != "$(path_identity "$rollback_dir" 2>/dev/null || true)" ]] ||
+    fail "publication did not replace plugin directory: $id"
+  [[ $(git -C "$public_dir" rev-parse --show-toplevel) == "$(realpath -- "$public_dir")" ]] || fail "published Git root is invalid: $id"
+  [[ $(git -C "$public_dir" rev-parse HEAD) == "$expected_commit" ]] || fail "published commit is invalid: $id"
+  [[ $(git -C "$public_dir" remote get-url origin) == "$origin_url" ]] || fail "published origin is invalid: $id"
+  [[ -z $(git -C "$public_dir" status --porcelain --untracked-files=normal) ]] || fail "published checkout is dirty: $id"
+  [[ $(manifest_id "$public_dir") == "$id" ]] || fail "published manifest ID is invalid: $id"
+  if ! rm -rf -- "$rollback_dir"; then
+    printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_dir" >&2
+  fi
+  rollback_dir=
+  stage_dir=
+  candidate_dir=
+}
+
 update_plugin() {
-  local id=$1 directory=$2 expected_id=${3-} prior remote origin_url status_output status_code repo updated_id
+  local id=$1 directory=$2 expected_id=${3-} prior remote origin_url status_output status_code repo
   if [[ $directory == "$target_path" && $target_fd -ge 0 ]]; then
     update_target_fd=$target_fd
     update_target_path=$target_path
@@ -878,54 +850,13 @@ update_plugin() {
     printf '%s: plugin changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
-  update_armed=1
-  rollback_failed=0
-  update_dir=$repo
-  update_prior=$prior
-  update_identity=$update_target_identity
-  if ! stable_git merge --ff-only "$remote" >/dev/null 2>&1; then
-    restore_update_transaction || true
-    printf '%s: plugin fast-forward failed: %s\n' "$script_name" "$id" >&2
-    return 1
-  fi
-  if ! revalidate_git_metadata "$repo"; then
-    restore_update_transaction || true
-    printf '%s: plugin changed before validation: %s\n' "$script_name" "$id" >&2
-    return 1
-  fi
-  if ! "$validator" "$repo" >/dev/null 2>&1; then
-    restore_update_transaction || true
-    printf '%s: plugin update failed validation and was rolled back: %s\n' "$script_name" "$id" >&2
-    return 1
-  fi
-  if [[ -n $expected_id ]]; then
-    if ! updated_id=$(manifest_id "$repo") || [[ $updated_id != "$expected_id" ]]; then
-      restore_update_transaction || true
-      printf '%s: plugin update changed manifest ID and was rolled back: %s\n' "$script_name" "$id" >&2
-      return 1
-    fi
-    if ! find_duplicate_id "$updated_id" "$update_target_path"; then
-      restore_update_transaction || true
-      printf '%s: plugin update duplicated an installed manifest ID and was rolled back: %s\n' \
-        "$script_name" "$id" >&2
-      return 1
-    fi
-  fi
-  if ! revalidate_git_metadata "$repo"; then
-    restore_update_transaction || true
-    printf '%s: plugin changed after validation: %s\n' "$script_name" "$id" >&2
-    return 1
-  fi
-  update_armed=0
-  retain_update_record "$id"
-  update_dir=
-  update_prior=
-  update_identity=
+  build_update_candidate "$id" "$directory" "$remote"
+  publish_update_candidate "$id" "$candidate_dir" "$directory" "$remote" "$origin_url"
   return 0
 }
 
 update_plugins() {
-  local requested_id=${1-} id directory changed=0 failed=0 boundary_failed=0 rollback_complete=0 status_code
+  local requested_id=${1-} id directory changed=0 failed=0 status_code
   local -a directories=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
@@ -935,7 +866,6 @@ update_plugins() {
       status_code=$?
       [[ $status_code == 2 ]] || failed=1
     fi
-    (( update_armed == 0 )) || failed=1
     release_update_target
   else
     revalidate_mutation_root || fail "plugin root changed before bulk update"
@@ -950,41 +880,12 @@ update_plugins() {
         status_code=$?
         [[ $status_code == 2 ]] || failed=1
       fi
-      if (( update_armed || rollback_failed )); then
-        failed=1
-        break
-      fi
       release_update_target
     done
   fi
   if (( changed )); then
-    if (( update_armed )); then
-      failed=1
-      rollback_retained_updates || true
-    else
-      run_test_hook before-rescan || boundary_failed=1
-      if (( boundary_failed == 0 )) && ! revalidate_retained_updates; then
-        boundary_failed=1
-      fi
-      if (( boundary_failed )); then
-        failed=1
-        rollback_retained_updates || true
-      elif ! rescan; then
-        failed=1
-        rollback_retained_updates || true
-      elif ! revalidate_retained_updates; then
-        failed=1
-        rollback_complete=0
-        if rollback_retained_updates; then
-          rollback_complete=1
-        fi
-        if (( rollback_complete )) && revalidate_retained_updates; then
-          rescan || true
-        fi
-      else
-        release_retained_updates
-      fi
-    fi
+    run_test_hook before-rescan || true
+    rescan || failed=1
   fi
   return "$failed"
 }
@@ -1084,6 +985,7 @@ main() {
       mkdir -p -- "$plugins_dir"
       acquire_add_lock
       if [[ -n $id ]]; then
+        recover_plugin_artifacts "$id"
         capture_target "$id"
         update_target_fd=$target_fd
         update_target_path=$target_path
@@ -1109,6 +1011,7 @@ main() {
         shift
       done
       acquire_add_lock
+      recover_plugin_artifacts "$id"
       capture_target "$id"
       (( yes )) || confirm_mutation "remove $id (destructive)"
       revalidate_target || fail "plugin changed before removal: $id"

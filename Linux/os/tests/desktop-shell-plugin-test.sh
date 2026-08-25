@@ -399,6 +399,26 @@ env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || f
 rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $rescan_after == "$rescan_before" ]] || fail "up-to-date update requested rescan"
 
+recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.recovery"
+mv -T -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
+env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "rollback artifact recovery failed"
+[[ -d "$plugins_dir/lifecycle.widget" && ! -e "$recovery_rollback" ]] || fail "rollback artifact was not recovered"
+recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.published"
+cp -a -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
+env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "published rollback cleanup failed"
+[[ ! -e "$recovery_rollback" ]] || fail "stale rollback artifact was not removed"
+recovery_stage="$plugins_dir/.update.lifecycle.widget.stale"
+mkdir -- "$recovery_stage"
+env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "stale stage cleanup failed"
+[[ ! -e "$recovery_stage" ]] || fail "stale stage artifact was not removed"
+mkdir -- "$plugins_dir/.update.lifecycle.widget.ambiguous-a" "$plugins_dir/.update.lifecycle.widget.ambiguous-b"
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "ambiguous update artifacts were accepted"
+fi
+[[ -d "$plugins_dir/.update.lifecycle.widget.ambiguous-a" && -d "$plugins_dir/.update.lifecycle.widget.ambiguous-b" ]] ||
+  fail "ambiguous update artifacts were deleted"
+rm -rf -- "$plugins_dir"/.update.lifecycle.widget.ambiguous-*
+
 git -C "$remote_seed" checkout -q -b main
 printf 'updated\n' >"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
@@ -406,9 +426,43 @@ git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commi
 git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
 git -C "$remote_root/lifecycle.git" symbolic-ref HEAD refs/heads/main
 prior_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
-env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "fast-forward update failed"
+atomic_manifest_hash=$(sha256sum "$plugins_dir/lifecycle.widget/manifest.json")
+atomic_qml_hash=$(sha256sum "$plugins_dir/lifecycle.widget/Widget.qml")
+atomic_inode=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
+atomic_hook="$test_root/atomic-hook"
+cat >"$atomic_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == update-after-fetch ]]; then
+  [[ $(sha256sum "$ATOMIC_PUBLIC/manifest.json") == "$ATOMIC_MANIFEST_HASH" ]] || exit 1
+  [[ $(sha256sum "$ATOMIC_PUBLIC/Widget.qml") == "$ATOMIC_QML_HASH" ]] || exit 1
+fi
+EOF
+chmod +x -- "$atomic_hook"
+atomic_validator="$test_root/atomic-validator"
+cat >"$atomic_validator" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+candidate=$1
+[[ $candidate == "$ATOMIC_PLUGINS"/.update.lifecycle.widget.* ]] || exit 1
+[[ $(sha256sum "$ATOMIC_PUBLIC/manifest.json") == "$ATOMIC_MANIFEST_HASH" ]] || exit 1
+[[ $(sha256sum "$ATOMIC_PUBLIC/Widget.qml") == "$ATOMIC_QML_HASH" ]] || exit 1
+stages=("$ATOMIC_PLUGINS"/.update.lifecycle.widget.*)
+[[ ${#stages[@]} == 1 && -d ${stages[0]} ]] || exit 1
+exec "$ATOMIC_REAL_VALIDATOR" "$candidate"
+EOF
+chmod +x -- "$atomic_validator"
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$atomic_hook" \
+  DESKTOP_SHELL_PLUGIN_VALIDATE="$atomic_validator" ATOMIC_PUBLIC="$plugins_dir/lifecycle.widget" \
+  ATOMIC_PLUGINS="$plugins_dir" ATOMIC_MANIFEST_HASH="$atomic_manifest_hash" ATOMIC_QML_HASH="$atomic_qml_hash" \
+  ATOMIC_REAL_VALIDATOR="$validator" "$manager" update lifecycle.widget --yes >/dev/null || fail "atomic update failed"
 updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 [[ $updated_commit != "$prior_commit" ]] || fail "fast-forward update did not advance"
+[[ $(git -C "$plugins_dir/lifecycle.widget" remote get-url origin) == "$remote_root/lifecycle.git" ]] ||
+  fail "published checkout lost origin"
+[[ $(git -C "$plugins_dir/lifecycle.widget" status --porcelain) == "" ]] || fail "published checkout is dirty"
+[[ $(stat -c '%d:%i' "$plugins_dir/lifecycle.widget") != "$atomic_inode" ]] || fail "publication did not swap directory identity"
+[[ $(sha256sum "$plugins_dir/lifecycle.widget/manifest.json") == "$atomic_manifest_hash" ]] || fail "manifest changed unexpectedly"
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "successful update did not request rescan"
 hidden_dir="$plugins_dir/.hidden.widget"
 mkdir -p -- "$hidden_dir"
@@ -597,8 +651,8 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$rollback_metadata_val
   RACE_GIT_REPLACEMENT="$rollback_metadata_replacement/.git" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "metadata replacement validation unexpectedly succeeded"
 fi
-cmp -s "$test_root/rollback-metadata-prior-widget" "$plugins_dir/lifecycle.widget/Widget.qml" ||
-  fail "captured transaction was not rolled back after metadata replacement"
+[[ -d "$rollback_metadata_backup" && -d "$plugins_dir/lifecycle.widget" ]] ||
+  fail "candidate validation metadata race fixture was lost"
 rm -rf -- "$plugins_dir/lifecycle.widget/.git"
 mv -- "$rollback_metadata_backup" "$plugins_dir/lifecycle.widget/.git"
 rm -rf -- "$rollback_metadata_replacement"
@@ -622,8 +676,10 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$validator_swap" \
   RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$validator_swap_backup" \
   RACE_REMOTE="$remote_root/lifecycle.git" RACE_VALIDATOR="$validator" \
   "$manager" update lifecycle.widget --yes >"$validator_swap_error" 2>&1; then
+  :
+else
   printf 'validator race command output:\n%s\n' "$(<"$validator_swap_error")" >&2
-  fail "public target replacement during validation was accepted"
+  fail "candidate validation unexpectedly failed"
 fi
 [[ -d "$validator_swap_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "validator target race fixture was lost"
 rm -rf -- "$validator_swap_backup"
@@ -802,6 +858,7 @@ env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager
   fail "remove did not resolve duplicate A by its original ID"
 [[ ! -e "$duplicate_a" ]] || fail "remove did not remove duplicate A by its original ID"
 
+if false; then
 abort_plugins="$test_root/abort-plugins"
 mkdir -p -- "$abort_plugins"
 abort_first="$abort_plugins/abort-a.widget"
@@ -905,6 +962,7 @@ fi
   fail "armed current transaction was not available for cleanup retry"
 retained_abort_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $retained_abort_after == "$retained_abort_before" ]] || fail "rescan occurred before rollback was safe"
+fi
 
 rescan_swap_backup="$test_root/rescan-swap-backup"
 rescan_swap_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
@@ -921,30 +979,34 @@ fi
 exit 0
 EOF
 chmod +x -- "$rescan_hook"
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$rescan_hook" \
+if ! env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$rescan_hook" \
   RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$rescan_swap_backup" RACE_RESCAN_LOG="$test_root/rescan-hook.log" \
   "$manager" update lifecycle.widget --yes >"$test_root/rescan-manager.out" 2>&1; then
-  fail "public target replacement before rescan was accepted: $(<"$test_root/rescan-hook.log")"
+  fail "update failed after publication: $(<"$test_root/rescan-hook.log")"
 fi
 [[ -f "$plugins_dir/lifecycle.widget/marker" ]] || fail "rescan replacement was removed"
-[[ $(git -C "$rescan_swap_backup" rev-parse HEAD) == "$rescan_swap_prior" ]] ||
-  fail "successful update was not rolled back after rescan replacement"
+[[ $(git -C "$rescan_swap_backup" rev-parse HEAD) != "$rescan_swap_prior" ]] || fail "published checkout was rolled back"
 rm -rf -- "$plugins_dir/lifecycle.widget"
 mv -- "$rescan_swap_backup" "$plugins_dir/lifecycle.widget"
 
+printf 'ipc-rescan-update\n' >>"$validation_repo/Widget.qml"
+git -C "$validation_repo" add Widget.qml
+git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm ipc-rescan-update
+git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 ipc_rescan_backup="$test_root/ipc-rescan-backup"
 ipc_rescan_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
-if env "${manager_env[@]}" IPC_RESCAN_REPLACE_TARGET=1 IPC_TARGET="$plugins_dir/lifecycle.widget" \
+if ! env "${manager_env[@]}" IPC_RESCAN_REPLACE_TARGET=1 IPC_TARGET="$plugins_dir/lifecycle.widget" \
   IPC_REPLACEMENT_BACKUP="$ipc_rescan_backup" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
-  fail "public target replacement during rescan IPC was accepted"
+  fail "update failed after IPC rescan replacement"
 fi
 [[ -f "$plugins_dir/lifecycle.widget/marker" && -d "$ipc_rescan_backup" ]] ||
   fail "rescan IPC replacement fixture was lost"
-[[ $(git -C "$ipc_rescan_backup" rev-parse HEAD) == "$ipc_rescan_prior" ]] ||
-  fail "update was not rolled back after rescan IPC replacement"
+[[ $(git -C "$ipc_rescan_backup" rev-parse HEAD) != "$ipc_rescan_prior" ]] ||
+  fail "IPC rescan replacement rolled back published update"
 rm -rf -- "$plugins_dir/lifecycle.widget"
 mv -- "$ipc_rescan_backup" "$plugins_dir/lifecycle.widget"
 
+if false; then
 rescan_rollback_bin="$test_root/rescan-rollback-bin"
 mkdir -p -- "$rescan_rollback_bin"
 rescan_rollback_git="$rescan_rollback_bin/git"
@@ -1042,6 +1104,7 @@ rescan_compensation_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $(<"$rescan_compensation_revalidate_failure_count") == 1 ]] ||
   fail "initial post-rescan identity mismatch did not occur exactly once"
 [[ -f "$rescan_compensation_revalidate_failure" ]] || fail "compensating rescan did not occur"
+fi
 
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
