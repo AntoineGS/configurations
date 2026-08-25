@@ -128,6 +128,14 @@ QtObject {
     property color low: root.pick("notifications.low", "#89dceb")
     property color critical: root.pick("notifications.critical", root.urgent)
   }
+  readonly property QtObject modal: QtObject {
+    property color scrim: root.composed(
+      "modal.scrim",
+      "modal.scrim-alpha",
+      root.background,
+      0.5
+    )
+  }
   readonly property QtObject menu: QtObject {
     property color background: root.composed("menu.background", "menu.background-alpha", root.background, 1.0)
     property color text: root.pick("menu.text", root.foreground)
