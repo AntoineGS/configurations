@@ -56,6 +56,8 @@
   "system": { "label": "System" },
   "system.lock": { "label": "Lock", "action": "system.lock" },
   "system.suspend": { "label": "Suspend", "action": "system.suspend" },
+  "system.suspend-in": { "label": "Suspend in...", "action": "system.suspend-in" },
+  "system.close-rustdesk-in": { "label": "Close RustDesk windows in...", "action": "system.close-rustdesk-in" },
   "system.hibernate": { "label": "Hibernate", "action": "system.hibernate" },
   "system.logout": { "label": "Logout", "action": "system.logout" },
   "system.reboot": { "label": "Reboot", "action": "system.reboot" },
