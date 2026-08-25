@@ -10,3 +10,4 @@ desktop.notifications|omarchy.notifications|shell/plugins/notifications/manifest
 desktop.osd|omarchy.osd|shell/plugins/osd/manifest.json shell/plugins/osd/Osd.qml shell/plugins/osd/OsdModel.js
 desktop.polkit|omarchy.polkit|shell/plugins/polkit/manifest.json shell/plugins/polkit/PolkitAgent.qml shell/plugins/polkit/PolkitModel.js
 desktop.clipboard|omarchy.clipboard|shell/plugins/clipboard/manifest.json shell/plugins/clipboard/Clipboard.qml shell/plugins/clipboard/ClipboardHistory.js shell/plugins/clipboard/capture.sh
+desktop.emojis|omarchy.emojis|shell/plugins/emojis/manifest.json shell/plugins/emojis/Emojis.qml shell/plugins/emojis/EmojiSearch.js shell/plugins/emojis/emojis.json

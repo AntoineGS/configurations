@@ -117,8 +117,4 @@ hl.bind(
 	hl.dsp.exec_cmd("desktop-shell summon desktop.clipboard '{}'"),
 	{ description = "Clipboard history" }
 )
-hl.bind(
-	"SUPER + PERIOD",
-	hl.dsp.exec_cmd("vicinae vicinae://launch/core/search-emojis"),
-	{ description = "Emoji picker" }
-)
+hl.bind("SUPER + PERIOD", hl.dsp.exec_cmd("desktop-shell summon desktop.emojis '{}'"), { description = "Emoji picker" })
