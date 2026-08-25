@@ -49,8 +49,7 @@ Panel {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
     if (!registry) return
     var scope = "capability:panel:" + moduleName
-    if (capabilityAvailable) registry.clearPluginError(moduleName, scope)
-    else registry.recordPluginError(moduleName, "BlueZ capability unavailable", scope)
+    registry.clearPluginError(moduleName, scope)
   }
 
   function refreshBatteries() {
