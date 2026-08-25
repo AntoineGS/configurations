@@ -11,6 +11,21 @@ usage() {
 action=$1
 argv=()
 
+wait_for_menu_dismissal() {
+  local attempt
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    if ! hyprctl layers -j 2>/dev/null \
+      | jq -e '.. | objects | select(.namespace? == "desktop-menu")' >/dev/null; then
+      sleep 0.05
+      return 0
+    fi
+    sleep 0.01
+  done
+
+  sleep 0.05
+}
+
 case "$action" in
   trigger.screenshot)       argv=(cmd-screenshot) ;;
   trigger.screenrecord)     argv=(cmd-screenrecord) ;;
@@ -61,6 +76,10 @@ case "$action" in
   system.reboot)            argv=(system-reboot) ;;
   system.shutdown)          argv=(system-shutdown) ;;
   *)                        usage ;;
+esac
+
+case $action in
+  trigger.screenshot | trigger.screenrecord | trigger.color) wait_for_menu_dismissal ;;
 esac
 
 if ! "${argv[@]}"; then

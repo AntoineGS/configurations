@@ -31,6 +31,7 @@ Item {
   property string dmenuPrompt: ""
   property var dmenuOptions: []
   property string requestDir: ""
+  property string pendingAction: ""
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
   readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
@@ -264,9 +265,11 @@ Item {
   }
 
   function applySelected(action) {
-    if (!root.runAction(action)) return
+    if (!MenuModel.isOpaqueActionId(action) || actionProcess.running || root.pendingAction) return
+    root.pendingAction = String(action)
     root.opened = false
     root.filterText = ""
+    actionDelay.restart()
   }
 
   function runAction(action) {
@@ -391,6 +394,16 @@ Item {
     command: []
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
+  }
+
+  Timer {
+    id: actionDelay
+    interval: 100
+    onTriggered: {
+      var action = root.pendingAction
+      root.pendingAction = ""
+      root.runAction(action)
+    }
   }
 
   Timer {
