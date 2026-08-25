@@ -24,6 +24,9 @@ QtObject {
   property string lastScanError: ""
   property string lastEnableError: ""
   property bool watcherUnavailable: false
+  property int watcherRetryCount: 0
+  property int watcherRetryLimit: 3
+  property int watcherRetryBaseDelay: 100
   property bool watcherStopRequested: false
   property var pendingWatchIds: ({})
   property var activeWatchIds: ({})
@@ -330,13 +333,13 @@ QtObject {
 
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
   function parseScanOutput(text) {
-    var retainedLoadErrors = []
-    for (var retainedIndex = 0; retainedIndex < registry.pluginErrors.length; retainedIndex++) {
-      var retained = registry.pluginErrors[retainedIndex]
-      if (retained && String(retained.scope || "registry") !== "registry")
-        retainedLoadErrors.push(retained)
+    var priorLoadErrors = []
+    for (var priorIndex = 0; priorIndex < registry.pluginErrors.length; priorIndex++) {
+      var priorEntry = registry.pluginErrors[priorIndex]
+      if (priorEntry && String(priorEntry.scope || "registry") !== "registry")
+        priorLoadErrors.push(priorEntry)
     }
-    registry.pluginErrors = retainedLoadErrors
+    registry.pluginErrors = priorLoadErrors
     var lines = String(text || "").split("\n")
     var firstParty = {}
     var thirdPartyCandidates = ({})
@@ -411,6 +414,27 @@ QtObject {
     for (var thirdId in thirdParty) {
       if (!firstParty[thirdId]) merged[thirdId] = thirdParty[thirdId]
     }
+    var retainedLoadErrors = []
+    for (var retainedIndex = 0; retainedIndex < registry.pluginErrors.length; retainedIndex++) {
+      var retained = registry.pluginErrors[retainedIndex]
+      if (!retained) continue
+      if (String(retained.scope || "registry") === "registry") {
+        retainedLoadErrors.push(retained)
+        continue
+      }
+      var retainedManifest = merged[String(retained.id)]
+      if (!retainedManifest || !Array.isArray(retainedManifest.kinds)) continue
+      var retainedScope = String(retained.scope || "")
+      var retainedKind = retainedScope
+      var capabilityMatch = retainedScope.match(/^capability:([^:]+):/)
+      if (capabilityMatch) retainedKind = capabilityMatch[1]
+      else if (retainedScope.indexOf("panel:") === 0) retainedKind = retainedScope.slice(6)
+      else if (retainedScope === "widget") retainedKind = "bar-widget"
+      if (retainedScope === "watcher"
+          || retainedManifest.kinds.indexOf(retainedKind) !== -1)
+        retainedLoadErrors.push(retained)
+    }
+    registry.pluginErrors = retainedLoadErrors
     installedPlugins = merged
     registryRevision++
     pluginSourceGeneration++
@@ -451,7 +475,7 @@ QtObject {
   }
 
   function initProcess() {
-    if (!registry.pluginWatchEnabled || registry.watcherUnavailable || registry.watcherProcess.running) return
+    if (!registry.pluginWatchEnabled || registry.watcherProcess.running) return
     registry.watcherStopRequested = false
     watcherProcess.command = ["bash", "-c",
       "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
@@ -466,10 +490,31 @@ QtObject {
       return
     }
     if (Number(exitCode) === 125) {
-      registry.watcherUnavailable = true
+      registry.scheduleWatcherRetry("plugin watcher dependencies are unavailable")
       return
     }
+    registry.scheduleWatcherRetry("plugin watcher exited with code " + String(exitCode))
     if (registry.pluginWatchEnabled) watchRestartTimer.restart()
+  }
+
+  function handleWatcherStarted() {
+    registry.watcherUnavailable = false
+    registry.watcherRetryCount = 0
+    registry.watcherRetryTimer.stop()
+    registry.clearPluginError("registry", "watcher")
+  }
+
+  function scheduleWatcherRetry(detail) {
+    if (!registry.pluginWatchEnabled) return
+    registry.watcherUnavailable = true
+    if (registry.watcherRetryCount >= registry.watcherRetryLimit) {
+      registry.recordPluginError("registry", String(detail), "watcher")
+      return
+    }
+    registry.watcherRetryCount++
+    registry.watcherRetryTimer.interval = Math.min(
+      registry.watcherRetryBaseDelay * Math.pow(2, registry.watcherRetryCount - 1), 2000)
+    registry.watcherRetryTimer.restart()
   }
 
   function stopWatcher() {
@@ -486,6 +531,7 @@ QtObject {
 
   property Process watcherProcess: Process {
     onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
+    onRunningChanged: if (running) registry.handleWatcherStarted()
     stdout: StdioCollector {
       id: watcherStdout
       waitForEnd: false
@@ -548,6 +594,12 @@ QtObject {
     interval: 100
     repeat: false
     onTriggered: registry.startWatchReloadGuard()
+  }
+
+  property Timer watcherRetryTimer: Timer {
+    interval: 100
+    repeat: false
+    onTriggered: registry.initProcess()
   }
 
   property Timer watchRestartTimer: Timer {

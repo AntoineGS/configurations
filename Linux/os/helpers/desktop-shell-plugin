@@ -1174,6 +1174,10 @@ update_plugin() {
     printf '%s: plugin changed before update: %s\n' "$script_name" "$id" >&2
     return 1
   }
+  assert_no_plugin_artifacts "$id" || {
+    printf '%s: plugin artifacts appeared before update publication: %s\n' "$script_name" "$id" >&2
+    return 1
+  }
   build_update_candidate "$id" "$directory" "$remote"
   publish_update_candidate "$id" "$candidate_dir" "$directory" "$remote" "$origin_url"
   return 0

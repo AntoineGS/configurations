@@ -97,10 +97,12 @@ ShellRoot {
       version: version
     }))
     swapProcess.command = ["bash", "-c",
-      "set -e; stage=\"$1/.stage.acme.widget\"; rm -rf -- \"$stage\"; mkdir -p -- \"$stage\"; "
+      "set -e; stage=\"$1/.stage.acme.widget\"; old=\"$1/.old.acme.widget\"; "
+      + "rm -rf -- \"$stage\" \"$old\"; mkdir -p -- \"$stage\"; "
       + "printf '%s\\n' \"$4\" >\"$stage/manifest.json\"; "
-      + "mv -- \"$stage/manifest.json\" \"$1/acme.widget/manifest.json\"; "
-      + "rmdir -- \"$stage\"; printf '%s\\n' \"$2/acme.widget/manifest.json\" >\"$3\"",
+      + "printf '%s\\n' 'import QtQuick\\nItem {}' >\"$stage/Widget.qml\"; "
+      + "mv -- \"$1/acme.widget\" \"$old\"; mv -- \"$stage\" \"$1/acme.widget\"; "
+      + "rm -rf -- \"$old\"; printf '%s\\n' \"$2/acme.widget/manifest.json\" >\"$3\"",
       "--", root.pluginsRoot, root.pluginsRoot, root.watcherFifoPath, value]
     swapProcess.running = true
   }
@@ -136,7 +138,11 @@ ShellRoot {
       "plugin source generation advances independently of reload state")
     registry.recordPluginError("desktop.audio", "widget load failed", "widget")
     registry.recordPluginError("desktop.audio", "PipeWire unavailable", "capability:panel:desktop.audio")
-    registry.parseScanOutput(block("thirdparty", "/third/scan", manifest("acme.scan", ["panel"], { panel: "Panel.qml" })))
+    registry.parseScanOutput(block("thirdparty", "/third/scan", manifest("desktop.audio", ["bar-widget", "panel"], {
+      barWidget: "Widget.qml", panel: "Panel.qml"
+    })) + block("thirdparty", "/third/scan-two", manifest("acme.scan", ["panel"], {
+      panel: "Panel.qml"
+    })))
     check(hasError("desktop.audio", "widget load failed")
       && hasError("desktop.audio", "PipeWire unavailable"),
       "scan preserves independent load and capability errors")
@@ -144,6 +150,19 @@ ShellRoot {
     check(hasError("desktop.audio", "widget load failed")
       && !hasError("desktop.audio", "PipeWire unavailable"),
       "capability recovery does not clear load errors")
+    registry.recordPluginError("acme.scope", "panel load failed", "panel:panel")
+    registry.recordPluginError("acme.scope", "capability failed", "capability:panel:acme.scope")
+    registry.recordPluginError("acme.scope", "widget load failed", "widget")
+    registry.parseScanOutput(block("thirdparty", "/third/scope", manifest("acme.scope", ["bar-widget"], {
+      barWidget: "Widget.qml"
+    })))
+    check(!hasError("acme.scope", "panel load failed")
+      && !hasError("acme.scope", "capability failed")
+      && hasError("acme.scope", "widget load failed"),
+      "scan drops removed kinds while retaining applicable load errors")
+    registry.parseScanOutput("")
+    check(!hasError("acme.scope", "widget load failed"),
+      "scan drops errors for removed plugins")
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
   }
@@ -169,10 +188,11 @@ ShellRoot {
     externalReleaseTimer.start()
   }
 
-  function hasError(id, text) {
+  function hasError(id, text, scope) {
     for (var i = 0; i < registry.pluginErrors.length; i++) {
       var error = registry.pluginErrors[i]
-      if (String(error.id) === id && String(error.error).indexOf(text) !== -1) return true
+      if (String(error.id) === id && String(error.error).indexOf(text) !== -1
+          && (!scope || String(error.scope) === scope)) return true
     }
     return false
   }
@@ -231,10 +251,24 @@ ShellRoot {
     check(!registry.watchRestartTimer.running && !registry.watcherStopRequested,
       "intentional watcher exit does not restart")
     registry.watcherUnavailable = false
+    registry.pluginWatchEnabled = true
+    registry.watcherRetryLimit = 2
+    registry.watcherRetryCount = 0
     registry.watchRestartTimer.stop()
     registry.handleWatcherExit(125)
-    check(registry.watcherUnavailable && !registry.watchRestartTimer.running,
-      "unavailable watcher exit does not restart")
+    check(registry.watcherUnavailable && registry.watcherRetryTimer.running,
+      "unavailable watcher exit schedules bounded retry")
+    registry.watcherRetryTimer.stop()
+    registry.handleWatcherExit(125)
+    registry.watcherRetryTimer.stop()
+    registry.handleWatcherExit(125)
+    check(registry.watcherUnavailable && !registry.watcherRetryTimer.running
+      && hasError("registry", "dependencies are unavailable", "watcher"),
+      "unavailable watcher reaches durable scoped error")
+    registry.handleWatcherStarted()
+    check(!registry.watcherUnavailable && registry.watcherRetryCount === 0
+      && !hasError("registry", "dependencies are unavailable", "watcher"),
+      "successful watcher startup clears only watcher health")
     registry.watcherUnavailable = false
     registry.pluginWatchEnabled = true
     registry.handleWatcherExit(1)
