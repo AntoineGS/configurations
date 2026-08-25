@@ -769,6 +769,25 @@ artifact_name_kind() {
   printf '%s' "${BASH_REMATCH[1]}"
 }
 
+sort_array_checked() {
+  local input_name=$1 output_name=$2 input_file output_file
+  local -n source_values=$input_name destination_values=$output_name
+  destination_values=()
+  ((${#source_values[@]})) || return 0
+  input_file=$(mktemp) || return 1
+  output_file=$(mktemp) || { rm -f -- "$input_file"; return 1; }
+  if ! printf '%s\n' "${source_values[@]}" >"$input_file" || ! sort <"$input_file" >"$output_file"; then
+    rm -f -- "$input_file" "$output_file"
+    return 1
+  fi
+  # shellcheck disable=SC2034 # mapfile populates the caller's nameref array.
+  if ! mapfile -t destination_values <"$output_file"; then
+    rm -f -- "$input_file" "$output_file"
+    return 1
+  fi
+  rm -f -- "$input_file" "$output_file"
+}
+
 discover_artifacts() {
   local output=$1 artifact_root
   artifact_root=$(artifact_root_path)
@@ -799,6 +818,7 @@ collect_plugin_artifacts() {
   local id=$1 result_name=$2
   local -n result=$result_name
   local artifact scan_file relative owner
+  local -a sorted_result=()
   # shellcheck disable=SC2034
   result=()
   scan_file=$(mktemp) || return 1
@@ -811,7 +831,8 @@ collect_plugin_artifacts() {
   done <"$scan_file"
   rm -f -- "$scan_file"
   if ((${#result[@]})); then
-    mapfile -t result < <(printf '%s\n' "${result[@]}" | sort)
+    sort_array_checked result sorted_result || return 1
+    result=("${sorted_result[@]}")
   fi
 }
 
@@ -864,9 +885,10 @@ assert_no_plugin_artifacts() {
     [[ -n $exclude_path && $artifact == "$exclude_path" ]] && continue
     relative=${artifact#"$(artifact_root_path)/"}
     owner=${relative%%/*}
-    [[ $relative == "$owner" ]] && continue
     if ! artifact_record_valid "$artifact"; then
       global_artifacts+=("$artifact")
+    elif [[ $relative == "$owner" ]]; then
+      continue
     elif [[ $owner == "$id" ]]; then
       artifacts+=("$artifact")
     elif [[ $owner == "$artifact_unassigned_name" ]]; then
@@ -1026,10 +1048,14 @@ publish_update_candidate() {
   publication_armed=0
   exec {publication_public_fd}<&-
   publication_public_fd=-1
-  safe_remove_artifact_path "$(root_name_path "$rollback_name")" "$publication_rollback_identity" artifact-after-open ||
-    printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_name" >&2
-  safe_remove_artifact_path "$(root_name_path "$rejected_name")" "$publication_rejected_identity" artifact-after-open ||
-    printf '%s: warning: retaining rejected artifact: %s\n' "$script_name" "$rejected_name" >&2
+  if [[ -e $(root_name_path "$rollback_name") || -L $(root_name_path "$rollback_name") ]]; then
+    safe_remove_artifact_path "$(root_name_path "$rollback_name")" "$publication_rollback_identity" artifact-after-open ||
+      printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_name" >&2
+  fi
+  if [[ -e $(root_name_path "$rejected_name") || -L $(root_name_path "$rejected_name") ]]; then
+    safe_remove_artifact_path "$(root_name_path "$rejected_name")" "$publication_rejected_identity" artifact-after-open ||
+      printf '%s: warning: retaining rejected artifact: %s\n' "$script_name" "$rejected_name" >&2
+  fi
   stage_dir=
   candidate_dir=
 }
@@ -1149,6 +1175,7 @@ run_update_plugin() {
 update_plugins() {
   local requested_id=${1-} id directory artifact artifact_id changed=0 failed=0 status_code return_status=0 global_artifact_block=0
   local scan_file relative owner
+  local -a blocked_id_values=() sorted_blocked_ids=()
   # shellcheck disable=SC2034
   local -a directories=() artifacts=() id_artifacts=() global_artifacts=()
   declare -A blocked_ids=()
@@ -1176,23 +1203,28 @@ update_plugins() {
       if ! artifact_record_valid "$artifact"; then
         global_artifacts+=("$artifact")
         failed=1
+        global_artifact_block=1
         continue
       fi
       [[ $relative == "$owner" ]] && continue
       if [[ $owner == "$artifact_unassigned_name" || ! -d "$root_path/$owner" || -L "$root_path/$owner" ]]; then
         global_artifacts+=("$artifact")
         failed=1
+        global_artifact_block=1
         continue
       fi
       blocked_ids["$owner"]=1
     done
     report_global_artifacts global_artifacts
-    while IFS= read -r artifact_id; do
+    # shellcheck disable=SC2034 # passed by name to sort_array_checked.
+    blocked_id_values=("${!blocked_ids[@]}")
+    sort_array_checked blocked_id_values sorted_blocked_ids || fail "cannot sort plugin artifact diagnostics"
+    for artifact_id in "${sorted_blocked_ids[@]}"; do
       [[ -n $artifact_id ]] || continue
-      collect_plugin_artifacts "$artifact_id" id_artifacts
+      collect_plugin_artifacts "$artifact_id" id_artifacts || fail "cannot sort plugin artifact diagnostics"
       report_plugin_artifacts "$artifact_id" id_artifacts
       failed=1
-    done < <(printf '%s\n' "${!blocked_ids[@]}" | sort)
+    done
     scan_file=$(mktemp) || fail "cannot inspect visible plugins"
     if ! find "$root_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0 | sort -z >"$scan_file"; then
       rm -f -- "$scan_file"
@@ -1256,10 +1288,14 @@ remove_plugin() {
   quarantine_path="/proc/self/fd/$quarantine_fd/."
   if is_git_plugin "$quarantine_path"; then
     revalidate_quarantine || fail "quarantined Git plugin changed: $id"
+  fi
+  [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
+    fail "removed plugin was repopulated before hidden cleanup: $id"
+  release_manager_lock
+  if is_git_plugin "$quarantine_path"; then
     safe_remove_artifact_path "$backup" "$target_identity" quarantine-after-delete ||
       fail "cannot remove Git plugin safely: $id"
   fi
-  release_manager_lock
   run_test_hook before-rescan
   revalidate_mutation_root || fail "plugin root changed before removal rescan: $id"
   [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
