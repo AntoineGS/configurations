@@ -37,27 +37,31 @@ QtObject {
 
   signal pluginsChanged()
   signal scanFinished()
-  signal pluginLoadFailed(string id, string error, int generation)
+  signal pluginLoadFailed(string id, string error, int generation, string scope)
   signal localPluginChanged(string id)
   signal watchReloadReady()
 
-  function recordPluginError(id, error) {
+  function recordPluginError(id, error, scope) {
     var key = String(id)
+    var errorScope = String(scope || "registry")
     var next = []
     for (var i = 0; i < registry.pluginErrors.length; i++) {
       var entry = registry.pluginErrors[i]
-      if (!entry || String(entry.id) !== key) next.push(entry)
+      if (!entry || String(entry.id) !== key || String(entry.scope || "registry") !== errorScope)
+        next.push(entry)
     }
-    next.push({ id: key, error: String(error) })
+    next.push({ id: key, scope: errorScope, error: String(error) })
     registry.pluginErrors = next
   }
 
-  function clearPluginError(id) {
+  function clearPluginError(id, scope) {
     var key = String(id)
+    var errorScope = scope === undefined ? "" : String(scope)
     var next = []
     for (var i = 0; i < registry.pluginErrors.length; i++) {
       var entry = registry.pluginErrors[i]
-      if (entry && String(entry.id) === key) continue
+      if (entry && String(entry.id) === key
+          && (errorScope === "" || String(entry.scope || "registry") === errorScope)) continue
       next.push(entry)
     }
     registry.pluginErrors = next
@@ -71,9 +75,9 @@ QtObject {
     return null
   }
 
-  onPluginLoadFailed: function(id, error, generation) {
+  onPluginLoadFailed: function(id, error, generation, scope) {
     if (generation === undefined || Number(generation) === registry.pluginSourceGeneration)
-      registry.recordPluginError(id, error)
+      registry.recordPluginError(id, error, scope || "plugin")
   }
 
   function isSafeEntryPoint(value) {
@@ -277,7 +281,10 @@ QtObject {
     for (var existing in registry.pendingWatchIds) next[existing] = true
     next[id] = true
     registry.pendingWatchIds = next
-    if (!registry.guardProcess.running) registry.startWatchReloadGuard()
+    if (!registry.guardProcess.running && !registry.guardRetryTimer.running) {
+      if (registry.guardRetryCount >= registry.guardRetryLimit) registry.guardRetryCount = 0
+      registry.startWatchReloadGuard()
+    }
   }
 
   function handleWatchOutput(text) {
@@ -505,6 +512,7 @@ QtObject {
         for (var activeId in registry.activeWatchIds) retryIds[activeId] = true
         registry.pendingWatchIds = retryIds
         registry.scheduleGuardRetry("plugin watcher lock wait failed with exit code " + String(exitCode))
+        return
       } else {
         if (registry.watchIdsEmitted) {
           registry.watcherGuardError = ""

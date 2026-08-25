@@ -110,6 +110,7 @@ ShellRoot {
   property bool pluginReloading: false
   property bool pluginReloadPending: false
   property int pluginReloadGeneration: 0
+  property int pluginLoadEpoch: 0
   property var reloadComponentStates: ({})
   property int reloadTokenCounter: 0
   property string reloadGenerationError: ""
@@ -354,23 +355,38 @@ ShellRoot {
       && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
+    property int loadEpoch: -1
     property int loadGeneration: -1
+    property string loadId: ""
+    property string loadUrl: ""
+    property var loadManifest: null
     property string reloadToken: ""
-    onLoaded: if (shell.isReloadTokenCurrent(reloadToken)) shell.configureBar(item, shell.activeBarManifest)
+    onLoaded: {
+      if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
+      shell.pluginRegistry.clearPluginError(loadId, "bar")
+      shell.configureBar(item, shell.activeBarManifest)
+    }
     onActiveChanged: if (!active) shell.bar = null
     onStatusChanged: {
       if (status === Loader.Loading && reloadToken === "") {
-        loadGeneration = shell.pluginReloadGeneration
-        reloadToken = shell.beginReloadOperation("bar:" + shell.activeBarId)
+        loadEpoch = shell.pluginLoadEpoch
+        loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+        loadId = shell.activeBarId
+        loadUrl = shell.activeBarSourceUrl
+        loadManifest = shell.activeBarManifest
+        reloadToken = shell.beginReloadOperation("bar:" + loadId)
       }
       if (status !== Loader.Loading && reloadToken !== "") {
+        if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
         shell.finishReloadOperation(reloadToken, status, errorString())
         reloadToken = ""
       }
       if (status === Loader.Error) {
+        if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
         var detail = errorString && errorString() ? errorString() : ""
-        console.warn("bar option " + shell.activeBarId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
-        shell.failedBarId = shell.activeBarId
+        console.warn("bar option " + loadId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
+        shell.pluginRegistry.pluginLoadFailed(loadId, detail, loadGeneration, "bar")
+        shell.failedBarId = loadId
       }
     }
     Component.onDestruction: {
@@ -409,6 +425,7 @@ ShellRoot {
     var url = pluginRegistry.entryPointUrl(manifest, "service")
     if (!url) return null
 
+    var loadEpoch = shell.pluginLoadEpoch
     var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
     var loadManifest = manifest
     var loadUrl = url
@@ -416,19 +433,17 @@ ShellRoot {
     function finalize() {
       if (comp.status === Component.Loading) return
       var currentManifest = shell.pluginRegistry.installedPlugins[key]
-      if (shell.pluginRegistry.pluginSourceGeneration !== loadGeneration
-          || !currentManifest
-          || shell.pluginRegistry.entryPointUrl(currentManifest, "service") !== loadUrl
-          || !shell.pluginRegistry.isEnabled(key)) return
+      if (!shell.isPluginLoadCurrent(key, "service", loadEpoch, loadGeneration, loadUrl, loadManifest)
+          || !currentManifest || !shell.pluginRegistry.isEnabled(key)) return
       if (comp.status !== Component.Ready) {
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
-        shell.pluginRegistry.pluginLoadFailed(key, comp.errorString(), loadGeneration)
+        shell.pluginRegistry.pluginLoadFailed(key, comp.errorString(), loadGeneration, "service")
         return
       }
       var inst = comp.createObject(serviceHost)
       if (!inst) {
         console.warn("service plugin createObject returned null for", key)
-        shell.pluginRegistry.pluginLoadFailed(key, "service createObject returned null", loadGeneration)
+        shell.pluginRegistry.pluginLoadFailed(key, "service createObject returned null", loadGeneration, "service")
         return
       }
       if ("shellPath" in inst) inst.shellPath = shell.shellPath
@@ -440,7 +455,7 @@ ShellRoot {
       for (var sk in _services) snext[sk] = _services[sk]
        snext[key] = inst
        _services = snext
-       shell.pluginRegistry.clearPluginError(key)
+        shell.pluginRegistry.clearPluginError(key, "service")
     }
     if (comp.status === Component.Loading) {
       comp.statusChanged.connect(finalize)
@@ -757,14 +772,18 @@ ShellRoot {
       readonly property string sourceUrl: shell.pluginRegistry.entryPointUrl(manifest, entryKind)
 
       property Loader panelLoader: Loader {
+        property int loadEpoch: shell.pluginLoadEpoch
         property int loadGeneration: shell.pluginReloadGeneration
+        property string loadUrl: panelEntry.sourceUrl
         property string reloadToken: ""
         source: panelEntry.sourceUrl
         active: panelEntry.sourceUrl !== "" && (panelEntry.keepLoaded || shell.openPanelIds[panelEntry.pluginId] === true)
         asynchronous: true
         onLoaded: {
           if (!item) return
-          if (!shell.isReloadTokenCurrent(reloadToken)) return
+          if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+              loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
+          shell.pluginRegistry.clearPluginError(panelEntry.pluginId, "panel:" + panelEntry.entryKind)
           if ("shellPath" in item) item.shellPath = shell.shellPath
           if ("shell" in item) item.shell = shell
           if ("manifest" in item) item.manifest = panelEntry.manifest
@@ -778,24 +797,36 @@ ShellRoot {
         }
         onStatusChanged: {
           if (status === Loader.Loading && reloadToken === "") {
+            loadEpoch = shell.pluginLoadEpoch
+            loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+            loadUrl = panelEntry.sourceUrl
             reloadToken = shell.beginReloadOperation("panel:" + panelEntry.pluginId
               + ":" + panelEntry.entryKind, loadGeneration)
           }
           if (status !== Loader.Loading && reloadToken !== "") {
+            if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+                loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
             shell.finishReloadOperation(reloadToken, status, errorString())
             reloadToken = ""
           }
           if (status === Loader.Error) {
+            if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+                loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
             // Loader.errorString() reflects the source-load failure even when
             // sourceComponent is null. Surface both so the user sees something
             // actionable instead of a panel that silently refuses to open.
             var detail = errorString && errorString() ? errorString() : ""
             if (!detail && sourceComponent) detail = sourceComponent.errorString()
             console.warn("panel plugin " + panelEntry.pluginId + " failed to load:", detail)
+            shell.pluginRegistry.pluginLoadFailed(panelEntry.pluginId, detail, loadGeneration,
+              "panel:" + panelEntry.entryKind)
             shell.hide(panelEntry.pluginId)
           }
         }
-        Component.onCompleted: loadGeneration = shell.pluginReloadGeneration
+        Component.onCompleted: {
+          loadEpoch = shell.pluginLoadEpoch
+          loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+        }
         Component.onDestruction: {
           reloadToken = ""
           shell.unregisterPanelLoader(panelEntry.pluginId)
@@ -892,6 +923,7 @@ ShellRoot {
   }
 
   function reloadPlugins() {
+    shell.pluginLoadEpoch++
     if (shell.pluginReloading || shell.pluginRegistry.scanning) {
       shell.pluginReloadPending = true
       return
@@ -942,15 +974,21 @@ ShellRoot {
       if (existing !== key) next[existing] = shell.reloadComponentStates[existing]
     }
     shell.reloadComponentStates = next
-    if ((status === Loader.Error || status === Component.Error)
-        && String(operation.kind).indexOf("widget:") !== 0)
-      shell.pluginRegistry.recordPluginError(String(operation.kind), String(detail || "component load error"))
     return true
   }
 
   function isReloadTokenCurrent(token) {
     var key = String(token || "")
     return key === "" && !shell.pluginReloading || !!shell.reloadComponentStates[key]
+  }
+
+  function isPluginLoadCurrent(id, kind, epoch, generation, url, manifest) {
+    var current = shell.pluginRegistry.installedPlugins[String(id)]
+    return Number(epoch) === shell.pluginLoadEpoch
+      && Number(generation) === shell.pluginRegistry.pluginSourceGeneration
+      && !!current
+      && shell.pluginRegistry.entryPointUrl(current, kind) === String(url)
+      && String(current.__sourceDir || "") === String(manifest.__sourceDir || "")
   }
 
   Connections {
@@ -986,22 +1024,26 @@ ShellRoot {
     // asynchronous and syncPluginWidgets runs several times while the shell
     // starts, so without a marker the later passes cannot tell a load in
     // flight from one that never happened.
+    var loadEpoch = shell.pluginLoadEpoch
+    var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+    var loadManifest = shell.pluginRegistry.installedPlugins[registryKey]
     var reloadToken = shell.beginReloadOperation("widget:" + registryKey)
     setPluginWidgetComponent(registryKey, { url: url, component: null, loading: true })
     var comp = shell.testPluginWidgetLoadEnabled
       ? Qt.createComponent(url) : Qt.createComponent(url, Component.Asynchronous)
     function finalize() {
       if (comp.status === Component.Loading) return
+      if (!shell.isPluginLoadCurrent(registryKey, "barWidget", loadEpoch, loadGeneration, url, loadManifest)) return
       if (reloadToken !== "" && !shell.finishReloadOperation(reloadToken, comp.status, comp.errorString())) return
       if (comp.status === Component.Ready) {
-        shell.pluginRegistry.clearPluginError(registryKey)
+        shell.pluginRegistry.clearPluginError(registryKey, "widget")
         shell.barWidgetRegistry.register(registryKey, comp, meta)
         shell.setPluginWidgetComponent(registryKey, { url: url, component: comp, loading: false })
       } else if (comp.status === Component.Error) {
         console.warn("Plugin widget " + registryKey + " failed: " + comp.errorString())
         // Drop the claim so a later rescan can retry.
         shell.setPluginWidgetComponent(registryKey, null)
-        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString(), shell.pluginRegistry.pluginSourceGeneration)
+        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString(), loadGeneration, "widget")
       }
     }
     if (comp.status === Component.Loading) {

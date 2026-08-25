@@ -208,6 +208,24 @@ wait_for_plugin_list 'any(.[]; .id == "test.marketplace-widget" and .enabled == 
 wait_for_widget_readiness ready
 wait_for_health '.configValid == true and .pluginStateValid == true and (.pluginErrors | length == 0)'
 
+printf 'import QtQuick\nItem {\n' >"$source_repo/Broken.qml"
+jq '.entryPoints.barWidget = "Broken.qml"' "$source_repo/manifest.json" >"$source_repo/manifest.json.tmp"
+mv -- "$source_repo/manifest.json.tmp" "$source_repo/manifest.json"
+git -C "$source_repo" add manifest.json Broken.qml
+git -C "$source_repo" -c user.name=test -c user.email=test@example.invalid commit -qm bad-qml
+run_omarchy plugin update test.marketplace-widget --yes >/dev/null || fail "bad-QML update failed"
+[[ -f "$plugins_dir/test.marketplace-widget/Broken.qml" ]] || fail "bad-QML update removed source"
+wait_for_health 'any(.pluginErrors[]?; .id == "test.marketplace-widget" and .scope == "widget")'
+
+rm -f -- "$source_repo/Broken.qml"
+jq '.entryPoints.barWidget = "Widget.qml"' "$source_repo/manifest.json" >"$source_repo/manifest.json.tmp"
+mv -- "$source_repo/manifest.json.tmp" "$source_repo/manifest.json"
+git -C "$source_repo" add manifest.json
+git -C "$source_repo" -c user.name=test -c user.email=test@example.invalid commit -qm repaired-qml
+run_omarchy plugin update test.marketplace-widget --yes >/dev/null || fail "repaired-QML update failed"
+wait_for_widget_readiness ready
+wait_for_health 'all(.pluginErrors[]?; .id != "test.marketplace-widget" or .scope != "widget")'
+
 run_omarchy plugin disable test.marketplace-widget >/dev/null || fail "plugin disable failed"
 wait_for_state '(.barWidgets // []) | all(.[]; .id != "test.marketplace-widget")'
 wait_for_writes
