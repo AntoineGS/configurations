@@ -40,6 +40,7 @@ env \
   XDG_STATE_HOME="$tmp_dir/home/.local/state" \
   DESKTOP_SHELL_TEST_NO_SURFACES=1 \
   DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION=1 \
+  DESKTOP_SHELL_TEST_LOAD_PLUGIN_WIDGETS=1 \
   DESKTOP_SHELL_STATE_PATH="$state_file" \
   DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" \
   DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
@@ -58,6 +59,20 @@ jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == fa
 
 enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}')
 [[ -n $enable_result ]]
+quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins >/dev/null
+for _ in {1..100}; do
+  health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
+  if jq -e '.reloadScanTerminal == true and .reloadOutstandingCount == 0 and .reloadComponentsActive == false' <<<"$health" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e '.reloadScanTerminal == true and .reloadOutstandingCount == 0 and .reloadComponentsActive == false' <<<"$health" >/dev/null
+widget_ready=""
+for _ in {1..100}; do
+  widget_ready=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget 2>/dev/null || true)
+  if [[ $widget_ready == ready ]]; then break; fi
+  sleep 0.1
+done
+[[ $widget_ready == ready ]]
 set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
 [[ -n $set_result ]]
 stop_shell

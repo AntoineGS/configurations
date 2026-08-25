@@ -29,6 +29,11 @@ QtObject {
   property bool guardReleaseRequested: false
   property bool guardTimedOut: false
   property var pendingWatchIds: ({})
+  property var activeGuardIds: ({})
+  property string watcherGuardError: ""
+  property int guardRetryCount: 0
+  property int guardRetryLimit: 3
+  property int guardRetryBaseDelay: 100
 
   signal pluginsChanged()
   signal scanFinished()
@@ -280,13 +285,13 @@ QtObject {
       var id = localPluginIdForPath(lines[i])
       if (!id) continue
       registry.queueLocalPluginChange(id)
-      return
     }
   }
 
   function startWatchReloadGuard() {
     if (registry.guardHeld || registry.guardStarting || Object.keys(registry.pendingWatchIds).length === 0)
       return
+    if (registry.guardRetryTimer.running) registry.guardRetryTimer.stop()
     registry.guardStarting = true
     registry.guardReleaseRequested = false
     registry.guardTimedOut = false
@@ -295,6 +300,26 @@ QtObject {
       + "exec 9>\"$0/.plugin-manager.lock\"; "
       + "flock 9; printf 'ready\\n'; IFS= read -r _", registry.pluginsDir]
     guardProcess.running = true
+  }
+
+  function requeueActiveGuardIds() {
+    var next = ({})
+    for (var pendingId in registry.pendingWatchIds) next[pendingId] = true
+    for (var activeId in registry.activeGuardIds) next[activeId] = true
+    registry.pendingWatchIds = next
+    registry.activeGuardIds = ({})
+  }
+
+  function scheduleGuardRetry(detail) {
+    registry.watcherGuardError = String(detail)
+    if (registry.guardRetryCount >= registry.guardRetryLimit) {
+      registry.watcherGuardError += " (retry limit reached)"
+      return
+    }
+    registry.guardRetryCount++
+    registry.guardRetryTimer.interval = Math.min(
+      registry.guardRetryBaseDelay * Math.pow(2, registry.guardRetryCount - 1), 2000)
+    registry.guardRetryTimer.restart()
   }
 
   function releaseWatchReloadGuard() {
@@ -461,15 +486,27 @@ QtObject {
 
   property Process guardProcess: Process {
     stdinEnabled: true
-    onExited: {
+    onExited: function(exitCode) {
       guardFailSafeTimer.stop()
-      var failed = Number(exitCode) !== 0 && !registry.guardReleaseRequested
+      var successfulRelease = Number(exitCode) === 0
+        && registry.guardReleaseRequested && !registry.guardTimedOut
+      var failed = !successfulRelease
       registry.guardHeld = false
       registry.guardStarting = false
+      if (failed) {
+        registry.requeueActiveGuardIds()
+        registry.scheduleGuardRetry(registry.guardTimedOut
+          ? "plugin watcher reload guard timed out"
+          : "plugin watcher lock guard failed with exit code " + String(exitCode))
+      } else {
+        registry.activeGuardIds = ({})
+        registry.watcherGuardError = ""
+        registry.guardRetryCount = 0
+        if (Object.keys(registry.pendingWatchIds).length > 0)
+          registry.startWatchReloadGuard()
+      }
       registry.guardReleaseRequested = false
-      if (failed) registry.recordPluginError("registry", "plugin watcher lock guard failed with exit code " + String(exitCode))
-      if (!registry.guardTimedOut && Object.keys(registry.pendingWatchIds).length > 0)
-        registry.startWatchReloadGuard()
+      registry.guardTimedOut = false
     }
     stdout: StdioCollector {
       waitForEnd: false
@@ -479,6 +516,7 @@ QtObject {
         registry.guardHeld = true
         var queued = registry.pendingWatchIds
         registry.pendingWatchIds = ({})
+        registry.activeGuardIds = queued
         for (var id in queued) registry.localPluginChanged(id)
         registry.watchReloadReady()
         guardFailSafeTimer.restart()
@@ -495,6 +533,12 @@ QtObject {
       registry.guardReleaseRequested = true
       guardProcess.running = false
     }
+  }
+
+  property Timer guardRetryTimer: Timer {
+    interval: 100
+    repeat: false
+    onTriggered: registry.startWatchReloadGuard()
   }
 
   property Timer watchRestartTimer: Timer {
