@@ -265,7 +265,7 @@ ShellRoot {
     check(registry.watcherUnavailable && !registry.watcherRetryTimer.running
       && hasError("registry", "dependencies are unavailable", "watcher"),
       "unavailable watcher reaches durable scoped error")
-    registry.handleWatcherStarted()
+    registry.handleWatcherReady()
     check(!registry.watcherUnavailable && registry.watcherRetryCount === 0
       && !hasError("registry", "dependencies are unavailable", "watcher"),
       "successful watcher startup clears only watcher health")
