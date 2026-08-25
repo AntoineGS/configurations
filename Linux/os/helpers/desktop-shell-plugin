@@ -913,7 +913,7 @@ update_plugins() {
       id=${directory##*/}
       validate_safe_id "$id" >/dev/null 2>&1 || continue
       is_git_plugin "$directory" || continue
-      if update_plugin "$id" "$directory"; then
+      if update_plugin "$id" "$directory" "$id"; then
         changed=1
       else
         status_code=$?
