@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Effects
+import qs.Commons
 
 BorderSurface {
   id: root
@@ -10,7 +11,7 @@ BorderSurface {
   property real revealProgress: 0
   property bool motionEnabled: true
   property real concealedScale: 0.97
-  property int motionDuration: 140
+  property int motionDuration: Motion.fastDuration
   property int shadowBlurMax: 24
   property real shadowBlurAmount: 0.7
   property real shadowOpacityAmount: 0.38
@@ -51,7 +52,25 @@ BorderSurface {
   }
 
   Behavior on revealProgress {
-    enabled: root._completed && root.motionEnabled
-    NumberAnimation { duration: root.motionDuration; easing.type: Easing.OutCubic }
+    enabled: root._completed && root.motionEnabled && Motion.enabled
+    NumberAnimation {
+      duration: root.motionDuration
+      easing.type: Motion.spatialEasing
+    }
+  }
+
+  function settleReveal() {
+    if (!root.motionEnabled || !Motion.enabled) {
+      revealProgress = revealed ? 1 : 0
+    }
+  }
+
+  onMotionEnabledChanged: settleReveal()
+
+  Connections {
+    target: Motion
+    function onEnabledChanged() {
+      if (!Motion.enabled) Qt.callLater(root.settleReveal)
+    }
   }
 }

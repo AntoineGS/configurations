@@ -421,6 +421,74 @@ function dmenuRows(options, query) {
   return rows
 }
 
+function planRowReconciliation(currentRows, nextRows) {
+  var current = Array.isArray(currentRows) ? currentRows.slice() : []
+  var next = Array.isArray(nextRows) ? nextRows : []
+  var desired = {}
+  var operations = []
+
+  function sameRow(left, right) {
+    if (left === right) return true
+    if (!left || !right) return false
+    var leftKeys = Object.keys(left)
+    var rightKeys = Object.keys(right)
+    if (leftKeys.length !== rightKeys.length) return false
+    for (var keyIndex = 0; keyIndex < leftKeys.length; keyIndex++) {
+      var key = leftKeys[keyIndex]
+      if (!(key in right) || left[key] !== right[key]) return false
+    }
+    return true
+  }
+
+  for (var desiredIndex = 0; desiredIndex < next.length; desiredIndex++)
+    desired["$" + String(next[desiredIndex].itemId || "")] = true
+
+  for (var removeIndex = current.length - 1; removeIndex >= 0; removeIndex--) {
+    var removeKey = "$" + String(current[removeIndex].itemId || "")
+    if (desired[removeKey]) continue
+    operations.push({ type: "remove", index: removeIndex })
+    current.splice(removeIndex, 1)
+  }
+
+  for (var targetIndex = 0; targetIndex < next.length; targetIndex++) {
+    var targetRow = next[targetIndex]
+    var targetKey = String(targetRow.itemId || "")
+    if (targetIndex < current.length && String(current[targetIndex].itemId || "") === targetKey) {
+      if (!sameRow(current[targetIndex], targetRow))
+        operations.push({ type: "set", index: targetIndex, row: targetRow })
+      current[targetIndex] = targetRow
+      continue
+    }
+
+    var foundIndex = -1
+    for (var searchIndex = targetIndex + 1; searchIndex < current.length; searchIndex++) {
+      if (String(current[searchIndex].itemId || "") === targetKey) {
+        foundIndex = searchIndex
+        break
+      }
+    }
+
+    if (foundIndex >= 0) {
+      var moved = current.splice(foundIndex, 1)[0]
+      current.splice(targetIndex, 0, moved)
+      operations.push({ type: "move", from: foundIndex, to: targetIndex })
+      if (!sameRow(current[targetIndex], targetRow))
+        operations.push({ type: "set", index: targetIndex, row: targetRow })
+      current[targetIndex] = targetRow
+    } else {
+      current.splice(targetIndex, 0, targetRow)
+      operations.push({ type: "insert", index: targetIndex, row: targetRow })
+    }
+  }
+
+  for (var extraIndex = current.length - 1; extraIndex >= next.length; extraIndex--) {
+    operations.push({ type: "remove", index: extraIndex })
+    current.splice(extraIndex, 1)
+  }
+
+  return operations
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     isOpaqueActionId: isOpaqueActionId,
@@ -453,6 +521,7 @@ if (typeof module !== "undefined") {
     applicationRow: applicationRow,
     calculatorRow: calculatorRow,
     composeSearchResults: composeSearchResults,
-    dmenuRows: dmenuRows
+    dmenuRows: dmenuRows,
+    planRowReconciliation: planRowReconciliation
   }
 }

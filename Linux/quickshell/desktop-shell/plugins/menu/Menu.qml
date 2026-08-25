@@ -32,10 +32,33 @@ Item {
   property var dmenuOptions: []
   property string requestDir: ""
   property string pendingAction: ""
+  property real animatedListHeight: listHeight
+  property real cardTop: 0
+  property bool cardPositioned: false
+  property string motionState: "closed"
+  property real materialXScale: 0
+  property real materialYScale: 0
+  property real surfaceOpacity: 0
+  property real seedOpacity: 0
+  property real searchOpacity: 0
+  property real resultsOpacity: 0
+  property real scrimOpacity: 0
+  property real closeTargetXScale: 0
+  property real closeTargetYScale: 0
+  property bool preparingCardPosition: false
+  property bool pendingCardFinalization: false
+  property int readinessGeneration: 0
+  property bool listTransitionsEnabled: motionState === "open"
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
   readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
   readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
+  readonly property bool surfaceVisible: menuReady
+    && (opened || motionState !== "closed" || surfaceOpacity > 0)
+  readonly property real seedSize: Style.space(8)
+  readonly property real seedXScale: seedSize / Math.max(1, card.width)
+  readonly property real seedYScale: seedSize / Math.max(1, card.height)
+  readonly property real searchCenterY: contentMargin + Style.space(17)
 
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
@@ -57,6 +80,39 @@ Item {
     Math.max(rowHeight, displayModel.count * rowHeight + Math.max(0, displayModel.count - 1) * rowSpacing),
     Style.space(440)
   )
+  readonly property real cardHeight: Math.min(
+    root.contentMargin * 2 + Style.space(54) + root.animatedListHeight
+      + (root.healthSummary ? Style.space(24) : 0),
+    panel.height - Style.gapsOut * 2
+  )
+
+  function prepareCardPosition() {
+    root.preparingCardPosition = true
+    root.animatedListHeight = root.listHeight
+    root.animatedListHeight = Qt.binding(function() { return root.listHeight })
+    root.retargetCardPosition()
+    root.cardPositioned = true
+    root.preparingCardPosition = false
+  }
+
+  function retargetCardPosition() {
+    root.cardTop = Math.round((panel.height - root.cardHeight) / 2)
+  }
+
+  Behavior on animatedListHeight {
+    enabled: root.opened && root.cardPositioned && !root.preparingCardPosition && Motion.enabled
+    NumberAnimation {
+      duration: Motion.spatialDuration
+      easing.type: Motion.spatialEasing
+    }
+  }
+  Behavior on cardTop {
+    enabled: root.opened && root.cardPositioned && !root.preparingCardPosition && Motion.enabled
+    NumberAnimation {
+      duration: Motion.spatialDuration
+      easing.type: Motion.spatialEasing
+    }
+  }
   readonly property string healthSummary: {
     var health = root.shell && root.shell.healthState ? root.shell.healthState : null
     if (!health) return ""
@@ -128,23 +184,42 @@ Item {
     root.cursorActive = target >= 0
   }
 
+  function currentDisplayRows() {
+    var rows = []
+    for (var i = 0; i < displayModel.count; i++) rows.push(displayModel.get(i))
+    return rows
+  }
+
+  function applyDisplayRows(rows) {
+    var operations = MenuModel.planRowReconciliation(root.currentDisplayRows(), rows)
+    for (var i = 0; i < operations.length; i++) {
+      var operation = operations[i]
+      if (operation.type === "remove") displayModel.remove(operation.index)
+      else if (operation.type === "move") displayModel.move(operation.from, operation.to, 1)
+      else if (operation.type === "insert") displayModel.insert(operation.index, operation.row)
+      else if (operation.type === "set") displayModel.set(operation.index, operation.row)
+    }
+  }
+
   function rebuildDisplay() {
-    displayModel.clear()
-    if (!root.menuReady) return
+    if (!root.menuReady) {
+      root.applyDisplayRows([])
+      return
+    }
 
     var active = root.item(root.activeMenu) ? root.activeMenu : "root"
     root.activeMenu = active
-    var commandRows = []
     var query = root.filterText.trim()
 
     if (root.dmenuActive) {
       var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
-      for (var dmenuIndex = 0; dmenuIndex < dmenuRows.length; dmenuIndex++) displayModel.append(dmenuRows[dmenuIndex])
+      root.applyDisplayRows(dmenuRows)
       root.settleCursor()
       if (root.menuMode === "input") root.cursorActive = false
       return
     }
 
+    var commandRows = []
     if (query) {
       for (var i = 0; i < root.itemOrder.length; i++) {
         var entry = root.item(root.itemOrder[i])
@@ -179,7 +254,7 @@ Item {
       calculatorResult = MenuModel.calculatorRow(query, root.calculatorResult, root.calculatorSerial)
 
     var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
-    for (var k = 0; k < rows.length; k++) displayModel.append(rows[k])
+    root.applyDisplayRows(rows)
     root.settleCursor()
   }
 
@@ -276,6 +351,7 @@ Item {
   }
 
   function openExistingMenu(initialMenu) {
+    var reopening = root.motionState === "closing"
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = "menu"
     root.dmenuPrompt = ""
@@ -286,13 +362,23 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    root.opened = true
+    if (reopening) {
+      root.cardPositioned = true
+      root.opened = true
+    }
     root.rebuildDisplay()
+    if (reopening) {
+      root.retargetCardPosition()
+    } else {
+      root.prepareCardPosition()
+      root.opened = true
+    }
     if (root.appLibrary) root.appLibrary.refreshIcons()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function openDmenu(payload) {
+    var reopening = root.motionState === "closing"
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = payload.mode === "input" ? "input" : "select"
     root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
@@ -304,8 +390,17 @@ Item {
     root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
     root.selectedIndex = 0
     root.cursorActive = root.menuMode === "select"
-    root.opened = true
+    if (reopening) {
+      root.cardPositioned = true
+      root.opened = true
+    }
     root.rebuildDisplay()
+    if (reopening) {
+      root.retargetCardPosition()
+    } else {
+      root.prepareCardPosition()
+      root.opened = true
+    }
     Qt.callLater(function() { searchField.forceActiveFocus() })
     return "ok"
   }
@@ -345,6 +440,7 @@ Item {
 
   function close() {
     if (root.requestActive) root.finishRequest(null)
+    root.invalidateReadinessFinalization()
     root.opened = false
     root.filterText = ""
     root.calculatorFocused = false
@@ -353,12 +449,114 @@ Item {
     root.scheduleCalculator("")
   }
 
+  function invalidateReadinessFinalization() {
+    root.readinessGeneration += 1
+    root.pendingCardFinalization = false
+  }
+
+  function scheduleReadinessFinalization() {
+    root.readinessGeneration += 1
+    root.pendingCardFinalization = true
+    var generation = root.readinessGeneration
+    Qt.callLater(function() {
+      if (generation !== root.readinessGeneration || !root.pendingCardFinalization
+          || !root.menuReady || !root.opened) return
+      root.pendingCardFinalization = false
+      root.rebuildDisplay()
+      root.prepareCardPosition()
+      root.beginOpenMotion()
+      searchField.forceActiveFocus()
+    })
+  }
+
+  function settleOpenMotion() {
+    root.materialXScale = 1
+    root.materialYScale = 1
+    root.surfaceOpacity = 1
+    root.seedOpacity = 0
+    root.searchOpacity = 1
+    root.resultsOpacity = 1
+    root.scrimOpacity = 1
+    root.motionState = "open"
+  }
+
+  function settleClosedMotion() {
+    root.surfaceOpacity = 0
+    root.seedOpacity = 0
+    root.searchOpacity = 0
+    root.resultsOpacity = 0
+    root.scrimOpacity = 0
+    root.motionState = "closed"
+  }
+
+  function beginOpenMotion() {
+    closeMotion.stop()
+    if (root.motionState === "closed") {
+      root.materialXScale = root.seedXScale
+      root.materialYScale = root.seedYScale
+      root.surfaceOpacity = 0
+      root.seedOpacity = 1
+      root.searchOpacity = 0
+      root.resultsOpacity = 0
+      root.scrimOpacity = 0
+    }
+    root.motionState = "opening"
+    if (!Motion.enabled) {
+      root.settleOpenMotion()
+      return
+    }
+    openMotion.restart()
+  }
+
+  function beginCloseMotion() {
+    openMotion.stop()
+    if (root.motionState === "closed") return
+    root.closeTargetXScale = root.materialXScale * 0.98
+    root.closeTargetYScale = root.materialYScale * 0.94
+    root.motionState = "closing"
+    if (!Motion.enabled) {
+      root.settleClosedMotion()
+      return
+    }
+    closeMotion.restart()
+  }
+
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
+
+  onOpenedChanged: {
+    if (root.opened) {
+      if (root.menuReady) root.beginOpenMotion()
+    } else {
+      root.invalidateReadinessFinalization()
+      root.beginCloseMotion()
+    }
+  }
+
+  onMenuReadyChanged: {
+    if (!root.menuReady || !root.opened) return
+    root.scheduleReadinessFinalization()
+  }
 
   Connections {
     target: root.appLibrary
     function onAppsChanged() {
       if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay()
+    }
+  }
+
+  Connections {
+    target: Motion
+
+    function onEnabledChanged() {
+      if (Motion.enabled) return
+      openMotion.stop()
+      closeMotion.stop()
+      if (root.opened && (!root.menuReady || root.pendingCardFinalization)) {
+        root.motionState = "closed"
+      } else if (root.opened) {
+        root.settleOpenMotion()
+      }
+      else root.settleClosedMotion()
     }
   }
 
@@ -393,6 +591,127 @@ Item {
       var action = root.pendingAction
       root.pendingAction = ""
       root.runAction(action)
+    }
+  }
+
+  ParallelAnimation {
+    id: openMotion
+
+    onFinished: root.settleOpenMotion()
+
+    NumberAnimation {
+      target: root
+      property: "materialXScale"
+      to: 1
+      duration: Motion.normalDuration
+      easing.type: Motion.spatialEasing
+    }
+    SequentialAnimation {
+      PauseAnimation { duration: 80 }
+      NumberAnimation {
+        target: root
+        property: "materialYScale"
+        to: 1
+        duration: Motion.spatialDuration
+        easing.type: Motion.spatialEasing
+      }
+    }
+    NumberAnimation {
+      target: root
+      property: "surfaceOpacity"
+      to: 1
+      duration: 80
+      easing.type: Motion.effectEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "seedOpacity"
+      to: 0
+      duration: 100
+      easing.type: Motion.effectEasing
+    }
+    SequentialAnimation {
+      PauseAnimation { duration: 80 }
+      NumberAnimation {
+        target: root
+        property: "searchOpacity"
+        to: 1
+        duration: 100
+        easing.type: Motion.effectEasing
+      }
+    }
+    SequentialAnimation {
+      PauseAnimation { duration: 140 }
+      NumberAnimation {
+        target: root
+        property: "resultsOpacity"
+        to: 1
+        duration: Motion.normalDuration
+        easing.type: Motion.effectEasing
+      }
+    }
+    NumberAnimation {
+      target: root
+      property: "scrimOpacity"
+      to: 1
+      duration: Motion.spatialDuration
+      easing.type: Motion.effectEasing
+    }
+  }
+
+  ParallelAnimation {
+    id: closeMotion
+
+    onFinished: root.settleClosedMotion()
+
+    NumberAnimation {
+      target: root
+      property: "surfaceOpacity"
+      to: 0
+      duration: Motion.fastDuration
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "searchOpacity"
+      to: 0
+      duration: 120
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "resultsOpacity"
+      to: 0
+      duration: 90
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "seedOpacity"
+      to: 0
+      duration: Motion.fastDuration
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "materialXScale"
+      to: root.closeTargetXScale
+      duration: Motion.fastDuration
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "materialYScale"
+      to: root.closeTargetYScale
+      duration: Motion.fastDuration
+      easing.type: Motion.exitEasing
+    }
+    NumberAnimation {
+      target: root
+      property: "scrimOpacity"
+      to: 0
+      duration: Motion.fastDuration
+      easing.type: Motion.exitEasing
     }
   }
 
@@ -455,12 +774,13 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened && root.menuReady || card.opacity > 0
+    visible: root.surfaceVisible
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "desktop-menu"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: root.opened
+      ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     anchors {
       top: true
@@ -469,37 +789,63 @@ Item {
       right: true
     }
 
-    Rectangle {
-      anchors.fill: parent
-      color: root.scrim
-
-      MouseArea {
+      Rectangle {
         anchors.fill: parent
-        onClicked: root.close()
+        color: root.scrim
+        opacity: root.scrimOpacity
+
+        MouseArea {
+          anchors.fill: parent
+          enabled: root.opened
+          onClicked: root.close()
+        }
       }
+
+    Rectangle {
+      id: materialSeed
+
+      width: root.seedSize
+      height: root.seedSize
+      radius: width / 2
+      x: Math.round(panel.width / 2 - width / 2)
+      y: Math.round(root.cardTop + root.searchCenterY - height / 2)
+      color: root.accent
+      opacity: root.seedOpacity
     }
 
-    PanelSurface {
-      id: card
-      width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
-      height: Math.min(
-        root.contentMargin * 2 + Style.space(54) + root.listHeight + (root.healthSummary ? Style.space(24) : 0),
-        panel.height - Style.gapsOut * 2
-      )
-      anchors.centerIn: parent
-      padding: root.contentMargin
-      revealed: root.opened
-      entranceY: -Style.space(6)
+    Item {
+      id: cardFrame
 
-      MouseArea {
-        anchors.fill: parent
-        onClicked: {}
+      width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
+      height: root.cardHeight
+      anchors.horizontalCenter: parent.horizontalCenter
+      y: root.cardPositioned ? root.cardTop : Math.round((panel.height - height) / 2)
+      opacity: root.surfaceOpacity
+
+      transform: Scale {
+        origin.x: cardFrame.width / 2
+        origin.y: root.searchCenterY
+        xScale: root.materialXScale
+        yScale: root.materialYScale
       }
 
-      Item {
-        id: content
+      PanelSurface {
+        id: card
+
         anchors.fill: parent
-        anchors.margins: card.padding
+        padding: root.contentMargin
+        revealed: true
+        motionEnabled: false
+
+        MouseArea {
+          anchors.fill: parent
+          onClicked: {}
+        }
+
+        Item {
+          id: content
+          anchors.fill: parent
+          anchors.margins: card.padding
 
         Column {
           anchors.fill: parent
@@ -514,6 +860,7 @@ Item {
               : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
             foreground: root.foreground
             accent: root.accent
+            opacity: root.searchOpacity
             font.family: root.fontFamily
             Keys.priority: Keys.BeforeItem
             onTextEdited: if (text !== root.filterText) root.setFilter(text)
@@ -543,17 +890,50 @@ Item {
 
           Item {
             width: parent.width
-            height: root.listHeight
+            height: root.animatedListHeight
+            opacity: root.resultsOpacity
 
-            ListView {
+            AnimatedListView {
               id: resultList
               anchors.fill: parent
               model: displayModel
               clip: true
               spacing: root.rowSpacing
               boundsBehavior: Flickable.StopAtBounds
+              transitionsEnabled: root.listTransitionsEnabled
+              currentIndex: root.cursorActive && root.selectedIndex < displayModel.count
+                ? root.selectedIndex : -1
+              highlightFollowsCurrentItem: false
 
-              delegate: CursorSurface {
+              highlight: CursorSurface {
+                id: selectionHighlight
+
+                width: resultList.width
+                height: root.rowHeight
+                y: resultList.currentItem ? resultList.currentItem.y : 0
+                hasCursor: true
+                foreground: root.foreground
+                accent: root.accent
+                opacity: root.cursorActive && resultList.currentIndex >= 0 ? 1 : 0
+
+                Behavior on y {
+                  enabled: Motion.enabled && resultList.transitionsEnabled
+                  NumberAnimation {
+                    duration: Motion.normalDuration
+                    easing.type: Motion.spatialEasing
+                  }
+                }
+
+                Behavior on opacity {
+                  enabled: Motion.enabled
+                  NumberAnimation {
+                    duration: Motion.fastDuration
+                    easing.type: Motion.effectEasing
+                  }
+                }
+              }
+
+              delegate: Item {
                 id: row
                 required property int index
                 required property string itemId
@@ -573,9 +953,6 @@ Item {
 
                 width: ListView.view.width
                 height: root.rowHeight
-                hasCursor: root.cursorActive && row.index === root.selectedIndex
-                foreground: root.foreground
-                accent: root.accent
                 opacity: row.disabled ? 0.42 : 1
 
                 Row {
@@ -666,7 +1043,7 @@ Item {
             visible: root.healthSummary !== ""
             text: root.healthSummary
             color: root.secondaryForeground
-            opacity: 0.75
+            opacity: 0.75 * root.resultsOpacity
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             elide: Text.ElideRight
@@ -674,7 +1051,6 @@ Item {
         }
       }
     }
-
-    onVisibleChanged: if (visible) Qt.callLater(function() { searchField.forceActiveFocus() })
   }
+}
 }
