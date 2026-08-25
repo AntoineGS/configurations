@@ -34,20 +34,6 @@ border-alpha = 1.0
 scrim = "#1e1e2e"
 scrim-alpha = 0.5
 
-[menu]
-background = "#1e1e2e"
-background-alpha = 1.0
-text = "#cdd6f4"
-border = "#cba6f7"
-border-alpha = 1.0
-scrim = "#1e1e2e"
-scrim-alpha = 0.5
-selected-background = "#7f849c"
-selected-background-alpha = 0.18
-selected-text = "#cba6f7"
-selected-border = "#cba6f7"
-selected-border-alpha = 0.25
-
 [notifications]
 background = "#b4befe"
 background-alpha = 1.0
@@ -61,11 +47,7 @@ low = "#89dceb"
 critical = "#f38ba8"
 
 [polkit]
-background = "#1e1e2e"
-background-alpha = 1.0
-text = "#cdd6f4"
 text-error = "#f38ba8"
-border = "#cba6f7"
 border-error = "#f38ba8"
 border-alpha = 1.0
 accent = "#cba6f7"
