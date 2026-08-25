@@ -109,7 +109,7 @@ Item {
     resultGrid.positionViewAtIndex(selectedIndex, GridView.Contain)
   }
 
-  function selectPage(delta) {
+  function selectPage(delta, halfPage) {
     if (displayModel.count === 0) return
     if (!cursorActive) {
       cursorActive = true
@@ -118,7 +118,8 @@ Item {
       return
     }
     var visibleRows = Math.max(1, Math.floor(resultGrid.height / cellHeight))
-    var newIndex = selectedIndex + delta * columns * visibleRows
+    var pageRows = halfPage ? Math.max(1, Math.floor(visibleRows / 2)) : visibleRows
+    var newIndex = selectedIndex + delta * columns * pageRows
     if (newIndex < 0) newIndex = 0
     if (newIndex >= displayModel.count) newIndex = displayModel.count - 1
     selectedIndex = newIndex
@@ -202,7 +203,26 @@ Item {
           onTextEdited: if (text !== root.filterText) root.setFilter(text)
 
           Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Escape) {
+            var control = event.modifiers & Qt.ControlModifier
+            if (control && event.key === Qt.Key_H) {
+              root.select(-1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_J) {
+              root.selectRow(1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_K) {
+              root.selectRow(-1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_L) {
+              root.select(1)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_U) {
+              root.selectPage(-1, true)
+              event.accepted = true
+            } else if (control && event.key === Qt.Key_D) {
+              root.selectPage(1, true)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Escape) {
               if (root.filterText) root.setFilter("")
               else root.dismiss()
               event.accepted = true

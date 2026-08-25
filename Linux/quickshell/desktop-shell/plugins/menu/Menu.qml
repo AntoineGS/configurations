@@ -272,6 +272,11 @@ Item {
     resultList.positionViewAtIndex(target, ListView.Contain)
   }
 
+  function selectHalfPage(delta) {
+    var visibleRows = Math.max(1, Math.floor(resultList.height / (root.rowHeight + root.rowSpacing)))
+    root.select(delta * Math.max(1, Math.floor(visibleRows / 2)))
+  }
+
   function setFilter(nextFilter) {
     root.filterText = String(nextFilter || "")
     root.selectedIndex = 0
@@ -866,7 +871,27 @@ Item {
             onTextEdited: if (text !== root.filterText) root.setFilter(text)
 
             Keys.onPressed: function(event) {
-              if (event.key === Qt.Key_Escape) {
+              var control = event.modifiers & Qt.ControlModifier
+              if (control && event.key === Qt.Key_H) {
+                root.goBack()
+                event.accepted = true
+              } else if (control && event.key === Qt.Key_J) {
+                root.select(1)
+                event.accepted = true
+              } else if (control && event.key === Qt.Key_K) {
+                root.select(-1)
+                event.accepted = true
+              } else if (control && event.key === Qt.Key_L) {
+                if (root.cursorActive) root.activateIndex(root.selectedIndex)
+                else root.settleCursor()
+                event.accepted = true
+              } else if (control && event.key === Qt.Key_U) {
+                root.selectHalfPage(-1)
+                event.accepted = true
+              } else if (control && event.key === Qt.Key_D) {
+                root.selectHalfPage(1)
+                event.accepted = true
+              } else if (event.key === Qt.Key_Escape) {
                 if (root.filterText) root.setFilter("")
                 else if (!root.goBack()) root.close()
                 event.accepted = true
