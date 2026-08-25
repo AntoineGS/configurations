@@ -13,6 +13,7 @@ CursorSurface 1.0 CursorSurface.qml
 KeyboardPanel 1.0 KeyboardPanel.qml
 OpticalGlyph 1.0 OpticalGlyph.qml
 Panel 1.0 Panel.qml
+PanelSurface 1.0 PanelSurface.qml
 PanelActionButton 1.0 PanelActionButton.qml
 PanelController 1.0 PanelController.qml
 PanelKeyCatcher 1.0 PanelKeyCatcher.qml
