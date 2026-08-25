@@ -27,8 +27,9 @@ Panel {
   function reportCapability() {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
     if (!registry) return
-    if (capabilityAvailable) registry.clearPluginError(moduleName)
-    else registry.recordPluginError(moduleName, "Tailscale unavailable or logged out")
+    var scope = "capability:panel:" + moduleName
+    if (capabilityAvailable) registry.clearPluginError(moduleName, scope)
+    else registry.recordPluginError(moduleName, "Tailscale unavailable or logged out", scope)
   }
 
   function moveCursor(delta) {
