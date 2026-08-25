@@ -1,4 +1,14 @@
-function normalizeEntry(value) {
+function confinedImagePath(path, imageRoot) {
+  var value = String(path || "")
+  var root = String(imageRoot || "").replace(/\/$/, "")
+  if (!root) return value
+  if (value.indexOf(root + "/") !== 0) return ""
+  var basename = value.slice(root.length + 1)
+  if (basename.indexOf("/") !== -1) return ""
+  return /^[0-9a-f]{64}\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(basename) ? value : ""
+}
+
+function normalizeEntry(value, imageRoot) {
   if (typeof value === "string")
     return value.trim().length > 0 ? { type: "text", text: value } : null
 
@@ -11,7 +21,7 @@ function normalizeEntry(value) {
   }
 
   if (type === "image") {
-    var path = String(value.path || "")
+    var path = confinedImagePath(value.path, imageRoot)
     if (!path) return null
     var entry = {
       type: "image",
@@ -32,13 +42,13 @@ function entryKey(entry) {
   return "text:" + String(entry.text || "")
 }
 
-function parseHistoryResult(raw) {
+function parseHistoryResult(raw, imageRoot) {
   try {
     var parsed = JSON.parse(String(raw || "[]"))
     if (!Array.isArray(parsed)) return { valid: false, history: [] }
     var next = []
     for (var i = 0; i < parsed.length && next.length < 500; i++) {
-      var entry = normalizeEntry(parsed[i])
+      var entry = normalizeEntry(parsed[i], imageRoot)
       if (entry) next.push(entry)
     }
     return { valid: true, history: next }
@@ -47,12 +57,12 @@ function parseHistoryResult(raw) {
   }
 }
 
-function parseHistory(raw) {
-  return parseHistoryResult(raw).history
+function parseHistory(raw, imageRoot) {
+  return parseHistoryResult(raw, imageRoot).history
 }
 
-function addEntry(history, entry, limit) {
-  var normalized = normalizeEntry(entry)
+function addEntry(history, entry, limit, imageRoot) {
+  var normalized = normalizeEntry(entry, imageRoot)
   var max = limit === undefined || limit === null ? 500 : Number(limit)
   if (isNaN(max)) max = 500
   max = Math.max(0, max)
@@ -64,7 +74,7 @@ function addEntry(history, entry, limit) {
   var values = Array.isArray(history) ? history : []
 
   for (var i = 0; i < values.length && next.length < max; i++) {
-    var existing = normalizeEntry(values[i])
+    var existing = normalizeEntry(values[i], imageRoot)
     if (!existing || entryKey(existing) === key) continue
     next.push(existing)
   }
@@ -85,10 +95,10 @@ function clearHistory() {
   return []
 }
 
-function parseEntryJson(line) {
+function parseEntryJson(line, imageRoot) {
   var raw = String(line || "").trim()
   if (!raw) return null
-  try { return normalizeEntry(JSON.parse(raw)) } catch (e) { return null }
+  try { return normalizeEntry(JSON.parse(raw), imageRoot) } catch (e) { return null }
 }
 
 function imagePaths(history) {
@@ -209,6 +219,7 @@ function displayRows(history, query, limit) {
 if (typeof module !== "undefined") {
   module.exports = {
     normalizeEntry: normalizeEntry,
+    confinedImagePath: confinedImagePath,
     entryKey: entryKey,
     parseHistoryResult: parseHistoryResult,
     parseHistory: parseHistory,

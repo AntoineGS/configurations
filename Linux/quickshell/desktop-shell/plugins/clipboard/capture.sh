@@ -4,6 +4,7 @@ umask 077
 
 state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell
 image_dir=$state_dir/clipboard-images
+history_file=$state_dir/clipboard-history.json
 current_tmp=""
 
 cleanup() {
@@ -11,7 +12,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+[[ ! -L $state_dir && ! -L $image_dir ]] || exit 1
 install -d -m 700 -- "$state_dir" "$image_dir"
+if [[ -e $history_file ]]; then
+  [[ -f $history_file && ! -L $history_file ]] || exit 1
+  chmod 600 -- "$history_file"
+fi
+if find "$image_dir" -mindepth 1 -maxdepth 1 -type l -print -quit | grep -q .; then
+  exit 1
+fi
+find "$image_dir" -mindepth 1 -maxdepth 1 -type f -exec chmod 600 -- {} +
+
+if [[ ${1:-} == --init ]]; then
+  exit 0
+fi
 
 types=$(wl-paste --list-types 2>/dev/null || true)
 if [[ ${CLIPBOARD_STATE:-} == sensitive ]] || grep -qx 'x-kde-passwordManagerHint' <<<"$types"; then
@@ -22,9 +36,6 @@ emit_image() {
   local mime=$1
   local ext hash file
 
-  ext=${mime#image/}
-  [[ $ext == jpeg ]] && ext=jpg
-
   current_tmp=$(mktemp --tmpdir="$image_dir" clipboard.XXXXXX)
   chmod 600 -- "$current_tmp"
   cat >"$current_tmp"
@@ -33,6 +44,21 @@ emit_image() {
     current_tmp=""
     return 0
   fi
+
+  if [[ $mime == image ]]; then
+    mime=$(file --brief --mime-type -- "$current_tmp")
+  fi
+  case $mime in
+    image/png | image/jpeg | image/webp | image/gif | image/bmp | image/tiff) ;;
+    *)
+      rm -f -- "$current_tmp"
+      current_tmp=""
+      return 0
+      ;;
+  esac
+
+  ext=${mime#image/}
+  [[ $ext == jpeg ]] && ext=jpg
 
   hash=$(sha256sum -- "$current_tmp")
   hash=${hash%% *}
@@ -92,6 +118,7 @@ emit_text() {
 
 case ${1:-} in
   text) emit_text; exit 0 ;;
+  image) emit_image image; exit 0 ;;
   image/png | image/jpeg | image/webp | image/gif | image/bmp | image/tiff) emit_image "$1"; exit 0 ;;
   "") ;;
   *) exit 0 ;;
