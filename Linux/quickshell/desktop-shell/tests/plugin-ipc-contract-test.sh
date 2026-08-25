@@ -72,7 +72,28 @@ jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == fa
 
 enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}')
 [[ -n $enable_result ]]
-quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins >/dev/null
+legacy_rescan=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins)
+[[ $legacy_rescan == ok ]]
+explicit_request=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan)
+[[ $explicit_request =~ ^[0-9]+:[0-9]+$ ]]
+coalesced_request=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan)
+[[ $coalesced_request =~ ^[0-9]+:[0-9]+$ && $coalesced_request != "$explicit_request" ]]
+explicit_status=""
+for _ in {1..100}; do
+  explicit_status=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus "$explicit_request" 2>/dev/null || true)
+  if [[ $explicit_status == ok || $explicit_status == error:* ]]; then break; fi
+  [[ $explicit_status == pending ]] || { printf 'unexpected explicit status: %s\n' "$explicit_status" >&2; exit 1; }
+  sleep 0.1
+done
+[[ $explicit_status == ok ]]
+coalesced_status=""
+for _ in {1..100}; do
+  coalesced_status=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus "$coalesced_request" 2>/dev/null || true)
+  if [[ $coalesced_status == ok || $coalesced_status == error:* ]]; then break; fi
+  [[ $coalesced_status == pending ]] || { printf 'unexpected coalesced status: %s\n' "$coalesced_status" >&2; exit 1; }
+  sleep 0.1
+done
+[[ $coalesced_status == ok ]]
 for _ in {1..100}; do
   health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
   if jq -e '.reloadScanTerminal == true and .reloadOutstandingCount == 0 and .reloadComponentsActive == false' <<<"$health" >/dev/null 2>&1; then break; fi

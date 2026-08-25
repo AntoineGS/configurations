@@ -34,8 +34,11 @@ forward() {
 }
 
 case "$method" in
-  ping|rescanPlugins|listPlugins|listShellConfig)
+  ping|rescanPlugins|beginPluginRescan|listPlugins|listShellConfig)
     (($# == 0)) || usage
+    ;;
+  pluginRescanStatus)
+    (($# == 1)) || usage
     ;;
   enablePlugin|putBarWidget|moveBarWidget)
     (($# >= 1 && $# <= 2)) || usage
@@ -60,6 +63,8 @@ esac
 case "$method" in
   ping)             forward "$desktop_shell" ping ;;
   rescanPlugins)    forward "$desktop_shell" plugin-rescan ;;
+  beginPluginRescan) forward "$desktop_shell" plugin-rescan-begin ;;
+  pluginRescanStatus) forward "$desktop_shell" plugin-rescan-status "$1" ;;
   listPlugins)      forward "$desktop_shell" plugin-list ;;
   listShellConfig)  forward "$desktop_shell" list-shell-config ;;
   enablePlugin)     forward "$desktop_shell" plugin-enable "$1" "${2:-"{}"}" ;;

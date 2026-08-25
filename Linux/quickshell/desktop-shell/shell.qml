@@ -124,6 +124,10 @@ ShellRoot {
   property int reloadOutstandingCount: 0
   property int reloadTokenCounter: 0
   property int reloadComponentAttemptCount: 0
+  property int explicitReloadRequestCounter: 0
+  property var explicitReloadRequests: ({})
+  property string reloadGenerationError: ""
+  property int explicitReloadFailSafeGeneration: 0
 
   onShellConfigChanged: {
     if (failedBarId !== "") failedBarId = ""
@@ -903,6 +907,7 @@ ShellRoot {
       return
     }
     shell.pluginReloadGeneration++
+    shell.reloadGenerationError = ""
     shell.reloadComponentStates = ({})
     shell.reloadOutstandingCount = 0
     shell.reloadScanTerminal = false
@@ -974,9 +979,11 @@ ShellRoot {
     if (!shell.pluginReloading || !shell.reloadScanTerminal || !shell.reloadComponentsActive) return
     if (shell.reloadOutstandingCount !== 0) return
     if (shell.pluginReloadPending) {
+      shell.settleExplicitReloadGeneration(shell.pluginReloadGeneration)
       shell.startPendingPluginReload()
       return
     }
+    shell.settleExplicitReloadGeneration(shell.pluginReloadGeneration)
     shell.pluginReloading = false
     shell.reloadComponentsActive = false
     if (shell.guardedReloadGeneration === shell.pluginReloadGeneration) {
@@ -992,7 +999,77 @@ ShellRoot {
     shell.pluginReloading = false
     shell.reloadScanTerminal = false
     shell.reloadComponentsActive = false
-    Qt.callLater(function() { shell.reloadPlugins(nextGuardSerial) })
+    Qt.callLater(function() {
+      shell.reloadPlugins(nextGuardSerial)
+      if (shell.hasExplicitReloadGeneration(shell.pluginReloadGeneration)) {
+        shell.explicitReloadFailSafeGeneration = shell.pluginReloadGeneration
+        explicitReloadFailSafeTimer.restart()
+      }
+    })
+  }
+
+  function hasExplicitReloadGeneration(generation) {
+    for (var requestId in shell.explicitReloadRequests) {
+      var request = shell.explicitReloadRequests[requestId]
+      if (Number(request.generation) === Number(generation) && request.status === "pending") return true
+    }
+    return false
+  }
+
+  function settleExplicitReloadGeneration(generation) {
+    var error = String(shell.reloadGenerationError || shell.pluginRegistry.lastScanError || "")
+    var terminal = error === "" ? "ok" : "error: " + error
+    var next = ({})
+    for (var requestId in shell.explicitReloadRequests) {
+      var request = shell.explicitReloadRequests[requestId]
+      if (Number(request.generation) === Number(generation) && request.status === "pending")
+        next[requestId] = { generation: request.generation, status: terminal }
+      else next[requestId] = request
+    }
+    shell.explicitReloadRequests = next
+    if (shell.explicitReloadFailSafeGeneration === Number(generation)) {
+      explicitReloadFailSafeTimer.stop()
+      shell.explicitReloadFailSafeGeneration = 0
+    }
+  }
+
+  function beginPluginRescan() {
+    var requestId = String(++shell.explicitReloadRequestCounter) + ":" + String(Date.now())
+    var generation
+    if (shell.pluginReloading || shell.pluginRegistry.scanning) {
+      shell.pluginReloadPending = true
+      generation = shell.pluginReloadGeneration + 1
+    } else {
+      shell.reloadPlugins()
+      generation = shell.pluginReloadGeneration
+      shell.explicitReloadFailSafeGeneration = generation
+      explicitReloadFailSafeTimer.restart()
+    }
+    var next = ({})
+    for (var existing in shell.explicitReloadRequests) next[existing] = shell.explicitReloadRequests[existing]
+    next[requestId] = { generation: generation, status: "pending" }
+    shell.explicitReloadRequests = next
+    return requestId
+  }
+
+  function pluginRescanStatus(requestId) {
+    var request = shell.explicitReloadRequests[String(requestId || "")]
+    return request ? String(request.status) : "error: unknown reload request ID"
+  }
+
+  function failExplicitReloadGeneration() {
+    var generation = shell.explicitReloadFailSafeGeneration
+    if (!generation || generation !== shell.pluginReloadGeneration || !shell.pluginReloading) return
+    shell.reloadGenerationError = "plugin reload timed out before terminal completion"
+    shell.pluginReloadPending = false
+    shell.pluginRegistry.cancelScan()
+    shell.reloadComponentStates = ({})
+    shell.reloadOutstandingCount = 0
+    shell.reloadScanTerminal = true
+    shell.reloadComponentsActive = true
+    shell.settleExplicitReloadGeneration(generation)
+    shell.pluginReloading = false
+    shell.reloadComponentsActive = false
   }
 
   function loaderTokenProbe() {
@@ -1050,6 +1127,13 @@ ShellRoot {
     onTriggered: shell.maybeFinishPluginReload()
   }
 
+  Timer {
+    id: explicitReloadFailSafeTimer
+    interval: 15000
+    repeat: false
+    onTriggered: shell.failExplicitReloadGeneration()
+  }
+
   Connections {
     target: shell.pluginRegistry
     function onWatchReloadReady(serial) {
@@ -1062,7 +1146,7 @@ ShellRoot {
       shell.reloadPlugins(Number(serial))
     }
     function onScanFinished() {
-      if (shell.pluginReloadPending) {
+      if (shell.pluginReloadPending && !shell.pluginReloading) {
         shell.startPendingPluginReload()
         return
       }
@@ -1078,6 +1162,9 @@ ShellRoot {
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
       shell.scheduleReloadCompletion()
+    }
+    function onPluginLoadFailed(id, error) {
+      if (shell.pluginReloading) shell.reloadGenerationError = String(error)
     }
   }
 
@@ -1222,6 +1309,14 @@ ShellRoot {
     function rescanPlugins(): string {
       shell.reloadPlugins()
       return "ok"
+    }
+
+    function beginPluginRescan(): string {
+      return shell.beginPluginRescan()
+    }
+
+    function pluginRescanStatus(requestId: string): string {
+      return shell.pluginRescanStatus(requestId)
     }
 
     function listPlugins(): string {

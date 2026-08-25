@@ -99,6 +99,40 @@ case "${2-}" in
     fi
     printf '%s\n' "${IPC_RESCAN_RESULT:-ok}"
     ;;
+  beginPluginRescan)
+    printf '%s\t\t\n' rescanPlugins >>"$IPC_LOG"
+    if [[ -n ${IPC_RESCAN_MARKER:-} ]]; then
+      : >"$IPC_RESCAN_MARKER"
+    fi
+    if [[ ${IPC_REPLACE_TARGET:-0} == 1 ]]; then
+      mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
+      mkdir -- "$IPC_TARGET"
+      printf 'replacement\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ ${IPC_SIGNAL_AFTER_RESCAN:-0} == 1 ]]; then
+      kill -TERM "$PPID"
+      sleep 0.2
+    fi
+    if [[ ${IPC_RESCAN_REPLACE_TARGET:-0} == 1 ]]; then
+      mv -- "$IPC_TARGET" "$IPC_REPLACEMENT_BACKUP"
+      mkdir -- "$IPC_TARGET"
+      printf 'replacement-during-ipc\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ ${IPC_RESCAN_REPOPULATE:-0} == 1 ]]; then
+      mkdir -- "$IPC_TARGET"
+      printf 'repopulated-during-ipc\n' >"$IPC_TARGET/marker"
+    fi
+    if [[ -n ${IPC_BEGIN_REQUEST:-} ]]; then
+      printf '1:1\n'
+      while [[ ! -e ${IPC_BEGIN_RELEASE:?} ]]; do sleep 0.01; done
+    else
+      printf '1:1\n'
+    fi
+    ;;
+  pluginRescanStatus)
+    [[ $# -eq 3 ]] || exit 2
+    if [[ ${IPC_RESCAN_RESULT:-ok} == ok ]]; then printf 'ok\n'; else printf 'error: %s\n' "${IPC_RESCAN_RESULT}"; fi
+    ;;
   listPlugins)
     count_file="$IPC_LOG.list-count"
     count=0
@@ -1155,5 +1189,38 @@ if env "${manager_env[@]}" "$manager" update identity.widget --yes >/dev/null 2>
 fi
 [[ $(git -C "$identity_target" rev-parse HEAD) == "$identity_prior" ]] || fail "duplicate ID update was not rolled back"
 [[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$identity_rescans" ]] || fail "duplicate ID update requested rescan"
+
+manager_a_repo="$test_root/manager-a"
+manager_b_repo="$test_root/manager-b"
+make_repo "$manager_a_repo" manager-a.widget
+make_repo "$manager_b_repo" manager-b.widget
+manager_a_release="$test_root/manager-a-release"
+manager_a_ready="$test_root/manager-a-ready"
+manager_b_scan="$test_root/manager-b-scan"
+manager_a_status=0
+env "${manager_env[@]}" IPC_BEGIN_REQUEST=1 IPC_BEGIN_RELEASE="$manager_a_release" \
+  IPC_RESCAN_MARKER="$manager_a_ready" "$manager" add "$manager_a_repo" --yes \
+  >"$test_root/manager-a.out" 2>&1 &
+manager_a_pid=$!
+for _ in {1..100}; do
+  [[ -f $manager_a_ready ]] && break
+  sleep 0.01
+done
+[[ -f $manager_a_ready ]] || fail "manager A did not reach explicit reload"
+manager_b_status=0
+env "${manager_env[@]}" IPC_BEGIN_REQUEST= IPC_BEGIN_RELEASE= \
+  IPC_RESCAN_MARKER="$manager_b_scan" "$manager" add "$manager_b_repo" --yes \
+  >"$test_root/manager-b.out" 2>&1 &
+manager_b_pid=$!
+sleep 0.2
+[[ ! -e "$plugins_dir/manager-b.widget" ]] || fail "manager B mutated while manager A held lock"
+[[ ! -e $manager_b_scan ]] || fail "manager B started a scan while manager A held lock"
+touch -- "$manager_a_release"
+wait "$manager_a_pid" || manager_a_status=$?
+wait "$manager_b_pid" || manager_b_status=$?
+[[ $manager_a_status == 0 ]] || fail "manager A explicit reload failed: $(<"$test_root/manager-a.out")"
+[[ $manager_b_status == 0 ]] || fail "manager B did not proceed after manager A: $(<"$test_root/manager-b.out")"
+[[ -f "$plugins_dir/manager-a.widget/manifest.json" && -f "$plugins_dir/manager-b.widget/manifest.json" ]] \
+  || fail "serialized managers did not install both plugins"
 
 printf 'PASS: desktop-shell plugin manager\n'
