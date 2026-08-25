@@ -28,19 +28,12 @@ Item {
   property string historyPath: root.stateRoot + "/clipboard-history.json"
   property string imageDir: root.stateRoot + "/clipboard-images"
   property string captureScript: root.shellPath + "/plugins/clipboard/capture.sh"
-  // Shares the [menu] surface tokens — themes that style the menu also
-  // style the clipboard. Selected-row colors composed in the
-  // singleton so consumers drop them straight into Rectangle bindings.
-  property color background: Color.menu.background
-  property color foreground: Color.menu.text
-  property color border: Color.menu.border
-  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  property color scrim: Color.menu.scrim
-  property color selectedBackground: Color.menu.selectedBackground
-  property color selectedText: Color.menu.selectedText
-  readonly property int cornerRadius: Style.cornerRadius
-  property string fontFamily: Style.font.menuFamily
-  property int contentMargin: Style.spacing.panelPadding
+  property color foreground: Color.barPanels.text
+  property color secondaryForeground: Color.barPanels.secondaryText
+  property color accent: Color.accent
+  property color scrim: Color.modal.scrim
+  property string fontFamily: Style.font.family
+  property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
   property int cardWidth: Math.min(Style.space(875), panel.width - Style.gapsOut * 2)
@@ -55,7 +48,7 @@ Item {
     root.cursorActive = true
     root.disarmPointer()
     root.rebuildDisplay()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function close() {
@@ -117,7 +110,7 @@ Item {
   function cancelClearHistory() {
     root.clearConfirmOpen = false
     root.disarmPointer()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function confirmClearHistory() {
@@ -131,7 +124,7 @@ Item {
     root.disarmPointer()
     root.clearConfirmOpen = false
     root.rebuildDisplay()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function removeDisplayIndex(index) {
@@ -373,7 +366,7 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened
+    visible: root.opened || card.opacity > 0
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "desktop-clipboard"
@@ -391,90 +384,31 @@ Item {
       onClicked: root.close()
     }
 
-    BorderSurface {
+    PanelSurface {
       id: card
       width: root.cardWidth
       height: root.cardHeight
-      radius: root.cornerRadius
       anchors.centerIn: parent
-      color: root.background
-      borderSpec: root.borderSpec
       padding: root.contentMargin
+      revealed: root.opened
+      entranceY: -Style.space(6)
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
-      Item {
-        id: keyCatcher
+      ConfirmDialog {
+        id: clearConfirm
+
         anchors.fill: parent
-        z: root.clearConfirmOpen ? 20 : 0
-        focus: true
-
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (root.clearConfirmOpen) {
-            if (clearConfirm.handleKey(event)) event.accepted = true
-            return
-          }
-
-          if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
-            else root.close()
-            event.accepted = true
-          } else if (Util.editsFilter(event, root.filterText)) {
-            root.setFilter(Util.editedFilter(event, root.filterText))
-            event.accepted = true
-          } else if (event.key === Qt.Key_Delete) {
-            if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
-            else root.removeDisplayIndex(root.selectedIndex)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up) {
-            root.select(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Down) {
-            root.select(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageUp) {
-            root.select(-6)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageDown) {
-            root.select(6)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Home) {
-            root.selectAbsolute(0)
-            event.accepted = true
-          } else if (event.key === Qt.Key_End) {
-            root.selectAbsolute(displayModel.count - 1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
-            else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
-            else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            else if (displayModel.count > 0) root.cursorActive = true
-            event.accepted = true
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
-            root.setFilter(root.filterText + event.text)
-            event.accepted = true
-          }
-        }
-
-        ConfirmDialog {
-          id: clearConfirm
-
-          anchors.fill: parent
-          opened: root.clearConfirmOpen
-          z: 10
-          message: "Delete entire clipboard history?"
-          confirmText: "Delete"
-          background: root.background
-          foreground: root.foreground
-          scrim: root.scrim
-          selectedBackground: root.selectedBackground
-          selectedText: root.selectedText
-          fontFamily: root.fontFamily
-          cornerRadius: root.cornerRadius
-          onCanceled: root.cancelClearHistory()
-          onConfirmed: root.confirmClearHistory()
-        }
+        opened: root.clearConfirmOpen
+        z: 10
+        message: "Delete entire clipboard history?"
+        confirmText: "Delete"
+        foreground: root.foreground
+        secondaryForeground: root.secondaryForeground
+        scrim: root.scrim
+        fontFamily: root.fontFamily
+        onCanceled: root.cancelClearHistory()
+        onConfirmed: root.confirmClearHistory()
       }
 
       Column {
@@ -485,22 +419,57 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: root.contentSpacing
 
-        Rectangle {
+        TextField {
+          id: searchField
           width: parent.width
           height: root.headerHeight
-          radius: root.cornerRadius
-          color: "transparent"
+          text: root.filterText
+          placeholderText: "Search clipboard…"
+          foreground: root.foreground
+          accent: root.accent
+          font.family: root.fontFamily
+          Keys.priority: Keys.BeforeItem
+          onTextEdited: if (text !== root.filterText) root.setFilter(text)
 
-          Text {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || "Search clipboard…"
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            elide: Text.ElideRight
+          Keys.onPressed: function(event) {
+            if (root.clearConfirmOpen) {
+              if (clearConfirm.handleKey(event)) event.accepted = true
+              return
+            }
+
+            if (event.key === Qt.Key_Escape) {
+              if (root.filterText) root.setFilter("")
+              else root.close()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Delete) {
+              if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
+              else root.removeDisplayIndex(root.selectedIndex)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+              root.select(-1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down) {
+              root.select(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageUp) {
+              root.select(-6)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageDown) {
+              root.select(6)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Home) {
+              root.selectAbsolute(0)
+              event.accepted = true
+            } else if (event.key === Qt.Key_End) {
+              root.selectAbsolute(displayModel.count - 1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
+              else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
+              else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+              else if (displayModel.count > 0) root.cursorActive = true
+              event.accepted = true
+            }
           }
         }
 
@@ -526,7 +495,7 @@ Item {
                 spacing: Style.space(4)
                 boundsBehavior: Flickable.StopAtBounds
 
-                delegate: Rectangle {
+                delegate: CursorSurface {
                   id: row
                   required property int index
                   required property string entryType
@@ -534,12 +503,11 @@ Item {
                   required property string fullText
                   required property string previewImage
 
-                  readonly property bool hasCursor: root.cursorActive && index === root.selectedIndex
-
                   width: ListView.view.width
                   height: root.rowHeight
-                  radius: root.cornerRadius
-                  color: hasCursor ? root.selectedBackground : "transparent"
+                  hasCursor: root.cursorActive && index === root.selectedIndex
+                  foreground: root.foreground
+                  accent: root.accent
 
                   Row {
                     anchors.fill: parent
@@ -563,7 +531,7 @@ Item {
                       width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
                       height: parent.height
                       text: parent.parent.previewText
-                      color: parent.parent.hasCursor ? root.selectedText : root.foreground
+                      color: parent.parent.hasCursor ? root.foreground : root.secondaryForeground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.title
                       opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0
@@ -602,7 +570,7 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: Style.normalBorderWidth
-                color: Util.alpha(root.border, 0.28)
+                color: Util.alpha(root.foreground, 0.28)
               }
 
               Text {
@@ -644,7 +612,7 @@ Item {
 
             Text {
               text: "󰅌"
-              color: root.selectedText
+              color: root.accent
               opacity: 0.8
               font.family: root.fontFamily
               font.pixelSize: Style.font.displayLarge
