@@ -32,6 +32,7 @@ QtObject {
   property bool watcherRetryPending: false
   property bool watcherRetryProcessStopped: false
   property bool watcherRetryElapsed: false
+  property bool watcherProcessStopped: true
   property var pendingWatchIds: ({})
   property var activeWatchIds: ({})
   property bool watchIdsEmitted: false
@@ -506,10 +507,12 @@ QtObject {
     registry.watcherReady = false
     watcherProcess.command = ["bash", "-c",
       "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
-      + "inotifywait --help >/dev/null 2>&1 || exit 125; "
-      + "printf 'ready\\n'; "
-      + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
+      + "inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\" & watcher_pid=$!; "
+      + "trap 'kill \"$watcher_pid\" 2>/dev/null || true' EXIT HUP INT TERM; "
+      + "sleep 0.05; kill -0 \"$watcher_pid\" 2>/dev/null || { wait \"$watcher_pid\"; exit 125; }; "
+      + "printf 'ready\\n'; wait \"$watcher_pid\"",
       registry.pluginsDir]
+    registry.watcherProcessStopped = false
     watcherProcess.running = true
   }
 
@@ -550,11 +553,12 @@ QtObject {
     }
     registry.watcherRetryCount++
     registry.watcherRetryPending = true
-    registry.watcherRetryProcessStopped = !registry.watcherProcess.running
+    registry.watcherRetryProcessStopped = registry.watcherProcessStopped
     registry.watcherRetryElapsed = false
     registry.watcherRetryTimer.interval = Math.min(
       registry.watcherRetryBaseDelay * Math.pow(2, registry.watcherRetryCount - 1), 2000)
-    registry.watcherRetryTimer.restart()
+    registry.watcherRetryTimer.stop()
+    registry.watcherRetryTimer.start()
   }
 
   function maybeStartWatcherRetry() {
@@ -567,6 +571,7 @@ QtObject {
   }
 
   function markWatcherProcessStopped() {
+    registry.watcherProcessStopped = true
     if (!registry.watcherRetryPending) return
     registry.watcherRetryProcessStopped = true
     registry.maybeStartWatcherRetry()
@@ -596,7 +601,8 @@ QtObject {
   property Process watcherProcess: Process {
     onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
     onRunningChanged: {
-      if (!running) registry.markWatcherProcessStopped()
+      if (running) registry.watcherProcessStopped = false
+      else registry.markWatcherProcessStopped()
     }
     stdout: StdioCollector {
       id: watcherStdout
@@ -699,7 +705,7 @@ QtObject {
       + "scan_thirdparty() { local dir=\"$1\"; [[ -d \"$dir\" ]] || return 0; "
       + "  while IFS= read -r sub; do "
       + "    [[ -d \"$sub\" ]] || continue; "
-      + "    [[ \"$sub\" == */.* || \"$sub\" == */.git ]] && continue; "
+      + "    name=\"${sub##*/}\"; [[ \"$name\" == .* ]] && continue; "
       + "    find \"$sub\" -path \"$sub/.git\" -prune -o -type l -print -quit | grep -q . && continue; "
       + "    manifest=\"$sub/manifest.json\"; [[ -f \"$manifest\" && ! -L \"$manifest\" ]] || continue; "
       + "    valid=1; while IFS= read -r entry; do "

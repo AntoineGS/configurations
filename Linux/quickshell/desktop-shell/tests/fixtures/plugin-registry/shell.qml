@@ -486,6 +486,10 @@ ShellRoot {
     onTriggered: fail("watcher timeout ready=" + root.watchReloadReadyCount
       + " scans=" + root.scanFinishedCount + " retry=" + registry.guardRetryCount
       + " watcherRetry=" + registry.watcherRetryCount + " unavailable=" + registry.watcherUnavailable
+      + " retryPending=" + registry.watcherRetryPending + " processStopped=" + registry.watcherProcessStopped
+      + " retryStopped=" + registry.watcherRetryProcessStopped + " retryElapsed=" + registry.watcherRetryElapsed
+      + " retryTimer=" + registry.watcherRetryTimer.running + " watcherRunning=" + registry.watcherProcess.running
+      + " retryInterval=" + registry.watcherRetryTimer.interval
       + " scanning=" + registry.scanning + " lifecycle=" + root.watcherLifecycleMode
       + " phase=" + root.watcherLifecyclePhase + " error=" + registry.watcherGuardError)
   }
