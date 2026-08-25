@@ -109,6 +109,12 @@ const widget = {
   kinds: ["bar-widget"],
   barWidget: { defaultSection: "right" },
 }
+const keepLoadedWidget = {
+  id: "acme.marketplace",
+  kinds: ["bar-widget"],
+  keepLoaded: true,
+  barWidget: { defaultSection: "right" },
+}
 const widgetWithoutDefault = { id: "weather", kinds: ["bar-widget"] }
 const hybrid = { id: "acme.hybrid", kinds: ["panel", "bar-widget"] }
 const fullBar = { id: "acme.bar", kinds: ["bar"] }
@@ -159,6 +165,23 @@ assert.equal(result.ok, true)
 assert.equal(result.state.barPluginId, undefined)
 result = State.setEnabled(result.state, { id: "desktop.clock", kinds: ["bar-widget"], __isFirstParty: true }, false)
 assert.equal(result.ok, false)
+
+let headless = State.setEnabled(State.emptyState(), keepLoadedWidget, true, { headless: true }, defaults)
+assert.equal(headless.ok, true)
+assert.deepEqual(headless.state.enabledPlugins, [{ id: "acme.marketplace" }])
+assert.equal(State.inBar(headless.state, "acme.marketplace"), false)
+
+let placed = State.setEnabled(headless.state, keepLoadedWidget, true, { section: "right" }, defaults)
+assert.equal(placed.state.enabledPlugins, undefined)
+assert.equal(State.inBar(placed.state, "acme.marketplace"), true)
+
+headless = State.setEnabled(placed.state, keepLoadedWidget, true, { headless: true }, defaults)
+assert.deepEqual(headless.state.enabledPlugins, [{ id: "acme.marketplace" }])
+assert.equal(State.inBar(headless.state, "acme.marketplace"), false)
+
+const rejected = State.setEnabled(State.emptyState(), widget, true, { headless: true }, defaults)
+assert.equal(rejected.ok, false)
+assert.match(rejected.error, /keepLoaded/)
 
 result = State.setEnabled(result.state, hybrid, true, { section: "left", index: 100 }, defaults)
 assert.equal(result.ok, true)

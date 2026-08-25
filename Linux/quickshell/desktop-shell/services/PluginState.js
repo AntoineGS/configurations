@@ -191,8 +191,15 @@ function setEnabled(state, manifest, enabled, placement, effectiveConfig) {
     return success(normalizeState(next))
   }
   if (kinds.indexOf("bar-widget") !== -1) {
-    next = upsertWidget(next, manifest, placement || {}, effectiveConfig || {})
-    if (!next) return failure(state, "invalid widget placement")
+    if (placement && placement.headless === true) {
+      if (manifest.keepLoaded !== true) return failure(state, "headless bar widget must set keepLoaded")
+      next = removeId(next, id)
+      next = upsertEnabledPlugin(next, id)
+    } else {
+      next.enabledPlugins = (next.enabledPlugins || []).filter(function (plugin) { return plugin.id !== id })
+      next = upsertWidget(normalizeState(next), manifest, placement || {}, effectiveConfig || {})
+      if (!next) return failure(state, "invalid widget placement")
+    }
   } else next = upsertEnabledPlugin(next, id)
   return success(normalizeState(next))
 }
