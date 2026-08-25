@@ -15,6 +15,7 @@ ShellRoot {
   property string pluginsRoot: Quickshell.env("PLUGIN_REGISTRY_PLUGINS_DIR")
   property string externalReleasePath: Quickshell.env("PLUGIN_REGISTRY_RELEASE_EXTERNAL")
   property int watchReloadReadyCount: 0
+  property int activeGuardSerial: 0
   property int scanFinishedCount: 0
   property bool scanObservedBeforeRelease: false
   property bool guardProbeBlocked: false
@@ -103,7 +104,7 @@ ShellRoot {
       && root.observedIds["acme.late"], "all batched and held IDs observed")
     check(root.scanFinishedCount === 3, "expected guarded scan count")
     check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
-      "restored Git tree installs only valid IDs")
+      "restored valid tree installs only valid IDs")
     check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
     check(registry.watcherGuardError === "", "successful guard clears durable error")
     resultFile.setText(JSON.stringify({ ok: true }))
@@ -246,13 +247,14 @@ ShellRoot {
       next[id] = true
       root.observedIds = next
     }
-    function onWatchReloadReady() {
+    function onWatchReloadReady(serial) {
       root.watchReloadReadyCount++
+      root.activeGuardSerial = Number(serial)
       if (root.watchReloadReadyCount === 1) {
         registry.queueLocalPluginChange("acme.late")
         registry.rescan()
       } else {
-        registry.releaseWatchReloadGuard()
+        registry.releaseWatchReloadGuard(root.activeGuardSerial)
       }
     }
     function onScanFinished() {
@@ -289,7 +291,7 @@ ShellRoot {
     running: root.guardProbeBlocked
     onTriggered: {
       check(root.scanObservedBeforeRelease, "scan/change notifications observed before guard release")
-      registry.releaseWatchReloadGuard()
+      registry.releaseWatchReloadGuard(root.activeGuardSerial)
       var waitForRelease = Qt.createQmlObject('import QtQuick; Timer { interval: 50; repeat: true }', root)
       waitForRelease.triggered.connect(function() {
         if (root.watchReloadReadyCount === 2 && !registry.guardHeld && !lockProbeProcess.running) {
