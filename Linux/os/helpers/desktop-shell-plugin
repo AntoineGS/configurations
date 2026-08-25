@@ -62,6 +62,7 @@ placement_section=
 placement_index=
 placement_before=
 placement_after=
+placement_headless=0
 
 fail() {
   printf '%s: %s\n' "$script_name" "$1" >&2
@@ -73,7 +74,7 @@ usage() {
     "usage: $script_name add|install URL [--enable] [--yes] [--expected-id ID]" \
     "       $script_name validate DIR" \
     "       $script_name list [--json]" \
-    "       $script_name enable ID [SECTION] [--section SECTION] [--index N] [--before ID|--after ID]" \
+    "       $script_name enable ID [SECTION] [--section SECTION] [--index N] [--before ID|--after ID|--headless]" \
     "       $script_name disable ID" \
     "       $script_name update [ID] [--yes]" \
     "       $script_name remove ID [--yes]" \
@@ -385,6 +386,10 @@ install_plugin() {
 }
 
 build_placement() {
+  if (( placement_headless )); then
+    printf '%s\n' '{"headless":true}'
+    return 0
+  fi
   jq -cn --arg section "$placement_section" --arg index "$placement_index" \
     --arg before "$placement_before" --arg after "$placement_after" \
     '({} + (if $section != "" then {section:$section} else {} end)
@@ -410,6 +415,7 @@ parse_enable_options() {
   placement_index=''
   placement_before=''
   placement_after=''
+  placement_headless=0
   while (($#)); do
     option=$1
     case $option in
@@ -445,6 +451,11 @@ parse_enable_options() {
             ;;
         esac
         ;;
+      --headless)
+        (( placement_headless == 0 )) || fail "duplicate headless option"
+        placement_headless=1
+        shift
+        ;;
       -*)
         usage
         ;;
@@ -457,6 +468,9 @@ parse_enable_options() {
         ;;
     esac
   done
+  if (( placement_headless )) && [[ -n $placement_section || -n $placement_index || -n $placement_before || -n $placement_after ]]; then
+    fail "headless enable cannot use placement options"
+  fi
 }
 
 disable_plugin() {
