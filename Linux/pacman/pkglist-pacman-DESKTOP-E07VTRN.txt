@@ -16,6 +16,7 @@ deno
 discord
 docker-compose
 doctest
+dotnet-runtime-9.0
 dust
 electron
 expac
@@ -29,11 +30,13 @@ gimp
 github-cli
 gitui
 gnome-calculator
+gnome-disk-utility
 gobject-introspection
 gopls
 gpsd
 gpu-screen-recorder
 gtk-doc
+gtkmm3
 gum
 htop
 hypridle
@@ -50,6 +53,7 @@ itstool
 kdenlive
 lazydocker
 lazygit
+libmpdclient
 libmspack
 libva-nvidia-driver
 luacheck
@@ -64,11 +68,13 @@ nwg-hello
 obsidian
 openai-codex
 partitionmanager
+pinta
 plymouth
 pnpm
 power-profiles-daemon
 python-langchain
 python-pylint
+quickshell
 rapidfuzz-cpp
 rebuild-detector
 reflector
@@ -76,12 +82,14 @@ remmina
 satty
 sd
 sddm
+shellcheck
 signal-desktop
 socat
 sof-firmware
 starship
 steam
 stylua
+sunshine
 sushi
 swaybg
 system-config-printer
@@ -92,6 +100,7 @@ texlive-xetex
 tldr
 tree-sitter-cli
 uv
+virt-manager
 waypipe
 wezterm
 whois
