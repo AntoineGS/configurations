@@ -21,6 +21,7 @@ ShellRoot {
   property bool guardProbeReleased: false
   property bool guardProbeStarted: false
   property bool guardAssertionsStarted: false
+  property var observedIds: ({})
   property PluginRegistry registry: PluginRegistry { }
   property var state: PluginState.emptyState()
   property var config: ({
@@ -97,8 +98,14 @@ ShellRoot {
 
   function finishGuardAssertions() {
     check(root.guardProbeReleased, "competing flock succeeds after guard release")
-    check(root.watchReloadReadyCount === 1, "coalesced paths emit one reload-ready signal")
-    check(root.changedId === "acme.widget", "coalesced watcher ID")
+    check(root.watchReloadReadyCount === 2, "batched and held events emit two guarded reloads")
+    check(root.observedIds["acme.widget"] && root.observedIds["acme.other"]
+      && root.observedIds["acme.late"], "all batched and held IDs observed")
+    check(root.scanFinishedCount === 3, "expected guarded scan count")
+    check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
+      "restored Git tree installs only valid IDs")
+    check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
+    check(registry.watcherGuardError === "", "successful guard clears durable error")
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
   }
@@ -107,8 +114,8 @@ ShellRoot {
     if (root.guardAssertionsStarted) return
     root.guardAssertionsStarted = true
     registry.pluginsDir = root.pluginsRoot
-    registry.queueLocalPluginChange(root.pluginsRoot + "/acme.widget/manifest.json")
-    registry.queueLocalPluginChange(root.pluginsRoot + "/acme.widget/Widget.qml")
+    registry.handleWatchOutput(root.pluginsRoot + "/acme.widget/manifest.json\n"
+      + root.pluginsRoot + "/acme.other/Widget.qml")
     externalReleaseTimer.start()
   }
 
@@ -159,6 +166,18 @@ ShellRoot {
     check(registry.isEnabled("desktop.menu") === true, "first-party plugin remains loadable")
 
     check(registry.pluginWatchEnabled === false, "watcher disabled by test environment")
+    check(registry.watcherGuardError === "", "guard error starts clear")
+    check(registry.guardRetryCount === 0, "guard retry count starts clear")
+    registry.guardRetryLimit = 2
+    registry.guardRetryCount = 2
+    registry.scheduleGuardRetry("forced guard failure")
+    check(registry.watcherGuardError.indexOf("retry limit reached") !== -1,
+      "guard failure reaches bounded retry limit")
+    check(!registry.guardRetryTimer.running, "retry limit does not spawn a tight loop")
+    registry.activeGuardIds = ({ "acme.retry": true })
+    registry.requeueActiveGuardIds()
+    check(registry.pendingWatchIds["acme.retry"] === true, "failed generation requeues active IDs")
+    registry.pendingWatchIds = ({})
     registry.watcherStopRequested = true
     registry.handleWatcherExit(0)
     check(!registry.watchRestartTimer.running && !registry.watcherStopRequested,
@@ -220,12 +239,24 @@ ShellRoot {
 
   Connections {
     target: root.registry
-    function onLocalPluginChanged(id) { root.changedId = id }
+    function onLocalPluginChanged(id) {
+      root.changedId = id
+      var next = ({})
+      for (var key in root.observedIds) next[key] = root.observedIds[key]
+      next[id] = true
+      root.observedIds = next
+    }
     function onWatchReloadReady() {
       root.watchReloadReadyCount++
-      registry.rescan()
+      if (root.watchReloadReadyCount === 1) {
+        registry.queueLocalPluginChange("acme.late")
+        registry.rescan()
+      } else {
+        registry.releaseWatchReloadGuard()
+      }
     }
     function onScanFinished() {
+      root.scanFinishedCount++
       root.runRescanAssertions()
       if (root.watchReloadReadyCount > 0 && registry.guardHeld && !root.guardProbeStarted) {
         root.scanObservedBeforeRelease = true
@@ -246,6 +277,8 @@ ShellRoot {
     repeat: false
     onTriggered: {
       check(root.watchReloadReadyCount === 0, "manager lock suppresses reload-ready")
+      check(root.scanFinishedCount === 2, "manager lock suppresses guarded scan")
+      check(Object.keys(root.observedIds).length === 0, "manager lock suppresses change notifications")
       externalReleaseProcess.running = true
     }
   }
@@ -259,12 +292,21 @@ ShellRoot {
       registry.releaseWatchReloadGuard()
       var waitForRelease = Qt.createQmlObject('import QtQuick; Timer { interval: 50; repeat: true }', root)
       waitForRelease.triggered.connect(function() {
-        if (!registry.guardHeld && !lockProbeProcess.running) {
+        if (root.watchReloadReadyCount === 2 && !registry.guardHeld && !lockProbeProcess.running) {
           waitForRelease.stop()
           root.probeGuardLock(true)
         }
       })
       waitForRelease.start()
     }
+  }
+
+  Timer {
+    interval: 5000
+    repeat: false
+    running: true
+    onTriggered: fail("guard timeout ready=" + root.watchReloadReadyCount
+      + " held=" + registry.guardHeld + " starting=" + registry.guardStarting
+      + " retry=" + registry.guardRetryCount + " error=" + registry.watcherGuardError)
   }
 }

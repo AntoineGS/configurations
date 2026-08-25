@@ -87,6 +87,13 @@ ShellRoot {
     pluginStateWritePending: shell.pluginStateWritePending,
     pluginStateWriteError: shell.pluginStateWriteError,
     pluginErrors: shell.pluginErrors,
+    watcherGuardError: pluginRegistry ? pluginRegistry.watcherGuardError : "",
+    watcherGuardRetryCount: pluginRegistry ? pluginRegistry.guardRetryCount : 0,
+    watcherGuardHeld: pluginRegistry ? pluginRegistry.guardHeld : false,
+    reloadGeneration: shell.pluginReloadGeneration,
+    reloadOutstandingCount: shell.reloadOutstandingCount,
+    reloadComponentsActive: shell.reloadComponentsActive,
+    reloadScanTerminal: shell.reloadScanTerminal,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
     testSurfaceSuppressed: shell.testSurfaceSuppressed,
@@ -104,6 +111,12 @@ ShellRoot {
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false
+  property int pluginReloadGeneration: 0
+  property int guardedReloadGeneration: 0
+  property bool reloadScanTerminal: false
+  property bool reloadComponentsActive: false
+  property var reloadComponentStates: ({})
+  property int reloadOutstandingCount: 0
 
   onShellConfigChanged: {
     if (failedBarId !== "") failedBarId = ""
@@ -341,13 +354,16 @@ ShellRoot {
   Loader {
     id: pluginBarLoader
 
-    active: !shell.testSurfaceSuppressed && !shell.pluginReloading
+    active: !shell.testSurfaceSuppressed && (!shell.pluginReloading || shell.reloadComponentsActive)
       && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
+    property int loadGeneration: shell.pluginReloadGeneration
     onLoaded: shell.configureBar(item, shell.activeBarManifest)
     onActiveChanged: if (!active) shell.bar = null
     onStatusChanged: {
+      if (status === Loader.Loading || status === Loader.Ready || status === Loader.Error)
+        shell.trackReloadComponent("bar", status, loadGeneration)
       if (status === Loader.Error) {
         var detail = errorString && errorString() ? errorString() : ""
         console.warn("bar option " + shell.activeBarId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
@@ -390,9 +406,11 @@ ShellRoot {
     var comp = Qt.createComponent(url, Component.PreferSynchronous)
     function finalize() {
       if (comp.status !== Component.Ready) {
+        shell.trackReloadComponent("service:" + key, comp.status, shell.pluginReloadGeneration)
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
         return
       }
+      shell.trackReloadComponent("service:" + key, Component.Ready, shell.pluginReloadGeneration)
       var inst = comp.createObject(serviceHost)
       if (!inst) {
         console.warn("service plugin createObject returned null for", key)
@@ -408,6 +426,7 @@ ShellRoot {
       snext[key] = inst
       _services = snext
     }
+    shell.trackReloadComponent("service:" + key, comp.status, shell.pluginReloadGeneration)
     if (comp.status === Component.Loading) {
       comp.statusChanged.connect(finalize)
       return null
@@ -721,12 +740,15 @@ ShellRoot {
       readonly property string entryKind: modelData.kind
       readonly property bool keepLoaded: modelData.keepLoaded === true
       readonly property string sourceUrl: shell.pluginRegistry.entryPointUrl(manifest, entryKind)
+      readonly property int loadGeneration: shell.pluginReloadGeneration
 
       property Loader panelLoader: Loader {
         source: panelEntry.sourceUrl
         active: panelEntry.sourceUrl !== "" && (panelEntry.keepLoaded || shell.openPanelIds[panelEntry.pluginId] === true)
         asynchronous: true
         onLoaded: {
+          shell.trackReloadComponent("panel:" + panelEntry.pluginId, Loader.Ready,
+            panelEntry.loadGeneration)
           if (!item) return
           if ("shellPath" in item) item.shellPath = shell.shellPath
           if ("shell" in item) item.shell = shell
@@ -740,6 +762,8 @@ ShellRoot {
           shell.registerPanelLoader(panelEntry.pluginId, this)
         }
         onStatusChanged: {
+          if (status === Loader.Loading || status === Loader.Ready || status === Loader.Error)
+            shell.trackReloadComponent("panel:" + panelEntry.pluginId, status, panelEntry.loadGeneration)
           if (status === Loader.Error) {
             // Loader.errorString() reflects the source-load failure even when
             // sourceComponent is null. Surface both so the user sees something
@@ -847,6 +871,13 @@ ShellRoot {
       shell.pluginReloadPending = true
       return
     }
+    shell.pluginReloadGeneration++
+    shell.reloadComponentStates = ({})
+    shell.reloadOutstandingCount = 0
+    shell.reloadScanTerminal = false
+    shell.reloadComponentsActive = false
+    shell.guardedReloadGeneration = shell.pluginRegistry.guardHeld
+      ? shell.pluginReloadGeneration : 0
     shell.pluginReloading = true
     shell.unloadPanels()
     shell.unloadPluginServices()
@@ -864,6 +895,42 @@ ShellRoot {
     shell.pluginRegistry.rescan()
   }
 
+  function trackReloadComponent(key, status, generation) {
+    if (!shell.pluginReloading || Number(generation) !== shell.pluginReloadGeneration) return
+    var loading = status === Component.Loading || status === Loader.Loading
+    var next = ({})
+    for (var existing in shell.reloadComponentStates) next[existing] = shell.reloadComponentStates[existing]
+    next[key] = { loading: loading, status: status }
+    shell.reloadComponentStates = next
+    var outstanding = 0
+    for (var tracked in next) if (next[tracked].loading) outstanding++
+    shell.reloadOutstandingCount = outstanding
+    shell.scheduleReloadCompletion()
+  }
+
+  function scheduleReloadCompletion() {
+    if (reloadCompletionTimer.running) return
+    reloadCompletionTimer.start()
+  }
+
+  function maybeFinishPluginReload() {
+    if (!shell.pluginReloading || !shell.reloadScanTerminal || !shell.reloadComponentsActive) return
+    if (shell.reloadOutstandingCount !== 0) return
+    shell.pluginReloading = false
+    shell.reloadComponentsActive = false
+    if (shell.guardedReloadGeneration === shell.pluginReloadGeneration) {
+      shell.guardedReloadGeneration = 0
+      shell.pluginRegistry.releaseWatchReloadGuard()
+    }
+  }
+
+  Timer {
+    id: reloadCompletionTimer
+    interval: 0
+    repeat: false
+    onTriggered: shell.maybeFinishPluginReload()
+  }
+
   Connections {
     target: shell.pluginRegistry
     function onWatchReloadReady() {
@@ -872,14 +939,24 @@ ShellRoot {
     function onScanFinished() {
       if (shell.pluginReloadPending) {
         shell.pluginReloadPending = false
+        shell.pluginReloading = false
+        shell.reloadScanTerminal = false
+        shell.reloadComponentsActive = false
         Qt.callLater(shell.reloadPlugins)
         return
       }
-      shell.pluginReloading = false
+      if (!shell.pluginReloading) {
+        shell._syncServices()
+        shell.panelEntries = shell.computePanelEntries()
+        shell.syncPluginWidgets()
+        return
+      }
+      shell.reloadScanTerminal = true
+      shell.reloadComponentsActive = true
       shell._syncServices()
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
-      shell.pluginRegistry.releaseWatchReloadGuard()
+      shell.scheduleReloadCompletion()
     }
   }
 
@@ -899,11 +976,14 @@ ShellRoot {
 
     var comp = shell.testPluginWidgetLoadEnabled
       ? Qt.createComponent(url) : Qt.createComponent(url, Component.Asynchronous)
+    shell.trackReloadComponent("widget:" + registryKey, comp.status, shell.pluginReloadGeneration)
     function finalize() {
       if (comp.status === Component.Ready) {
+        shell.trackReloadComponent("widget:" + registryKey, Component.Ready, shell.pluginReloadGeneration)
         shell.barWidgetRegistry.register(registryKey, comp, meta)
         shell.setPluginWidgetComponent(registryKey, { url: url, component: comp })
       } else if (comp.status === Component.Error) {
+        shell.trackReloadComponent("widget:" + registryKey, Component.Error, shell.pluginReloadGeneration)
         console.warn("Plugin widget " + registryKey + " failed: " + comp.errorString())
         // Drop the claim so a later rescan can retry.
         shell.setPluginWidgetComponent(registryKey, null)
