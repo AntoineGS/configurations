@@ -12,6 +12,15 @@ ShellRoot {
   property string firstPartyRoot: Quickshell.shellDir + "/firstparty"
   property bool rescanChecked: false
   property string changedId: ""
+  property string pluginsRoot: Quickshell.env("PLUGIN_REGISTRY_PLUGINS_DIR")
+  property string externalReleasePath: Quickshell.env("PLUGIN_REGISTRY_RELEASE_EXTERNAL")
+  property int watchReloadReadyCount: 0
+  property int scanFinishedCount: 0
+  property bool scanObservedBeforeRelease: false
+  property bool guardProbeBlocked: false
+  property bool guardProbeReleased: false
+  property bool guardProbeStarted: false
+  property bool guardAssertionsStarted: false
   property PluginRegistry registry: PluginRegistry { }
   property var state: PluginState.emptyState()
   property var config: ({
@@ -34,6 +43,21 @@ ShellRoot {
     atomicWrites: false
     blockWrites: false
     printErrors: false
+  }
+
+  Process {
+    id: externalReleaseProcess
+    command: ["bash", "-c", "touch -- \"$0\"", root.externalReleasePath]
+  }
+
+  Process {
+    id: lockProbeProcess
+    property bool afterRelease: false
+    onExited: {
+      if (afterRelease) root.guardProbeReleased = Number(exitCode) === 0
+      else root.guardProbeBlocked = Number(exitCode) !== 0
+      if (afterRelease) root.finishGuardAssertions()
+    }
   }
 
   function manifest(id, kinds, entryPoints, options) {
@@ -62,6 +86,30 @@ ShellRoot {
 
   function check(condition, message) {
     if (!condition) fail(message)
+  }
+
+  function probeGuardLock(afterRelease) {
+    lockProbeProcess.afterRelease = afterRelease
+    lockProbeProcess.command = ["bash", "-c",
+      "exec 9>\"$0/.plugin-manager.lock\"; flock -n 9", root.pluginsRoot]
+    lockProbeProcess.running = true
+  }
+
+  function finishGuardAssertions() {
+    check(root.guardProbeReleased, "competing flock succeeds after guard release")
+    check(root.watchReloadReadyCount === 1, "coalesced paths emit one reload-ready signal")
+    check(root.changedId === "acme.widget", "coalesced watcher ID")
+    resultFile.setText(JSON.stringify({ ok: true }))
+    Qt.exit(0)
+  }
+
+  function startGuardAssertions() {
+    if (root.guardAssertionsStarted) return
+    root.guardAssertionsStarted = true
+    registry.pluginsDir = root.pluginsRoot
+    registry.queueLocalPluginChange(root.pluginsRoot + "/acme.widget/manifest.json")
+    registry.queueLocalPluginChange(root.pluginsRoot + "/acme.widget/Widget.qml")
+    externalReleaseTimer.start()
   }
 
   function hasError(id, text) {
@@ -131,6 +179,8 @@ ShellRoot {
     registry.pluginStateWriter = function(nextState) {
       root.state = nextState
       root.config = PluginState.mergeConfig(root.config, root.state)
+      if (!nextState.enabledPlugins)
+        root.config.plugins = root.config.plugins.filter(function(plugin) { return plugin.id !== "acme.panel" })
       return true
     }
     var revision = registry.registryRevision
@@ -156,12 +206,7 @@ ShellRoot {
     check(registry.lastEnableError.indexOf("unknown plugin") !== -1, "unknown plugin error detail")
     check(registry.registryRevision === revision, "mutations do not fake scan revision")
 
-    registry.pluginsDir = "/tmp/plugins"
-    registry.handleWatchOutput("/tmp/plugins/acme.widget/Widget.qml")
-    check(root.changedId === "acme.widget", "watcher change notification delivery")
-
-    resultFile.setText(JSON.stringify({ ok: true }))
-    Qt.exit(0)
+    root.startGuardAssertions()
   }
 
   function runRescanAssertions() {
@@ -176,11 +221,50 @@ ShellRoot {
   Connections {
     target: root.registry
     function onLocalPluginChanged(id) { root.changedId = id }
-    function onScanFinished() { root.runRescanAssertions() }
+    function onWatchReloadReady() {
+      root.watchReloadReadyCount++
+      registry.rescan()
+    }
+    function onScanFinished() {
+      root.runRescanAssertions()
+      if (root.watchReloadReadyCount > 0 && registry.guardHeld && !root.guardProbeStarted) {
+        root.scanObservedBeforeRelease = true
+        root.guardProbeStarted = true
+        root.probeGuardLock(false)
+      }
+    }
   }
 
   Component.onCompleted: {
     registry.firstPartyDir = root.firstPartyRoot
     registry.rescan()
+  }
+
+  Timer {
+    id: externalReleaseTimer
+    interval: 150
+    repeat: false
+    onTriggered: {
+      check(root.watchReloadReadyCount === 0, "manager lock suppresses reload-ready")
+      externalReleaseProcess.running = true
+    }
+  }
+
+  Timer {
+    interval: 300
+    repeat: false
+    running: root.guardProbeBlocked
+    onTriggered: {
+      check(root.scanObservedBeforeRelease, "scan/change notifications observed before guard release")
+      registry.releaseWatchReloadGuard()
+      var waitForRelease = Qt.createQmlObject('import QtQuick; Timer { interval: 50; repeat: true }', root)
+      waitForRelease.triggered.connect(function() {
+        if (!registry.guardHeld && !lockProbeProcess.running) {
+          waitForRelease.stop()
+          root.probeGuardLock(true)
+        }
+      })
+      waitForRelease.start()
+    }
   }
 }
