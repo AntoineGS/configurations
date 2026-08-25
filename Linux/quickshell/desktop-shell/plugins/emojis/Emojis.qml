@@ -160,15 +160,11 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
+    mask: Region {}
 
     Rectangle {
       anchors.fill: parent
       color: root.scrim
-    }
-
-    MouseArea {
-      anchors.fill: parent
-      onClicked: root.dismiss()
     }
 
     PanelSurface {
@@ -179,8 +175,6 @@ Item {
       padding: root.contentMargin
       revealed: root.opened
       entranceY: -Style.space(6)
-
-      MouseArea { anchors.fill: parent; onClicked: {} }
 
       Column {
         anchors.fill: parent
@@ -280,22 +274,6 @@ Item {
                 text: parent.emoji
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
-              }
-
-              MouseArea {
-                id: mouseArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onContainsMouseChanged: if (containsMouse) {
-                  root.cursorActive = true
-                  root.selectedIndex = index
-                }
-                onClicked: {
-                  root.cursorActive = true
-                  root.selectedIndex = index
-                  root.activateIndex(index)
-                }
               }
             }
           }
