@@ -26,7 +26,17 @@ printf 'manager %s\n' "$*" >>"$CALL_LOG"
 case ${1-} in
   list) [[ ${2-} == --json ]] && printf '%s\n' "${PLUGIN_LIST:-[]}" ;;
   add) mkdir -p -- "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace"; printf '%s\n' '{"id":"io.yasino55.omarchy-plugin-marketplace"}' >"$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace/manifest.json"; git -C "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace" init -q; git -C "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace" remote add origin 'https://github.com/Yasino55/omarchy-plugin-marketplace.git' ;;
-  enable) printf 'enabled\n' >>"$CALL_LOG" ;;
+  enable)
+    [[ ${3-} == --headless ]] || exit 2
+    tmp_config=$(mktemp)
+    jq --arg id io.yasino55.omarchy-plugin-marketplace \
+      '.bar.layout.left = [.bar.layout.left[]? | select(.id != $id)]
+       | .bar.layout.center = [.bar.layout.center[]? | select(.id != $id)]
+       | .bar.layout.right = [.bar.layout.right[]? | select(.id != $id)]' \
+      "$SHELL_CONFIG_FILE" >"$tmp_config"
+    mv -- "$tmp_config" "$SHELL_CONFIG_FILE"
+    printf 'enabled\n' >>"$CALL_LOG"
+    ;;
   *) exit 2 ;;
 esac
 EOF
@@ -36,7 +46,7 @@ set -Eeuo pipefail
 printf 'ipc %s\n' "$*" >>"$CALL_LOG"
 case ${1-} in
   shell) case ${2-} in
-    listShellConfig) printf '%s\n' "$SHELL_CONFIG" ;;
+    listShellConfig) cat -- "$SHELL_CONFIG_FILE" ;;
     rescanPlugins) printf 'ok\n' ;;
     *) exit 2 ;;
   esac ;;
@@ -56,7 +66,8 @@ EOF
 cp -- "$source_helper" "$helper_dir/setup-desktop-shell-marketplace"
 chmod +x -- "$helper_dir/desktop-shell-plugin" "$helper_dir/omarchy-shell" "$helper_dir/setup-desktop-shell-marketplace" "$bin_dir/systemctl"
 
-export CALL_LOG="$log_file" DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]' SHELL_CONFIG='{"bar":{"layout":{"right":[{"id":"io.yasino55.omarchy-plugin-marketplace"}]}}}'
+export CALL_LOG="$log_file" DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]' SHELL_CONFIG_FILE="$test_root/shell-config.json"
+printf '%s\n' '{"bar":{"layout":{"left":[],"center":[],"right":[]}}}' >"$SHELL_CONFIG_FILE"
 
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then
   fail "missing checkout unexpectedly passed check"
@@ -79,10 +90,13 @@ if ! PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply
   fail "apply failed"
 fi
 grep -Fq 'manager add https://github.com/Yasino55/omarchy-plugin-marketplace.git --yes --expected-id io.yasino55.omarchy-plugin-marketplace' "$log_file" || fail "apply did not install with expected arguments"
-grep -Fq 'manager enable io.yasino55.omarchy-plugin-marketplace --section right' "$log_file" || fail "apply did not explicitly enable right section"
+grep -Fq 'manager enable io.yasino55.omarchy-plugin-marketplace --headless' "$log_file" || fail "apply did not request headless enablement"
 grep -Fq 'ipc shell rescanPlugins' "$log_file" || fail "apply did not request plugin rescan"
 grep -Fq 'systemctl --user start desktop-shell.service' "$log_file" || fail "apply did not start service"
-pass "apply installs, waits, and enables right section"
+jq -e --arg id io.yasino55.omarchy-plugin-marketplace \
+  '[.bar.layout.left[]?, .bar.layout.center[]?, .bar.layout.right[]?] | all(.id != $id)' \
+  "$SHELL_CONFIG_FILE" >/dev/null || fail "apply retained marketplace bar placement"
+pass "apply installs, waits, and enables headless"
 
 if PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then :; else fail "applied checkout failed second check"; fi
 pass "repeated check is idempotent"
@@ -135,8 +149,24 @@ if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then f
 PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":false,"firstParty":false}]'
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "disabled plugin passed check"; fi
 PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]'
-SHELL_CONFIG='{"bar":{"layout":{"right":[]}}}'
+printf '%s\n' '{"bar":{"layout":{"left":[],"center":[],"right":[{"id":"io.yasino55.omarchy-plugin-marketplace"}]}}}' >"$SHELL_CONFIG_FILE"
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "wrong placement passed check"; fi
-pass "discovery, enabled state, and right placement are checked"
+pass "discovery, enabled state, and barless placement are checked"
+
+: >"$log_file"
+PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply \
+  || fail "bar-to-headless migration failed"
+grep -Fq 'manager enable io.yasino55.omarchy-plugin-marketplace --headless' "$log_file" \
+  || fail "apply did not request headless enablement for placed plugin"
+jq -e --arg id io.yasino55.omarchy-plugin-marketplace \
+  '[.bar.layout.left[]?, .bar.layout.center[]?, .bar.layout.right[]?] | all(.id != $id)' \
+  "$SHELL_CONFIG_FILE" >/dev/null || fail "apply retained marketplace bar placement"
+pass "bar placement migrates to headless state"
+
+: >"$log_file"
+PATH="$bin_dir:$PATH" "$helper_dir/setup-desktop-shell-marketplace" --apply \
+  || fail "headless apply was not idempotent"
+! grep -Fq 'manager enable ' "$log_file" || fail "headless apply re-enabled marketplace"
+pass "headless apply is idempotent"
 
 printf 'All marketplace bootstrap tests passed.\n'
