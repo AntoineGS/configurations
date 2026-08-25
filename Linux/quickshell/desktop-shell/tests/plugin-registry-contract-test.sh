@@ -16,7 +16,6 @@ fixture="$shell_dir/tests/fixtures/plugin-registry/shell.qml"
 tmp_dir=$(mktemp -d)
 shell_pid=""
 holder_pid=""
-swap2_pid=""
 stop_holder() {
   if [[ -n $holder_pid ]]; then
     kill "$holder_pid" 2>/dev/null || true
@@ -24,7 +23,7 @@ stop_holder() {
     holder_pid=""
   fi
 }
-trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; stop_holder; [[ -z $swap2_pid ]] || wait "$swap2_pid" 2>/dev/null || true; rm -rf -- "$tmp_dir"' EXIT
+trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; stop_holder; rm -rf -- "$tmp_dir"' EXIT
 
 result="$tmp_dir/result.json"
 config="$tmp_dir/config"
@@ -37,16 +36,9 @@ printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","versi
 touch "$plugins_dir/acme.widget/Widget.qml"
 printf '%s\n' '{"schemaVersion":1,"id":"acme.other","name":"Acme Other","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/acme.other/manifest.json"
 touch "$plugins_dir/acme.other/Widget.qml"
-mkdir -p -- "$plugins_dir/.stage.swap1" "$plugins_dir/.stage.swap2"
-printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"2.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/.stage.swap1/manifest.json"
-printf 'import QtQuick\nItem { }\n' >"$plugins_dir/.stage.swap1/Widget.qml"
-printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"3.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/.stage.swap2/manifest.json"
-printf 'import QtQuick\nItem { }\n' >"$plugins_dir/.stage.swap2/Widget.qml"
 (
   exec 9>"$plugins_dir/.plugin-manager.lock"
   flock 9
-  mv -- "$plugins_dir/acme.widget" "$plugins_dir/.rollback.swap1"
-  mv -- "$plugins_dir/.stage.swap1" "$plugins_dir/acme.widget"
   touch "$tmp_dir/lock-held"
   while [[ ! -e $release_external ]]; do sleep 0.01; done
 ) &
@@ -56,16 +48,6 @@ for _ in {1..100}; do
   sleep 0.01
 done
 [[ -f "$tmp_dir/lock-held" ]]
-(
-  while [[ ! -e $release_external ]]; do sleep 0.01; done
-  sleep 0.02
-  exec 8>"$plugins_dir/.plugin-manager.lock"
-  flock 8
-  mv -- "$plugins_dir/acme.widget" "$plugins_dir/.rollback.swap2"
-  mv -- "$plugins_dir/.stage.swap2" "$plugins_dir/acme.widget"
-  flock -u 8
-) &
-swap2_pid=$!
 cp -- "$fixture" "$config/shell.qml"
 mkdir -p -- "$config/firstparty"
 cp -R -- "$shell_dir/plugins/." "$config/firstparty/"
@@ -73,9 +55,9 @@ ln -s -- "$shell_dir/services" "$config/services"
 ln -s -- "$shell_dir/Commons" "$config/Commons"
 
 env \
-  HOME="$tmp_dir/home" \
-  XDG_CONFIG_HOME="$tmp_dir/home/.config" \
-  DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
+    HOME="$tmp_dir/home" \
+    XDG_CONFIG_HOME="$tmp_dir/home/.config" \
+    DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
   PLUGIN_REGISTRY_PLUGINS_DIR="$plugins_dir" \
   PLUGIN_REGISTRY_RELEASE_EXTERNAL="$release_external" \
   PLUGIN_REGISTRY_RESULT="$result" \

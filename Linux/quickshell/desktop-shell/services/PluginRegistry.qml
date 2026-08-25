@@ -40,6 +40,7 @@ QtObject {
   signal pluginLoadFailed(string id, string error, int generation, string scope)
   signal localPluginChanged(string id)
   signal watchReloadReady()
+  signal rescanRequested()
 
   function recordPluginError(id, error, scope) {
     var key = String(id)
@@ -329,7 +330,13 @@ QtObject {
 
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
   function parseScanOutput(text) {
-    registry.pluginErrors = []
+    var retainedLoadErrors = []
+    for (var retainedIndex = 0; retainedIndex < registry.pluginErrors.length; retainedIndex++) {
+      var retained = registry.pluginErrors[retainedIndex]
+      if (retained && String(retained.scope || "registry") !== "registry")
+        retainedLoadErrors.push(retained)
+    }
+    registry.pluginErrors = retainedLoadErrors
     var lines = String(text || "").split("\n")
     var firstParty = {}
     var thirdPartyCandidates = ({})
@@ -548,7 +555,7 @@ QtObject {
     repeat: false
     onTriggered: {
       if (!registry.pluginWatchEnabled || registry.watcherUnavailable || registry.watcherProcess.running) return
-      registry.rescan()
+       registry.rescanRequested()
     }
   }
 

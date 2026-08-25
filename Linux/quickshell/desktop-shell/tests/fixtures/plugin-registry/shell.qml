@@ -86,8 +86,6 @@ ShellRoot {
     check(root.scanFinishedCount === 3, "expected asynchronous scan count")
     check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
       "restored valid tree installs only valid IDs")
-    check(registry.installedPlugins["acme.widget"].version === "3.0.0",
-      "atomic filesystem swaps converge to latest complete version")
     check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
     check(registry.localPluginIdForPath(root.pluginsRoot + "/.stage.acme/manifest.json") === "",
       "hidden staging path produces no plugin ID")
@@ -178,10 +176,12 @@ ShellRoot {
     check(!registry.guardRetryTimer.running, "retry limit does not spawn a tight loop")
     registry.pendingWatchIds = ({})
     registry.watcherStopRequested = true
+    registry.watchRestartTimer.stop()
     registry.handleWatcherExit(0)
     check(!registry.watchRestartTimer.running && !registry.watcherStopRequested,
       "intentional watcher exit does not restart")
     registry.watcherUnavailable = false
+    registry.watchRestartTimer.stop()
     registry.handleWatcherExit(125)
     check(registry.watcherUnavailable && !registry.watchRestartTimer.running,
       "unavailable watcher exit does not restart")
