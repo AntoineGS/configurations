@@ -18,6 +18,13 @@ case "$action" in
   trigger.share-clipboard)  argv=(cmd-share clipboard) ;;
   trigger.share-file)       argv=(launch-tui-large cmd-share file) ;;
   trigger.share-folder)     argv=(launch-tui-large cmd-share folder) ;;
+  trigger.toggle.top-bar)          argv=(toggle-desktop-shell-bar) ;;
+  trigger.toggle.window-gaps)      argv=(hyprland-window-gaps-toggle) ;;
+  trigger.toggle.window-ratio)     argv=(hyprland-window-single-square-aspect-toggle) ;;
+  trigger.toggle.workspace-layout) argv=(hyprland-workspace-layout-toggle) ;;
+  trigger.toggle.nightlight)       argv=(toggle-nightlight) ;;
+  trigger.toggle.idle-lock)        argv=(toggle-idle) ;;
+  trigger.turn-off-screens)        argv=(turn-off-screens 2) ;;
 
   setup.audio)              argv=(desktop-shell summon desktop.audio '{}') ;;
   setup.wifi)               argv=(desktop-shell summon desktop.network '{}') ;;
@@ -28,6 +35,11 @@ case "$action" in
   setup.security)           argv=(launch-tui-large setup-fingerprint) ;;
   setup.shell-config)       argv=(launch-editor "$HOME/.config/quickshell/desktop-shell/config/shell.json") ;;
   setup.shell-health)       argv=(launch-tui-large watch -n 2 desktop-shell health) ;;
+  setup.keybindings)           argv=(menu-keybindings) ;;
+  setup.cycle-display-scaling) argv=(hyprland-monitor-scaling-cycle) ;;
+  setup.audio-tui)             argv=(launch-audio) ;;
+  setup.wifi-tui)              argv=(launch-wifi) ;;
+  setup.bluetooth-tui)         argv=(launch-bluetooth) ;;
 
   install.package)          argv=(launch-tui-large pkg-install) ;;
   install.aur)              argv=(launch-tui-large pkg-aur-install) ;;
