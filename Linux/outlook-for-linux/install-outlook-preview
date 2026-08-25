@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly PACKAGE_NAME=outlook-for-linux
+readonly PACKAGE_VERSION=1.4.0_test.1-1
+readonly PACKAGE_URL=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build/outlook-for-linux-1.4.0-test.1-x86_64.pkg.tar.zst
+readonly PACKAGE_SHA256=65ee88bfcfd56ec87d676b316b99c412ed3dbe5c6b46e869443bd02164a8dd56
+
+tmp_package=
+
+cleanup() {
+  if [[ -n $tmp_package ]]; then
+    rm -f -- "$tmp_package"
+  fi
+}
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+check_installation() {
+  local installed
+  installed=$(pacman -Q "$PACKAGE_NAME" 2>/dev/null) || return 1
+  [[ $installed == "$PACKAGE_NAME $PACKAGE_VERSION" ]]
+}
+
+apply_installation() {
+  local required_command
+  [[ $(uname -m) == x86_64 ]] || die 'Outlook preview installation requires x86_64'
+  [[ $(id -u) == 0 ]] || die 'Outlook preview installation requires root'
+  for required_command in curl sha256sum pacman mktemp; do
+    command -v "$required_command" >/dev/null || die "Required command not found: $required_command"
+  done
+
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  tmp_package=$(mktemp --tmpdir "$PACKAGE_NAME.XXXXXXXX.pkg.tar.zst")
+
+  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --retry 3 \
+    --output "$tmp_package" "$PACKAGE_URL"
+  if ! printf '%s  %s\n' "$PACKAGE_SHA256" "$tmp_package" | sha256sum --check --status -; then
+    die 'Outlook preview package checksum verification failed'
+  fi
+  pacman --noconfirm -U -- "$tmp_package"
+  check_installation || die 'Outlook preview post-install verification failed'
+}
+
+if [[ $# != 1 ]]; then
+  die 'Usage: install-outlook-preview --check|--apply'
+fi
+
+case $1 in
+  --check) check_installation ;;
+  --apply) apply_installation ;;
+  *) die 'Usage: install-outlook-preview --check|--apply' ;;
+esac
