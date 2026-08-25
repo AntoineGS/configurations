@@ -9,6 +9,7 @@ readonly script_path
 script_dir=$(dirname -- "$script_path")
 readonly script_dir
 readonly plugins_dir=${DESKTOP_SHELL_PLUGINS_DIR:-$HOME/.config/omarchy/plugins}
+readonly artifact_root_name=.plugin-artifacts
 readonly validator=${DESKTOP_SHELL_PLUGIN_VALIDATE:-$script_dir/desktop-shell-plugin-validate}
 readonly ipc=${DESKTOP_SHELL_PLUGIN_IPC:-$script_dir/omarchy-shell}
 
@@ -19,12 +20,10 @@ export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-'ssh -oBatchMode=yes'}
 stage_dir=
 installed_target=
 installed_identity=
-rollback_dir=
 candidate_dir=
 candidate_fd=-1
 candidate_identity=
 candidate_real=
-candidate_name=
 publication_armed=0
 publication_public_name=
 publication_rollback_name=
@@ -82,24 +81,9 @@ usage() {
 }
 
 quarantine_owned_target() {
-  local quarantine_path quarantine_identity
   [[ -n $installed_target && -n $installed_identity ]] || return 0
   [[ -d $installed_target && ! -L $installed_target ]] || return 0
-  rollback_dir=$(mktemp -d "$plugins_dir/.rollback.XXXXXX") || return 0
-  quarantine_path=$rollback_dir/plugin
-  if ! mv -T -- "$installed_target" "$quarantine_path"; then
-    rmdir -- "$rollback_dir" 2>/dev/null || true
-    rollback_dir=
-    return 0
-  fi
-  quarantine_identity=$(stat -c '%d:%i' -- "$quarantine_path" 2>/dev/null || true)
-  if [[ $quarantine_identity == "$installed_identity" ]]; then
-    safe_remove_artifact_path "$quarantine_path" "$installed_identity" artifact-after-open || true
-  elif [[ ! -e $installed_target && ! -L $installed_target ]]; then
-    mv -T -- "$quarantine_path" "$installed_target" || true
-  fi
-  rmdir -- "$rollback_dir" 2>/dev/null || true
-  rollback_dir=
+  safe_remove_artifact_path "$installed_target" "$installed_identity" artifact-after-open || true
   installed_target=
   installed_identity=
 }
@@ -182,7 +166,7 @@ trap 'handle_signal TERM' TERM
 
 require_commands() {
   local command
-  for command in git jq mktemp realpath stat flock; do
+  for command in git jq mktemp realpath stat flock findmnt; do
     command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
   done
 }
@@ -292,46 +276,10 @@ confirm_mutation() {
 }
 
 rescan() {
-  local request status
-  if ! request=$("$ipc" shell beginPluginRescan); then
+  if ! "$ipc" shell rescanPlugins >/dev/null; then
     printf '%s: plugin rescan IPC failed\n' "$script_name" >&2
     return 1
   fi
-  [[ $request =~ ^[0-9]+:[0-9]+$ ]] || {
-    printf '%s: plugin rescan returned an invalid request ID\n' "$script_name" >&2
-    return 1
-  }
-  # Keep the manager lock until the shell acknowledges a terminal result. The
-  # shell fail-safe is 15s; transport retries below add margin without making
-  # a live, pending shell eligible for rollback.
-  attempt=0
-  while :; do
-    attempt=$((attempt + 1))
-    status=""
-    for retry in {1..5}; do
-      if status=$("$ipc" shell pluginRescanStatus "$request"); then
-        break
-      fi
-      if ((retry < 5)); then sleep 0.1; fi
-    done
-    if [[ -z $status ]]; then
-      if ! "$ipc" shell health >/dev/null 2>&1; then
-        printf '%s: plugin shell became unavailable during rescan\n' "$script_name" >&2
-        return 1
-      fi
-      continue
-    fi
-    case $status in
-      pending) sleep 0.1 ;;
-      ok) return 0 ;;
-      error:*)
-        printf '%s: plugin rescan failed: %s\n' "$script_name" "${status#error: }" >&2
-        return 1
-        ;;
-      *) sleep 0.1 ;;
-    esac
-    if ((attempt >= 180)); then attempt=0; fi
-  done
 }
 
 list_json() {
@@ -365,7 +313,8 @@ install_plugin() {
   mkdir -p -- "$plugins_dir"
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
   acquire_add_lock
-  stage_dir=$(mktemp -d "$plugins_dir/.add.XXXXXX") || fail "cannot create staging directory"
+  mkdir -p -- "$plugins_dir/$artifact_root_name/unassigned" || fail "cannot create artifact namespace"
+  stage_dir=$(mktemp -d "$plugins_dir/$artifact_root_name/unassigned/add.XXXXXX") || fail "cannot create staging directory"
   candidate_identity=$(stat -c '%d:%i' -- "$stage_dir") || fail "cannot identify staging directory"
   if ! git -c credential.helper= -c core.askPass=/bin/false clone --no-recurse-submodules -- "$url" "$stage_dir" \
     >/dev/null 2>&1; then
@@ -375,13 +324,14 @@ install_plugin() {
   id=$(manifest_id "$stage_dir")
   [[ -z $expected_id ]] || [[ $id == "$expected_id" ]] || fail "expected id $expected_id, got $id"
   stage_suffix=${stage_dir##*.}
-  [[ $stage_suffix =~ ^[A-Za-z0-9]{6}$ ]] || fail "malformed add staging name: $stage_dir"
-  renamed_stage=$(root_name_path ".add.$id.$stage_suffix")
+  [[ $stage_suffix =~ ^[A-Za-z0-9_-]+$ ]] || fail "malformed add staging name: $stage_dir"
+  mkdir -p -- "$(root_name_path "$artifact_root_name/$id")" || fail "cannot create artifact namespace: $id"
+  renamed_stage=$(artifact_path "$id" add "$stage_suffix")
   revalidate_mutation_root || fail "plugin root changed before add staging rename"
   [[ $(artifact_identity "$stage_dir") == "$candidate_identity" ]] || fail "add staging identity changed: $id"
   [[ ! -e $renamed_stage && ! -L $renamed_stage ]] || fail "add staging target already exists: $id"
   mv -T -- "$stage_dir" "$renamed_stage" || fail "cannot correlate add staging artifact: $id"
-  stage_dir="$root_path/.add.$id.$stage_suffix"
+  stage_dir=$(artifact_path "$id" add "$stage_suffix")
   assert_no_plugin_artifacts "$id" "$stage_dir" || fail "plugin artifacts block installation: $id"
   find_duplicate_id "$id" || fail "plugin id already installed: $id"
   target=$plugins_dir/$id
@@ -391,9 +341,7 @@ install_plugin() {
   installed_identity=$stage_identity
   mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
   stage_dir=
-  if ! rescan; then
-    fail "plugin install failed during rescan"
-  fi
+  rescan || printf '%s: warning: plugin reload failed after publication\n' "$script_name" >&2
   if (( enable )); then
     wait_for_discovery "$id"
     enable_plugin "$id" ""
@@ -703,7 +651,7 @@ artifact_identity() {
 }
 
 safe_remove_artifact_path() {
-  local path=$1 expected_identity=${2-} hook_name=${3-} fd=-1 identity fd_path
+  local path=$1 expected_identity=${2-} hook_name=${3-} fd=-1 identity fd_path mount_output mount_target
   [[ -n $path && -n $expected_identity ]] || return 1
   revalidate_mutation_root || return 1
   [[ -d $path && ! -L $path ]] || return 1
@@ -715,6 +663,25 @@ safe_remove_artifact_path() {
   fi
   revalidate_mutation_root || { exec {fd}<&-; return 1; }
   [[ $(artifact_identity "$path") == "$identity" ]] || { exec {fd}<&-; return 1; }
+  local -a mount_targets=()
+  mount_output=$(mktemp) || { exec {fd}<&-; return 1; }
+  if ! findmnt -R -n -o TARGET --target "$path" >"$mount_output"; then
+    rm -f -- "$mount_output"
+    exec {fd}<&-
+    return 1
+  fi
+  mapfile -t mount_targets <"$mount_output" || {
+    rm -f -- "$mount_output"
+    exec {fd}<&-
+    return 1
+  }
+  rm -f -- "$mount_output"
+  for mount_target in "${mount_targets[@]}"; do
+    [[ -z $mount_target || $mount_target == / || $mount_target == "$path" || $path == "$mount_target"/* ]] || {
+      exec {fd}<&-
+      return 1
+    }
+  done
   fd_path="/proc/self/fd/$fd/."
   if ! find "$fd_path" -xdev -depth -mindepth 1 -delete; then
     exec {fd}<&-
@@ -739,7 +706,6 @@ capture_candidate() {
   candidate_dir=$path
   candidate_real=$current_path
   candidate_identity=$current_identity
-  candidate_name=${path##*/}
 }
 
 revalidate_candidate() {
@@ -766,15 +732,61 @@ artifact_type() {
   fi
 }
 
+artifact_root_path() {
+  printf '%s/%s' "$root_path" "$artifact_root_name"
+}
+
+artifact_path() {
+  local id=$1 kind=$2 suffix=$3
+  printf '%s/%s/%s/%s.%s' "$root_path" "$artifact_root_name" "$id" "$kind" "$suffix"
+}
+
+artifact_name_kind() {
+  local name=${1##*/}
+  [[ $name =~ ^(add|update|rollback|rejected|removed)\.[A-Za-z0-9_-]+$ ]] || return 1
+  printf '%s' "${BASH_REMATCH[1]}"
+}
+
+discover_artifacts() {
+  local output=$1 artifact_root
+  artifact_root=$(artifact_root_path)
+  : >"$output" || return 1
+  [[ ! -e $artifact_root && ! -L $artifact_root ]] && return 0
+  [[ -d $artifact_root && ! -L $artifact_root ]] || return 1
+  find "$artifact_root" -mindepth 1 -maxdepth 2 -print0 >"$output" || return 1
+}
+
+artifact_record_valid() {
+  local path=$1 relative id kind parent
+  relative=${path#"$(artifact_root_path)/"}
+  [[ $relative != "$path" ]] || return 1
+  [[ $relative == unassigned ]] && return 0
+  parent=${relative%%/*}
+  [[ $parent == unassigned ]] && { [[ $relative != */*/* ]] || return 1; artifact_name_kind "$relative" >/dev/null; return $?; }
+  validate_safe_id "$parent" >/dev/null 2>&1 || return 1
+  [[ $relative == */* && ${relative#*/} != */* ]] || return 0
+  kind=$(artifact_name_kind "${relative#*/}") || return 1
+  [[ -n $kind ]] || return 1
+  [[ -d $path && ! -L $path ]] || return 1
+}
+
 collect_plugin_artifacts() {
   local id=$1 result_name=$2
   local -n result=$result_name
+  local artifact scan_file relative owner
   # shellcheck disable=SC2034
   result=()
-  mapfile -d '' result < <(find "$root_path" -mindepth 1 -maxdepth 1 \
-    \( -name ".add.$id.*" -o -name ".update.$id.*" -o -name ".rollback.$id.*" \
-    -o -name ".rejected.$id.*" -o -name ".removed.$id.*" \) -print0)
-  : "${result[*]}"
+  scan_file=$(mktemp) || return 1
+  if ! discover_artifacts "$scan_file"; then rm -f -- "$scan_file"; return 1; fi
+  while IFS= read -r -d '' artifact; do
+    relative=${artifact#"$(artifact_root_path)/"}
+    owner=${relative%%/*}
+    [[ $owner == "$id" ]] && result+=("$artifact")
+  done <"$scan_file"
+  rm -f -- "$scan_file"
+  if ((${#result[@]})); then
+    mapfile -t result < <(printf '%s\n' "${result[@]}" | sort)
+  fi
 }
 
 report_plugin_artifacts() {
@@ -784,13 +796,16 @@ report_plugin_artifacts() {
   printf '%s: plugin artifacts block mutation for %s:\n' "$script_name" "$id" >&2
   for artifact in "${items[@]}"; do
     printf '  %q (%s)\n' "$artifact" "$(artifact_type "$artifact")" >&2
-    [[ ${artifact##*/} == .rollback."$id".* ]] && { rollback=$artifact; rollback_count=$((rollback_count + 1)); }
+    [[ ${artifact##*/} == rollback.* && -d $artifact && ! -L $artifact ]] && {
+      rollback=$artifact
+      rollback_count=$((rollback_count + 1))
+    }
   done
   printf '%s: manually inspect each artifact; no automatic recovery or deletion is performed.\n' "$script_name" >&2
   for artifact in "${items[@]}"; do
     printf '  stat -- %q\n' "$artifact" >&2
+    printf '  findmnt -R -n -o TARGET --target %q\n' "$artifact" >&2
     printf '  find -- %q -xdev -depth -print\n' "$artifact" >&2
-    [[ ${artifact##*/} == .rollback."$id".* ]] || printf '  rm -rf -- %q\n' "$artifact" >&2
   done
   if [[ ! -e $public_path && ! -L $public_path && $rollback_count == 1 ]]; then
     printf '  mv -T -- %q %q\n' "$rollback" "$public_path" >&2
@@ -798,15 +813,20 @@ report_plugin_artifacts() {
 }
 
 assert_no_plugin_artifacts() {
-  local id=$1 exclude_path=${2-} artifact artifact_id
+  local id=$1 exclude_path=${2-} artifact scan_file relative owner
   local -a artifacts=() all_artifacts=()
   validate_safe_id "$id"
-  mapfile -d '' all_artifacts < <(find "$root_path" -mindepth 1 -maxdepth 1 \
-    \( -name '.add.*' -o -name '.update.*' -o -name '.rollback.*' -o -name '.rejected.*' -o -name '.removed.*' \) -print0)
+  scan_file=$(mktemp) || return 1
+  if ! discover_artifacts "$scan_file"; then rm -f -- "$scan_file"; return 1; fi
+  mapfile -d '' all_artifacts <"$scan_file"
+  rm -f -- "$scan_file"
   for artifact in "${all_artifacts[@]}"; do
     [[ -n $exclude_path && $artifact == "$exclude_path" ]] && continue
-    artifact_id=$(artifact_id_from_name "$artifact")
-    [[ -z $artifact_id || $artifact_id == "$id" ]] || continue
+    relative=${artifact#"$(artifact_root_path)/"}
+    owner=${relative%%/*}
+    [[ $relative == "$owner" || $relative == unassigned ]] && continue
+    artifact_record_valid "$artifact" || { artifacts+=("$artifact"); continue; }
+    [[ $owner == "$id" || $owner == unassigned ]] || continue
     artifacts+=("$artifact")
   done
   ((${#artifacts[@]} == 0)) && return 0
@@ -814,20 +834,12 @@ assert_no_plugin_artifacts() {
   return 1
 }
 
-artifact_id_from_name() {
-  local name=${1##*/}
-  if [[ $name =~ ^\.(add|update|rollback|rejected)\.([A-Za-z0-9][A-Za-z0-9._-]*)\.[A-Za-z0-9]{6}$ ]]; then
-    printf '%s' "${BASH_REMATCH[2]}"
-  elif [[ $name =~ ^\.removed\.([A-Za-z0-9][A-Za-z0-9._-]*)\.[0-9]{8}T[0-9]{6}Z$ ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-  fi
-}
-
 build_update_candidate() {
   local id=$1 public_dir=$2 remote_commit=$3 origin_url candidate transfer_ref clone_status descriptor source_dir
   origin_url=$(stable_git remote get-url origin 2>/dev/null) || fail "plugin has no origin: $id"
   [[ -n $origin_url ]] || fail "plugin has no origin: $id"
-  stage_dir=$(mktemp -d "$(root_name_path ".update.$id.XXXXXX")") || fail "cannot create update staging directory: $id"
+  mkdir -p -- "$(root_name_path "$artifact_root_name/$id")" || fail "cannot create update artifact namespace: $id"
+  stage_dir=$(mktemp -d "$(root_name_path "$artifact_root_name/$id/update.XXXXXX")") || fail "cannot create update staging directory: $id"
   candidate=$stage_dir
   source_dir="/proc/self/fd/$update_target_fd/."
   transfer_ref="refs/omarchy/update/$id"
@@ -854,8 +866,9 @@ build_update_candidate() {
 }
 
 reserve_hidden_name() {
-  local pattern=$1 path
-  path=$(mktemp -d "$(root_name_path "$pattern")") || return 1
+  local kind=$1 id=$2 path
+  mkdir -p -- "$(root_name_path "$artifact_root_name/$id")" || return 1
+  path=$(mktemp -d "$(root_name_path "$artifact_root_name/$id/$kind.XXXXXX")") || return 1
   reserved_identity=$(artifact_identity "$path") || return 1
   rmdir -- "$path" || return 1
   printf '%s' "${path##*/}"
@@ -880,10 +893,7 @@ restore_armed_publication() {
       publication_armed=0
       return 0
     fi
-    if [[ $public_identity != "$publication_new_identity" ]]; then
-      printf '%s: preserving unknown public object %q as %q\n' "$script_name" \
-        "$root_path/$publication_public_name" "$root_path/$publication_rejected_name" >&2
-    fi
+    [[ $public_identity == "$publication_new_identity" ]] || return 1
     [[ ! -e $rejected_path && ! -L $rejected_path ]] || return 1
     mv -T -- "$public_path" "$rejected_path" || return 1
     publication_rejected_identity=$(artifact_identity "$rejected_path") || return 1
@@ -912,10 +922,12 @@ publish_update_candidate() {
   revalidate_mutation_root || fail "plugin root changed before publication: $id"
   revalidate_update_target || fail "plugin changed before publication: $id"
   revalidate_candidate || fail "candidate changed before publication: $id"
-  rollback_name=$(reserve_hidden_name ".rollback.$id.XXXXXX") || fail "cannot reserve rollback path: $id"
+  rollback_name=$(reserve_hidden_name rollback "$id") || fail "cannot reserve rollback path: $id"
+  rollback_name="$artifact_root_name/$id/$rollback_name"
   publication_rollback_reserved_identity=$reserved_identity
   publication_rollback_identity=$target_identity
-  rejected_name=$(reserve_hidden_name ".rejected.$id.XXXXXX") || fail "cannot reserve rejected path: $id"
+  rejected_name=$(reserve_hidden_name rejected "$id") || fail "cannot reserve rejected path: $id"
+  rejected_name="$artifact_root_name/$id/$rejected_name"
   publication_rejected_identity=$reserved_identity
   public_name=${public_dir##*/}
   publication_armed=1
@@ -949,7 +961,7 @@ publish_update_candidate() {
   [[ ! -e $(root_name_path "$public_name") && ! -L $(root_name_path "$public_name") &&
     ! -e $(root_name_path "$rejected_name") && ! -L $(root_name_path "$rejected_name") ]] ||
     fail "candidate publication destinations changed: $id"
-  mv -T -- "$(root_name_path "$candidate_name")" "$(root_name_path "$public_name")" || fail "plugin update publication failed: $id"
+  mv -T -- "$stage" "$(root_name_path "$public_name")" || fail "plugin update publication failed: $id"
   run_test_hook after-candidate-publication
   descriptor=$(root_name_path "$public_name")
   current_identity=$(artifact_identity "$descriptor") || fail "cannot identify published plugin: $id"
@@ -972,7 +984,6 @@ publish_update_candidate() {
     printf '%s: warning: retaining rollback artifact: %s\n' "$script_name" "$rollback_name" >&2
   safe_remove_artifact_path "$(root_name_path "$rejected_name")" "$publication_rejected_identity" artifact-after-open ||
     printf '%s: warning: retaining rejected artifact: %s\n' "$script_name" "$rejected_name" >&2
-  rollback_dir=
   stage_dir=
   candidate_dir=
 }
@@ -1090,6 +1101,7 @@ run_update_plugin() {
 
 update_plugins() {
   local requested_id=${1-} id directory artifact artifact_id changed=0 failed=0 status_code return_status=0 global_artifact_block=0
+  local scan_file relative owner
   # shellcheck disable=SC2034
   local -a directories=() artifacts=() id_artifacts=()
   declare -A blocked_ids=()
@@ -1107,24 +1119,34 @@ update_plugins() {
     release_update_target
   else
     revalidate_mutation_root || fail "plugin root changed before bulk update"
-    mapfile -d '' artifacts < <(find "$root_path" -mindepth 1 -maxdepth 1 \
-      \( -name '.add.*' -o -name '.update.*' -o -name '.rollback.*' -o -name '.rejected.*' -o -name '.removed.*' \) -print0)
+    scan_file=$(mktemp) || fail "cannot inspect plugin artifacts"
+    discover_artifacts "$scan_file" || { rm -f -- "$scan_file"; fail "cannot inspect plugin artifacts"; }
+    mapfile -d '' artifacts <"$scan_file"
+    rm -f -- "$scan_file"
     for artifact in "${artifacts[@]}"; do
-      artifact_id=$(artifact_id_from_name "$artifact")
-      if [[ -z $artifact_id ]]; then
+      relative=${artifact#"$(artifact_root_path)/"}
+      owner=${relative%%/*}
+      if ! artifact_record_valid "$artifact"; then
         printf '%s: hidden artifact blocks bulk update: %q (%s); manually inspect and recover/remove it\n' \
           "$script_name" "$artifact" "$(artifact_type "$artifact")" >&2
         failed=1
         global_artifact_block=1
         continue
       fi
-      blocked_ids["$artifact_id"]=1
+      [[ $relative == "$owner" ]] && continue
+      if [[ $owner == unassigned ]]; then
+        failed=1
+        global_artifact_block=1
+        continue
+      fi
+      blocked_ids["$owner"]=1
     done
-    for artifact_id in "${!blocked_ids[@]}"; do
+    while IFS= read -r artifact_id; do
+      [[ -n $artifact_id ]] || continue
       collect_plugin_artifacts "$artifact_id" id_artifacts
       report_plugin_artifacts "$artifact_id" id_artifacts
       failed=1
-    done
+    done < <(printf '%s\n' "${!blocked_ids[@]}" | sort)
     mapfile -d '' directories < <(find "$root_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
     for directory in "${directories[@]}"; do
       id=${directory##*/}
@@ -1160,7 +1182,8 @@ remove_plugin() {
   disable_plugin "$id"
   revalidate_target || fail "plugin changed during disable: $id"
   timestamp=$(date -u +%Y%m%dT%H%M%SZ) || fail "cannot create removal timestamp"
-  backup="/proc/self/fd/$root_fd/.removed.$id.$timestamp"
+  mkdir -p -- "$(root_name_path "$artifact_root_name/$id")" || fail "cannot create removal artifact namespace: $id"
+  backup=$(artifact_path "$id" removed "$timestamp")
   mkdir -- "$backup" 2>/dev/null || fail "removal backup already exists: $id"
   rmdir -- "$backup" || fail "cannot reserve removal backup: $id"
   revalidate_target || fail "plugin changed before quarantine: $id"
@@ -1188,7 +1211,7 @@ remove_plugin() {
   revalidate_mutation_root || fail "plugin root changed before removal rescan: $id"
   [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
     fail "removed plugin was repopulated before rescan: $id"
-  rescan || fail "plugin removal failed during rescan"
+  rescan || printf '%s: warning: plugin reload failed after removal\n' "$script_name" >&2
   revalidate_mutation_root || fail "plugin root changed during removal rescan: $id"
   [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
     fail "removed plugin was repopulated during rescan: $id"
