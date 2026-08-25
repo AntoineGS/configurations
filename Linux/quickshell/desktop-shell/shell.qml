@@ -611,8 +611,7 @@ ShellRoot {
     }
     // Bar widgets take no payload; payloadJson is dropped on this path.
     if (shell.isBarWidgetPanelPlugin(id)) {
-      var summoned = shell.bar && typeof shell.bar.summonBarWidget === "function"
-        && shell.bar.summonBarWidget(id)
+      var summoned = shell.invokeBarWidget(id, "open")
       if (!summoned) console.warn("summon: no live bar widget for:", id)
       return summoned === true
     }
@@ -649,8 +648,7 @@ ShellRoot {
     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
     if (!id) return false
     if (shell.isBarWidgetPanelPlugin(id)) {
-      var hidden = shell.bar && typeof shell.bar.hideBarWidget === "function"
-        && shell.bar.hideBarWidget(id)
+      var hidden = shell.invokeBarWidget(id, "close")
       if (!hidden) console.warn("hide: no live bar widget for:", id)
       return hidden === true
     }
@@ -670,9 +668,8 @@ ShellRoot {
   function isPluginOpen(pluginId) {
     var id = shell.pluginRegistry.resolveEnabledId(pluginId)
     if (shell.isBarWidgetPanelPlugin(id)) {
-      return shell.bar && typeof shell.bar.isBarWidgetOpen === "function"
-        ? shell.bar.isBarWidgetOpen(id)
-        : false
+      var widget = shell.barWidgetFor(id)
+      return !!widget && widget.opened === true
     }
     var loader = panelLoaders[id]
     if (loader && loader.item && loader.item.opened !== undefined)
@@ -948,6 +945,8 @@ ShellRoot {
       loadPluginWidget(registryKey, url, meta)
     }
 
+    shell.syncHeadlessWidgetInstances()
+
     // Drop registrations for plugins that are no longer present or enabled.
     var allIds = shell.barWidgetRegistry.availableIds()
     for (var i = 0; i < allIds.length; i++) {
@@ -962,7 +961,61 @@ ShellRoot {
     }
   }
 
+  property var headlessWidgetInstances: ({})
+
+  function shouldHostHeadlessWidget(pluginId) {
+    var manifest = shell.pluginRegistry.installedPlugins[String(pluginId || "")]
+    return !!manifest
+      && Array.isArray(manifest.kinds)
+      && manifest.kinds.indexOf("bar-widget") !== -1
+      && manifest.keepLoaded === true
+      && shell.pluginRegistry.isEnabled(pluginId)
+      && !shell.pluginRegistry.inBar(pluginId)
+  }
+
+  function headlessWidgetFor(pluginId) {
+    return shell.headlessWidgetInstances[String(pluginId || "")] || null
+  }
+
+  function syncHeadlessWidgetInstances() {
+    var next = ({})
+    for (var existingId in shell.headlessWidgetInstances) {
+      if (shell.shouldHostHeadlessWidget(existingId)) next[existingId] = shell.headlessWidgetInstances[existingId]
+      else {
+        var existing = shell.headlessWidgetInstances[existingId]
+        if (existing && typeof existing.destroy === "function") existing.destroy()
+      }
+    }
+
+    for (var id in shell.pluginWidgetComponents) {
+      if (!shell.shouldHostHeadlessWidget(id) || next[id]) continue
+      var entry = shell.pluginWidgetComponents[id]
+      if (!entry || !entry.component || entry.component.status !== Component.Ready) continue
+      var instance = entry.component.createObject(shell)
+      if (!instance) {
+        var detail = entry.component.errorString ? entry.component.errorString() : ""
+        if (!detail) detail = "failed to create hidden widget instance"
+        shell.pluginRegistry.pluginLoadFailed(id, detail,
+          shell.pluginRegistry.pluginSourceGeneration, "widget-host")
+        continue
+      }
+      if (typeof instance.visible !== "undefined") instance.visible = false
+      next[id] = instance
+      shell.pluginRegistry.clearPluginError(id, "widget-host")
+    }
+    shell.headlessWidgetInstances = next
+  }
+
+  function unloadHeadlessWidgetInstances() {
+    for (var id in shell.headlessWidgetInstances) {
+      var instance = shell.headlessWidgetInstances[id]
+      if (instance && typeof instance.destroy === "function") instance.destroy()
+    }
+    shell.headlessWidgetInstances = ({})
+  }
+
   function unloadPluginWidgets() {
+    shell.unloadHeadlessWidgetInstances()
     for (var id in pluginWidgetComponents) shell.barWidgetRegistry.unregister(id)
     pluginWidgetComponents = ({})
   }
@@ -1092,6 +1145,7 @@ ShellRoot {
         shell.pluginRegistry.clearPluginError(registryKey, "widget")
         shell.barWidgetRegistry.register(registryKey, comp, meta)
         shell.setPluginWidgetComponent(registryKey, { url: url, component: comp, loading: false })
+        shell.syncHeadlessWidgetInstances()
       } else if (comp.status === Component.Error) {
         console.warn("Plugin widget " + registryKey + " failed: " + comp.errorString())
         // Drop the claim so a later rescan can retry.
@@ -1121,8 +1175,9 @@ ShellRoot {
   // shell-wide. Keep one handler per target and route calls to the widget on
   // the focused screen; widget state is still shared across all bar screens.
   function barWidgetFor(pluginId) {
-    return shell.bar && typeof shell.bar.findPanelWidget === "function"
+    var visible = shell.bar && typeof shell.bar.findPanelWidget === "function"
       ? shell.bar.findPanelWidget(pluginId) : null
+    return visible || shell.headlessWidgetFor(pluginId)
   }
 
   function pingBarWidget(pluginId) {
@@ -1356,6 +1411,15 @@ ShellRoot {
 
     function pluginWidgetReady(id: string): string {
       return shell.testPluginWidgetReady(id)
+    }
+
+    function headlessWidgetReady(id: string): string {
+      return shell.headlessWidgetFor(id) ? "ready" : "absent"
+    }
+
+    function headlessWidgetState(id: string): string {
+      var widget = shell.headlessWidgetFor(id)
+      return widget ? JSON.stringify({ opened: widget.opened === true, openCount: Number(widget.openCount || 0) }) : "{}"
     }
 
     function pluginBarTestProbe(): string {

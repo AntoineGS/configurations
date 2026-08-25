@@ -35,11 +35,17 @@ plugins_dir="$tmp_dir/plugins"
 state_file="$tmp_dir/home/.config/desktop-shell/shell.json"
 mkdir -p -- "$plugins_dir/acme.widget"
 cat >"$plugins_dir/acme.widget/manifest.json" <<'JSON'
-{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"BarWidget.qml"}}
+{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"1.0.0","kinds":["bar-widget"],"keepLoaded":true,"entryPoints":{"barWidget":"BarWidget.qml"}}
 JSON
 cat >"$plugins_dir/acme.widget/BarWidget.qml" <<'QML'
 import QtQuick
-Item { }
+Item {
+  property bool opened: false
+  property int openCount: 0
+  function open() { opened = true; openCount++ }
+  function close() { opened = false }
+  function toggle() { opened = !opened }
+}
 QML
 git -C "$plugins_dir" init --quiet
 git -C "$plugins_dir" add -- .
@@ -70,7 +76,7 @@ jq -e 'type == "array"' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "desktop.bar" and .firstParty == true and .canDisable == false)' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == false)' <<<"$plugins" >/dev/null
 
-enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"section":"right"}')
+enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"headless":true}')
 [[ -n $enable_result ]]
 legacy_rescan=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins)
 [[ $legacy_rescan == ok ]]
@@ -93,6 +99,21 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $widget_ready == ready ]]
+for _ in {1..100}; do
+  headless_ready=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget 2>/dev/null || true)
+  if [[ $headless_ready == ready ]]; then break; fi
+  sleep 0.1
+done
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget) == ready ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell summon acme.widget '{}') == ok ]]
+jq -e '.opened == true and .openCount == 1' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
+quickshell ipc --pid "$shell_pid" call -- desktop-shell hide acme.widget >/dev/null
+jq -e '.opened == false' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
+quickshell ipc --pid "$shell_pid" call -- desktop-shell toggle acme.widget '{}' >/dev/null
+jq -e '.opened == true' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
 lock_release="$tmp_dir/release-manager-lock"
 lock_held="$tmp_dir/manager-lock-held"
 sleep 0.2
@@ -146,6 +167,12 @@ jq -e 'any(.[]; .id == "acme.widget")' <<<"$(quickshell ipc --pid "$shell_pid" c
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget) == ready ]]
 set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
 [[ -n $set_result ]]
+for _ in {1..100}; do
+  headless_ready=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget 2>/dev/null || true)
+  if [[ $headless_ready == absent ]]; then break; fi
+  sleep 0.1
+done
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget) == absent ]]
 stop_shell
 
 failure_state_file="$tmp_dir/failure-state"
