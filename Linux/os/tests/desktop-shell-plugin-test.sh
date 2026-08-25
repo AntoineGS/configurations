@@ -399,75 +399,20 @@ env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || f
 rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $rescan_after == "$rescan_before" ]] || fail "up-to-date update requested rescan"
 
-write_transaction_fixture() {
-  local id=$1 old_commit=$2 new_commit=$3 old_origin=$4 new_origin=$5 old_identity=$6 new_identity=$7
-  local stage_name=$8 rollback_name=$9 rejected_name=${10} fixture_tmp
-  fixture_tmp="$plugins_dir/.transaction.$id.tmp"
-  jq -n --arg id "$id" --arg old_commit "$old_commit" --arg new_commit "$new_commit" \
-    --arg old_origin "$old_origin" --arg new_origin "$new_origin" --arg old_identity "$old_identity" \
-    --arg new_identity "$new_identity" --arg stage_name "$stage_name" --arg rollback_name "$rollback_name" \
-    --arg rejected_name "$rejected_name" \
-    '{version:1,id:$id,old_commit:$old_commit,new_commit:$new_commit,old_origin:$old_origin,new_origin:$new_origin,
-      old_identity:$old_identity,new_identity:$new_identity,stage_name:$stage_name,rollback_name:$rollback_name,
-      rejected_name:$rejected_name}' >"$fixture_tmp"
-  mv -- "$fixture_tmp" "$plugins_dir/.transaction.$id"
-}
-recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.recovery"
-recovery_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
-recovery_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
-recovery_origin=$(git -C "$plugins_dir/lifecycle.widget" remote get-url origin)
-write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
-  "$recovery_identity" "$recovery_identity" .update.lifecycle.widget.recovery .rollback.lifecycle.widget.recovery .rejected.lifecycle.widget.recovery
-mv -T -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
-env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "rollback artifact recovery failed"
-[[ -d "$plugins_dir/lifecycle.widget" && ! -e "$recovery_rollback" ]] || fail "rollback artifact was not recovered"
-recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.published"
-cp -a -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
-recovery_old_identity=$(stat -c '%d:%i' "$recovery_rollback")
-recovery_new_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
-write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
-  "$recovery_old_identity" "$recovery_new_identity" .update.lifecycle.widget.published .rollback.lifecycle.widget.published .rejected.lifecycle.widget.published
-env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "published rollback cleanup failed"
-[[ ! -e "$recovery_rollback" ]] || fail "stale rollback artifact was not removed"
-recovery_stage="$plugins_dir/.update.lifecycle.widget.stale"
-cp -a -- "$plugins_dir/lifecycle.widget" "$recovery_stage"
-recovery_stage_identity=$(stat -c '%d:%i' "$recovery_stage")
-recovery_public_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
-write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
-  "$recovery_public_identity" "$recovery_stage_identity" .update.lifecycle.widget.stale .rollback.lifecycle.widget.stale .rejected.lifecycle.widget.stale
-env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "stale stage cleanup failed"
-[[ ! -e "$recovery_stage" ]] || fail "stale stage artifact was not removed"
-replacement_stage="$plugins_dir/.update.lifecycle.widget.replacement"
-cp -a -- "$plugins_dir/lifecycle.widget" "$replacement_stage"
-replacement_stage_identity=$(stat -c '%d:%i' "$replacement_stage")
-replacement_public_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
-write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
-  "$replacement_public_identity" "$replacement_stage_identity" .update.lifecycle.widget.replacement .rollback.lifecycle.widget.replacement .rejected.lifecycle.widget.replacement
-artifact_race_hook="$test_root/artifact-race-hook"
-artifact_race_backup="$test_root/artifact-race-backup"
-cat >"$artifact_race_hook" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if [[ $1 == artifact-after-open && $2 == *'.update.lifecycle.widget.'* ]]; then
-  mv -- "$2" "$ARTIFACT_RACE_BACKUP"
-  mkdir -- "$2"
-  printf 'replacement\n' >"$2/marker"
-fi
-EOF
-chmod +x -- "$artifact_race_hook"
-if DESKTOP_SHELL_PLUGIN_TEST_HOOK="$artifact_race_hook" ARTIFACT_RACE_BACKUP="$artifact_race_backup" \
-  env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
-  fail "artifact replacement during deletion was accepted"
-fi
-[[ -f "$replacement_stage/marker" && -d "$artifact_race_backup" ]] || fail "artifact replacement safety state was lost"
-rm -rf -- "$replacement_stage" "$artifact_race_backup" "$plugins_dir/.transaction.lifecycle.widget"
-mkdir -- "$plugins_dir/.update.lifecycle.widget.ambiguous-a" "$plugins_dir/.update.lifecycle.widget.ambiguous-b"
-if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
-  fail "ambiguous update artifacts were accepted"
-fi
-[[ -d "$plugins_dir/.update.lifecycle.widget.ambiguous-a" && -d "$plugins_dir/.update.lifecycle.widget.ambiguous-b" ]] ||
-  fail "ambiguous update artifacts were deleted"
-rm -rf -- "$plugins_dir"/.update.lifecycle.widget.ambiguous-*
+manual_artifacts=(
+  "$plugins_dir/.rollback.lifecycle.widget.manual"
+  "$plugins_dir/.update.lifecycle.widget.manual"
+  "$plugins_dir/.rejected.lifecycle.widget.manual"
+  "$plugins_dir/.removed.lifecycle.widget.manual"
+)
+for manual_artifact in "${manual_artifacts[@]}"; do
+  mkdir -- "$manual_artifact"
+  if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+    fail "hidden artifact was accepted: $manual_artifact"
+  fi
+  [[ -d "$manual_artifact" ]] || fail "hidden artifact was changed: $manual_artifact"
+  rmdir -- "$manual_artifact"
+done
 ln -s -- "$plugins_dir/lifecycle.widget" "$plugins_dir/.update.lifecycle.widget.invalid-type"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "invalid recovery artifact type was accepted"
@@ -600,6 +545,34 @@ fi
 [[ -f "$candidate_race_backup/manifest.json" ]] || fail "candidate race lost validated candidate"
 rm -rf -- "$candidate_race_backup" "$plugins_dir"/.update.lifecycle.widget.*
 
+printf 'cleanup-race-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm cleanup-race-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+cleanup_race_hook="$test_root/cleanup-race-hook"
+cleanup_race_backup="$test_root/cleanup-race-backup"
+cat >"$cleanup_race_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == artifact-after-open && $2 == *'.rollback.lifecycle.widget.'* ]]; then
+  mv -- "$2" "$CLEANUP_RACE_BACKUP"
+  mkdir -- "$2"
+  printf 'replacement\n' >"$2/marker"
+fi
+EOF
+chmod +x -- "$cleanup_race_hook"
+if ! env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$cleanup_race_hook" \
+  CLEANUP_RACE_BACKUP="$cleanup_race_backup" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "cleanup replacement changed publication result"
+fi
+cleanup_rollback=("$plugins_dir"/.rollback.lifecycle.widget.*)
+[[ ${#cleanup_rollback[@]} == 1 && -f ${cleanup_rollback[0]}/marker && -d "$cleanup_race_backup" ]] ||
+  fail "rollback cleanup replacement was not retained"
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "retained cleanup artifact did not block later mutation"
+fi
+rm -rf -- "${cleanup_rollback[@]}" "$cleanup_race_backup"
+
 printf 'reload-warning-update\n' >>"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
 git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm reload-warning-update
@@ -610,7 +583,6 @@ if ! IPC_RESCAN_RESULT=failed env "${manager_env[@]}" "$manager" update lifecycl
 fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) != "$reload_prior" ]] ||
   fail "reload failure discarded committed publication"
-[[ ! -e "$plugins_dir/.transaction.lifecycle.widget" ]] || fail "publication transaction record was not removed"
 public_id_drift_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 jq '.id = "drifted.widget"' "$plugins_dir/lifecycle.widget/manifest.json" >"$plugins_dir/lifecycle.widget/manifest.tmp"
 mv -- "$plugins_dir/lifecycle.widget/manifest.tmp" "$plugins_dir/lifecycle.widget/manifest.json"
@@ -677,7 +649,6 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false "$manager" u
   fail "validation-failing update was accepted"
 fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$validation_prior" ]] || fail "validation rollback changed commit"
-[[ ! -e "$plugins_dir/.transaction.lifecycle.widget" ]] || fail "validation failure left transaction record"
 validation_stages=("$plugins_dir"/.update.lifecycle.widget.*)
 [[ ${#validation_stages[@]} == 0 ]] || { printf 'validation output:\n%s\n' "$(<"$test_root/validation.err")" >&2; fail "validation failure left update stage: ${validation_stages[*]}"; }
 validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
@@ -942,6 +913,8 @@ git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid c
 git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 bulk_good_prior=$(git -C "$bulk_good" rev-parse HEAD)
 bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
+bulk_orphan_artifact="$bulk_plugins/.rollback.orphan.widget.ABC123"
+mkdir -- "$bulk_orphan_artifact"
 visible_non_git="$bulk_plugins/visible.widget"
 mkdir -p -- "$visible_non_git"
 printf 'visible\n' >"$visible_non_git/marker"
@@ -955,6 +928,7 @@ fi
 [[ $bulk_status != 0 ]] || fail "partial bulk update unexpectedly succeeded"
 [[ $(git -C "$bulk_good" rev-parse HEAD) != "$bulk_good_prior" ]] || fail "partial bulk update lost successful change"
 [[ $(git -C "$bulk_bad" rev-parse HEAD) == "$bulk_bad_prior" ]] || fail "partial bulk update changed failed plugin"
+[[ -d "$bulk_orphan_artifact" ]] || fail "bulk artifact-only evidence was deleted"
 bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $((bulk_rescan_after - bulk_rescan_before)) == 1 ]] || fail "partial bulk update did not request exactly one rescan"
 [[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
