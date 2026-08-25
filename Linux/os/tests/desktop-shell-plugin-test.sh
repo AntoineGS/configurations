@@ -432,6 +432,28 @@ fi
 [[ -L "$plugins_dir/.plugin-artifacts/lifecycle.widget/update.invalid-type" ]] || fail "invalid recovery artifact was deleted"
 rm -f -- "$plugins_dir/.plugin-artifacts/lifecycle.widget/update.invalid-type"
 
+malformed_owner_file="$plugins_dir/.plugin-artifacts/malformed-owner-file"
+: >"$malformed_owner_file"
+if env "${manager_env[@]}" "$manager" add "$source_repo" --yes >/dev/null 2>&1; then
+  fail "add ignored malformed depth-one owner file"
+fi
+rm -f -- "$malformed_owner_file"
+
+malformed_owner_link="$plugins_dir/.plugin-artifacts/malformed-owner-link"
+ln -s -- /tmp "$malformed_owner_link"
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "update ignored malformed depth-one owner symlink"
+fi
+rm -f -- "$malformed_owner_link"
+
+malformed_owner_name="$plugins_dir/.plugin-artifacts/malformed..owner/update.marker"
+mkdir -p -- "${malformed_owner_name%/*}"
+mkdir -- "$malformed_owner_name"
+if env "${manager_env[@]}" "$manager" remove lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "remove ignored malformed artifact owner name"
+fi
+rm -rf -- "${malformed_owner_name%/*}"
+
 git -C "$remote_seed" checkout -q -b main
 printf 'updated\n' >"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
@@ -476,6 +498,9 @@ env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$atomic_hook" \
     printf 'atomic update output:\n%s\n' "$(<"$test_root/atomic.err")" >&2
     fail "atomic update failed"
   }
+if grep -Fq 'retaining rejected artifact' "$test_root/atomic.err"; then
+  fail "successful update warned about a missing rejected artifact"
+fi
 updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 [[ $updated_commit != "$prior_commit" ]] || fail "fast-forward update did not advance"
 [[ $(git -C "$plugins_dir/lifecycle.widget" remote get-url origin) == "$remote_root/lifecycle.git" ]] ||
@@ -902,12 +927,45 @@ else
   bulk_status=$?
 fi
 [[ $bulk_status != 0 ]] || fail "partial bulk update unexpectedly succeeded"
-[[ $(git -C "$bulk_good" rev-parse HEAD) != "$bulk_good_prior" ]] || fail "partial bulk update lost successful change"
+[[ $(git -C "$bulk_good" rev-parse HEAD) == "$bulk_good_prior" ]] || fail "global artifact block changed good plugin"
 [[ $(git -C "$bulk_bad" rev-parse HEAD) == "$bulk_bad_prior" ]] || fail "partial bulk update changed failed plugin"
 [[ -d "$bulk_orphan_artifact" ]] || fail "bulk artifact-only evidence was deleted"
 bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-[[ $((bulk_rescan_after - bulk_rescan_before)) == 1 ]] || fail "partial bulk update did not request exactly one rescan"
+[[ $bulk_rescan_after == "$bulk_rescan_before" ]] || fail "global artifact block requested a rescan"
 [[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
+
+sort_peer_remote="$test_root/sort-peer.git"
+sort_peer_seed="$test_root/sort-peer-seed"
+sort_peer="$bulk_plugins/sort-peer.widget"
+make_identity_plugin "$sort_peer_remote" "$sort_peer_seed" "$sort_peer" sort-peer.widget
+commit_identity_remote_change "$sort_peer_seed" sort-peer-update
+sort_peer_prior=$(git -C "$sort_peer" rev-parse HEAD)
+sort_artifact="$bulk_plugins/.plugin-artifacts/bulk-good.widget/update.sort"
+mkdir -p -- "${sort_artifact%/*}"
+mkdir -- "$sort_artifact"
+sort_fail_bin="$test_root/sort-fail-bin"
+mkdir -p -- "$sort_fail_bin"
+cat >"$sort_fail_bin/sort" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ ${1-} != -z ]]; then
+  printf '%s\n' partial-sort-result
+  exit 1
+fi
+exec /usr/bin/sort "$@"
+EOF
+chmod +x -- "$sort_fail_bin/sort"
+sort_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$bulk_plugins" PATH="$sort_fail_bin:$PATH" \
+  "$manager" update --yes >/dev/null 2>&1; then
+  sort_status=0
+else
+  sort_status=$?
+fi
+[[ $sort_status != 0 ]] || fail "per-ID diagnostic sorting failure was accepted"
+[[ $(git -C "$sort_peer" rev-parse HEAD) == "$sort_peer_prior" ]] || fail "sorting failure allowed a peer update"
+[[ -d "$sort_artifact" ]] || fail "sorting failure deleted artifact evidence"
+rm -rf -- "$sort_artifact"
 
 identity_plugins="$test_root/identity-plugins"
 mkdir -p -- "$identity_plugins"
@@ -1084,6 +1142,32 @@ git clone -q -- "$remote_root/lifecycle.git" "$remove_dir"
 env "${manager_env[@]}" "$manager" remove remove.widget --yes >/dev/null || fail "Git removal failed"
 [[ ! -e $remove_dir ]] || fail "Git removal left source directory"
 grep -Fq $'setPluginEnabled\tremove.widget\tfalse' "$log_file" || fail "Git removal did not disable first"
+
+lock_probe_dir="$plugins_dir/lock-probe.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$lock_probe_dir"
+lock_probe_hook="$test_root/lock-probe-hook"
+cat >"$lock_probe_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == quarantine-after-delete ]]; then
+  (
+    "$LOCK_PROBE_MANAGER" disable lock-probe.widget >"$LOCK_PROBE_OUTPUT" 2>&1
+    : >"$LOCK_PROBE_MARKER"
+  ) &
+  probe_pid=$!
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    [[ -e $LOCK_PROBE_MARKER ]] && break
+    sleep 0.05
+  done
+  wait "$probe_pid"
+fi
+EOF
+chmod +x -- "$lock_probe_hook"
+lock_probe_marker="$test_root/lock-probe-marker"
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$lock_probe_hook" \
+  LOCK_PROBE_MANAGER="$manager" LOCK_PROBE_MARKER="$lock_probe_marker" LOCK_PROBE_OUTPUT="$test_root/lock-probe.out" \
+  "$manager" remove lock-probe.widget --yes >/dev/null || fail "remove held manager lock during hidden cleanup"
+[[ -e "$lock_probe_marker" ]] || { printf 'lock probe output:\n%s\n' "$(<"$test_root/lock-probe.out")" >&2; fail "cooperating manager did not proceed during hidden cleanup"; }
 
 ipc_repopulate_dir="$plugins_dir/ipc-repopulate.widget"
 mkdir -p -- "$ipc_repopulate_dir"
