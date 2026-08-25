@@ -236,15 +236,18 @@ fi
 if env "${manager_env[@]}" "$manager" add "$source_repo" --yes --expected-id other.widget >/dev/null 2>"$test_root/id.err"; then
   fail "expected-id mismatch was accepted"
 fi
-stages=("$plugins_dir"/.plugin-artifacts/unassigned/add.* "$plugins_dir"/.plugin-artifacts/*/add.*)
-[[ ! -e "$plugins_dir/other.widget" && ${#stages[@]} == 0 ]] || fail "failed expected-id add left files behind"
+stages=("$plugins_dir"/.plugin-artifacts/*/add.*)
+[[ ! -e "$plugins_dir/other.widget" && ${#stages[@]} == 0 ]] || {
+  printf 'expected-id error:\n%s\nstages:\n%s\n' "$(<"$test_root/id.err")" "${stages[*]}" >&2
+  fail "failed expected-id add left files behind"
+}
 
 reserved_repo="$test_root/reserved"
 make_repo "$reserved_repo" desktop.clock
 if env "${manager_env[@]}" "$manager" add "$reserved_repo" --yes >/dev/null 2>&1; then
   fail "reserved id was accepted"
 fi
-stages=("$plugins_dir"/.plugin-artifacts/unassigned/add.* "$plugins_dir"/.plugin-artifacts/*/add.*)
+stages=("$plugins_dir"/.plugin-artifacts/*/add.*)
 [[ ${#stages[@]} == 0 ]] || fail "validator failure left staging directory"
 
 symlink_repo="$test_root/symlink"
@@ -255,7 +258,7 @@ git -C "$symlink_repo" -c user.name=test -c user.email=test@example.invalid comm
 if env "${manager_env[@]}" "$manager" add "$symlink_repo" --yes >/dev/null 2>&1; then
   fail "symlinked plugin was accepted"
 fi
-stages=("$plugins_dir"/.plugin-artifacts/unassigned/add.* "$plugins_dir"/.plugin-artifacts/*/add.*)
+stages=("$plugins_dir"/.plugin-artifacts/*/add.*)
 [[ ${#stages[@]} == 0 ]] || fail "symlink validation left staging directory"
 
 alias_manager="$test_root/manager-link"
@@ -303,7 +306,7 @@ sanitized_scp=$("$manager" sanitize-url 'TOKEN@host.example:repo/path?token=QUER
 if env "${manager_env[@]}" "$manager" add "$test_root/missing-repository" --yes >/dev/null 2>&1; then
   fail "failed clone was accepted"
 fi
-stages=("$plugins_dir"/.plugin-artifacts/unassigned/add.* "$plugins_dir"/.plugin-artifacts/*/add.*)
+stages=("$plugins_dir"/.plugin-artifacts/*/add.*)
 [[ ${#stages[@]} == 0 ]] || fail "failed clone left staging directory"
 
 jq -n '[{"id":"acme.widget"}]' >"$IPC_LIST"
@@ -329,7 +332,35 @@ make_repo "$signal_repo" signal.widget
 signal_status=0
 IPC_SIGNAL_AFTER_RESCAN=1 env "${manager_env[@]}" "$manager" add "$signal_repo" --yes >/dev/null 2>&1 || signal_status=$?
 [[ $signal_status == 143 ]] || fail "TERM after move returned status $signal_status"
-[[ ! -e "$plugins_dir/signal.widget" ]] || fail "TERM after move left target"
+[[ -d "$plugins_dir/signal.widget" ]] || fail "TERM after move deleted committed source"
+
+signal_hook="$test_root/install-signal-hook"
+cat >"$signal_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "$1" in
+  before-discovery|before-enable)
+    kill -TERM "$PPID"
+    sleep 0.2
+    ;;
+esac
+EOF
+chmod +x -- "$signal_hook"
+discovery_signal_repo="$test_root/discovery-signal"
+make_repo "$discovery_signal_repo" discovery-signal.widget
+discovery_signal_status=0
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$signal_hook" \
+  "$manager" add "$discovery_signal_repo" --yes --enable >/dev/null 2>&1 || discovery_signal_status=$?
+[[ $discovery_signal_status == 143 ]] || fail "TERM during discovery returned status $discovery_signal_status"
+[[ -d "$plugins_dir/discovery-signal.widget" ]] || fail "TERM during discovery deleted committed source"
+
+enable_signal_repo="$test_root/enable-signal"
+make_repo "$enable_signal_repo" enable-signal.widget
+enable_signal_status=0
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$signal_hook" \
+  "$manager" add "$enable_signal_repo" --yes --enable >/dev/null 2>&1 || enable_signal_status=$?
+[[ $enable_signal_status == 143 ]] || fail "TERM during enable returned status $enable_signal_status"
+[[ -d "$plugins_dir/enable-signal.widget" ]] || fail "TERM during enable deleted committed source"
 
 credential_error=$(env "${manager_env[@]}" "$manager" add 'https://user:SECRET@example.invalid/repo?token=QUERY#fragment' --yes 2>&1 || true)
 [[ $credential_error != *SECRET* && $credential_error != *QUERY* && $credential_error != *fragment* ]] || fail "clone diagnostics leaked URL credentials"
@@ -857,7 +888,7 @@ git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid c
 git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 bulk_good_prior=$(git -C "$bulk_good" rev-parse HEAD)
 bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
-bulk_orphan_artifact="$bulk_plugins/.plugin-artifacts/orphan.widget/rollback.ABC123"
+bulk_orphan_artifact="$bulk_plugins/.plugin-artifacts/unassigned/rollback.ABC123"
 mkdir -p -- "${bulk_orphan_artifact%/*}"
 mkdir -- "$bulk_orphan_artifact"
 visible_non_git="$bulk_plugins/visible.widget"
@@ -1095,6 +1126,37 @@ mount_fail_backups=("$plugins_dir/.plugin-artifacts/mount-remove.widget/removed.
 [[ ${#mount_fail_backups[@]} == 1 && -f "${mount_fail_backups[0]}/manifest.json" ]] || fail "nested mount refusal did not retain backup"
 mv -T -- "${mount_fail_backups[0]}" "$mount_remove_dir"
 env "${manager_env[@]}" "$manager" remove mount-remove.widget --yes >/dev/null || fail "nested mount recovery cleanup failed"
+
+mount_equal_bin="$test_root/findmnt-equal-bin"
+mkdir -p -- "$mount_equal_bin"
+cat >"$mount_equal_bin/findmnt" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' "${@: -1}"
+EOF
+chmod +x -- "$mount_equal_bin/findmnt"
+equal_mount_dir="$plugins_dir/equal-mount.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$equal_mount_dir"
+if env "${manager_env[@]}" PATH="$mount_equal_bin:$PATH" "$manager" remove equal-mount.widget --yes >/dev/null 2>&1; then
+  fail "equal mount cleanup was accepted"
+fi
+equal_mount_backups=("$plugins_dir/.plugin-artifacts/equal-mount.widget/removed."*)
+[[ ${#equal_mount_backups[@]} == 1 && -f "${equal_mount_backups[0]}/manifest.json" ]] || fail "equal mount refusal did not retain backup"
+mv -T -- "${equal_mount_backups[0]}" "$equal_mount_dir"
+env "${manager_env[@]}" "$manager" remove equal-mount.widget --yes >/dev/null || fail "equal mount recovery cleanup failed"
+
+mount_root_bin="$test_root/findmnt-root-bin"
+mkdir -p -- "$mount_root_bin"
+cat >"$mount_root_bin/findmnt" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '/\n'
+EOF
+chmod +x -- "$mount_root_bin/findmnt"
+root_mount_dir="$plugins_dir/root-mount.widget"
+git clone -q -- "$remote_root/lifecycle.git" "$root_mount_dir"
+env "${manager_env[@]}" PATH="$mount_root_bin:$PATH" "$manager" remove root-mount.widget --yes >/dev/null || fail "containing root mount was rejected"
+[[ ! -e "$root_mount_dir" ]] || fail "root mount cleanup left source"
 env "${manager_env[@]}" "$manager" remove non-git.widget --yes >/dev/null || fail "non-Git removal failed"
 backup_count=0
 for backup in "$plugins_dir/.plugin-artifacts/non-git.widget"/removed.*; do
