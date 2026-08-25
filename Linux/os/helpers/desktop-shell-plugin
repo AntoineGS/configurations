@@ -171,10 +171,15 @@ require_commands() {
   done
 }
 
-validate_id() {
+validate_safe_id() {
   local id=$1
-  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "unsafe plugin id: $id"
-  [[ $id != *..* && $id != desktop.* && $id != omarchy.* ]] || fail "unsafe plugin id: $id"
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && $id != *..* ]] || fail "unsafe plugin id: $id"
+}
+
+validate_third_party_id() {
+  local id=$1
+  validate_safe_id "$id"
+  [[ $id != desktop.* && $id != omarchy.* ]] || fail "plugin id uses reserved namespace: $id"
 }
 
 sanitize_url() {
@@ -220,7 +225,7 @@ manifest_id() {
   local directory=$1 id
   id=$(jq -e -r '.id | select(type == "string" and length > 0)' -- "$directory/manifest.json") ||
     fail "validated manifest has no string id"
-  validate_id "$id"
+  validate_third_party_id "$id"
   printf '%s' "$id"
 }
 
@@ -288,7 +293,7 @@ list_json() {
   jq -e 'type == "array" and all(.[]; type == "object" and (.id | type) == "string")' \
     >/dev/null <<< "$response" || fail "IPC returned an invalid plugin list"
   while IFS= read -r id; do
-    validate_id "$id"
+    validate_safe_id "$id"
   done < <(jq -r '.[].id' <<< "$response")
   printf '%s\n' "$response"
 }
@@ -307,7 +312,7 @@ wait_for_discovery() {
 
 install_plugin() {
   local url=$1 expected_id=$2 enable=$3 yes=$4 id target response stage_identity
-  [[ -z $expected_id ]] || validate_id "$expected_id"
+  [[ -z $expected_id ]] || validate_third_party_id "$expected_id"
   validate_url "$url"
   (( yes )) || confirm_install "$url"
   mkdir -p -- "$plugins_dir"
@@ -352,7 +357,7 @@ build_placement() {
 
 enable_plugin() {
   local id=$1 placement response
-  validate_id "$id"
+  validate_safe_id "$id"
   placement=$(build_placement)
   response=$(run_ipc enablePlugin "$id" "$placement")
   [[ $response == ok ]] || fail "plugin enable failed: $response"
@@ -389,12 +394,12 @@ parse_enable_options() {
             ;;
           --before)
             [[ -z $placement_before && -z $placement_after ]] || fail "conflicting before/after placement"
-            validate_id "$value"
+            validate_safe_id "$value"
             placement_before=$value
             ;;
           --after)
             [[ -z $placement_before && -z $placement_after ]] || fail "conflicting before/after placement"
-            validate_id "$value"
+            validate_safe_id "$value"
             placement_after=$value
             ;;
         esac
@@ -415,7 +420,7 @@ parse_enable_options() {
 
 disable_plugin() {
   local id=$1 response
-  validate_id "$id"
+  validate_safe_id "$id"
   response=$(run_ipc setPluginEnabled "$id" false)
   [[ $response == ok ]] || fail "plugin disable failed: $response"
 }
@@ -736,7 +741,7 @@ rollback_retained_updates() {
 
 plugin_directory() {
   local id=$1 directory root_real directory_real
-  validate_id "$id"
+  validate_safe_id "$id"
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
   directory=$plugins_dir/$id
   [[ -d $directory && ! -L $directory ]] || fail "plugin not found: $id"
@@ -906,7 +911,7 @@ update_plugins() {
     mapfile -d '' directories < <(find "$plugins_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
     for directory in "${directories[@]}"; do
       id=${directory##*/}
-      validate_id "$id" >/dev/null 2>&1 || continue
+      validate_safe_id "$id" >/dev/null 2>&1 || continue
       is_git_plugin "$directory" || continue
       if update_plugin "$id" "$directory"; then
         changed=1

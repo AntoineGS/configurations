@@ -116,7 +116,11 @@ env "${manager_env[@]}" "$manager" add "$source_repo" --yes >/dev/null || fail "
 [[ -f "$plugins_dir/acme.widget/manifest.json" ]] || fail "plugin was not installed under manifest id"
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "add did not request rescan"
 
-jq -n '[{id:"acme.widget",name:"Acme Widget",kinds:["bar-widget"],enabled:false,clonedFrom:"local"}]' >"$IPC_LIST"
+jq -n '[
+  {id:"desktop.bar",name:"Desktop Bar",kinds:["bar"],enabled:true,firstParty:true},
+  {id:"Acme_Widget",name:"Acme Widget",kinds:["bar-widget"],enabled:false,clonedFrom:"local"},
+  {id:"weather",name:"Weather",kinds:["panel"],enabled:false,clonedFrom:"local"}
+]' >"$IPC_LIST"
 for accepted_id in weather Acme_Widget acme-widget; do
   make_repo "$test_root/$accepted_id" "$accepted_id"
   env "${manager_env[@]}" "$manager" validate "$test_root/$accepted_id" >/dev/null \
@@ -129,9 +133,11 @@ for rejected_id in desktop.clock omarchy.fake acme..widget; do
   fi
 done
 json_output=$(env "${manager_env[@]}" "$manager" list --json)
-[[ $(jq -r '.[0].id' <<<"$json_output") == acme.widget ]] || fail "list --json changed plugin data"
+[[ $(jq -e 'map(.id) == ["desktop.bar", "Acme_Widget", "weather"]' <<<"$json_output") == true ]] \
+  || fail "list --json rejected or changed valid plugin IDs"
 plain_output=$(env "${manager_env[@]}" "$manager" list)
-[[ $plain_output == $'acme.widget\tdisabled\tlocal\tbar-widget\tAcme Widget' ]] || fail "plain list format is incorrect"
+[[ $plain_output == *$'desktop.bar\tenabled'* && $plain_output == *$'Acme_Widget\tdisabled'* \
+  && $plain_output == *$'weather\tdisabled'* ]] || fail "plain list format is incorrect"
 
 env "${manager_env[@]}" "$manager" enable acme.widget --section right --index 2 || fail "enable failed"
 grep -Fq $'enablePlugin\tacme.widget\t{"section":"right","index":2}' "$log_file" || fail "placement JSON is incorrect"
