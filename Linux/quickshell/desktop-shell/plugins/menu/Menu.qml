@@ -33,8 +33,6 @@ Item {
   property string requestDir: ""
   property string pendingAction: ""
   property real animatedListHeight: listHeight
-  property real cardTop: 0
-  property bool cardPositioned: false
   property string motionState: "closed"
   property real materialXScale: 0
   property real materialYScale: 0
@@ -45,7 +43,7 @@ Item {
   property real scrimOpacity: 0
   property real closeTargetXScale: 0
   property real closeTargetYScale: 0
-  property bool preparingCardPosition: false
+  property bool preparingCardHeight: false
   property bool pendingCardFinalization: false
   property int readinessGeneration: 0
   property bool listTransitionsEnabled: motionState === "open"
@@ -80,34 +78,22 @@ Item {
     Math.max(rowHeight, displayModel.count * rowHeight + Math.max(0, displayModel.count - 1) * rowSpacing),
     Style.space(440)
   )
-  readonly property real cardHeight: Math.min(
-    root.contentMargin * 2 + Style.space(54) + root.animatedListHeight
-      + (root.healthSummary ? Style.space(24) : 0),
-    panel.height - Style.gapsOut * 2
-  )
+  readonly property real desiredCardHeight: root.contentMargin * 2 + Style.space(54) + root.animatedListHeight
+    + (root.healthSummary ? Style.space(24) : 0)
+  readonly property real cardHeight: panel.height > 0
+    ? Math.min(root.desiredCardHeight, Math.max(1, panel.height - Style.gapsOut * 2))
+    : root.desiredCardHeight
+  readonly property real cardTop: MenuModel.launcherCardTop(panel.height, root.cardHeight, Style.gapsOut)
 
-  function prepareCardPosition() {
-    root.preparingCardPosition = true
+  function prepareCardHeight() {
+    root.preparingCardHeight = true
     root.animatedListHeight = root.listHeight
     root.animatedListHeight = Qt.binding(function() { return root.listHeight })
-    root.retargetCardPosition()
-    root.cardPositioned = true
-    root.preparingCardPosition = false
-  }
-
-  function retargetCardPosition() {
-    root.cardTop = Math.round((panel.height - root.cardHeight) / 2)
+    root.preparingCardHeight = false
   }
 
   Behavior on animatedListHeight {
-    enabled: root.opened && root.cardPositioned && !root.preparingCardPosition && Motion.enabled
-    NumberAnimation {
-      duration: Motion.spatialDuration
-      easing.type: Motion.spatialEasing
-    }
-  }
-  Behavior on cardTop {
-    enabled: root.opened && root.cardPositioned && !root.preparingCardPosition && Motion.enabled
+    enabled: root.opened && !root.preparingCardHeight && Motion.enabled
     NumberAnimation {
       duration: Motion.spatialDuration
       easing.type: Motion.spatialEasing
@@ -182,6 +168,19 @@ Item {
     var target = root.nextSelectable(root.selectedIndex, 1)
     root.selectedIndex = target >= 0 ? target : 0
     root.cursorActive = target >= 0
+    root.syncResultSelection()
+  }
+
+  function syncResultSelection() {
+    var target = root.cursorActive && root.selectedIndex < displayModel.count ? root.selectedIndex : -1
+    if (resultList.currentIndex !== target) {
+      resultList.currentIndex = target
+      return
+    }
+    if (target >= 0 && resultList.currentItem !== resultList.itemAtIndex(target)) {
+      resultList.currentIndex = -1
+      resultList.currentIndex = target
+    }
   }
 
   function currentDisplayRows() {
@@ -216,6 +215,8 @@ Item {
       root.applyDisplayRows(dmenuRows)
       root.settleCursor()
       if (root.menuMode === "input") root.cursorActive = false
+      root.syncResultSelection()
+      Qt.callLater(root.syncResultSelection)
       return
     }
 
@@ -256,6 +257,7 @@ Item {
     var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
     root.applyDisplayRows(rows)
     root.settleCursor()
+    Qt.callLater(root.syncResultSelection)
   }
 
   function parentPath(id) {
@@ -269,6 +271,7 @@ Item {
     if (target < 0) return
     root.cursorActive = true
     root.selectedIndex = target
+    root.syncResultSelection()
     resultList.positionViewAtIndex(target, ListView.Contain)
   }
 
@@ -367,15 +370,10 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    if (reopening) {
-      root.cardPositioned = true
-      root.opened = true
-    }
+    if (reopening) root.opened = true
     root.rebuildDisplay()
-    if (reopening) {
-      root.retargetCardPosition()
-    } else {
-      root.prepareCardPosition()
+    if (!reopening) {
+      root.prepareCardHeight()
       root.opened = true
     }
     if (root.appLibrary) root.appLibrary.refreshIcons()
@@ -395,15 +393,10 @@ Item {
     root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
     root.selectedIndex = 0
     root.cursorActive = root.menuMode === "select"
-    if (reopening) {
-      root.cardPositioned = true
-      root.opened = true
-    }
+    if (reopening) root.opened = true
     root.rebuildDisplay()
-    if (reopening) {
-      root.retargetCardPosition()
-    } else {
-      root.prepareCardPosition()
+    if (!reopening) {
+      root.prepareCardHeight()
       root.opened = true
     }
     Qt.callLater(function() { searchField.forceActiveFocus() })
@@ -468,7 +461,7 @@ Item {
           || !root.menuReady || !root.opened) return
       root.pendingCardFinalization = false
       root.rebuildDisplay()
-      root.prepareCardPosition()
+      root.prepareCardHeight()
       root.beginOpenMotion()
       searchField.forceActiveFocus()
     })
@@ -824,7 +817,7 @@ Item {
       width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
       height: root.cardHeight
       anchors.horizontalCenter: parent.horizontalCenter
-      y: root.cardPositioned ? root.cardTop : Math.round((panel.height - height) / 2)
+      y: root.cardTop
       opacity: root.surfaceOpacity
 
       transform: Scale {
@@ -926,8 +919,6 @@ Item {
               spacing: root.rowSpacing
               boundsBehavior: Flickable.StopAtBounds
               transitionsEnabled: root.listTransitionsEnabled
-              currentIndex: root.cursorActive && root.selectedIndex < displayModel.count
-                ? root.selectedIndex : -1
               highlightFollowsCurrentItem: false
 
               highlight: CursorSurface {

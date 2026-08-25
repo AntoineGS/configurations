@@ -421,6 +421,16 @@ function dmenuRows(options, query) {
   return rows
 }
 
+function launcherCardTop(panelHeight, cardHeight, margin) {
+  var height = Math.max(0, Number(panelHeight) || 0)
+  if (height === 0) return 0
+  var inset = Math.max(0, Number(margin) || 0)
+  var extent = Math.max(0, Number(cardHeight) || 0)
+  var preferred = Math.round(height / 3)
+  var maxTop = Math.max(inset, height - extent - inset)
+  return Math.max(inset, Math.min(preferred, maxTop))
+}
+
 function planRowReconciliation(currentRows, nextRows) {
   var current = Array.isArray(currentRows) ? currentRows.slice() : []
   var next = Array.isArray(nextRows) ? nextRows : []
@@ -522,6 +532,7 @@ if (typeof module !== "undefined") {
     calculatorRow: calculatorRow,
     composeSearchResults: composeSearchResults,
     dmenuRows: dmenuRows,
+    launcherCardTop: launcherCardTop,
     planRowReconciliation: planRowReconciliation
   }
 }
