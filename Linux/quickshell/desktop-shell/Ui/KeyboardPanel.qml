@@ -45,7 +45,7 @@ PanelWindow {
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
   property int elevationInset: Style.space(24)
-  property var borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, Math.max(1, Style.space(2)))
+  property alias borderSpec: card.borderSpec
   property bool centerOnBar: false
   property bool open: false
   property int gap: Style.gapsOut  // distance between bar edge and panel
@@ -389,16 +389,13 @@ PanelWindow {
 
   // --- card ----------------------------------------------------------------
 
-  ElevatedSurface {
+  PanelSurface {
     id: card
     x: root.cardOrigin.x
     y: root.cardOrigin.y
     width: root.contentWidth
     height: root.contentHeight
-    color: Color.barPanels.background
-    borderSpec: root.borderSpec
     padding: root.padding
-    radius: Style.cornerRadius
     revealed: root.open || root.popoutSwitching
     entranceX: root.entranceX
     entranceY: root.entranceY

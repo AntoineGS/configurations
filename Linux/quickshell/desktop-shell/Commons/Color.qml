@@ -128,26 +128,29 @@ QtObject {
     property color low: root.pick("notifications.low", "#89dceb")
     property color critical: root.pick("notifications.critical", root.urgent)
   }
-  readonly property QtObject menu: QtObject {
-    property color background: root.composed("menu.background", "menu.background-alpha", root.background, 1.0)
-    property color text: root.pick("menu.text", root.foreground)
-    property color border: root.composed("menu.border", "menu.border-alpha", root.foreground, 1.0)
-    property color scrim: root.composed("menu.scrim", "menu.scrim-alpha", root.background, 0.5)
-    property color selectedBackground: root.composed("menu.selected-background", "menu.selected-background-alpha", root.foreground, 0.08)
-    property color selectedText: root.pick("menu.selected-text", root.accent)
-    property color selectedBorder: root.composed("menu.selected-border", "menu.selected-border-alpha", root.foreground, 0.0)
+  readonly property QtObject modal: QtObject {
+    property color scrim: root.composed(
+      "modal.scrim",
+      "modal.scrim-alpha",
+      root.background,
+      0.5
+    )
   }
   // polkit + lock share a single border-alpha across border / border-active /
   // border-error: the three states are mutually exclusive in time, so one
   // companion is enough.
   readonly property QtObject polkit: QtObject {
-    property color background: root.composed("polkit.background", "polkit.background-alpha", root.background, 1.0)
-    property color text: root.pick("polkit.text", root.foreground)
+    property color background: root.inheritedComposed(
+      "polkit", "bar-panels", "background", "background-alpha", root.background, 1.0)
+    property color text: root.inheritedPick("polkit", "text", "bar-panels", root.foreground)
+    property color border: root.inheritedComposed(
+      "polkit", "bar-panels", "border", "border-alpha", root.accent, 1.0)
     property color textError: root.pick("polkit.text-error", root.urgent)
-    property color border: root.composed("polkit.border", "polkit.border-alpha", root.accent, 1.0)
-    property color borderError: root.composed("polkit.border-error", "polkit.border-alpha", root.urgent, 1.0)
+    property color borderError: root.composed(
+      "polkit.border-error", "polkit.border-alpha", root.urgent, 1.0)
     property color accent: root.pick("polkit.accent", root.accent)
-    property color scrim: root.composed("polkit.scrim", "polkit.scrim-alpha", root.background, 0.5)
+    property color scrim: root.composed(
+      "polkit.scrim", "polkit.scrim-alpha", root.background, 0.5)
   }
   readonly property QtObject lock: QtObject {
     property color background: root.composed("lock.background", "lock.background-alpha", root.background, 0.8)

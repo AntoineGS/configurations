@@ -20,19 +20,12 @@ Item {
   property var emojis: []
   property var filteredEmojis: []
 
-  // Shares the [menu] surface tokens — themes that style the menu also
-  // style emojis. Selected-cell colors composed in the
-  // singleton so consumers drop them straight into Rectangle bindings.
-  property color background: Color.menu.background
-  property color foreground: Color.menu.text
-  property color border: Color.menu.border
-  property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  property color scrim: Color.menu.scrim
-  property color selectedBackground: Color.menu.selectedBackground
-  property color selectedText: Color.menu.selectedText
-  readonly property int cornerRadius: Style.cornerRadius
-  property string fontFamily: Style.font.menuFamily
-  property int contentMargin: Style.spacing.panelPadding
+  property color foreground: Color.barPanels.text
+  property color secondaryForeground: Color.barPanels.secondaryText
+  property color accent: Color.accent
+  property color scrim: Color.modal.scrim
+  property string fontFamily: Style.font.family
+  property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
   property int cardWidth: Math.min(Style.space(400), panel.width - Style.gapsOut * 2)
@@ -48,7 +41,7 @@ Item {
     root.selectedIndex = 0
     root.cursorActive = true
     root.rebuildDisplay()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function close() {
@@ -159,12 +152,12 @@ Item {
   }
   PanelWindow {
     id: panel
-    visible: root.opened
+    visible: root.opened || card.opacity > 0
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "desktop-emojis"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
     Rectangle {
@@ -177,60 +170,16 @@ Item {
       onClicked: root.dismiss()
     }
 
-    BorderSurface {
+    PanelSurface {
       id: card
       width: root.cardWidth
       height: root.cardHeight
-      radius: root.cornerRadius
       anchors.centerIn: parent
-      color: root.background
-      borderSpec: root.borderSpec
       padding: root.contentMargin
+      revealed: root.opened
+      entranceY: -Style.space(6)
 
       MouseArea { anchors.fill: parent; onClicked: {} }
-
-      Item {
-        id: keyCatcher
-        anchors.fill: parent
-        focus: true
-
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
-            else root.dismiss()
-            event.accepted = true
-          } else if (Util.editsFilter(event, root.filterText)) {
-            root.setFilter(Util.editedFilter(event, root.filterText))
-            event.accepted = true
-          } else if (event.key === Qt.Key_Left) {
-            root.select(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Right) {
-            root.select(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up) {
-            root.selectRow(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Down) {
-            root.selectRow(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageUp) {
-            root.selectPage(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageDown) {
-            root.selectPage(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            else if (displayModel.count > 0) root.cursorActive = true
-            event.accepted = true
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32 && event.text.charCodeAt(0) !== 127) {
-            root.setFilter(root.filterText + event.text)
-            event.accepted = true
-          }
-        }
-      }
 
       Column {
         anchors.fill: parent
@@ -240,22 +189,46 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: root.contentSpacing
 
-        Rectangle {
+        TextField {
+          id: searchField
           width: parent.width
           height: root.headerHeight
-          radius: root.cornerRadius
-          color: "transparent"
+          text: root.filterText
+          placeholderText: "Search emojis…"
+          foreground: root.foreground
+          accent: root.accent
+          font.family: root.fontFamily
+          Keys.priority: Keys.BeforeItem
+          onTextEdited: if (text !== root.filterText) root.setFilter(text)
 
-          Text {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.filterText || "Search emojis…"
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.58
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            elide: Text.ElideRight
+          Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape) {
+              if (root.filterText) root.setFilter("")
+              else root.dismiss()
+              event.accepted = true
+            } else if (event.key === Qt.Key_Left) {
+              root.select(-1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Right) {
+              root.select(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Up) {
+              root.selectRow(-1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Down) {
+              root.selectRow(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageUp) {
+              root.selectPage(-1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_PageDown) {
+              root.selectPage(1)
+              event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              if (root.cursorActive) root.activateIndex(root.selectedIndex)
+              else if (displayModel.count > 0) root.cursorActive = true
+              event.accepted = true
+            }
           }
         }
 
@@ -272,24 +245,21 @@ Item {
             cellHeight: root.cellHeight
             boundsBehavior: Flickable.StopAtBounds
 
-            delegate: Rectangle {
+            delegate: CursorSurface {
               required property int index
               required property string emoji
 
-              readonly property bool hasCursor: root.cursorActive && index === root.selectedIndex
-
               width: root.cellWidth
               height: root.cellHeight
-              radius: root.cornerRadius
-              color: hasCursor ? root.selectedBackground : "transparent"
+              hasCursor: root.cursorActive && index === root.selectedIndex
+              foreground: root.foreground
+              accent: root.accent
 
               Text {
+                anchors.centerIn: parent
                 text: parent.emoji
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
-                anchors.centerIn: parent
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
               }
 
               MouseArea {
@@ -317,7 +287,7 @@ Item {
 
             Text {
               text: "󰈉"
-              color: root.selectedText
+              color: root.accent
               opacity: 0.8
               font.family: root.fontFamily
               font.pixelSize: Style.font.displayLarge
@@ -327,7 +297,7 @@ Item {
 
             Text {
               text: "No matches for “" + root.filterText + "”"
-              color: root.foreground
+              color: root.secondaryForeground
               opacity: 0.7
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
