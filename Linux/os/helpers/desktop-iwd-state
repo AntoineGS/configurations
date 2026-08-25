@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly SCRIPT_NAME="desktop-iwd-state"
+
+error() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+command -v busctl >/dev/null 2>&1 || error "busctl is required"
+command -v jq >/dev/null 2>&1 || error "jq is required"
+
+objects_json="$(busctl --json=short --system call net.connman.iwd / org.freedesktop.DBus.ObjectManager GetManagedObjects)" || error "unable to query iwd objects"
+jq -e '
+  .data as $data
+  | if ($data | type) != "array" or ($data | length) != 1 then false
+    else ($data[0] | type) == "object"
+    end
+' >/dev/null <<<"$objects_json" || error "iwd returned malformed object data"
+jq -e '
+  .data[0] | to_entries | all(.[];
+    (.value["net.connman.iwd.Device"] // null) as $device
+    | if $device == null then true
+      elif ($device | type) != "object" then false
+      else ($device.Mode | type) == "object"
+        and ($device.Mode.data | type) == "string"
+      end)
+' >/dev/null <<<"$objects_json" || error "iwd returned malformed device data"
+
+station_path="$(jq -r '
+  .data[0] | to_entries
+  | map(. as $entry
+      | ($entry.value["net.connman.iwd.Device"] // null) as $device
+      | select(($device | type) == "object")
+      | select(($device.Mode | type) == "object")
+      | select(($device.Mode.data | type) == "string" and $device.Mode.data == "station"))
+  | sort_by(.key) | first | .key // null
+  ' <<<"$objects_json" 2>/dev/null || error "iwd returned malformed station data")"
+
+if [[ "$station_path" == null ]]; then
+  printf '%s\n' '{"available":false,"device":null,"stationPath":null,"state":"disconnected","connectedSsid":null,"signal":0,"networks":[]}'
+  exit 0
+fi
+
+jq -e --arg path "$station_path" '
+  .data[0][$path] as $station
+  | $station["net.connman.iwd.Device"] as $device
+  | $station["net.connman.iwd.Station"] as $station_properties
+  | ($station_properties.ConnectedNetwork // null) as $connected
+  | ($station | type) == "object"
+    and ($device | type) == "object"
+    and ($device.Name | type) == "object"
+    and ($device.Name.data | type) == "string"
+    and ($station_properties | type) == "object"
+    and ($station_properties.State | type) == "object"
+    and ($station_properties.State.data | type) == "string"
+    and (if $connected == null then true
+         elif ($connected | type) == "object" then ($connected.data | type) == "string"
+         else false
+         end)
+  ' >/dev/null <<<"$objects_json" || error "iwd returned malformed station data"
+
+device_name="$(jq -er --arg path "$station_path" '.data[0][$path]["net.connman.iwd.Device"].Name.data' <<<"$objects_json")" || error "iwd returned malformed station name"
+
+ordered_json="$(busctl --json=short --system call net.connman.iwd "$station_path" net.connman.iwd.Station GetOrderedNetworks)" || error "unable to query iwd networks"
+jq -e '
+  .data as $data
+  | if ($data | type) != "array" or ($data | length) != 1 or ($data[0] | type) != "array" then false
+    else all($data[0][];
+      (type == "array") and (length == 2) and
+      (.[0] | type) == "string" and (.[1] | type) == "number")
+    end
+' >/dev/null <<<"$ordered_json" || error "iwd returned malformed network data"
+jq -e --argjson objects "$objects_json" '
+  ($objects.data[0]) as $all
+  | all(.data[0][];
+      . as $row
+      | ($all[$row[0]] // null) as $entry
+      | ($entry["net.connman.iwd.Network"] // null) as $network
+      | if ($network | type) != "object" then false
+        else ($network.Name | type) == "object"
+          and ($network.Name.data | type) == "string"
+          and ($network.Type | type) == "object"
+          and ($network.Type.data | type) == "string"
+          and ($network.Connected | type) == "object"
+          and ($network.Connected.data | type) == "boolean"
+          and (if ($network.KnownNetwork // null) == null then true
+               elif ($network.KnownNetwork | type) == "object" then
+                 ($network.KnownNetwork.data | type) == "string"
+               else false
+               end)
+        end)
+' >/dev/null <<<"$ordered_json" || error "iwd returned malformed network data"
+
+jq -e --argjson objects "$objects_json" --arg path "$station_path" '
+  ($objects.data[0]) as $all
+  | ($all[$path]["net.connman.iwd.Station"]) as $station
+  | if $station.State.data != "connected" then true
+    else
+      ($station.ConnectedNetwork.data // "") as $connected_path
+      | ($all[$connected_path]["net.connman.iwd.Network"].Connected.data // false) as $connected
+      | ($connected_path | length) > 0
+        and (any(.data[0][]; .[0] == $connected_path))
+        and $connected == true
+    end
+' >/dev/null <<<"$ordered_json" || error "iwd returned incoherent connected snapshot"
+
+jq -n \
+  --arg device "$device_name" \
+  --arg station_path "$station_path" \
+  --argjson objects "$objects_json" \
+  --argjson ordered "$ordered_json" '
+  def value($object; $interface; $property):
+    $object[$interface][$property].data;
+  def signal_percent:
+    (((. / 100) + 90) * 2.5 | round) as $value
+    | if $value < 0 then 0 elif $value > 100 then 100 else $value end;
+
+  ($objects.data[0]) as $all
+  | ($all[$station_path]) as $station
+  | ($station["net.connman.iwd.Station"]) as $station_properties
+  | ($station_properties.ConnectedNetwork.data // null) as $connected_path
+  | [ $ordered.data[0][] | . as $row
+      | ($all[$row[0]]["net.connman.iwd.Network"]) as $network
+      | ($row[1] | signal_percent) as $signal
+      | {path: $row[0], ssid: ($network.Name.data // ""), signal: $signal,
+         security: ($network.Type.data // ""), known: ($network.KnownNetwork != null),
+         connected: ($network.Connected.data // false)}
+    ] as $networks
+  | {available: true, device: $device, stationPath: $station_path,
+     state: ($station_properties.State.data // "unknown"),
+     connectedSsid: ([$networks[] | select(.path == $connected_path) | .ssid] | first // null),
+     signal: ([$networks[] | select(.path == $connected_path) | .signal] | first // 0),
+     networks: $networks}
+  ' || error "unable to normalize iwd data"

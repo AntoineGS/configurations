@@ -12,21 +12,17 @@ function connectionIcon(kind, signalStrength) {
   return "󰤮"
 }
 
-function networkCapabilityAvailable(backend, networkManagerBackend, devices) {
-  return backend === networkManagerBackend && devices !== undefined && devices !== null
-}
-
 function wifiRow(network) {
   if (!network) return null
-  var signal = Number(network.signalStrength || 0)
-  if (signal <= 1) signal *= 100
+  var signal = Number(network.signal || 0)
   signal = Math.max(0, Math.min(100, Math.round(signal)))
   return {
+    path: String(network.path || ""),
     connected: !!network.connected,
     known: !!network.known,
-    ssid: String(network.name || ""),
+    ssid: String(network.ssid || ""),
     signal: signal,
-    security: network.security
+    security: String(network.security || "open")
   }
 }
 
@@ -54,14 +50,18 @@ function isProtected(security, openSecurity) {
   return security !== openSecurity
 }
 
+function connectionSessionKey(device, state, ssid) {
+  return JSON.stringify([String(device || ""), String(state || ""), String(ssid || "")])
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     wifiIconFor: wifiIconFor,
     connectionIcon: connectionIcon,
-    networkCapabilityAvailable: networkCapabilityAvailable,
     wifiRow: wifiRow,
     sortWifiRows: sortWifiRows,
     wifiSectionTitle: wifiSectionTitle,
-    isProtected: isProtected
+    isProtected: isProtected,
+    connectionSessionKey: connectionSessionKey
   }
 }

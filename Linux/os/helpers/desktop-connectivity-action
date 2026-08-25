@@ -42,9 +42,14 @@ case $domain in
     ;;
   network)
     case $action in
-      connect)
+      scan)
         (($# == 3)) || invalid_arguments
-        [[ -n ${3:-} ]] || invalid_arguments
+        [[ ${3:-} =~ ^[[:alnum:]_.:-]+$ ]] || invalid_arguments
+        run_command iwctl station "$3" scan
+        ;;
+      connect)
+        (($# == 4)) || invalid_arguments
+        [[ ${3:-} =~ ^[[:alnum:]_.:-]+$ && -n ${4:-} ]] || invalid_arguments
 
         password=''
         if [[ ! -t 0 ]]; then
@@ -52,42 +57,40 @@ case $domain in
         fi
 
         if [[ -n $password ]]; then
-          if ! printf '%s\n' "$password" | nmcli --ask device wifi connect "$3" >/dev/null 2>&1; then
+          if ! printf '%s\n' "$password" | run_command iwctl station "$3" connect "$4"; then
             exit 1
           fi
         else
-          run_command nmcli device wifi connect "$3"
+          run_command iwctl station "$3" connect "$4"
         fi
         ;;
       disconnect)
         (($# == 3)) || invalid_arguments
-        [[ -n ${3:-} ]] || invalid_arguments
-        run_command nmcli connection down id "$3"
+        [[ ${3:-} =~ ^[[:alnum:]_.:-]+$ ]] || invalid_arguments
+        run_command iwctl station "$3" disconnect
         ;;
       forget)
         (($# == 3)) || invalid_arguments
         [[ -n ${3:-} ]] || invalid_arguments
-        run_command nmcli connection delete id "$3"
+        run_command iwctl known-networks "$3" forget
         ;;
       set-dns)
         (($# == 4)) || invalid_arguments
-        [[ -n ${3:-} ]] || invalid_arguments
+        [[ ${3:-} =~ ^[[:alnum:]_.:-]+$ ]] || invalid_arguments
 
         case $4 in
           DHCP)
-            run_command nmcli connection modify "$3" \
-              ipv4.ignore-auto-dns no ipv4.dns "" \
-              ipv6.ignore-auto-dns no ipv6.dns ""
+            run_command resolvectl revert "$3"
             ;;
           Cloudflare)
-            run_command nmcli connection modify "$3" \
-              ipv4.ignore-auto-dns yes ipv4.dns 1.1.1.1,1.0.0.1 \
-              ipv6.ignore-auto-dns yes ipv6.dns 2606:4700:4700::1111,2606:4700:4700::1001
+            run_command resolvectl dns "$3" \
+              1.1.1.1 1.0.0.1 \
+              2606:4700:4700::1111 2606:4700:4700::1001
             ;;
           Google)
-            run_command nmcli connection modify "$3" \
-              ipv4.ignore-auto-dns yes ipv4.dns 8.8.8.8,8.8.4.4 \
-              ipv6.ignore-auto-dns yes ipv6.dns 2001:4860:4860::8888,2001:4860:4860::8844
+            run_command resolvectl dns "$3" \
+              8.8.8.8 8.8.4.4 \
+              2001:4860:4860::8888 2001:4860:4860::8844
             ;;
           *)
             invalid_arguments
