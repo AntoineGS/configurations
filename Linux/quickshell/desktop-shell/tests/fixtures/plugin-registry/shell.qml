@@ -14,8 +14,11 @@ ShellRoot {
   property string changedId: ""
   property string pluginsRoot: Quickshell.env("PLUGIN_REGISTRY_PLUGINS_DIR")
   property string externalReleasePath: Quickshell.env("PLUGIN_REGISTRY_RELEASE_EXTERNAL")
+  property string watcherFifoPath: Quickshell.env("PLUGIN_REGISTRY_WATCH_FIFO")
+  property bool fifoMode: Quickshell.env("DESKTOP_SHELL_WATCH_FIFO_TEST") === "1"
   property int watchReloadReadyCount: 0
   property int scanFinishedCount: 0
+  property var observedVersions: []
   property bool guardAssertionsStarted: false
   property bool finishStarted: false
   property var observedIds: ({})
@@ -48,6 +51,18 @@ ShellRoot {
     command: ["bash", "-c", "touch -- \"$0\"", root.externalReleasePath]
   }
 
+  Process {
+    id: swapProcess
+  }
+
+  Timer {
+    id: firstSwapTimer
+    interval: 500
+    repeat: false
+    running: true
+    onTriggered: if (root.fifoMode) root.swapPlugin("2.0.0")
+  }
+
 
   function manifest(id, kinds, entryPoints, options) {
     var result = {
@@ -75,6 +90,19 @@ ShellRoot {
 
   function check(condition, message) {
     if (!condition) fail(message)
+  }
+
+  function swapPlugin(version) {
+    var value = JSON.stringify(manifest("acme.widget", ["bar-widget"], { barWidget: "Widget.qml" }, {
+      version: version
+    }))
+    swapProcess.command = ["bash", "-c",
+      "set -e; stage=\"$1/.stage.acme.widget\"; rm -rf -- \"$stage\"; mkdir -p -- \"$stage\"; "
+      + "printf '%s\\n' \"$4\" >\"$stage/manifest.json\"; "
+      + "mv -- \"$stage/manifest.json\" \"$1/acme.widget/manifest.json\"; "
+      + "rmdir -- \"$stage\"; printf '%s\\n' \"$2/acme.widget/manifest.json\" >\"$3\"",
+      "--", root.pluginsRoot, root.pluginsRoot, root.watcherFifoPath, value]
+    swapProcess.running = true
   }
 
   function finishGuardAssertions() {
@@ -106,7 +134,29 @@ ShellRoot {
       "second atomic watcher event converges to latest manifest")
     check(registry.pluginSourceGeneration > oldGeneration,
       "plugin source generation advances independently of reload state")
+    registry.recordPluginError("desktop.audio", "widget load failed", "widget")
+    registry.recordPluginError("desktop.audio", "PipeWire unavailable", "capability:panel:desktop.audio")
+    registry.parseScanOutput(block("thirdparty", "/third/scan", manifest("acme.scan", ["panel"], { panel: "Panel.qml" })))
+    check(hasError("desktop.audio", "widget load failed")
+      && hasError("desktop.audio", "PipeWire unavailable"),
+      "scan preserves independent load and capability errors")
+    registry.clearPluginError("desktop.audio", "capability:panel:desktop.audio")
+    check(hasError("desktop.audio", "widget load failed")
+      && !hasError("desktop.audio", "PipeWire unavailable"),
+      "capability recovery does not clear load errors")
     resultFile.setText(JSON.stringify({ ok: true }))
+    Qt.exit(0)
+  }
+
+  function finishFifoAssertions() {
+    if (root.finishStarted) return
+    root.finishStarted = true
+    check(root.observedVersions.length === 3, "FIFO watcher records initial and both complete scans")
+    check(root.observedVersions[0] === "1.0.0" && root.observedVersions[1] === "2.0.0"
+      && root.observedVersions[2] === "3.0.0", "FIFO watcher observes complete old/new/latest versions")
+    check(registry.installedPlugins["acme.widget"].version === "3.0.0",
+      "FIFO watcher converges to latest same-parent swap")
+    resultFile.setText(JSON.stringify({ ok: true, observedVersions: root.observedVersions }))
     Qt.exit(0)
   }
 
@@ -228,7 +278,6 @@ ShellRoot {
     registry.clearPluginError("acme.mixed", "widget")
     check(hasError("acme.mixed", "service failed") && !hasError("acme.mixed", "widget failed"),
       "component-scoped errors clear independently")
-
     registry.guardRetryLimit = 2
     registry.guardRetryCount = 0
     registry.pendingWatchIds = ({})
@@ -271,6 +320,10 @@ ShellRoot {
     }
     function onWatchReloadReady(serial) {
       root.watchReloadReadyCount++
+      if (root.fifoMode) {
+        registry.rescan()
+        return
+      }
       if (root.watchReloadReadyCount === 1) {
         registry.queueLocalPluginChange("acme.late")
         registry.rescan()
@@ -278,6 +331,15 @@ ShellRoot {
     }
     function onScanFinished() {
       root.scanFinishedCount++
+      if (root.fifoMode) {
+        var nextVersions = root.observedVersions.slice(0)
+        nextVersions.push(String(registry.installedPlugins["acme.widget"]
+          ? registry.installedPlugins["acme.widget"].version : ""))
+        root.observedVersions = nextVersions
+        if (root.scanFinishedCount === 2) root.swapPlugin("3.0.0")
+        else if (root.scanFinishedCount === 3) root.finishFifoAssertions()
+        return
+      }
       root.runRescanAssertions()
       if (root.watchReloadReadyCount >= 2 && root.scanFinishedCount >= 3)
         root.finishGuardAssertions()
@@ -286,7 +348,10 @@ ShellRoot {
 
   Component.onCompleted: {
     registry.firstPartyDir = root.firstPartyRoot
+    registry.pluginsDir = root.pluginsRoot
+    if (root.fifoMode) registry.pluginWatchEnabled = true
     registry.rescan()
+    if (root.fifoMode) firstSwapTimer.start()
   }
 
   Timer {

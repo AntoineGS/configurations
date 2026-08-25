@@ -32,8 +32,9 @@ Panel {
   function reportCapability() {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
     if (!registry) return
-    if (capabilityAvailable) registry.clearPluginError(moduleName)
-    else registry.recordPluginError(moduleName, "Controllable display unavailable")
+    var scope = "capability:panel:" + moduleName
+    if (capabilityAvailable) registry.clearPluginError(moduleName, scope)
+    else registry.recordPluginError(moduleName, "Controllable display unavailable", scope)
   }
 
   function applyState(raw) {

@@ -761,7 +761,10 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { shell.panelEntries = shell.computePanelEntries() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell.panelEntries = shell.computePanelEntries()
+    }
   }
 
   Instantiator {
@@ -849,7 +852,10 @@ ShellRoot {
   // widgets use the same first-party manifest contract as third-party widgets.
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { shell.syncPluginWidgets() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell.syncPluginWidgets()
+    }
   }
 
   property var pluginWidgetComponents: ({})
@@ -944,10 +950,7 @@ ShellRoot {
     shell.unloadPanels()
     shell.unloadPluginServices()
     shell.unloadPluginWidgets()
-    Qt.callLater(function() {
-      shell.pluginBarReloadEnabled = true
-      shell.finishPluginReload()
-    })
+    Qt.callLater(shell.finishPluginReload)
   }
 
   function finishPluginReload() {
@@ -1022,6 +1025,7 @@ ShellRoot {
       shell._syncServices()
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
+      shell.pluginBarReloadEnabled = true
     }
     function onRescanRequested() {
       shell.reloadPlugins()
