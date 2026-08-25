@@ -10,6 +10,7 @@ script_dir=$(dirname -- "$script_path")
 readonly script_dir
 readonly plugins_dir=${DESKTOP_SHELL_PLUGINS_DIR:-$HOME/.config/omarchy/plugins}
 readonly artifact_root_name=.plugin-artifacts
+readonly artifact_unassigned_name=_unassigned
 readonly validator=${DESKTOP_SHELL_PLUGIN_VALIDATE:-$script_dir/desktop-shell-plugin-validate}
 readonly ipc=${DESKTOP_SHELL_PLUGIN_IPC:-$script_dir/omarchy-shell}
 
@@ -114,11 +115,7 @@ cleanup() {
     publication_public_fd=-1
   fi
   quarantine_owned_target
-  if (( add_lock_fd >= 0 )); then
-    flock -u "$add_lock_fd" || true
-    exec {add_lock_fd}>&-
-    add_lock_fd=-1
-  fi
+  release_manager_lock
   if (( root_fd >= 0 )); then
     exec {root_fd}<&-
     root_fd=-1
@@ -145,6 +142,14 @@ cleanup() {
     common_fd=-1
   fi
   (( cleanup_failure == 0 ))
+}
+
+release_manager_lock() {
+  if (( add_lock_fd >= 0 )); then
+    flock -u "$add_lock_fd" || true
+    exec {add_lock_fd}>&-
+    add_lock_fd=-1
+  fi
 }
 
 handle_signal() {
@@ -230,8 +235,14 @@ manifest_id() {
 }
 
 find_duplicate_id() {
-  local requested_id=$1 exclude_dir=${2-} manifest candidate
+  local requested_id=$1 exclude_dir=${2-} manifest candidate scan_file duplicate=0
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || return 0
+  scan_file=$(mktemp) || return 1
+  if ! find "$plugins_dir" -mindepth 2 -maxdepth 2 -name manifest.json \
+    -not -path "$plugins_dir/.*" -print0 | sort -z >"$scan_file"; then
+    rm -f -- "$scan_file"
+    return 1
+  fi
   while IFS= read -r -d '' manifest; do
     [[ $manifest == "$stage_dir/manifest.json" ]] && continue
     if [[ ${manifest%/manifest.json} == "$plugins_dir/$requested_id" ]] || \
@@ -241,10 +252,13 @@ find_duplicate_id() {
     candidate=$(jq -r '.id // empty' -- "$manifest" 2>/dev/null || true)
     if [[ $candidate == "$requested_id" ]]; then
       printf '%s: plugin id already installed: %s\n' "$script_name" "$requested_id" >&2
-      return 1
+      duplicate=1
+      break
     fi
-  done < <(find "$plugins_dir" -mindepth 2 -maxdepth 2 -name manifest.json \
-    -not -path "$plugins_dir/.*" -print0)
+  done 3<"$scan_file" <&3
+  exec 3<&-
+  rm -f -- "$scan_file"
+  (( duplicate == 0 ))
 }
 
 acquire_add_lock() {
@@ -313,8 +327,8 @@ install_plugin() {
   mkdir -p -- "$plugins_dir"
   [[ -d $plugins_dir && ! -L $plugins_dir ]] || fail "plugin root is not a real directory"
   acquire_add_lock
-  mkdir -p -- "$plugins_dir/$artifact_root_name/unassigned" || fail "cannot create artifact namespace"
-  stage_dir=$(mktemp -d "$plugins_dir/$artifact_root_name/unassigned/add.XXXXXX") || fail "cannot create staging directory"
+  mkdir -p -- "$plugins_dir/$artifact_root_name/$artifact_unassigned_name" || fail "cannot create artifact namespace"
+  stage_dir=$(mktemp -d "$plugins_dir/$artifact_root_name/$artifact_unassigned_name/add.XXXXXX") || fail "cannot create staging directory"
   candidate_identity=$(stat -c '%d:%i' -- "$stage_dir") || fail "cannot identify staging directory"
   if ! git -c credential.helper= -c core.askPass=/bin/false clone --no-recurse-submodules -- "$url" "$stage_dir" \
     >/dev/null 2>&1; then
@@ -341,13 +355,19 @@ install_plugin() {
   installed_identity=$stage_identity
   mv -T -- "$stage_dir" "$target" || fail "cannot install plugin: $id"
   stage_dir=
-  rescan || printf '%s: warning: plugin reload failed after publication\n' "$script_name" >&2
-  if (( enable )); then
-    wait_for_discovery "$id"
-    enable_plugin "$id" ""
-  fi
+  [[ $(artifact_identity "$target") == "$stage_identity" ]] || fail "installed plugin identity mismatch: $id"
   installed_target=
   installed_identity=
+  release_manager_lock
+  rescan || printf '%s: warning: plugin reload failed after publication\n' "$script_name" >&2
+  if (( enable )); then
+    run_test_hook before-discovery
+    wait_for_discovery "$id"
+    run_test_hook before-enable
+    acquire_add_lock
+    enable_plugin "$id" ""
+    release_manager_lock
+  fi
   printf '%s\n' "$id"
 }
 
@@ -678,11 +698,11 @@ safe_remove_artifact_path() {
   }
   rm -f -- "$mount_output"
   for mount_target in "${mount_targets[@]}"; do
-    [[ -z $mount_target || $mount_target == / || $mount_target == "$canonical_path" ||
-      $canonical_path == "$mount_target"/* ]] || {
+    if [[ -n $mount_target && $mount_target != / &&
+      ( $mount_target == "$canonical_path" || $mount_target == "$canonical_path"/* ) ]]; then
       exec {fd}<&-
       return 1
-    }
+    fi
   done
   fd_path="/proc/self/fd/$fd/."
   if ! find "$fd_path" -xdev -depth -mindepth 1 -delete; then
@@ -755,18 +775,21 @@ discover_artifacts() {
   : >"$output" || return 1
   [[ ! -e $artifact_root && ! -L $artifact_root ]] && return 0
   [[ -d $artifact_root && ! -L $artifact_root ]] || return 1
-  find "$artifact_root" -mindepth 1 -maxdepth 2 -print0 >"$output" || return 1
+  if ! find "$artifact_root" -mindepth 1 -maxdepth 2 -print0 | sort -z >"$output"; then
+    return 1
+  fi
 }
 
 artifact_record_valid() {
-  local path=$1 relative id kind parent
+  local path=$1 relative owner kind owner_path
   relative=${path#"$(artifact_root_path)/"}
   [[ $relative != "$path" ]] || return 1
-  [[ $relative == unassigned ]] && return 0
-  parent=${relative%%/*}
-  [[ $parent == unassigned ]] && { [[ $relative != */*/* ]] || return 1; artifact_name_kind "$relative" >/dev/null; return $?; }
-  validate_safe_id "$parent" >/dev/null 2>&1 || return 1
-  [[ $relative == */* && ${relative#*/} != */* ]] || return 0
+  owner=${relative%%/*}
+  [[ $owner == "$artifact_unassigned_name" ]] || validate_safe_id "$owner" >/dev/null 2>&1 || return 1
+  owner_path=$(artifact_root_path)/$owner
+  [[ -d $owner_path && ! -L $owner_path ]] || return 1
+  [[ $relative == */* ]] || return 0
+  [[ ${relative#*/} != */* ]] || return 1
   kind=$(artifact_name_kind "${relative#*/}") || return 1
   [[ -n $kind ]] || return 1
   [[ -d $path && ! -L $path ]] || return 1
@@ -783,6 +806,7 @@ collect_plugin_artifacts() {
   while IFS= read -r -d '' artifact; do
     relative=${artifact#"$(artifact_root_path)/"}
     owner=${relative%%/*}
+    [[ $relative == "$id" ]] && continue
     [[ $owner == "$id" ]] && result+=("$artifact")
   done <"$scan_file"
   rm -f -- "$scan_file"
@@ -798,10 +822,10 @@ report_plugin_artifacts() {
   printf '%s: plugin artifacts block mutation for %s:\n' "$script_name" "$id" >&2
   for artifact in "${items[@]}"; do
     printf '  %q (%s)\n' "$artifact" "$(artifact_type "$artifact")" >&2
-    [[ ${artifact##*/} == rollback.* && -d $artifact && ! -L $artifact ]] && {
+    if [[ ${artifact##*/} == rollback.* && -d $artifact && ! -L $artifact ]] && artifact_record_valid "$artifact"; then
       rollback=$artifact
       rollback_count=$((rollback_count + 1))
-    }
+    fi
   done
   printf '%s: manually inspect each artifact; no automatic recovery or deletion is performed.\n' "$script_name" >&2
   for artifact in "${items[@]}"; do
@@ -814,9 +838,23 @@ report_plugin_artifacts() {
   fi
 }
 
+report_global_artifacts() {
+  local artifacts_name=$1 artifact
+  local -n items=$artifacts_name
+  ((${#items[@]})) || return 0
+  printf '%s: global or malformed plugin artifacts block mutation:\n' "$script_name" >&2
+  for artifact in "${items[@]}"; do
+    printf '  %q (%s)\n' "$artifact" "$(artifact_type "$artifact")" >&2
+    printf '  stat -- %q\n' "$artifact" >&2
+    printf '  findmnt -R -n -o TARGET --target %q\n' "$artifact" >&2
+    printf '  find -- %q -xdev -depth -print\n' "$artifact" >&2
+  done
+  printf '%s: no automatic restore is available for global or malformed artifacts.\n' "$script_name" >&2
+}
+
 assert_no_plugin_artifacts() {
   local id=$1 exclude_path=${2-} artifact scan_file relative owner
-  local -a artifacts=() all_artifacts=()
+  local -a artifacts=() global_artifacts=() all_artifacts=()
   validate_safe_id "$id"
   scan_file=$(mktemp) || return 1
   if ! discover_artifacts "$scan_file"; then rm -f -- "$scan_file"; return 1; fi
@@ -826,14 +864,20 @@ assert_no_plugin_artifacts() {
     [[ -n $exclude_path && $artifact == "$exclude_path" ]] && continue
     relative=${artifact#"$(artifact_root_path)/"}
     owner=${relative%%/*}
-    [[ $relative == "$owner" || $relative == unassigned ]] && continue
-    artifact_record_valid "$artifact" || { artifacts+=("$artifact"); continue; }
-    [[ $owner == "$id" || $owner == unassigned ]] || continue
-    artifacts+=("$artifact")
+    [[ $relative == "$owner" ]] && continue
+    if ! artifact_record_valid "$artifact"; then
+      global_artifacts+=("$artifact")
+    elif [[ $owner == "$id" ]]; then
+      artifacts+=("$artifact")
+    elif [[ $owner == "$artifact_unassigned_name" ]]; then
+      global_artifacts+=("$artifact")
+    fi
   done
-  ((${#artifacts[@]} == 0)) && return 0
-  report_plugin_artifacts "$id" artifacts
-  return 1
+  ((${#global_artifacts[@]} == 0)) || report_global_artifacts global_artifacts
+  if ((${#artifacts[@]})); then
+    report_plugin_artifacts "$id" artifacts
+  fi
+  ((${#artifacts[@]} == 0 && ${#global_artifacts[@]} == 0))
 }
 
 build_update_candidate() {
@@ -1098,6 +1142,7 @@ run_update_plugin() {
   trap 'handle_signal HUP' HUP
   trap 'handle_signal INT' INT
   trap 'handle_signal TERM' TERM
+  acquire_add_lock
   update_plugin "$@"
 }
 
@@ -1105,7 +1150,7 @@ update_plugins() {
   local requested_id=${1-} id directory artifact artifact_id changed=0 failed=0 status_code return_status=0 global_artifact_block=0
   local scan_file relative owner
   # shellcheck disable=SC2034
-  local -a directories=() artifacts=() id_artifacts=()
+  local -a directories=() artifacts=() id_artifacts=() global_artifacts=()
   declare -A blocked_ids=()
   if [[ -n $requested_id ]]; then
     directory=$(plugin_directory "$requested_id")
@@ -1129,27 +1174,32 @@ update_plugins() {
       relative=${artifact#"$(artifact_root_path)/"}
       owner=${relative%%/*}
       if ! artifact_record_valid "$artifact"; then
-        printf '%s: hidden artifact blocks bulk update: %q (%s); manually inspect and recover/remove it\n' \
-          "$script_name" "$artifact" "$(artifact_type "$artifact")" >&2
+        global_artifacts+=("$artifact")
         failed=1
-        global_artifact_block=1
         continue
       fi
       [[ $relative == "$owner" ]] && continue
-      if [[ $owner == unassigned ]]; then
+      if [[ $owner == "$artifact_unassigned_name" || ! -d "$root_path/$owner" || -L "$root_path/$owner" ]]; then
+        global_artifacts+=("$artifact")
         failed=1
-        global_artifact_block=1
         continue
       fi
       blocked_ids["$owner"]=1
     done
+    report_global_artifacts global_artifacts
     while IFS= read -r artifact_id; do
       [[ -n $artifact_id ]] || continue
       collect_plugin_artifacts "$artifact_id" id_artifacts
       report_plugin_artifacts "$artifact_id" id_artifacts
       failed=1
     done < <(printf '%s\n' "${!blocked_ids[@]}" | sort)
-    mapfile -d '' directories < <(find "$root_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0)
+    scan_file=$(mktemp) || fail "cannot inspect visible plugins"
+    if ! find "$root_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0 | sort -z >"$scan_file"; then
+      rm -f -- "$scan_file"
+      fail "cannot inspect visible plugins"
+    fi
+    mapfile -d '' directories <"$scan_file"
+    rm -f -- "$scan_file"
     for directory in "${directories[@]}"; do
       id=${directory##*/}
       validate_safe_id "$id" >/dev/null 2>&1 || continue
@@ -1209,6 +1259,7 @@ remove_plugin() {
     safe_remove_artifact_path "$backup" "$target_identity" quarantine-after-delete ||
       fail "cannot remove Git plugin safely: $id"
   fi
+  release_manager_lock
   run_test_hook before-rescan
   revalidate_mutation_root || fail "plugin root changed before removal rescan: $id"
   [[ ! -e "/proc/self/fd/$root_fd/$id" && ! -L "/proc/self/fd/$root_fd/$id" ]] ||
@@ -1252,9 +1303,14 @@ main() {
       id=$1
       shift
       parse_enable_options "$@"
-      enable_plugin "$id" ;;
+      acquire_add_lock
+      enable_plugin "$id"
+      release_manager_lock ;;
     disable)
-      (($# == 1)) || usage; disable_plugin "$1" ;;
+      (($# == 1)) || usage
+      acquire_add_lock
+      disable_plugin "$1"
+      release_manager_lock ;;
     update)
       (($# <= 2)) || usage
       id=''
@@ -1283,6 +1339,7 @@ main() {
         (( yes )) || confirm_mutation "update all plugins"
         revalidate_mutation_root || fail "plugin root changed before update"
       fi
+      release_manager_lock
       update_plugins "$id" ;;
     remove)
       (($# >= 1 && $# <= 2)) || usage
