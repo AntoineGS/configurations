@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+helper_dir=$(dirname -- "$(realpath -- "$0")")
+self=$(realpath -- "$0")
+facade_depth=${OMARCHY_FACADE_DEPTH:-0}
+[[ $facade_depth =~ ^[0-9]+$ ]] || facade_depth=1
+
+if (( facade_depth > 0 )) && [[ ${1:-} != plugin ]]; then
+  printf 'omarchy: unsupported without a native Omarchy installation: %s\n' "${1:-<none>}" >&2
+  exit 127
+fi
+
+resolve_native_omarchy() {
+  local candidate resolved candidate_identity self_identity
+  local -a candidates=()
+  self_identity=$(stat -c '%d:%i' -- "$self") || return 1
+  [[ -n ${DESKTOP_SHELL_NATIVE_OMARCHY:-} ]] && candidates+=("$DESKTOP_SHELL_NATIVE_OMARCHY")
+  [[ -n ${OMARCHY_PATH:-} ]] && candidates+=("$OMARCHY_PATH/bin/omarchy")
+  mapfile -t candidates < <(
+    printf '%s\n' "${candidates[@]}"
+    type -aP omarchy 2>/dev/null || true
+  )
+  for candidate in "${candidates[@]}"; do
+    [[ -n $candidate && -x $candidate ]] || continue
+    resolved=$(realpath -- "$candidate" 2>/dev/null) || continue
+    [[ $resolved != "$self" ]] || continue
+    candidate_identity=$(stat -c '%d:%i' -- "$candidate" 2>/dev/null) || continue
+    [[ $candidate_identity != "$self_identity" ]] || continue
+    printf '%s' "$resolved"
+    return 0
+  done
+  return 1
+}
+
+if [[ ${1:-} == plugin ]]; then
+  shift
+  exec "$helper_dir/desktop-shell-plugin" "$@"
+fi
+
+native=$(resolve_native_omarchy) || {
+  printf 'omarchy: unsupported without a native Omarchy installation: %s\n' "${1:-<none>}" >&2
+  exit 127
+}
+OMARCHY_FACADE_DEPTH=$((facade_depth + 1)) exec "$native" "$@"

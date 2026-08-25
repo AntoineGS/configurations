@@ -59,8 +59,9 @@ Panel {
   function reportStateError() {
     var registry = bar && bar.shell ? bar.shell.pluginRegistry : null
     if (!registry) return
-    if (vmState.stale && vmState.error) registry.recordPluginError(moduleName, vmState.error)
-    else registry.clearPluginError(moduleName)
+    var scope = "capability:panel:" + moduleName
+    if (vmState.stale && vmState.error) registry.recordPluginError(moduleName, vmState.error, scope)
+    else registry.clearPluginError(moduleName, scope)
   }
 
   function applyState(raw, processError) {

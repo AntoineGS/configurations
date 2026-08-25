@@ -22,8 +22,9 @@ Item {
 
   function reportCapability(available) {
     if (!pluginRegistry) return
-    if (available) pluginRegistry.clearPluginError("desktop.battery")
-    else pluginRegistry.recordPluginError("desktop.battery", "Battery capability unavailable")
+    var scope = "capability:service:desktop.battery"
+    if (available) pluginRegistry.clearPluginError("desktop.battery", scope)
+    else pluginRegistry.recordPluginError("desktop.battery", "Battery capability unavailable", scope)
   }
 
   function checkBattery(raw) {

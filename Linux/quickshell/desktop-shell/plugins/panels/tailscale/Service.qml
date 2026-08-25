@@ -29,8 +29,9 @@ Item {
 
   function reportCapability() {
     if (!pluginRegistry) return
-    if (available) pluginRegistry.clearPluginError("desktop.tailscale")
-    else pluginRegistry.recordPluginError("desktop.tailscale", "Tailscale unavailable or logged out")
+    var scope = "capability:service:desktop.tailscale"
+    if (available) pluginRegistry.clearPluginError("desktop.tailscale", scope)
+    else pluginRegistry.recordPluginError("desktop.tailscale", "Tailscale unavailable or logged out", scope)
   }
 
   function applyState(raw) {
