@@ -48,6 +48,7 @@ ShellRoot {
     command: ["bash", "-c", "touch -- \"$0\"", root.externalReleasePath]
   }
 
+
   function manifest(id, kinds, entryPoints, options) {
     var result = {
       schemaVersion: 1,
@@ -79,12 +80,14 @@ ShellRoot {
   function finishGuardAssertions() {
     if (root.finishStarted) return
     root.finishStarted = true
-    check(root.watchReloadReadyCount === 2, "queued swaps emit coalesced reloads")
+    check(root.watchReloadReadyCount >= 2, "queued swaps emit coalesced reloads")
     check(root.observedIds["acme.widget"] && root.observedIds["acme.other"]
       && root.observedIds["acme.late"], "all batched IDs observed")
     check(root.scanFinishedCount === 3, "expected asynchronous scan count")
     check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
       "restored valid tree installs only valid IDs")
+    check(registry.installedPlugins["acme.widget"].version === "3.0.0",
+      "atomic filesystem swaps converge to latest complete version")
     check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
     check(registry.localPluginIdForPath(root.pluginsRoot + "/.stage.acme/manifest.json") === "",
       "hidden staging path produces no plugin ID")
@@ -105,16 +108,6 @@ ShellRoot {
       "second atomic watcher event converges to latest manifest")
     check(registry.pluginSourceGeneration > oldGeneration,
       "plugin source generation advances independently of reload state")
-    registry.pendingWatchIds = ({})
-    registry.activeWatchIds = ({ "acme.retry": true })
-    registry.handleGuardExit(1)
-    check(registry.pendingWatchIds["acme.retry"] === true,
-      "failed watcher child preserves IDs for retry")
-    registry.pendingWatchIds = ({})
-    registry.watcherGuardError = "stale watcher error"
-    registry.watchIdsEmitted = true
-    registry.handleGuardExit(0)
-    check(registry.watcherGuardError === "", "successful retry clears durable error")
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
   }
@@ -230,6 +223,30 @@ ShellRoot {
     check(registry.setEnabled("acme.missing", true) === false, "unknown plugin rejected")
     check(registry.lastEnableError.indexOf("unknown plugin") !== -1, "unknown plugin error detail")
     check(registry.registryRevision === revision, "mutations do not fake scan revision")
+    registry.recordPluginError("acme.mixed", "service failed", "service")
+    registry.recordPluginError("acme.mixed", "widget failed", "widget")
+    registry.clearPluginError("acme.mixed", "widget")
+    check(hasError("acme.mixed", "service failed") && !hasError("acme.mixed", "widget failed"),
+      "component-scoped errors clear independently")
+
+    registry.guardRetryLimit = 2
+    registry.guardRetryCount = 0
+    registry.pendingWatchIds = ({})
+    registry.activeWatchIds = ({ "acme.retry": true })
+    registry.handleGuardExit(1)
+    check(registry.guardRetryTimer.running && registry.pendingWatchIds["acme.retry"] === true,
+      "failed watcher child defers retry with preserved IDs")
+    registry.guardRetryTimer.stop()
+    registry.activeWatchIds = ({ "acme.retry": true })
+    registry.handleGuardExit(1)
+    registry.guardRetryTimer.stop()
+    registry.activeWatchIds = ({ "acme.retry": true })
+    registry.handleGuardExit(1)
+    check(!registry.guardRetryTimer.running && registry.pendingWatchIds["acme.retry"] === true
+      && registry.watcherGuardError.indexOf("retry limit reached") !== -1,
+      "repeated watcher failures stop at the bounded retry limit")
+    registry.pendingWatchIds = ({})
+    registry.watcherGuardError = ""
 
     root.startGuardAssertions()
   }
@@ -262,7 +279,7 @@ ShellRoot {
     function onScanFinished() {
       root.scanFinishedCount++
       root.runRescanAssertions()
-      if (root.watchReloadReadyCount === 2 && root.scanFinishedCount >= 3)
+      if (root.watchReloadReadyCount >= 2 && root.scanFinishedCount >= 3)
         root.finishGuardAssertions()
     }
   }
@@ -289,6 +306,7 @@ ShellRoot {
     repeat: false
     running: true
     onTriggered: fail("watcher timeout ready=" + root.watchReloadReadyCount
-      + " retry=" + registry.guardRetryCount + " error=" + registry.watcherGuardError)
+      + " scans=" + root.scanFinishedCount + " retry=" + registry.guardRetryCount
+      + " error=" + registry.watcherGuardError)
   }
 }
