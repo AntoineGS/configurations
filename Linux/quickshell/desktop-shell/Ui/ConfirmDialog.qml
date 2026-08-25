@@ -9,13 +9,10 @@ Item {
   property string cancelText: "Cancel"
   property string confirmText: "Confirm"
   property int selectedIndex: 1
-  property color background: Color.background
-  property color foreground: Color.foreground
-  property color scrim: Util.alpha(Color.background, 0.7)
-  property color selectedBackground: Util.alpha(Color.foreground, 0.08)
-  property color selectedText: Color.accent
+  property color foreground: Color.barPanels.text
+  property color secondaryForeground: Color.barPanels.secondaryText
+  property color scrim: Color.modal.scrim
   property string fontFamily: Style.font.family
-  property int cornerRadius: Style.cornerRadius
 
   signal canceled()
   signal confirmed()
@@ -46,17 +43,15 @@ Item {
 
     MouseArea { anchors.fill: parent; onClicked: root.canceled() }
 
-    BorderSurface {
+    PanelSurface {
       id: card
       width: Math.min(parent.width - Style.space(32), Style.space(370))
       // Grows with the wrapped message so narrow hosts (like the menu card)
       // don't squeeze the text into the buttons.
       height: card.contentTopInset + card.contentBottomInset + messageText.implicitHeight + Style.space(20) + Style.space(34)
       anchors.centerIn: parent
-      color: root.background
-      borderSpec: Border.flat(root.selectedText, Style.normalBorderWidth)
       padding: Style.space(18)
-      radius: root.cornerRadius
+      revealed: root.opened
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -87,40 +82,23 @@ Item {
           Repeater {
             model: [root.cancelText, root.confirmText]
 
-            BorderSurface {
+            Button {
               required property int index
               required property string modelData
 
-              readonly property bool selected: root.selectedIndex === index
               readonly property bool destructive: index === 1
 
               width: Style.space(88)
-              height: Style.space(34)
-              color: selected
-                ? (destructive ? Util.alpha(Color.urgent, 0.22) : root.selectedBackground)
-                : "transparent"
-              borderSpec: Border.flat(destructive
-                ? (selected ? Color.urgent : Util.alpha(Color.urgent, 0.56))
-                : (selected ? root.selectedText : Util.alpha(root.foreground, 0.38)), Style.normalBorderWidth)
-              radius: 0
-
-              Text {
-                anchors.centerIn: parent
-                text: modelData
-                color: destructive ? (selected ? Color.urgent : root.foreground) : (selected ? root.selectedText : root.foreground)
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-
-              MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onEntered: root.selectedIndex = index
-                onClicked: {
-                  if (index === 0) root.canceled()
-                  else root.confirmed()
-                }
+              text: modelData
+              foreground: root.foreground
+              accent: destructive ? Color.urgent : Color.accent
+              hasCursor: root.selectedIndex === index
+              bordered: true
+              fontFamily: root.fontFamily
+              onHovered: function(hovered) { if (hovered) root.selectedIndex = index }
+              onClicked: {
+                if (index === 0) root.canceled()
+                else root.confirmed()
               }
             }
           }
