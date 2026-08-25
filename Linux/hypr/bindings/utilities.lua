@@ -1,19 +1,8 @@
 -- Menus
-hl.bind("SUPER + SPACE", hl.dsp.exec_cmd("vicinae toggle"), { description = "Dashboard" })
--- vicinae 0.20.12: `vicinae vicinae://launch/power` registers the deeplink but
--- doesn't raise the window (works fine for clipboard/emojis/calculator). Chain
--- an explicit `open` so the window actually appears.
-hl.bind(
-	"XF86PowerOff",
-	hl.dsp.exec_cmd("vicinae open && vicinae deeplink vicinae://launch/power"),
-	{ description = "Power menu" }
-)
+hl.bind("SUPER + SPACE", hl.dsp.exec_cmd("menu"), { description = "Dashboard" })
+hl.bind("XF86PowerOff", hl.dsp.exec_cmd("menu system"), { description = "Power menu" })
 hl.bind("SUPER + CTRL + K", hl.dsp.exec_cmd("menu-keybindings"), { description = "Show key bindings" })
-hl.bind(
-	"XF86Calculator",
-	hl.dsp.exec_cmd("vicinae vicinae://extensions/vicinae/calculator/history"),
-	{ description = "Calculator" }
-)
+hl.bind("XF86Calculator", hl.dsp.exec_cmd("menu --calculator"), { description = "Calculator" })
 hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("desktop-shell-activate"), { description = "Reload top bar" })
 hl.bind("SUPER + CTRL + H", hl.dsp.exec_cmd("restart-hyprctl"), { description = "Reload Hyprland" })
 
