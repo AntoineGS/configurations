@@ -63,7 +63,7 @@ shell_pid=$!
 plugins=""
 for _ in {1..100}; do
   plugins=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins 2>/dev/null || true)
-  if jq -e 'type == "array"' <<<"$plugins" >/dev/null 2>&1; then break; fi
+  if jq -e 'type == "array" and any(.[]; .id == "desktop.bar")' <<<"$plugins" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
 jq -e 'type == "array"' <<<"$plugins" >/dev/null
@@ -111,6 +111,12 @@ token_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test loade
 jq -e '.nullTerminal == true and .destructionTerminal == true and .duplicateIgnored == true and .outstanding == 0' <<<"$token_probe" >/dev/null
 serial_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test guardSerialProbe 2>/dev/null || true)
 jq -e '.staleReleaseIgnored == true and .matchingReleaseAccepted == true' <<<"$serial_probe" >/dev/null
+terminal_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadTerminalProbe 2>/dev/null || true)
+jq -e '.scanExitRequired == true and .cancelledFinalizersInert == true and .queuedRequestsSettled == true' <<<"$terminal_probe" >/dev/null
+error_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadErrorAttributionProbe 2>/dev/null || true)
+jq -e '.service == true and .bar == true and .panel == true and .widget == true and .staleIgnored == true' <<<"$error_probe" >/dev/null
+cache_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test requestCacheProbe 2>/dev/null || true)
+jq -e '.terminalRecords == 64 and .pendingPreserved == true' <<<"$cache_probe" >/dev/null
 
 lock_release="$tmp_dir/release-manager-lock"
 lock_held="$tmp_dir/manager-lock-held"
