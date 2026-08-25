@@ -1335,6 +1335,30 @@ applications:
         files:
           - setup-office-shares-fstab
         sudo: true
+      - targets:
+          linux: /usr/local/libexec/antoinews-linux
+        name: credentials-helper
+        method: copy
+        backup: ./Linux/office-shares
+        files:
+          - refresh-office-shares-credentials
+        sudo: true
+      - targets:
+          linux: /usr/share/polkit-1/actions
+        name: polkit-policy
+        method: copy
+        backup: ./Linux/office-shares
+        files:
+          - local.multidev.office-shares.policy
+        sudo: true
+      - targets:
+          linux: /etc/polkit-1/rules.d
+        name: polkit-rules
+        method: copy
+        backup: ./Linux/office-shares
+        files:
+          - 10-office-shares.rules
+        sudo: true
       - check:
           linux: /usr/local/libexec/antoinews-linux/setup-office-shares-fstab --check
         run:

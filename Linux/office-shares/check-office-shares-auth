@@ -6,10 +6,11 @@ set -Eeuo pipefail
 shopt -s inherit_errexit
 
 readonly realm='MULTIDEV.LOCAL'
+readonly polkit_helper='/usr/local/libexec/antoinews-linux/refresh-office-shares-credentials'
 
-unix_user="$(id -un)"
-unix_user="${unix_user%@*}"
-expected_principal="${unix_user}@${realm}"
+session_user="$(id -un)"
+principal_user="${session_user%@*}"
+expected_principal="${principal_user}@${realm}"
 cache_dir="${OFFICE_SHARES_CACHE_DIR:-/tmp}"
 
 log() {
@@ -44,11 +45,13 @@ has_valid_cache() {
 }
 
 authenticate() {
-  require_commands kinit systemctl || return 1
-  export KRB5CCNAME="FILE:${cache_dir}/krb5cc_${UID}"
-
-  if ! kinit "$expected_principal"; then
-    log 'domain authentication failed'
+  require_commands pkexec systemctl || return 1
+  if ! pkexec --disable-internal-agent --user "$session_user" "$polkit_helper"; then
+    log 'polkit domain authentication failed'
+    return 1
+  fi
+  if ! has_valid_cache; then
+    log 'polkit authentication did not create a Kerberos ticket'
     return 1
   fi
 
@@ -68,7 +71,7 @@ check_authentication() {
     --icon=dialog-password \
     --urgency=critical \
     --expire-time=0 \
-    --action=authenticate=Authenticate \
+    --action=default=Authenticate \
     --wait \
     -- \
     'Domain authentication required' \
@@ -77,25 +80,17 @@ check_authentication() {
     return 1
   }
 
-  [[ "$action" == authenticate ]] || return 0
-  require_commands systemd-run uwsm ghostty || return 1
-  systemd-run \
-    --user \
-    --unit=office-shares-authenticate \
-    --collect \
-    -- \
-    uwsm app -- ghostty --class=office-shares-auth -e "$0" --authenticate
+  [[ "$action" == default ]] || return 0
+  authenticate
 }
 
 main() {
-  if [[ $# -eq 0 ]]; then
-    check_authentication
-  elif [[ $# -eq 1 && "$1" == --authenticate ]]; then
-    authenticate
-  else
-    printf 'Usage: %s [--authenticate]\n' "${0##*/}" >&2
+  if [[ $# -ne 0 ]]; then
+    printf 'Usage: %s\n' "${0##*/}" >&2
     return 2
   fi
+
+  check_authentication
 }
 
 main "$@"
