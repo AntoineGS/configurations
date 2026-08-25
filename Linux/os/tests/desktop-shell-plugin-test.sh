@@ -222,6 +222,15 @@ env "${manager_env[@]}" "$manager" enable acme.widget --before acme.other || fai
 grep -Fq $'enablePlugin\tacme.widget\t{"before":"acme.other"}' "$log_file" || fail "before JSON is incorrect"
 env "${manager_env[@]}" "$manager" enable acme.widget --after acme.other || fail "after enable failed"
 grep -Fq $'enablePlugin\tacme.widget\t{"after":"acme.other"}' "$log_file" || fail "after JSON is incorrect"
+env "${manager_env[@]}" "$manager" enable acme.widget --headless || fail "headless enable failed"
+grep -Fq $'enablePlugin\tacme.widget\t{"headless":true}' "$log_file" \
+  || fail "headless JSON is incorrect"
+if env "${manager_env[@]}" "$manager" enable acme.widget --headless --section right >/dev/null 2>&1; then
+  fail "headless enable accepted a bar section"
+fi
+if env "${manager_env[@]}" "$manager" enable acme.widget --index 1 --headless >/dev/null 2>&1; then
+  fail "headless enable accepted an index"
+fi
 env "${manager_env[@]}" "$manager" disable acme.widget || fail "disable failed"
 grep -Fq $'setPluginEnabled\tacme.widget\tfalse' "$log_file" || fail "disable call is incorrect"
 
