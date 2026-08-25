@@ -43,13 +43,14 @@ for _ in {1..150}; do
 done
 jq -e '.loadCount == 1 and .version == "1.0.0"' <<<"$probe" >/dev/null
 
-stage="$tmp_dir/stage"
+stage="$tmp_dir/.stage.acme.bar"
+old="$tmp_dir/.old.acme.bar"
 mkdir -p -- "$stage"
 printf '%s\n' 'import QtQuick' 'Item {' ' readonly property string version: "2.0.0"' ' property var shell: null' ' Component.onDestruction: if (shell && typeof shell.recordPluginBarDestroyed === "function") shell.recordPluginBarDestroyed()' '}' >"$stage/Bar.qml"
 printf '%s\n' '{"schemaVersion":1,"id":"acme.bar","name":"Acme Bar","version":"2.0.0","kinds":["bar"],"entryPoints":{"bar":"Bar.qml"}}' >"$stage/manifest.json"
-mv -- "$stage/Bar.qml" "$plugins_dir/Bar.qml"
-mv -- "$stage/manifest.json" "$plugins_dir/manifest.json"
-rmdir -- "$stage"
+mv -- "$plugins_dir" "$old"
+mv -- "$stage" "$plugins_dir"
+rm -rf -- "$old"
 printf '%s\n' "$plugins_dir/manifest.json" >"$watch_fifo"
 
 for _ in {1..150}; do

@@ -523,6 +523,30 @@ updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 [[ $(stat -c '%d:%i' "$plugins_dir/lifecycle.widget") != "$atomic_inode" ]] || fail "publication did not swap directory identity"
 [[ $(sha256sum "$plugins_dir/lifecycle.widget/manifest.json") == "$atomic_manifest_hash" ]] || fail "manifest changed unexpectedly"
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "successful update did not request rescan"
+printf 'artifact-gap-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm artifact-gap-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+gap_artifact="$plugins_dir/.plugin-artifacts/lifecycle.widget/update.gap"
+gap_hook="$test_root/gap-hook"
+cat >"$gap_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == update-after-fetch ]]; then
+  mkdir -p -- "${GAP_ARTIFACT%/*}"
+  mkdir -- "$GAP_ARTIFACT"
+fi
+EOF
+chmod +x -- "$gap_hook"
+gap_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$gap_hook" GAP_ARTIFACT="$gap_artifact" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "artifact created before candidate build was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$gap_prior" ]] || \
+  fail "pre-build artifact changed explicit update target"
+[[ -d "$gap_artifact" ]] || fail "pre-build artifact evidence was deleted"
+rm -rf -- "$gap_artifact"
 printf 'post-verify-update\n' >>"$remote_seed/Widget.qml"
 git -C "$remote_seed" add Widget.qml
 git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm post-verify-update
@@ -921,11 +945,37 @@ printf 'bulk-diverged\n' >>"$bulk_bad/Widget.qml"
 git -C "$bulk_bad" add Widget.qml
 git -C "$bulk_bad" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-diverged
 commit_identity_remote_change "$bulk_bad_seed" bulk-update-bad
+git -C "$bulk_bad" reset --hard -q HEAD~1
 printf 'bulk-update\n' >>"$validation_repo/Widget.qml"
 git -C "$validation_repo" add Widget.qml
 git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-update
 git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 bulk_good_prior=$(git -C "$bulk_good" rev-parse HEAD)
+bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
+bulk_gap_artifact="$bulk_plugins/.plugin-artifacts/bulk-good.widget/update.gap"
+bulk_gap_hook="$test_root/bulk-gap-hook"
+cat >"$bulk_gap_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == update-after-fetch && ${2-} == *bulk-good.widget* ]]; then
+  mkdir -p -- "${BULK_GAP_ARTIFACT%/*}"
+  mkdir -- "$BULK_GAP_ARTIFACT"
+fi
+EOF
+chmod +x -- "$bulk_gap_hook"
+bulk_gap_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$bulk_plugins" \
+  DESKTOP_SHELL_PLUGIN_TEST_HOOK="$bulk_gap_hook" BULK_GAP_ARTIFACT="$bulk_gap_artifact" \
+  "$manager" update --yes >/dev/null 2>&1; then
+  bulk_gap_status=0
+else
+  bulk_gap_status=$?
+fi
+[[ $bulk_gap_status != 0 ]] || fail "bulk pre-build artifact was accepted"
+[[ $(git -C "$bulk_good" rev-parse HEAD) == "$bulk_good_prior" ]] || fail "bulk gap changed blocked plugin"
+[[ $(git -C "$bulk_bad" rev-parse HEAD) != "$bulk_bad_prior" ]] || fail "bulk gap did not continue independent plugin"
+[[ -d "$bulk_gap_artifact" ]] || fail "bulk gap artifact evidence was deleted"
+rm -rf -- "$bulk_gap_artifact"
 bulk_bad_prior=$(git -C "$bulk_bad" rev-parse HEAD)
 bulk_orphan_artifact="$bulk_plugins/.plugin-artifacts/unassigned/rollback.ABC123"
 mkdir -p -- "${bulk_orphan_artifact%/*}"

@@ -91,6 +91,8 @@ ShellRoot {
     pluginErrors: shell.pluginErrors,
     watcherGuardError: pluginRegistry ? pluginRegistry.watcherGuardError : "",
     watcherGuardRetryCount: pluginRegistry ? pluginRegistry.guardRetryCount : 0,
+    watcherUnavailable: pluginRegistry ? pluginRegistry.watcherUnavailable : false,
+    watcherRetryCount: pluginRegistry ? pluginRegistry.watcherRetryCount : 0,
     reloadGeneration: shell.pluginReloadGeneration,
     pluginLoadEpoch: shell.pluginLoadEpoch,
     pluginBarLoadCount: shell.pluginBarLoadCount,
