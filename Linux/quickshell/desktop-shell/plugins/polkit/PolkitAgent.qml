@@ -24,7 +24,7 @@ Item {
     return home + "/.local/share/helpers/desktop-shell-polkit-pam"
   }
 
-  property string fontFamily: Style.font.menuFamily
+  property string fontFamily: Style.font.family
   property color accent: Color.polkit.accent
   property color background: Color.polkit.background
   property color foreground: Color.polkit.text
@@ -469,13 +469,16 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: !root.testSurfaceSuppressed && root.dialogVisible && root.activeScreen !== null
+    visible: !root.testSurfaceSuppressed && root.activeScreen !== null
+      && (root.dialogVisible || card.opacity > 0)
     screen: root.activeScreen
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "desktop-shell-polkit"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.dialogVisible
+      ? WlrKeyboardFocus.Exclusive
+      : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
     Rectangle {
@@ -488,16 +491,15 @@ Item {
       onClicked: root.refocus()
     }
 
-    BorderSurface {
+    PanelSurface {
       id: card
       width: root.cardWidth
       height: root.cardHeight
-      radius: root.cornerRadius
       anchors.centerIn: parent
       anchors.horizontalCenterOffset: root.shakeOffset
-      color: root.background
       borderSpec: root.borderSpec
       padding: root.contentMargin
+      revealed: root.dialogVisible
 
       MouseArea { anchors.fill: parent; onClicked: root.refocus() }
 
@@ -554,20 +556,13 @@ Item {
           width: parent.width - Style.space(40)
           height: root.fieldHeight
 
-          TextInput {
+          TextField {
             id: passwordInput
             anchors.fill: parent
-            verticalAlignment: TextInput.AlignVCenter
-            activeFocusOnPress: true
-            clip: true
-            selectionColor: Util.alpha(root.accent, 0.45)
-            selectedTextColor: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.iconLarge
+            foreground: root.errorFlash ? Color.polkit.textError : root.foreground
+            accent: root.errorFlash ? Color.polkit.textError : root.accent
+            placeholderText: root.errorFlash ? "Wrong" : (root.submitted ? "Checking..." : "Enter password")
             echoMode: root.responseVisible ? TextInput.Normal : TextInput.Password
-            passwordCharacter: "\u2022"
-            color: root.errorFlash ? Color.polkit.textError : root.foreground
-            cursorVisible: activeFocus && !root.submitted && !root.errorFlash
             readOnly: root.submitted || root.errorFlash
             enabled: root.dialogVisible
             onAccepted: root.submitResponse()
@@ -579,58 +574,27 @@ Item {
             }
           }
 
-          Text {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.errorFlash ? "Wrong" : (root.submitted ? "Checking..." : "Enter password")
-            color: root.errorFlash ? Color.polkit.textError : root.foreground
-            opacity: root.errorFlash ? 1 : 0.36
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.iconLarge
-            elide: Text.ElideRight
-            visible: passwordInput.text.length === 0
-          }
-
-          Rectangle {
-            width: Math.max(1, Style.space(2))
-            height: Style.space(24)
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            color: root.errorFlash ? Color.polkit.textError : root.foreground
-            visible: passwordInput.visible && passwordInput.activeFocus && passwordInput.text.length === 0
-              && !root.submitted && !root.errorFlash
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.LeftButton
-            enabled: passwordInput.visible
-            onClicked: passwordInput.forceActiveFocus()
-          }
         }
       }
     }
 
-    BorderSurface {
+    PanelSurface {
       id: contextCard
       width: Math.min(Style.space(520), Math.max(Style.space(260), panel.width - Style.gapsOut * 2))
-      height: contextColumn.implicitHeight + Style.space(12)
+      height: contentTopInset + contentBottomInset + contextColumn.implicitHeight
       anchors.horizontalCenter: card.horizontalCenter
       anchors.bottom: card.top
       anchors.bottomMargin: Style.space(10)
-      radius: root.cornerRadius
-      color: root.background
-      borderSpec: Border.surfaceSpec("polkit", "border", root.border, Math.max(1, Style.space(2)), "border-alpha")
+      revealed: root.dialogVisible
       visible: root.dialogVisible && (root.currentMessage !== "" || root.currentActionId !== "")
 
       Column {
         id: contextColumn
         anchors.fill: parent
-        anchors.leftMargin: Style.space(12)
-        anchors.rightMargin: Style.space(12)
-        anchors.topMargin: Style.space(6)
-        anchors.bottomMargin: Style.space(6)
+        anchors.leftMargin: contextCard.contentLeftInset
+        anchors.rightMargin: contextCard.contentRightInset
+        anchors.topMargin: contextCard.contentTopInset
+        anchors.bottomMargin: contextCard.contentBottomInset
         spacing: Style.space(2)
 
         Text {
