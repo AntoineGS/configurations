@@ -45,16 +45,12 @@ Item {
     root.shell && root.shell.barConfig ? root.shell.barConfig.layout : null,
     root.routeWidgets)
 
-  readonly property color background: Color.menu.background
-  readonly property color foreground: Color.menu.text
-  readonly property color border: Color.menu.border
-  readonly property color scrim: Color.menu.scrim
-  readonly property color selectedBackground: Color.menu.selectedBackground
-  readonly property color selectedText: Color.menu.selectedText
-  readonly property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
-  readonly property var selectedBorderSpec: Border.surfaceSpec("menu", "selected-border", Color.menu.selectedBorder, 0)
-  readonly property string fontFamily: Style.font.menuFamily
-  readonly property int contentMargin: Style.spacing.panelPadding
+  readonly property color foreground: Color.barPanels.text
+  readonly property color secondaryForeground: Color.barPanels.secondaryText
+  readonly property color accent: Color.accent
+  readonly property color scrim: Color.modal.scrim
+  readonly property string fontFamily: Style.font.family
+  readonly property int contentMargin: Style.spacing.popupPadding
   readonly property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.rowPaddingX * 2)
   readonly property int rowSpacing: Style.space(2)
   readonly property int listHeight: Math.min(
@@ -299,7 +295,7 @@ Item {
     root.opened = true
     root.rebuildDisplay()
     if (root.appLibrary) root.appLibrary.refreshIcons()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function openDmenu(payload) {
@@ -316,7 +312,7 @@ Item {
     root.cursorActive = root.menuMode === "select"
     root.opened = true
     root.rebuildDisplay()
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { searchField.forceActiveFocus() })
     return "ok"
   }
 
@@ -465,7 +461,7 @@ Item {
 
   PanelWindow {
     id: panel
-    visible: root.opened && root.menuReady
+    visible: root.opened && root.menuReady || card.opacity > 0
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "desktop-menu"
@@ -489,7 +485,7 @@ Item {
       }
     }
 
-    BorderSurface {
+    PanelSurface {
       id: card
       width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
       height: Math.min(
@@ -497,10 +493,9 @@ Item {
         panel.height - Style.gapsOut * 2
       )
       anchors.centerIn: parent
-      color: root.background
-      radius: Style.cornerRadius
-      borderSpec: root.borderSpec
       padding: root.contentMargin
+      revealed: root.opened
+      entranceY: -Style.space(6)
 
       MouseArea {
         anchors.fill: parent
@@ -508,56 +503,48 @@ Item {
       }
 
       Item {
-        id: keyCatcher
+        id: content
         anchors.fill: parent
         anchors.margins: card.padding
-        focus: true
-
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            if (root.filterText) root.setFilter("")
-            else if (!root.goBack()) root.close()
-            event.accepted = true
-          } else if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Left) && !root.filterText) {
-            root.goBack()
-            event.accepted = true
-          } else if (Util.editsFilter(event, root.filterText)) {
-            root.setFilter(Util.editedFilter(event, root.filterText))
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up) {
-            root.select(-1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Down) {
-            root.select(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
-            if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
-            else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-            else root.settleCursor()
-            event.accepted = true
-          } else if (event.text && event.text.length === 1 && event.text.charCodeAt(0) >= 32
-                     && event.text.charCodeAt(0) !== 127
-                     && (event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier)) {
-            root.setFilter(root.filterText + event.text)
-            event.accepted = true
-          }
-        }
 
         Column {
           anchors.fill: parent
           spacing: Style.space(10)
 
-          Text {
+          TextField {
+            id: searchField
             width: parent.width
             height: Style.space(34)
-            text: root.filterText || (root.dmenuActive ? root.dmenuPrompt : root.calculatorFocused ? "Calculate…"
-              : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…"))
-            color: root.foreground
-            opacity: root.filterText ? 1 : 0.62
+            text: root.filterText
+            placeholderText: root.dmenuActive ? root.dmenuPrompt : root.calculatorFocused ? "Calculate…"
+              : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
+            foreground: root.foreground
+            accent: root.accent
             font.family: root.fontFamily
-            font.pixelSize: Style.font.heading
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
+            Keys.priority: Keys.BeforeItem
+            onTextEdited: if (text !== root.filterText) root.setFilter(text)
+
+            Keys.onPressed: function(event) {
+              if (event.key === Qt.Key_Escape) {
+                if (root.filterText) root.setFilter("")
+                else if (!root.goBack()) root.close()
+                event.accepted = true
+              } else if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Left) && !root.filterText) {
+                root.goBack()
+                event.accepted = true
+              } else if (event.key === Qt.Key_Up) {
+                root.select(-1)
+                event.accepted = true
+              } else if (event.key === Qt.Key_Down) {
+                root.select(1)
+                event.accepted = true
+              } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
+                if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
+                else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+                else root.settleCursor()
+                event.accepted = true
+              }
+            }
           }
 
           Item {
@@ -572,7 +559,7 @@ Item {
               spacing: root.rowSpacing
               boundsBehavior: Flickable.StopAtBounds
 
-              delegate: BorderSurface {
+              delegate: CursorSurface {
                 id: row
                 required property int index
                 required property string itemId
@@ -592,9 +579,9 @@ Item {
 
                 width: ListView.view.width
                 height: root.rowHeight
-                radius: Style.cornerRadius
-                color: root.cursorActive && row.index === root.selectedIndex ? root.selectedBackground : "transparent"
-                borderSpec: root.cursorActive && row.index === root.selectedIndex ? root.selectedBorderSpec : Border.none()
+                hasCursor: root.cursorActive && row.index === root.selectedIndex
+                foreground: root.foreground
+                accent: root.accent
                 opacity: row.disabled ? 0.42 : 1
 
                 Row {
@@ -611,7 +598,7 @@ Item {
                       anchors.fill: parent
                       visible: row.kind !== "application"
                       text: row.icon
-                      color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
+                      color: root.foreground
                       font.family: row.iconFont || root.fontFamily
                       font.pixelSize: Style.font.icon
                       horizontalAlignment: Text.AlignHCenter
@@ -636,7 +623,7 @@ Item {
                     Text {
                       width: parent.width
                       text: row.label
-                      color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
+                      color: root.foreground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.heading
                       elide: Text.ElideRight
@@ -646,7 +633,7 @@ Item {
                       width: parent.width
                       visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
                       text: row.detail
-                      color: root.foreground
+                      color: root.secondaryForeground
                       opacity: 0.5
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
@@ -657,7 +644,7 @@ Item {
                   Text {
                     width: Style.space(14)
                     text: row.kind === "menu" || row.kind === "link" ? "›" : ""
-                    color: root.cursorActive && row.index === root.selectedIndex ? root.selectedText : root.foreground
+                    color: root.secondaryForeground
                     opacity: row.kind === "menu" || row.kind === "link" ? 0.5 : 0
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.heading
@@ -695,7 +682,7 @@ Item {
             width: parent.width
             visible: root.healthSummary !== ""
             text: root.healthSummary
-            color: root.selectedText
+            color: root.secondaryForeground
             opacity: 0.75
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -705,6 +692,6 @@ Item {
       }
     }
 
-    onVisibleChanged: if (visible) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    onVisibleChanged: if (visible) Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 }
