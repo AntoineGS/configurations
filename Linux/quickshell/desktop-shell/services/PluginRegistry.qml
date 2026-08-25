@@ -24,6 +24,7 @@ QtObject {
   property string lastScanError: ""
   property string lastEnableError: ""
   property bool watcherUnavailable: false
+  property bool watcherReady: false
   property int watcherRetryCount: 0
   property int watcherRetryLimit: 3
   property int watcherRetryBaseDelay: 100
@@ -300,6 +301,17 @@ QtObject {
     }
   }
 
+  function handleWatcherOutput(text) {
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i] === "ready") {
+        registry.handleWatcherReady()
+        continue
+      }
+      registry.handleWatchOutput(lines[i])
+    }
+  }
+
   function startWatchReloadGuard() {
     if (registry.guardProcess.running || Object.keys(registry.pendingWatchIds).length === 0)
       return
@@ -334,9 +346,13 @@ QtObject {
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
   function parseScanOutput(text) {
     var priorLoadErrors = []
+    var watcherErrors = []
     for (var priorIndex = 0; priorIndex < registry.pluginErrors.length; priorIndex++) {
       var priorEntry = registry.pluginErrors[priorIndex]
-      if (priorEntry && String(priorEntry.scope || "registry") !== "registry")
+      if (priorEntry && String(priorEntry.scope || "registry") === "watcher") {
+        watcherErrors.push(priorEntry)
+        priorLoadErrors.push(priorEntry)
+      } else if (priorEntry && String(priorEntry.scope || "registry") !== "registry")
         priorLoadErrors.push(priorEntry)
     }
     registry.pluginErrors = priorLoadErrors
@@ -422,6 +438,10 @@ QtObject {
         retainedLoadErrors.push(retained)
         continue
       }
+      if (String(retained.scope || "") === "watcher") {
+        retainedLoadErrors.push(retained)
+        continue
+      }
       var retainedManifest = merged[String(retained.id)]
       if (!retainedManifest || !Array.isArray(retainedManifest.kinds)) continue
       var retainedScope = String(retained.scope || "")
@@ -430,9 +450,12 @@ QtObject {
       if (capabilityMatch) retainedKind = capabilityMatch[1]
       else if (retainedScope.indexOf("panel:") === 0) retainedKind = retainedScope.slice(6)
       else if (retainedScope === "widget") retainedKind = "bar-widget"
-      if (retainedScope === "watcher"
-          || retainedManifest.kinds.indexOf(retainedKind) !== -1)
+      if (retainedManifest.kinds.indexOf(retainedKind) !== -1)
         retainedLoadErrors.push(retained)
+    }
+    for (var watcherIndex = 0; watcherIndex < watcherErrors.length; watcherIndex++) {
+      var watcherError = watcherErrors[watcherIndex]
+      if (retainedLoadErrors.indexOf(watcherError) === -1) retainedLoadErrors.push(watcherError)
     }
     registry.pluginErrors = retainedLoadErrors
     installedPlugins = merged
@@ -477,9 +500,11 @@ QtObject {
   function initProcess() {
     if (!registry.pluginWatchEnabled || registry.watcherProcess.running) return
     registry.watcherStopRequested = false
+    registry.watcherReady = false
     watcherProcess.command = ["bash", "-c",
       "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
-      + "inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
+      + "printf 'ready\\n'; "
+      + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
       registry.pluginsDir]
     watcherProcess.running = true
   }
@@ -497,7 +522,9 @@ QtObject {
     if (registry.pluginWatchEnabled) watchRestartTimer.restart()
   }
 
-  function handleWatcherStarted() {
+  function handleWatcherReady() {
+    if (registry.watcherReady) return
+    registry.watcherReady = true
     registry.watcherUnavailable = false
     registry.watcherRetryCount = 0
     registry.watcherRetryTimer.stop()
@@ -531,11 +558,10 @@ QtObject {
 
   property Process watcherProcess: Process {
     onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
-    onRunningChanged: if (running) registry.handleWatcherStarted()
     stdout: StdioCollector {
       id: watcherStdout
       waitForEnd: false
-      onTextChanged: registry.handleWatchOutput(text)
+      onTextChanged: registry.handleWatcherOutput(text)
     }
   }
 
@@ -599,7 +625,10 @@ QtObject {
   property Timer watcherRetryTimer: Timer {
     interval: 100
     repeat: false
-    onTriggered: registry.initProcess()
+    onTriggered: {
+      if (registry.watcherProcess.running) registry.watcherProcess.running = false
+      registry.initProcess()
+    }
   }
 
   property Timer watchRestartTimer: Timer {
