@@ -16,6 +16,10 @@ ShellRoot {
   property string externalReleasePath: Quickshell.env("PLUGIN_REGISTRY_RELEASE_EXTERNAL")
   property string watcherFifoPath: Quickshell.env("PLUGIN_REGISTRY_WATCH_FIFO")
   property bool fifoMode: Quickshell.env("DESKTOP_SHELL_WATCH_FIFO_TEST") === "1"
+  property bool watcherLifecycleMode: Quickshell.env("DESKTOP_SHELL_WATCHER_LIFECYCLE_TEST") === "1"
+  property string watcherModePath: Quickshell.env("PLUGIN_REGISTRY_WATCHER_MODE")
+  property string watcherCountPath: Quickshell.env("PLUGIN_REGISTRY_WATCHER_COUNT")
+  property int watcherLifecyclePhase: 0
   property int watchReloadReadyCount: 0
   property int scanFinishedCount: 0
   property var observedVersions: []
@@ -177,6 +181,39 @@ ShellRoot {
       "FIFO watcher converges to latest same-parent swap")
     resultFile.setText(JSON.stringify({ ok: true, observedVersions: root.observedVersions }))
     Qt.exit(0)
+  }
+
+  function runWatcherLifecycleAssertions() {
+    if (root.watcherLifecyclePhase === 0) {
+      if (registry.scanning) return
+      registry.pluginWatchEnabled = true
+      registry.watcherRetryLimit = 2
+      registry.watcherRetryBaseDelay = 20
+      registry.initProcess()
+      root.watcherLifecyclePhase = 1
+      return
+    }
+    if (root.watcherLifecyclePhase === 1) {
+      if (registry.watcherRetryCount < registry.watcherRetryLimit
+          || !registry.watcherUnavailable
+          || !hasError("registry", "dependencies are unavailable", "watcher")) return
+      registry.parseScanOutput(block("thirdparty", root.pluginsRoot + "/acme.widget", manifest(
+        "acme.widget", ["bar-widget"], { barWidget: "Widget.qml" })))
+      check(hasError("registry", "dependencies are unavailable", "watcher"),
+        "successful registry scan preserves terminal watcher error")
+      registry.initProcess()
+      root.watcherLifecyclePhase = 2
+      return
+    }
+    if (root.watcherLifecyclePhase === 2 && registry.watcherReady) {
+      check(!registry.watcherUnavailable && registry.watcherRetryCount === 0,
+        "explicit ready clears retry health")
+      check(!hasError("registry", "dependencies are unavailable", "watcher"),
+        "explicit ready clears watcher error")
+      registry.stopWatcher()
+      resultFile.setText(JSON.stringify({ ok: true }))
+      Qt.exit(0)
+    }
   }
 
   function startGuardAssertions() {
@@ -364,6 +401,10 @@ ShellRoot {
       }
     }
     function onScanFinished() {
+      if (root.watcherLifecycleMode) {
+        root.runWatcherLifecycleAssertions()
+        return
+      }
       root.scanFinishedCount++
       if (root.fifoMode) {
         var nextVersions = root.observedVersions.slice(0)
@@ -383,9 +424,19 @@ ShellRoot {
   Component.onCompleted: {
     registry.firstPartyDir = root.firstPartyRoot
     registry.pluginsDir = root.pluginsRoot
+    if (root.watcherLifecycleMode) registry.pluginWatchEnabled = false
     if (root.fifoMode) registry.pluginWatchEnabled = true
     registry.rescan()
     if (root.fifoMode) firstSwapTimer.start()
+    if (root.watcherLifecycleMode) lifecycleTimer.start()
+  }
+
+  Timer {
+    id: lifecycleTimer
+    interval: 25
+    repeat: true
+    running: root.watcherLifecycleMode
+    onTriggered: root.runWatcherLifecycleAssertions()
   }
 
   Timer {
@@ -406,6 +457,8 @@ ShellRoot {
     running: true
     onTriggered: fail("watcher timeout ready=" + root.watchReloadReadyCount
       + " scans=" + root.scanFinishedCount + " retry=" + registry.guardRetryCount
-      + " error=" + registry.watcherGuardError)
+      + " watcherRetry=" + registry.watcherRetryCount + " unavailable=" + registry.watcherUnavailable
+      + " scanning=" + registry.scanning + " lifecycle=" + root.watcherLifecycleMode
+      + " phase=" + root.watcherLifecyclePhase + " error=" + registry.watcherGuardError)
   }
 }

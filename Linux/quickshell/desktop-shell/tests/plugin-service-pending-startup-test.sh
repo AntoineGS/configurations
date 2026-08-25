@@ -23,7 +23,7 @@ printf '%s\n' '{"version":1,"bar":{"id":"desktop.bar","position":"top","layout":
 printf '%s\n' '{"schemaVersion":1,"id":"acme.service","name":"Acme Service","version":"1.0.0","kinds":["service"],"entryPoints":{"service":"Service.qml"}}' >"$plugins_dir/manifest.json"
 printf '%s\n' 'import QtQuick' 'Item { }' >"$plugins_dir/Service.qml"
 # shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$tmp_dir/bin/inotifywait"
+printf '%s\n' '#!/usr/bin/env bash' '[[ ${1-} == --help ]] && exit 0' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$tmp_dir/bin/inotifywait"
 printf '%s\n' '#!/usr/bin/env bash' 'sleep 1' 'exec /usr/bin/find "$@"' >"$tmp_dir/bin/find"
 chmod 0755 -- "$tmp_dir/bin/inotifywait" "$tmp_dir/bin/find"
 

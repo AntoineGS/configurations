@@ -28,8 +28,32 @@ trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; stop_holder;
 result="$tmp_dir/result.json"
 config="$tmp_dir/config"
 plugins_dir="$tmp_dir/plugins"
+bin_dir="$tmp_dir/bin"
+watcher_mode="$tmp_dir/watcher-mode"
+watcher_count="$tmp_dir/watcher-count"
 release_external="$tmp_dir/release-external"
 mkdir -p -- "$config"
+mkdir -p -- "$bin_dir"
+printf '%s\n' fail >"$watcher_mode"
+printf '0\n' >"$watcher_count"
+cat >"$bin_dir/inotifywait" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+mode=$(<"$PLUGIN_REGISTRY_WATCHER_MODE")
+count=$(<"$PLUGIN_REGISTRY_WATCHER_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" >"$PLUGIN_REGISTRY_WATCHER_COUNT"
+if [[ $mode == fail ]]; then
+  if (( count >= 3 )); then printf '%s\n' ready >"$PLUGIN_REGISTRY_WATCHER_MODE"; fi
+  exit 125
+fi
+if [[ ${1-} == --help ]]; then
+  exit 0
+fi
+printf 'stub-event\n'
+while :; do sleep 1; done
+EOF
+chmod 0755 -- "$bin_dir/inotifywait"
 mkdir -p -- "$plugins_dir/acme.widget"
 mkdir -p -- "$plugins_dir/acme.other"
 printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/acme.widget/manifest.json"
@@ -57,6 +81,10 @@ ln -s -- "$shell_dir/Commons" "$config/Commons"
 env \
     HOME="$tmp_dir/home" \
     XDG_CONFIG_HOME="$tmp_dir/home/.config" \
+    PATH="$bin_dir:$PATH" \
+    DESKTOP_SHELL_WATCHER_LIFECYCLE_TEST=1 \
+    PLUGIN_REGISTRY_WATCHER_MODE="$watcher_mode" \
+    PLUGIN_REGISTRY_WATCHER_COUNT="$watcher_count" \
     DESKTOP_SHELL_DISABLE_PLUGIN_WATCH=1 \
   PLUGIN_REGISTRY_PLUGINS_DIR="$plugins_dir" \
   PLUGIN_REGISTRY_RELEASE_EXTERNAL="$release_external" \
@@ -81,6 +109,11 @@ if ! jq -e '.ok == true' "$result" >/dev/null; then
   sed -n '1,240p' "$tmp_dir/quickshell.log" >&2
   exit 1
 fi
+[[ $(<"$watcher_count") -ge 5 ]] || {
+  printf 'watcher stub did not observe bounded failures and ready recovery\n' >&2
+  exit 1
+}
+touch -- "$release_external"
 wait "$holder_pid"
 holder_pid=""
 printf 'PASS: plugin registry contract\n'

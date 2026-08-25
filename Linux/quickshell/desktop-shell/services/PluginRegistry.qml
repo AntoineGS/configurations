@@ -29,6 +29,7 @@ QtObject {
   property int watcherRetryLimit: 3
   property int watcherRetryBaseDelay: 100
   property bool watcherStopRequested: false
+  property bool watcherRetryPending: false
   property var pendingWatchIds: ({})
   property var activeWatchIds: ({})
   property bool watchIdsEmitted: false
@@ -498,11 +499,12 @@ QtObject {
   }
 
   function initProcess() {
-    if (!registry.pluginWatchEnabled || registry.watcherProcess.running) return
+    if (!registry.pluginWatchEnabled || (registry.watcherProcess.running && registry.watcherReady)) return
     registry.watcherStopRequested = false
     registry.watcherReady = false
     watcherProcess.command = ["bash", "-c",
       "command -v inotifywait >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || exit 125; "
+      + "inotifywait --help >/dev/null 2>&1 || exit 125; "
       + "printf 'ready\\n'; "
       + "exec inotifywait -m -r -e close_write,create,delete,move --format '%w%f' -- \"$0\"",
       registry.pluginsDir]
@@ -535,10 +537,12 @@ QtObject {
     if (!registry.pluginWatchEnabled) return
     registry.watcherUnavailable = true
     if (registry.watcherRetryCount >= registry.watcherRetryLimit) {
+      registry.watcherRetryPending = false
       registry.recordPluginError("registry", String(detail), "watcher")
       return
     }
     registry.watcherRetryCount++
+    registry.watcherRetryPending = true
     registry.watcherRetryTimer.interval = Math.min(
       registry.watcherRetryBaseDelay * Math.pow(2, registry.watcherRetryCount - 1), 2000)
     registry.watcherRetryTimer.restart()
@@ -546,6 +550,7 @@ QtObject {
 
   function stopWatcher() {
     if (!registry.watcherProcess.running) return
+    registry.watcherRetryPending = false
     registry.watcherStopRequested = true
     registry.watcherProcess.running = false
   }
@@ -558,6 +563,12 @@ QtObject {
 
   property Process watcherProcess: Process {
     onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
+    onRunningChanged: {
+      if (!running && registry.watcherRetryPending) {
+        registry.watcherRetryPending = false
+        registry.initProcess()
+      }
+    }
     stdout: StdioCollector {
       id: watcherStdout
       waitForEnd: false
@@ -626,8 +637,10 @@ QtObject {
     interval: 100
     repeat: false
     onTriggered: {
-      if (registry.watcherProcess.running) registry.watcherProcess.running = false
-      registry.initProcess()
+      if (!registry.watcherProcess.running && registry.watcherRetryPending) {
+        registry.watcherRetryPending = false
+        registry.initProcess()
+      }
     }
   }
 

@@ -21,7 +21,7 @@ printf '%s\n' '{"version":1,"bar":{"id":"acme.bar","position":"top","layout":{"l
 printf '%s\n' '{"schemaVersion":1,"id":"acme.bar","name":"Acme Bar","version":"1.0.0","kinds":["bar"],"entryPoints":{"bar":"Bar.qml"}}' >"$plugins_dir/manifest.json"
 printf '%s\n' 'import QtQuick' 'Item {' ' readonly property string version: "1.0.0"' ' property var shell: null' ' Component.onDestruction: if (shell && typeof shell.recordPluginBarDestroyed === "function") shell.recordPluginBarDestroyed()' '}' >"$plugins_dir/Bar.qml"
 # shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$tmp_dir/bin/inotifywait"
+printf '%s\n' '#!/usr/bin/env bash' '[[ ${1-} == --help ]] && exit 0' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$tmp_dir/bin/inotifywait"
 chmod 0755 -- "$tmp_dir/bin/inotifywait"
 
 env PATH="$tmp_dir/bin:$PATH" \
