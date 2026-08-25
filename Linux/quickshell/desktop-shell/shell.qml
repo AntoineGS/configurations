@@ -35,6 +35,8 @@ ShellRoot {
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   readonly property bool testMutationEnabled: Quickshell.env("DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION") === "1"
     && configuredPluginStatePath !== "" && testSurfaceSuppressed
+  readonly property bool testPluginWidgetLoadEnabled: testMutationEnabled
+    && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_WIDGETS") === "1"
   readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
@@ -767,7 +769,7 @@ ShellRoot {
   property var pluginWidgetComponents: ({})
 
   function syncPluginWidgets() {
-    if (shell.testSurfaceSuppressed) {
+    if (shell.testSurfaceSuppressed && !shell.testPluginWidgetLoadEnabled) {
       shell.unloadPluginWidgets()
       return
     }
@@ -895,7 +897,8 @@ ShellRoot {
     // flight from one that never happened.
     setPluginWidgetComponent(registryKey, { url: url, component: null })
 
-    var comp = Qt.createComponent(url, Component.Asynchronous)
+    var comp = shell.testPluginWidgetLoadEnabled
+      ? Qt.createComponent(url) : Qt.createComponent(url, Component.Asynchronous)
     function finalize() {
       if (comp.status === Component.Ready) {
         shell.barWidgetRegistry.register(registryKey, comp, meta)
@@ -912,6 +915,17 @@ ShellRoot {
     } else {
       finalize()
     }
+  }
+
+  function testPluginWidgetReady(id) {
+    if (!shell.testPluginWidgetLoadEnabled) return "disabled"
+    var key = String(id || "")
+    if (!shell.pluginRegistry.installedPlugins[key]) return "absent"
+    if (!shell.pluginRegistry.isEnabled(key)) return "absent"
+    var entry = shell.pluginWidgetComponents[key]
+    if (!entry) return "absent"
+    if (!entry.component) return "loading"
+    return entry.component.status === Component.Ready ? "ready" : "loading"
   }
 
   // Bar widgets are instantiated once per screen, but their IPC targets are
@@ -1149,6 +1163,10 @@ ShellRoot {
       if (shell.pluginStateWriteError !== "") return "rejected-write-failed"
       if (!shell.pluginStateDirectoryReady) return "rejected-not-ready"
       return "pending"
+    }
+
+    function pluginWidgetReady(id: string): string {
+      return shell.testPluginWidgetReady(id)
     }
   }
 }
