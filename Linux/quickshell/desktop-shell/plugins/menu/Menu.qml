@@ -643,6 +643,7 @@ Item {
 
                   Text {
                     width: Style.space(14)
+                    height: parent.height
                     text: row.kind === "menu" || row.kind === "link" ? "›" : ""
                     color: root.secondaryForeground
                     opacity: row.kind === "menu" || row.kind === "link" ? 0.5 : 0

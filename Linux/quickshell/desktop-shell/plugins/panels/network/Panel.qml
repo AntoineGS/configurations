@@ -21,6 +21,8 @@ Panel {
   property string connectedSsid: ""
   property int iwdSignal: 0
   property var iwdNetworks: []
+  property bool initialProbeCompleted: false
+  property bool initialProbeHadStation: false
   readonly property bool capabilityAvailable: iwdAvailable || stationPath !== ""
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -233,6 +235,12 @@ Panel {
       setHealthError("iwd state query failed")
       return
     }
+    if (!parsed.available
+        && (parsed.device !== null || parsed.stationPath !== null || parsed.state !== "disconnected"
+            || parsed.connectedSsid !== null || parsed.signal !== 0 || parsed.networks.length !== 0)) {
+      setHealthError("iwd state query failed")
+      return
+    }
     var previousSession = Model.connectionSessionKey(iwdDevice, connectionState, connectedSsid)
     var nextDevice = parsed.device === null ? "" : String(parsed.device || "")
     var nextState = String(parsed.state || "")
@@ -246,7 +254,11 @@ Panel {
     iwdSignal = Math.max(0, Math.min(100, Math.round(Number(parsed.signal || 0))))
     iwdNetworks = parsed.networks
     syncWifiNetworks()
-    healthError = iwdAvailable ? "" : "iwd station capability unavailable"
+    if (!initialProbeCompleted) {
+      initialProbeCompleted = true
+      initialProbeHadStation = parsed.available
+    }
+    healthError = ""
     reportHealth()
   }
 
@@ -311,7 +323,7 @@ Panel {
     id: idleRefreshTimer
     interval: 15000
     repeat: true
-    running: !root.opened
+    running: !root.opened && (!root.initialProbeCompleted || root.initialProbeHadStation)
     onTriggered: root.requestRefresh(false)
   }
 
@@ -319,7 +331,7 @@ Panel {
     id: openRefreshTimer
     interval: 3000
     repeat: true
-    running: root.opened
+    running: root.opened && (!root.initialProbeCompleted || root.initialProbeHadStation)
     onTriggered: root.requestRefresh(false)
   }
 
