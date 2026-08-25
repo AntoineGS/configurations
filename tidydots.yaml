@@ -74,7 +74,6 @@ applications:
           linux: npm install -g opencode-with-claude
           windows: npm install -g opencode-with-claude
         name: claude-plugin
-        when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
         run:
@@ -1235,7 +1234,6 @@ applications:
         run:
           linux: ~/.local/share/helpers/setup-remmina-hostkey --apply
         name: disable-remmina-hostkey
-        when: '{{ and (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
       - targets:
           linux: ~/.local/share/applications/common
         name: common .desktop files
@@ -1334,13 +1332,7 @@ applications:
           - office-shares-auth-check.service
           - office-shares-auth-check.timer
       - check:
-          linux: >-
-            systemctl --user is-enabled --quiet office-shares-mount.timer &&
-            systemctl --user is-active --quiet office-shares-mount.timer &&
-            systemctl --user is-enabled --quiet office-shares-auth-check.timer &&
-            systemctl --user is-active --quiet office-shares-auth-check.timer &&
-            test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no &&
-            test "$(systemctl --user show office-shares-auth-check.timer --property=NeedDaemonReload --value)" = no
+          linux: systemctl --user is-enabled --quiet office-shares-mount.timer && systemctl --user is-active --quiet office-shares-mount.timer && systemctl --user is-enabled --quiet office-shares-auth-check.timer && systemctl --user is-active --quiet office-shares-auth-check.timer && test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no && test "$(systemctl --user show office-shares-auth-check.timer --property=NeedDaemonReload --value)" = no
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer office-shares-auth-check.timer
         name: enable-timer
@@ -1763,7 +1755,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: 1password-beta
+        pacman: 1password
     name: 1password
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
