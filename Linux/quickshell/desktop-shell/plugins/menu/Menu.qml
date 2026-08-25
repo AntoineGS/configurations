@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "MenuModel.js" as MenuModel
+import "../../services/CalculatorProvider.js" as CalculatorProvider
 
 Item {
   id: root
@@ -21,6 +22,11 @@ Item {
   property string filterText: ""
   property int selectedIndex: 0
   property bool cursorActive: false
+  property bool calculatorFocused: false
+  property int calculatorSerial: 0
+  property string calculatorPendingQuery: ""
+  property string calculatorResult: ""
+  property string calculatorResultQuery: ""
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
 
@@ -157,7 +163,11 @@ Item {
       }
     }
 
-    var rows = MenuModel.composeSearchResults(commandRows, appRows, null)
+    var calculatorResult = null
+    if (query && active === "root" && root.calculatorResult && root.calculatorResultQuery === query)
+      calculatorResult = MenuModel.calculatorRow(query, root.calculatorResult, root.calculatorSerial)
+
+    var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
     for (var k = 0; k < rows.length; k++) displayModel.append(rows[k])
     root.settleCursor()
   }
@@ -180,7 +190,19 @@ Item {
     root.filterText = String(nextFilter || "")
     root.selectedIndex = 0
     root.cursorActive = true
+    root.scheduleCalculator(root.filterText)
     root.rebuildDisplay()
+  }
+
+  function scheduleCalculator(query) {
+    root.calculatorSerial += 1
+    root.calculatorPendingQuery = String(query || "").trim()
+    root.calculatorResult = ""
+    root.calculatorResultQuery = ""
+    calculatorDebounce.stop()
+    calculatorTimeout.stop()
+    if (calculatorProcess.running) calculatorProcess.signal(15)
+    if (CalculatorProvider.isExpressionLike(root.calculatorPendingQuery)) calculatorDebounce.restart()
   }
 
   function setActiveMenu(id, pushHistory) {
@@ -216,6 +238,10 @@ Item {
       root.opened = false
       root.filterText = ""
       if (root.appLibrary) root.appLibrary.launch(row.desktopId, row.label)
+    } else if (row.kind === "calculator") {
+      root.opened = false
+      root.filterText = ""
+      Quickshell.execDetached(["wl-copy", "--type", "text/plain", row.label])
     } else {
       root.applySelected(row.action)
     }
@@ -268,12 +294,15 @@ Item {
   function open(payloadJson) {
     var payload = ({})
     try { payload = JSON.parse(String(payloadJson || "{}")) } catch (error) { payload = ({}) }
+    root.calculatorFocused = payload.mode === "calculator"
     return root.openRoute(payload.initialMenu || payload.menu || "root")
   }
 
   function close() {
     root.opened = false
     root.filterText = ""
+    root.calculatorFocused = false
+    root.scheduleCalculator("")
   }
 
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
@@ -307,6 +336,53 @@ Item {
     command: []
     stdout: StdioCollector { waitForEnd: true }
     stderr: StdioCollector { waitForEnd: true }
+  }
+
+  Timer {
+    id: calculatorDebounce
+    interval: 150
+    onTriggered: {
+      if (calculatorProcess.running) {
+        calculatorDebounce.restart()
+        return
+      }
+      calculatorProcess.requestSerial = root.calculatorSerial
+      calculatorProcess.requestQuery = root.calculatorPendingQuery
+      calculatorProcess.command = ["qalc", "-t", calculatorProcess.requestQuery]
+      calculatorProcess.running = true
+      calculatorTimeout.restart()
+    }
+  }
+
+  Timer {
+    id: calculatorTimeout
+    interval: 1500
+    onTriggered: if (calculatorProcess.running) calculatorProcess.signal(15)
+  }
+
+  Process {
+    id: calculatorProcess
+    property int requestSerial: 0
+    property string requestQuery: ""
+    property string output: ""
+    command: []
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (calculatorProcess.output.length <= 4096)
+          calculatorProcess.output += (calculatorProcess.output ? "\n" : "") + line
+      }
+    }
+    stderr: StdioCollector { waitForEnd: true }
+    onStarted: output = ""
+    onExited: function(exitCode) {
+      calculatorTimeout.stop()
+      var result = Number(exitCode) === 0 ? CalculatorProvider.normalizeResult(output, 4096) : ""
+      if (!result || !CalculatorProvider.shouldAcceptResult(requestSerial, root.calculatorSerial,
+          requestQuery, root.filterText.trim())) return
+      root.calculatorResult = result
+      root.calculatorResultQuery = requestQuery
+      if (root.opened) root.rebuildDisplay()
+    }
   }
 
   FileView {
@@ -405,7 +481,8 @@ Item {
           Text {
             width: parent.width
             height: Style.space(34)
-            text: root.filterText || ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
+            text: root.filterText || (root.calculatorFocused ? "Calculate…"
+              : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…"))
             color: root.foreground
             opacity: root.filterText ? 1 : 0.62
             font.family: root.fontFamily

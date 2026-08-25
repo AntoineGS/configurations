@@ -51,6 +51,7 @@ kdenlive
 lazydocker
 lazygit
 libmspack
+libqalculate
 libva-nvidia-driver
 luacheck
 luarocks
