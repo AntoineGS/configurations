@@ -30,6 +30,10 @@ text = "#cdd6f4"
 border = "#cba6f7"
 border-alpha = 1.0
 
+[modal]
+scrim = "#1e1e2e"
+scrim-alpha = 0.5
+
 [menu]
 background = "#1e1e2e"
 background-alpha = 1.0
