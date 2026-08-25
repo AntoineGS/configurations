@@ -814,7 +814,10 @@ Item {
     Item {
       id: cardFrame
 
-      width: Math.min(Style.space(460), panel.width - Style.gapsOut * 2)
+      width: Math.min(
+        Style.space(root.dmenuActive && root.menuMode === "select" ? 720 : 460),
+        panel.width - Style.gapsOut * 2
+      )
       height: root.cardHeight
       anchors.horizontalCenter: parent.horizontalCenter
       y: root.cardTop
