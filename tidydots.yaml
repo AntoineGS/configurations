@@ -812,13 +812,10 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: inotify-tools
-    name: desktop-shell-inotify-tools
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        pacman: quickshell
+        pacman:
+          name: quickshell
+          deps:
+            - inotify-tools
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
