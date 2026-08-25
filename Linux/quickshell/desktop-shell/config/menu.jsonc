@@ -43,6 +43,11 @@
   "install": { "label": "Install" },
   "install.package": { "label": "Package", "action": "install.package" },
   "install.aur": { "label": "AUR", "action": "install.aur" },
+  "install.plugin-marketplace": {
+    "label": "Plugin Marketplace",
+    "description": "Browse and install community shell plugins",
+    "action": "install.plugin-marketplace"
+  },
 
   "remove": { "label": "Remove" },
   "remove.package": { "label": "Package", "action": "remove.package" },

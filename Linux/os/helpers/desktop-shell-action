@@ -59,6 +59,9 @@ case "$action" in
 
   install.package)          argv=(launch-tui-large pkg-install) ;;
   install.aur)              argv=(launch-tui-large pkg-aur-install) ;;
+  install.plugin-marketplace)
+    argv=(desktop-shell summon io.yasino55.omarchy-plugin-marketplace '{}')
+    ;;
   remove.package)           argv=(launch-tui-large pkg-remove) ;;
 
   update.system)            argv=(launch-tui-large update) ;;

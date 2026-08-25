@@ -41,6 +41,7 @@ commands=(
   launch-wifi
   launch-bluetooth
   desktop-shell-prompt-action
+  desktop-shell
   start-all-terminals
 )
 for command in "${commands[@]}"; do
@@ -71,6 +72,8 @@ assert_action setup.bluetooth-tui 'launch-bluetooth'
 assert_action system.suspend-in 'desktop-shell-prompt-action system.suspend-in'
 assert_action system.close-rustdesk-in 'desktop-shell-prompt-action system.close-rustdesk-in'
 assert_action trigger.start-all-terminals 'start-all-terminals'
+assert_action install.plugin-marketplace \
+  'desktop-shell summon io.yasino55.omarchy-plugin-marketplace {}'
 
 rm -f "$log"
 if ACTION_LOG=$log PATH="$bin:$PATH" "$action_helper" unknown.action >/dev/null 2>&1; then
