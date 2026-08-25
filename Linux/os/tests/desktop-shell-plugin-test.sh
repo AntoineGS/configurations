@@ -33,6 +33,38 @@ make_repo() {
   git -C "$directory" -c user.name=test -c user.email=test@example.invalid commit -qm "$id"
 }
 
+make_identity_plugin() {
+  local remote=$1 seed=$2 installed=$3 id=$4
+  cp -a -- "$source_repo" "$seed"
+  jq --arg id "$id" '.id=$id' "$seed/manifest.json" >"$seed/manifest.tmp"
+  mv -- "$seed/manifest.tmp" "$seed/manifest.json"
+  git -C "$seed" add manifest.json
+  git -C "$seed" -c user.name=test -c user.email=test@example.invalid commit -qm "$id"
+  git -C "$seed" checkout -q -b main
+  git clone -q --bare -- "$seed" "$remote"
+  git -C "$seed" remote add origin "$remote"
+  git -C "$seed" push -q "$remote" main
+  git -C "$remote" symbolic-ref HEAD refs/heads/main
+  git clone -q -- "$remote" "$installed"
+}
+
+update_identity_remote() {
+  local seed=$1 id=$2
+  jq --arg id "$id" '.id=$id' "$seed/manifest.json" >"$seed/manifest.tmp"
+  mv -- "$seed/manifest.tmp" "$seed/manifest.json"
+  git -C "$seed" add manifest.json
+  git -C "$seed" -c user.name=test -c user.email=test@example.invalid commit -qm "$id"
+  git -C "$seed" push -q origin main
+}
+
+commit_identity_remote_change() {
+  local seed=$1 marker=$2
+  printf '%s\n' "$marker" >>"$seed/Widget.qml"
+  git -C "$seed" add Widget.qml
+  git -C "$seed" -c user.name=test -c user.email=test@example.invalid commit -qm "$marker"
+  git -C "$seed" push -q origin main
+}
+
 write_manifest
 git -C "$source_repo" init -q
 git -C "$source_repo" -c user.name=test -c user.email=test@example.invalid add .
@@ -634,11 +666,17 @@ bulk_plugins="$test_root/bulk-plugins"
 mkdir -p -- "$bulk_plugins"
 bulk_good="$bulk_plugins/bulk-good.widget"
 bulk_bad="$bulk_plugins/bulk-bad.widget"
-git clone -q -- "$remote_root/lifecycle.git" "$bulk_good"
-git clone -q -- "$remote_root/lifecycle.git" "$bulk_bad"
+bulk_good_remote="$test_root/bulk-good.git"
+bulk_good_seed="$test_root/bulk-good-seed"
+bulk_bad_remote="$test_root/bulk-bad.git"
+bulk_bad_seed="$test_root/bulk-bad-seed"
+make_identity_plugin "$bulk_good_remote" "$bulk_good_seed" "$bulk_good" bulk-good.widget
+make_identity_plugin "$bulk_bad_remote" "$bulk_bad_seed" "$bulk_bad" bulk-bad.widget
+commit_identity_remote_change "$bulk_good_seed" bulk-update-good
 printf 'bulk-diverged\n' >>"$bulk_bad/Widget.qml"
 git -C "$bulk_bad" add Widget.qml
 git -C "$bulk_bad" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-diverged
+commit_identity_remote_change "$bulk_bad_seed" bulk-update-bad
 printf 'bulk-update\n' >>"$validation_repo/Widget.qml"
 git -C "$validation_repo" add Widget.qml
 git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm bulk-update
@@ -662,12 +700,84 @@ bulk_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $((bulk_rescan_after - bulk_rescan_before)) == 1 ]] || fail "partial bulk update did not request exactly one rescan"
 [[ -f "$visible_non_git/marker" ]] || fail "visible non-Git directory was touched by bulk update"
 
+identity_plugins="$test_root/identity-plugins"
+mkdir -p -- "$identity_plugins"
+identity_a_remote="$test_root/identity-a.git"
+identity_a_seed="$test_root/identity-a-seed"
+identity_a="$identity_plugins/acme.a"
+identity_b_remote="$test_root/identity-b.git"
+identity_b_seed="$test_root/identity-b-seed"
+identity_b="$identity_plugins/acme.b"
+make_identity_plugin "$identity_a_remote" "$identity_a_seed" "$identity_a" acme.a
+make_identity_plugin "$identity_b_remote" "$identity_b_seed" "$identity_b" acme.b
+identity_a_prior=$(git -C "$identity_a" rev-parse HEAD)
+identity_b_prior=$(git -C "$identity_b" rev-parse HEAD)
+update_identity_remote "$identity_a_seed" acme.renamed
+identity_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+identity_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$identity_plugins" "$manager" update --yes >/dev/null 2>&1; then
+  identity_status=0
+else
+  identity_status=$?
+fi
+[[ $identity_status != 0 ]] || fail "bulk manifest identity change was accepted"
+[[ $(git -C "$identity_a" rev-parse HEAD) == "$identity_a_prior" ]] || fail "identity-changing update changed A"
+[[ $(git -C "$identity_b" rev-parse HEAD) == "$identity_b_prior" ]] || fail "identity-changing update touched B"
+identity_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $identity_rescan_after == "$identity_rescan_before" ]] || fail "identity-changing bulk update requested rescan"
+jq -n '[{id:"acme.a"},{id:"acme.b"}]' >"$IPC_LIST"
+identity_list=$(env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$identity_plugins" "$manager" list)
+[[ $identity_list == *$'acme.a\t'* ]] || fail "identity-changing update lost A's original ID"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$identity_plugins" "$manager" update acme.a --yes >/dev/null 2>&1; then
+  fail "explicit update accepted changed manifest ID"
+fi
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$identity_plugins" "$manager" remove acme.a --yes >/dev/null ||
+  fail "remove did not resolve A by its original ID"
+[[ ! -e "$identity_a" ]] || fail "remove did not remove A by its original ID"
+
+duplicate_plugins="$test_root/duplicate-plugins"
+mkdir -p -- "$duplicate_plugins"
+duplicate_a_remote="$test_root/duplicate-a.git"
+duplicate_a_seed="$test_root/duplicate-a-seed"
+duplicate_a="$duplicate_plugins/acme.a"
+duplicate_b_remote="$test_root/duplicate-b.git"
+duplicate_b_seed="$test_root/duplicate-b-seed"
+duplicate_b="$duplicate_plugins/acme.b"
+make_identity_plugin "$duplicate_a_remote" "$duplicate_a_seed" "$duplicate_a" acme.a
+make_identity_plugin "$duplicate_b_remote" "$duplicate_b_seed" "$duplicate_b" acme.b
+duplicate_a_prior=$(git -C "$duplicate_a" rev-parse HEAD)
+duplicate_b_prior=$(git -C "$duplicate_b" rev-parse HEAD)
+update_identity_remote "$duplicate_a_seed" acme.b
+duplicate_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+duplicate_status=0
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager" update --yes >/dev/null 2>&1; then
+  duplicate_status=0
+else
+  duplicate_status=$?
+fi
+[[ $duplicate_status != 0 ]] || fail "bulk duplicate manifest ID was accepted"
+[[ $(git -C "$duplicate_a" rev-parse HEAD) == "$duplicate_a_prior" ]] || fail "duplicate update changed A"
+[[ $(git -C "$duplicate_b" rev-parse HEAD) == "$duplicate_b_prior" ]] || fail "duplicate update touched B"
+duplicate_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+[[ $duplicate_rescan_after == "$duplicate_rescan_before" ]] || fail "duplicate bulk update requested rescan"
+jq -n '[{id:"acme.a"},{id:"acme.b"}]' >"$IPC_LIST"
+duplicate_list=$(env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager" list)
+[[ $duplicate_list == *$'acme.a\t'* ]] || fail "duplicate update lost A's original ID"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager" update acme.a --yes >/dev/null 2>&1; then
+  fail "explicit duplicate update was accepted"
+fi
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager" remove acme.a --yes >/dev/null ||
+  fail "remove did not resolve duplicate A by its original ID"
+[[ ! -e "$duplicate_a" ]] || fail "remove did not remove duplicate A by its original ID"
+
 abort_plugins="$test_root/abort-plugins"
 mkdir -p -- "$abort_plugins"
 abort_first="$abort_plugins/abort-a.widget"
 abort_second="$abort_plugins/abort-b.widget"
-git clone -q -- "$remote_root/lifecycle.git" "$abort_first"
-git clone -q -- "$remote_root/lifecycle.git" "$abort_second"
+make_identity_plugin "$test_root/abort-a.git" "$test_root/abort-a-seed" "$abort_first" abort-a.widget
+make_identity_plugin "$test_root/abort-b.git" "$test_root/abort-b-seed" "$abort_second" abort-b.widget
+commit_identity_remote_change "$test_root/abort-a-seed" abort-rollback-a
+commit_identity_remote_change "$test_root/abort-b-seed" abort-rollback-b
 printf 'abort-rollback\n' >>"$validation_repo/Widget.qml"
 git -C "$validation_repo" add Widget.qml
 git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm abort-rollback
@@ -722,8 +832,10 @@ retained_abort_plugins="$test_root/retained-abort-plugins"
 mkdir -p -- "$retained_abort_plugins"
 retained_abort_a="$retained_abort_plugins/retained-a.widget"
 retained_abort_b="$retained_abort_plugins/retained-b.widget"
-git clone -q -- "$remote_root/lifecycle.git" "$retained_abort_a"
-git clone -q -- "$remote_root/lifecycle.git" "$retained_abort_b"
+make_identity_plugin "$test_root/retained-a.git" "$test_root/retained-a-seed" "$retained_abort_a" retained-a.widget
+make_identity_plugin "$test_root/retained-b.git" "$test_root/retained-b-seed" "$retained_abort_b" retained-b.widget
+commit_identity_remote_change "$test_root/retained-a-seed" retained-abort-a
+commit_identity_remote_change "$test_root/retained-b-seed" retained-abort-b
 printf 'retained-abort-update\n' >>"$validation_repo/Widget.qml"
 git -C "$validation_repo" add Widget.qml
 git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm retained-abort-update
