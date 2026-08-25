@@ -10,6 +10,14 @@
   "trigger.share-clipboard": { "label": "Share clipboard", "action": "trigger.share-clipboard" },
   "trigger.share-file": { "label": "Share file", "action": "trigger.share-file" },
   "trigger.share-folder": { "label": "Share folder", "action": "trigger.share-folder" },
+  "trigger.toggle": { "label": "Toggle" },
+  "trigger.toggle.top-bar": { "label": "Toggle top bar", "action": "trigger.toggle.top-bar" },
+  "trigger.toggle.window-gaps": { "label": "Toggle window gaps", "action": "trigger.toggle.window-gaps" },
+  "trigger.toggle.window-ratio": { "label": "Toggle 1-window ratio", "action": "trigger.toggle.window-ratio" },
+  "trigger.toggle.workspace-layout": { "label": "Toggle workspace layout", "action": "trigger.toggle.workspace-layout" },
+  "trigger.toggle.nightlight": { "label": "Toggle nightlight", "action": "trigger.toggle.nightlight" },
+  "trigger.toggle.idle-lock": { "label": "Toggle idle lock", "action": "trigger.toggle.idle-lock" },
+  "trigger.turn-off-screens": { "label": "Turn off screens", "action": "trigger.turn-off-screens" },
 
   "setup": { "label": "Setup" },
   "setup.audio": { "label": "Audio", "action": "setup.audio" },
@@ -25,6 +33,11 @@
     "action": "setup.shell-config"
   },
   "setup.shell-health": { "label": "Shell health", "action": "setup.shell-health" },
+  "setup.keybindings": { "label": "Keybindings", "action": "setup.keybindings" },
+  "setup.cycle-display-scaling": { "label": "Cycle display scaling", "action": "setup.cycle-display-scaling" },
+  "setup.audio-tui": { "label": "Audio (wiremix)", "action": "setup.audio-tui" },
+  "setup.wifi-tui": { "label": "Wi-Fi (impala)", "action": "setup.wifi-tui" },
+  "setup.bluetooth-tui": { "label": "Bluetooth (bluetui)", "action": "setup.bluetooth-tui" },
 
   "install": { "label": "Install" },
   "install.package": { "label": "Package", "action": "install.package" },
