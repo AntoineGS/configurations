@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.clipboard",
+  "name": "Clipboard",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Search and paste clipboard history",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Clipboard.qml"
+  }
+}

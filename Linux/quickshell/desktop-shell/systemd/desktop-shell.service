@@ -4,6 +4,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
+UMask=0077
 Environment=DESKTOP_SHELL_NOTIFICATIONS_REGISTER=1
 Environment=DESKTOP_SHELL_POLKIT_REGISTER=1
 ExecStart=%h/.local/share/helpers/desktop-shell-launch
