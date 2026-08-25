@@ -275,12 +275,6 @@ Item {
     return true
   }
 
-  function selectFromPointer(index) {
-    if (!root.rowSelectable(index)) return
-    root.cursorActive = true
-    root.selectedIndex = index
-  }
-
   function openExistingMenu(initialMenu) {
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = "menu"
@@ -653,18 +647,6 @@ Item {
                   }
                 }
 
-                MouseArea {
-                  anchors.fill: parent
-                  enabled: !row.disabled
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onEntered: root.selectFromPointer(row.index)
-                  onClicked: {
-                    root.cursorActive = true
-                    root.selectedIndex = row.index
-                    root.activateIndex(row.index)
-                  }
-                }
               }
             }
 
