@@ -70,8 +70,13 @@ Item {
   readonly property bool fingerprintMode: (root.fingerprintConfigured || root.fingerprintPrompt)
     && root.dialogVisible && !root.responseRequired && !root.submitted && !root.errorFlash
   readonly property int cardHeight: panel.height > 0
-    ? Math.min(root.fieldHeight + Style.spacing.popupPadding * 2, panel.height - Style.gapsOut * 2)
+    ? Math.min(
+        root.fieldHeight + Style.spacing.popupPadding * 2
+          + Border.top(root.borderSpec) + Border.bottom(root.borderSpec),
+        panel.height - Style.gapsOut * 2
+      )
     : root.fieldHeight + Style.spacing.popupPadding * 2
+      + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
   readonly property int cardWidth: root.fingerprintMode
     ? root.cardHeight
     : Math.min(
