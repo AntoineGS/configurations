@@ -24,7 +24,7 @@ cat >"$helper_dir/desktop-shell-plugin" <<'EOF'
 set -Eeuo pipefail
 printf 'manager %s\n' "$*" >>"$CALL_LOG"
 case ${1-} in
-  list) [[ ${2-} == --json ]] && printf '%s\n' "${PLUGIN_LIST:-[]}" ;;
+  list) [[ ${2-} == --json ]] && cat -- "$PLUGIN_LIST_FILE" ;;
   add) mkdir -p -- "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace"; printf '%s\n' '{"id":"io.yasino55.omarchy-plugin-marketplace"}' >"$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace/manifest.json"; git -C "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace" init -q; git -C "$DESKTOP_SHELL_PLUGINS_DIR/io.yasino55.omarchy-plugin-marketplace" remote add origin 'https://github.com/Yasino55/omarchy-plugin-marketplace.git' ;;
   enable)
     [[ ${3-} == --headless ]] || exit 2
@@ -35,6 +35,11 @@ case ${1-} in
        | .bar.layout.right = [.bar.layout.right[]? | select(.id != $id)]' \
       "$SHELL_CONFIG_FILE" >"$tmp_config"
     mv -- "$tmp_config" "$SHELL_CONFIG_FILE"
+    tmp_list=$(mktemp)
+    jq --arg id io.yasino55.omarchy-plugin-marketplace \
+      'map(if .id == $id then .enabled = true else . end)' \
+      "$PLUGIN_LIST_FILE" >"$tmp_list"
+    mv -- "$tmp_list" "$PLUGIN_LIST_FILE"
     printf 'enabled\n' >>"$CALL_LOG"
     ;;
   *) exit 2 ;;
@@ -66,7 +71,8 @@ EOF
 cp -- "$source_helper" "$helper_dir/setup-desktop-shell-marketplace"
 chmod +x -- "$helper_dir/desktop-shell-plugin" "$helper_dir/omarchy-shell" "$helper_dir/setup-desktop-shell-marketplace" "$bin_dir/systemctl"
 
-export CALL_LOG="$log_file" DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]' SHELL_CONFIG_FILE="$test_root/shell-config.json"
+export CALL_LOG="$log_file" DESKTOP_SHELL_PLUGINS_DIR="$plugins_dir" PLUGIN_LIST_FILE="$test_root/plugin-list.json" SHELL_CONFIG_FILE="$test_root/shell-config.json"
+printf '%s\n' '[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]' >"$PLUGIN_LIST_FILE"
 printf '%s\n' '{"bar":{"layout":{"left":[],"center":[],"right":[]}}}' >"$SHELL_CONFIG_FILE"
 
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then
@@ -144,11 +150,11 @@ if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then f
 pass "wrong manifest id is rejected"
 jq -n '{id:"io.yasino55.omarchy-plugin-marketplace"}' >"$plugins_dir/io.yasino55.omarchy-plugin-marketplace/manifest.json"
 
-PLUGIN_LIST='[]'
+printf '%s\n' '[]' >"$PLUGIN_LIST_FILE"
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "undiscovered plugin passed check"; fi
-PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":false,"firstParty":false}]'
+printf '%s\n' '[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":false,"firstParty":false}]' >"$PLUGIN_LIST_FILE"
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "disabled plugin passed check"; fi
-PLUGIN_LIST='[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]'
+printf '%s\n' '[{"id":"io.yasino55.omarchy-plugin-marketplace","enabled":true,"firstParty":false}]' >"$PLUGIN_LIST_FILE"
 printf '%s\n' '{"bar":{"layout":{"left":[],"center":[],"right":[{"id":"io.yasino55.omarchy-plugin-marketplace"}]}}}' >"$SHELL_CONFIG_FILE"
 if "$helper_dir/setup-desktop-shell-marketplace" --check >/dev/null 2>&1; then fail "wrong placement passed check"; fi
 pass "discovery, enabled state, and barless placement are checked"

@@ -92,6 +92,11 @@ for _ in {1..100}; do
   sleep 0.1
 done
 jq -e '.scanFinishedCount >= 2' <<<"$health" >/dev/null
+jq -e 'any(.[]; .id == "acme.widget" and .enabled == true)' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins)" >/dev/null
+jq -e --arg id acme.widget \
+  '[.bar.layout.left[]?, .bar.layout.center[]?, .bar.layout.right[]?] | all(.id != $id)' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listShellConfig)" >/dev/null
 widget_ready=""
 for _ in {1..100}; do
   widget_ready=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget 2>/dev/null || true)
