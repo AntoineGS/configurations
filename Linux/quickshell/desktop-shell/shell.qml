@@ -90,6 +90,8 @@ ShellRoot {
     watcherGuardError: pluginRegistry ? pluginRegistry.watcherGuardError : "",
     watcherGuardRetryCount: pluginRegistry ? pluginRegistry.guardRetryCount : 0,
     reloadGeneration: shell.pluginReloadGeneration,
+    pluginLoadEpoch: shell.pluginLoadEpoch,
+    pluginBarLoadCount: shell.pluginBarLoadCount,
     scanFinishedCount: pluginRegistry ? pluginRegistry.scanFinishedCount : 0,
     watchChangeCount: pluginRegistry ? pluginRegistry.watchChangeCount : 0,
     activeBarId: shell.activeBarId,
@@ -111,6 +113,8 @@ ShellRoot {
   property bool pluginReloadPending: false
   property int pluginReloadGeneration: 0
   property int pluginLoadEpoch: 0
+  property int pluginBarLoadCount: 0
+  property bool pluginBarReloadEnabled: true
   property var reloadComponentStates: ({})
   property int reloadTokenCounter: 0
   property string reloadGenerationError: ""
@@ -352,6 +356,7 @@ ShellRoot {
     id: pluginBarLoader
 
     active: !shell.testSurfaceSuppressed
+      && shell.pluginBarReloadEnabled
       && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
@@ -363,6 +368,7 @@ ShellRoot {
     property string reloadToken: ""
     onLoaded: {
       if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
+      shell.pluginBarLoadCount++
       shell.pluginRegistry.clearPluginError(loadId, "bar")
       shell.configureBar(item, shell.activeBarManifest)
     }
@@ -934,10 +940,14 @@ ShellRoot {
     shell.pluginReloading = true
     pluginBarLoader.reloadToken = ""
     pluginBarLoader.loadGeneration = -1
+    shell.pluginBarReloadEnabled = false
     shell.unloadPanels()
     shell.unloadPluginServices()
     shell.unloadPluginWidgets()
-    Qt.callLater(shell.finishPluginReload)
+    Qt.callLater(function() {
+      shell.pluginBarReloadEnabled = true
+      shell.finishPluginReload()
+    })
   }
 
   function finishPluginReload() {
@@ -995,20 +1005,26 @@ ShellRoot {
     target: shell.pluginRegistry
     function onWatchReloadReady() {
       if (shell.pluginReloading || shell.pluginRegistry.scanning) {
+        shell.pluginLoadEpoch++
         shell.pluginReloadPending = true
         return
       }
       shell.reloadPlugins()
     }
     function onScanFinished() {
+      if (shell.pluginReloadPending) {
+        shell.pluginReloadPending = false
+        shell.pluginReloading = false
+        shell.reloadPlugins()
+        return
+      }
       shell.pluginReloading = false
       shell._syncServices()
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
-      if (shell.pluginReloadPending) {
-        shell.pluginReloadPending = false
-        shell.reloadPlugins()
-      }
+    }
+    function onRescanRequested() {
+      shell.reloadPlugins()
     }
   }
 
