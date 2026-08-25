@@ -62,7 +62,7 @@ Panel {
 
   function reportHealth() {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
-    if (!registry) return
+    if (!registry) return;
     var scope = "capability:panel:" + moduleName
     if (healthError === "") registry.clearPluginError(moduleName, scope)
     else registry.recordPluginError(moduleName, healthError, scope)
