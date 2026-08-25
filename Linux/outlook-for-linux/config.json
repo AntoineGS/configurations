@@ -1,4 +1,18 @@
 {
   "menubar": "hidden",
-  "vimMode": true
+  "shortcuts": {
+    "vim": {
+      "enabled": true
+    }
+  },
+  "logConfig": {
+    "transports": {
+      "console": {
+        "level": "info"
+      },
+      "file": {
+        "level": false
+      }
+    }
+  }
 }
