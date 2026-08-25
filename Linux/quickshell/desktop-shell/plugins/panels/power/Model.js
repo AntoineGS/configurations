@@ -49,12 +49,13 @@ function batteryBarIcon(percent, state, onBattery) {
 
 function batteryBarValue(percent, state, onBattery) {
   if (isFullyCharged(percent, state, onBattery)) return ""
+  if (isCharging(state)) return percent + "%"
   if (isPluggedIn(onBattery)) return "󰚥"
   return percent + "%"
 }
 
 function batteryBarValueIsIcon(percent, state, onBattery) {
-  return !isFullyCharged(percent, state, onBattery) && isPluggedIn(onBattery)
+  return !isFullyCharged(percent, state, onBattery) && !isCharging(state) && isPluggedIn(onBattery)
 }
 
 function modeLabel(state) {
