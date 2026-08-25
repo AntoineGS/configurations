@@ -75,10 +75,10 @@ enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePl
 legacy_rescan=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell rescanPlugins)
 [[ $legacy_rescan == ok ]]
 begin_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell beginPluginRescan 2>/dev/null || true)
-[[ $begin_result != ok && $begin_result != pending && $begin_result != error:* ]] \
+[[ $begin_result == "Function not found." ]] \
   || { printf 'beginPluginRescan is still exposed: %s\n' "$begin_result" >&2; exit 1; }
 status_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell pluginRescanStatus unknown 2>/dev/null || true)
-[[ $status_result != ok && $status_result != pending && $status_result != error:* ]] \
+[[ $status_result == "Function not found." ]] \
   || { printf 'pluginRescanStatus is still exposed: %s\n' "$status_result" >&2; exit 1; }
 for _ in {1..100}; do
   health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)

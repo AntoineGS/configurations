@@ -409,29 +409,38 @@ ShellRoot {
     var url = pluginRegistry.entryPointUrl(manifest, "service")
     if (!url) return null
 
-    var reloadToken = shell.beginReloadOperation("service:" + key)
+    var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+    var loadManifest = manifest
+    var loadUrl = url
     var comp = Qt.createComponent(url, Component.PreferSynchronous)
     function finalize() {
       if (comp.status === Component.Loading) return
-      if (reloadToken !== "") shell.finishReloadOperation(reloadToken, comp.status, comp.errorString())
+      var currentManifest = shell.pluginRegistry.installedPlugins[key]
+      if (shell.pluginRegistry.pluginSourceGeneration !== loadGeneration
+          || !currentManifest
+          || shell.pluginRegistry.entryPointUrl(currentManifest, "service") !== loadUrl
+          || !shell.pluginRegistry.isEnabled(key)) return
       if (comp.status !== Component.Ready) {
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
+        shell.pluginRegistry.pluginLoadFailed(key, comp.errorString(), loadGeneration)
         return
       }
       var inst = comp.createObject(serviceHost)
       if (!inst) {
         console.warn("service plugin createObject returned null for", key)
+        shell.pluginRegistry.pluginLoadFailed(key, "service createObject returned null", loadGeneration)
         return
       }
       if ("shellPath" in inst) inst.shellPath = shell.shellPath
       if ("shell" in inst) inst.shell = shell
-      if ("manifest" in inst) inst.manifest = manifest
+       if ("manifest" in inst) inst.manifest = loadManifest
       if ("barWidgetRegistry" in inst) inst.barWidgetRegistry = shell.barWidgetRegistry
       if ("pluginRegistry" in inst) inst.pluginRegistry = shell.pluginRegistry
       var snext = ({})
       for (var sk in _services) snext[sk] = _services[sk]
-      snext[key] = inst
-      _services = snext
+       snext[key] = inst
+       _services = snext
+       shell.pluginRegistry.clearPluginError(key)
     }
     if (comp.status === Component.Loading) {
       comp.statusChanged.connect(finalize)
@@ -992,7 +1001,7 @@ ShellRoot {
         console.warn("Plugin widget " + registryKey + " failed: " + comp.errorString())
         // Drop the claim so a later rescan can retry.
         shell.setPluginWidgetComponent(registryKey, null)
-        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString(), shell.pluginReloadGeneration)
+        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString(), shell.pluginRegistry.pluginSourceGeneration)
       }
     }
     if (comp.status === Component.Loading) {

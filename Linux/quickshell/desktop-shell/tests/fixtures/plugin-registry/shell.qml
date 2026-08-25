@@ -17,6 +17,7 @@ ShellRoot {
   property int watchReloadReadyCount: 0
   property int scanFinishedCount: 0
   property bool guardAssertionsStarted: false
+  property bool finishStarted: false
   property var observedIds: ({})
   property PluginRegistry registry: PluginRegistry { }
   property var state: PluginState.emptyState()
@@ -76,6 +77,8 @@ ShellRoot {
   }
 
   function finishGuardAssertions() {
+    if (root.finishStarted) return
+    root.finishStarted = true
     check(root.watchReloadReadyCount === 2, "queued swaps emit coalesced reloads")
     check(root.observedIds["acme.widget"] && root.observedIds["acme.other"]
       && root.observedIds["acme.late"], "all batched IDs observed")
@@ -83,7 +86,35 @@ ShellRoot {
     check(registry.installedPlugins["acme.widget"] && registry.installedPlugins["acme.other"],
       "restored valid tree installs only valid IDs")
     check(!hasError("acme.widget", "invalid JSON"), "restored tree has no manifest error")
-    check(registry.watcherGuardError === "", "successful watcher clears durable error")
+    check(registry.localPluginIdForPath(root.pluginsRoot + "/.stage.acme/manifest.json") === "",
+      "hidden staging path produces no plugin ID")
+    check(registry.localPluginIdForPath(root.pluginsRoot + "/.rollback.acme/manifest.json") === "",
+      "hidden rollback path produces no plugin ID")
+    check(registry.localPluginIdForPath(root.pluginsRoot + "/.removed.acme/manifest.json") === "",
+      "hidden removal path produces no plugin ID")
+    var oldTree = block("thirdparty", root.pluginsRoot + "/acme.swap",
+      manifest("acme.swap", ["panel"], { panel: "Panel.qml" }, { version: "1.0.0" }))
+    var newTree = block("thirdparty", root.pluginsRoot + "/acme.swap",
+      manifest("acme.swap", ["panel"], { panel: "Panel.qml" }, { version: "2.0.0" }))
+    var oldGeneration = registry.pluginSourceGeneration
+    registry.parseScanOutput(oldTree)
+    check(registry.installedPlugins["acme.swap"].version === "1.0.0",
+      "atomic watcher observes a complete old manifest")
+    registry.parseScanOutput(newTree)
+    check(registry.installedPlugins["acme.swap"].version === "2.0.0",
+      "second atomic watcher event converges to latest manifest")
+    check(registry.pluginSourceGeneration > oldGeneration,
+      "plugin source generation advances independently of reload state")
+    registry.pendingWatchIds = ({})
+    registry.activeWatchIds = ({ "acme.retry": true })
+    registry.handleGuardExit(1)
+    check(registry.pendingWatchIds["acme.retry"] === true,
+      "failed watcher child preserves IDs for retry")
+    registry.pendingWatchIds = ({})
+    registry.watcherGuardError = "stale watcher error"
+    registry.watchIdsEmitted = true
+    registry.handleGuardExit(0)
+    check(registry.watcherGuardError === "", "successful retry clears durable error")
     resultFile.setText(JSON.stringify({ ok: true }))
     Qt.exit(0)
   }
@@ -226,13 +257,13 @@ ShellRoot {
       if (root.watchReloadReadyCount === 1) {
         registry.queueLocalPluginChange("acme.late")
         registry.rescan()
-      } else if (root.watchReloadReadyCount === 2) {
-        root.finishGuardAssertions()
       }
     }
     function onScanFinished() {
       root.scanFinishedCount++
       root.runRescanAssertions()
+      if (root.watchReloadReadyCount === 2 && root.scanFinishedCount >= 3)
+        root.finishGuardAssertions()
     }
   }
 
