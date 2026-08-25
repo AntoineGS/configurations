@@ -11,6 +11,7 @@ shell_dir="$repo_root/Linux/quickshell/desktop-shell"
 helper_dir="$repo_root/Linux/os/helpers"
 tmp_dir=$(mktemp -d)
 shell_pid=""
+holder_pid=""
 
 stop_shell() {
   if [[ -n $shell_pid ]]; then
@@ -20,7 +21,15 @@ stop_shell() {
   fi
 }
 
-trap 'stop_shell; rm -rf -- "$tmp_dir"' EXIT
+stop_holder() {
+  if [[ -n $holder_pid ]]; then
+    kill "$holder_pid" 2>/dev/null || true
+    wait "$holder_pid" 2>/dev/null || true
+    holder_pid=""
+  fi
+}
+
+trap 'stop_shell; stop_holder; rm -rf -- "$tmp_dir"' EXIT
 
 plugins_dir="$tmp_dir/plugins"
 state_file="$tmp_dir/home/.config/desktop-shell/shell.json"
@@ -32,6 +41,10 @@ cat >"$plugins_dir/acme.widget/BarWidget.qml" <<'QML'
 import QtQuick
 Item { }
 QML
+git -C "$plugins_dir" init --quiet
+git -C "$plugins_dir" add -- .
+git -C "$plugins_dir" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit --quiet -m baseline
 
 env \
   HOME="$tmp_dir/home" \
@@ -73,6 +86,65 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $widget_ready == ready ]]
+token_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test reloadTokenProbe 2>/dev/null || true)
+jq -e '.staleIgnored == true and .distinctTokens == true and .outstanding == 0' <<<"$token_probe" >/dev/null
+serial_probe=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test guardSerialProbe 2>/dev/null || true)
+jq -e '.staleReleaseIgnored == true and .matchingReleaseAccepted == true' <<<"$serial_probe" >/dev/null
+
+lock_release="$tmp_dir/release-manager-lock"
+lock_held="$tmp_dir/manager-lock-held"
+sleep 0.2
+(
+  exec 9>"$plugins_dir/.plugin-manager.lock"
+  flock 9
+  touch "$lock_held"
+  while [[ ! -e $lock_release ]]; do sleep 0.01; done
+  git -C "$plugins_dir" checkout -- acme.widget/manifest.json
+) &
+holder_pid=$!
+for _ in {1..100}; do
+  [[ -f $lock_held ]] && break
+  sleep 0.01
+done
+[[ -f $lock_held ]]
+health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
+before_generation=$(jq -r '.reloadGeneration' <<<"$health")
+before_scan_count=$(jq -r '.scanFinishedCount' <<<"$health")
+before_change_count=$(jq -r '.watchChangeCount' <<<"$health")
+before_attempt_count=$(jq -r '.reloadComponentAttemptCount' <<<"$health")
+printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":' >"$plugins_dir/acme.widget/manifest.json"
+queue_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test queuePluginChangeForTest "$plugins_dir/acme.widget/manifest.json")
+[[ $queue_result == queued ]]
+sleep 0.2
+locked_health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
+if ! jq -e --arg generation "$before_generation" --arg scan "$before_scan_count" \
+  --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
+  '.watcherGuardHeld == false and .reloadGeneration == ($generation | tonumber)
+   and .scanFinishedCount == ($scan | tonumber)
+   and .watchChangeCount == ($change | tonumber)
+   and .reloadComponentAttemptCount == ($attempts | tonumber)' <<<"$locked_health" >/dev/null; then
+  printf 'locked health changed: %s\n' "$locked_health" >&2
+  exit 1
+fi
+touch "$lock_release"
+for _ in {1..100}; do
+  health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
+  if jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
+    '.watcherGuardHeld == false and .watcherGuardError == "" and .reloadOutstandingCount == 0
+     and .scanFinishedCount > ($scan | tonumber)
+     and .watchChangeCount > ($change | tonumber)
+     and .reloadComponentAttemptCount > ($attempts | tonumber)' <<<"$health" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e --arg scan "$before_scan_count" --arg change "$before_change_count" --arg attempts "$before_attempt_count" \
+  '.watcherGuardHeld == false and .watcherGuardError == "" and .reloadOutstandingCount == 0
+   and .scanFinishedCount > ($scan | tonumber)
+   and .watchChangeCount > ($change | tonumber)
+   and .reloadComponentAttemptCount > ($attempts | tonumber)' <<<"$health" >/dev/null
+wait "$holder_pid"
+holder_pid=""
+jq -e 'any(.[]; .id == "acme.widget")' <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins)" >/dev/null
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget) == ready ]]
 set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
 [[ -n $set_result ]]
 stop_shell

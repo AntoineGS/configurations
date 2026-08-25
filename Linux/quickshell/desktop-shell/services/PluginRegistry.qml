@@ -28,18 +28,24 @@ QtObject {
   property bool guardStarting: false
   property bool guardReleaseRequested: false
   property bool guardTimedOut: false
+  property int guardSerial: 0
+  property int activeGuardSerial: 0
+  property int guardProcessSerial: 0
+  property int guardReleaseSerial: 0
   property var pendingWatchIds: ({})
   property var activeGuardIds: ({})
   property string watcherGuardError: ""
   property int guardRetryCount: 0
   property int guardRetryLimit: 3
   property int guardRetryBaseDelay: 100
+  property int scanFinishedCount: 0
+  property int watchChangeCount: 0
 
   signal pluginsChanged()
   signal scanFinished()
   signal pluginLoadFailed(string id, string error)
   signal localPluginChanged(string id)
-  signal watchReloadReady()
+  signal watchReloadReady(int serial)
 
   function recordPluginError(id, error) {
     var key = String(id)
@@ -293,6 +299,9 @@ QtObject {
       return
     if (registry.guardRetryTimer.running) registry.guardRetryTimer.stop()
     registry.guardStarting = true
+    registry.guardSerial++
+    registry.activeGuardSerial = registry.guardSerial
+    registry.guardProcessSerial = registry.activeGuardSerial
     registry.guardReleaseRequested = false
     registry.guardTimedOut = false
     guardProcess.command = ["bash", "-c",
@@ -322,10 +331,17 @@ QtObject {
     registry.guardRetryTimer.restart()
   }
 
-  function releaseWatchReloadGuard() {
-    if (!registry.guardHeld) return
+  function releaseWatchReloadGuard(serial) {
+    var requestedSerial = Number(serial)
+    if (!registry.guardHeld || requestedSerial !== registry.activeGuardSerial) return false
     registry.guardReleaseRequested = true
+    registry.guardReleaseSerial = requestedSerial
     guardProcess.write("release\n")
+    return true
+  }
+
+  function guardSerialMatches(serial) {
+    return registry.guardHeld && Number(serial) === registry.activeGuardSerial
   }
 
   // Output format: ===kind::<absolute-source-dir>===, manifest JSON, then EOM.
@@ -409,6 +425,7 @@ QtObject {
     registryRevision++
     scanning = false
     pluginsChanged()
+    registry.scanFinishedCount++
     scanFinished()
   }
 
@@ -418,6 +435,7 @@ QtObject {
       registry.recordPluginError("registry", registry.lastScanError)
       registry.scanning = false
       console.warn("PluginRegistry: " + registry.lastScanError)
+      registry.scanFinishedCount++
       registry.scanFinished()
       return false
     }
@@ -488,11 +506,15 @@ QtObject {
     stdinEnabled: true
     onExited: function(exitCode) {
       guardFailSafeTimer.stop()
+      var serial = registry.guardProcessSerial
+      if (serial !== registry.activeGuardSerial) return
       var successfulRelease = Number(exitCode) === 0
-        && registry.guardReleaseRequested && !registry.guardTimedOut
+        && registry.guardReleaseRequested && registry.guardReleaseSerial === serial
+        && !registry.guardTimedOut
       var failed = !successfulRelease
       registry.guardHeld = false
       registry.guardStarting = false
+      registry.activeGuardSerial = 0
       if (failed) {
         registry.requeueActiveGuardIds()
         registry.scheduleGuardRetry(registry.guardTimedOut
@@ -506,6 +528,7 @@ QtObject {
           registry.startWatchReloadGuard()
       }
       registry.guardReleaseRequested = false
+      registry.guardReleaseSerial = 0
       registry.guardTimedOut = false
     }
     stdout: StdioCollector {
@@ -517,8 +540,11 @@ QtObject {
         var queued = registry.pendingWatchIds
         registry.pendingWatchIds = ({})
         registry.activeGuardIds = queued
-        for (var id in queued) registry.localPluginChanged(id)
-        registry.watchReloadReady()
+        for (var id in queued) {
+          registry.watchChangeCount++
+          registry.localPluginChanged(id)
+        }
+        registry.watchReloadReady(registry.activeGuardSerial)
         guardFailSafeTimer.restart()
       }
     }
@@ -531,6 +557,7 @@ QtObject {
       registry.recordPluginError("registry", "plugin watcher reload guard timed out")
       registry.guardTimedOut = true
       registry.guardReleaseRequested = true
+      registry.guardReleaseSerial = registry.activeGuardSerial
       guardProcess.running = false
     }
   }

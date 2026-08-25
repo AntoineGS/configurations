@@ -36,17 +36,11 @@ printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","versi
 touch "$plugins_dir/acme.widget/Widget.qml"
 printf '%s\n' '{"schemaVersion":1,"id":"acme.other","name":"Acme Other","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/acme.other/manifest.json"
 touch "$plugins_dir/acme.other/Widget.qml"
-git -C "$plugins_dir" init --quiet
-git -C "$plugins_dir" add -- .
-git -C "$plugins_dir" -c user.name=fixture -c user.email=fixture@example.invalid \
-  commit --quiet -m baseline
-printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":' >"$plugins_dir/acme.widget/manifest.json"
 (
   exec 9>"$plugins_dir/.plugin-manager.lock"
   flock 9
   touch "$tmp_dir/lock-held"
   while [[ ! -e $release_external ]]; do sleep 0.01; done
-  git -C "$plugins_dir" checkout -- acme.widget/manifest.json
 ) &
 holder_pid=$!
 for _ in {1..100}; do
