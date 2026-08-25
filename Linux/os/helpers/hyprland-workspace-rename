@@ -1,8 +1,11 @@
 #!/bin/bash
+set -Eeuo pipefail
 
 workspace_id=$(hyprctl activeworkspace -j | jq -r '.id')
 current_name=$(hyprctl activeworkspace -j | jq -r '.name')
-new_name=$(printf '' | vicinae dmenu --navigation-title "Rename Workspace" --placeholder "Workspace name" --query "$current_name" --no-section --no-quick-look)
+if ! new_name=$(menu-input "Rename Workspace" --initial "$current_name"); then
+  exit 0
+fi
 
 [[ -n $workspace_id && -n $new_name ]] || exit 0
 

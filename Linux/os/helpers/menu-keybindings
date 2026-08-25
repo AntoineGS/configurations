@@ -181,8 +181,7 @@ parse_bindings() {
     }
 
     if (action != "") {
-        # Padded into two columns. This only aligns visually because Vicinae is
-        # configured with a monospace font (see Linux/vicinae/settings.json);
+        # Padded into two columns. This relies on the menu monospace font;
         # with a proportional font the padding would look ragged.
         # 30 = longest current key combo (27) + a small gutter.
         printf "%-30s → %s\n", key_combo, action;
@@ -264,12 +263,8 @@ output_keybindings() {
     prioritize_entries
 }
 
-if [[ $1 == "--print" || $1 == "-p" ]]; then
+if [[ ${1-} == "--print" || ${1-} == "-p" ]]; then
   output_keybindings
 else
-  monitor_height=$(hyprctl monitors -j | jq -r '.[] | select(.focused == true) | .height')
-  menu_height=$((monitor_height * 40 / 100))
-
-  output_keybindings |
-    vicinae dmenu -p 'Keybindings' -W 800 -H "$menu_height"
+  output_keybindings | menu-select Keybindings >/dev/null
 fi

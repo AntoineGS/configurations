@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+(( $# <= 1 )) || exit 2
+emoji=${1:-}
+[[ -n $emoji ]] || exit 0
+copy_pid=""
+
+cleanup() {
+  if [[ -n $copy_pid ]]; then
+    kill "$copy_pid" 2>/dev/null || true
+    wait "$copy_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+printf '%s' "$emoji" | wl-copy --type text/plain --sensitive --foreground &
+copy_pid=$!
+sleep 0.15
+wtype -M shift -k Insert -m shift 2>/dev/null || true
+sleep 0.2

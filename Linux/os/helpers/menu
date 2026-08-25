@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: %s [route]\n' "${0##*/}" >&2
+  printf 'usage: %s [route|--calculator]\n' "${0##*/}" >&2
   exit 2
 }
 
@@ -10,9 +10,13 @@ usage() {
 
 payload='{"menu":"root"}'
 if (($# == 1)); then
-  route=$1
-  [[ $route =~ ^[a-z0-9]+([.-][a-z0-9-]+)*$ ]] || usage
-  printf -v payload '{"menu":"%s"}' "$route"
+  if [[ $1 == --calculator ]]; then
+    payload='{"menu":"root","mode":"calculator"}'
+  else
+    route=$1
+    [[ $route =~ ^[a-z0-9]+([.-][a-z0-9-]+)*$ ]] || usage
+    printf -v payload '{"menu":"%s"}' "$route"
+  fi
 fi
 
 exec desktop-shell summon desktop.menu "$payload"

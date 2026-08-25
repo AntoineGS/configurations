@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s --remove PATH...\n' "${0##*/}" >&2
+  printf '       %s --prune\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# >= 1 )) || usage
+mode=$1
+shift
+
+state_root=${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell
+history_file=$state_root/clipboard-history.json
+image_dir=$state_root/clipboard-images
+[[ -f $history_file && ! -L $history_file ]] || exit 1
+jq -e 'type == "array"' "$history_file" >/dev/null || exit 1
+[[ -d $image_dir && ! -L $image_dir ]] || exit 0
+image_root=$(realpath -e -- "$image_dir")
+
+remove_if_orphaned() {
+  local path=$1
+  local resolved
+
+  [[ -f $path && ! -L $path ]] || return 1
+  resolved=$(realpath -e -- "$path") || return 1
+  [[ $resolved == "$image_root"/* ]] || return 1
+  if jq -e --arg path "$resolved" '.[] | select(.type == "image" and .path == $path)' "$history_file" >/dev/null; then
+    return 0
+  fi
+  rm -f -- "$resolved"
+}
+
+case $mode in
+  --remove)
+    (( $# > 0 )) || usage
+    for path in "$@"; do
+      remove_if_orphaned "$path"
+    done
+    ;;
+  --prune)
+    (( $# == 0 )) || usage
+    while IFS= read -r -d '' path; do
+      remove_if_orphaned "$path"
+    done < <(find "$image_root" -type f -print0)
+    ;;
+  *) usage ;;
+esac

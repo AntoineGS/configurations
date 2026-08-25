@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s [--copy-only] MIME PATH\n' "${0##*/}" >&2
+  exit 2
+}
+
+copy_only=false
+if [[ ${1-} == --copy-only ]]; then
+  copy_only=true
+  shift
+fi
+(( $# == 2 )) || usage
+mime=$1
+path=$2
+[[ $mime =~ ^image/(png|jpeg|webp|gif|bmp|tiff)$ ]] || usage
+
+image_dir=${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell/clipboard-images
+[[ -d $image_dir && ! -L $image_dir ]] || exit 1
+[[ -f $path && ! -L $path ]] || exit 1
+image_root=$(realpath -e -- "$image_dir")
+resolved=$(realpath -e -- "$path")
+[[ $resolved == "$image_root"/* ]] || exit 1
+
+wl-copy --type "$mime" <"$resolved"
+if [[ $copy_only == false ]]; then
+  sleep 0.15
+  wtype -M shift -k Insert -m shift 2>/dev/null || true
+fi

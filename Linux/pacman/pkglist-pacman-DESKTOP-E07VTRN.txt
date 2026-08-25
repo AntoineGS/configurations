@@ -55,6 +55,7 @@ lazydocker
 lazygit
 libmpdclient
 libmspack
+libqalculate
 libva-nvidia-driver
 luacheck
 luarocks
