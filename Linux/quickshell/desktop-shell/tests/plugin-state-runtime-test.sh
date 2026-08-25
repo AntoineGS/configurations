@@ -75,7 +75,7 @@ jq -e '.bar.layout.right[0] == {"id":"acme.widget","units":"c"}' <<<"$config" >/
 health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health)
 jq -e '.pluginStateValid == true and .pluginStateDirectoryReady == true' <<<"$health" >/dev/null
 normal_hook_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test persistPluginStateForTest '{"version":1}' )
-[[ $normal_hook_result == "Function not found." ]]
+[[ $normal_hook_result == "Function not found." || $normal_hook_result == "Target not found." ]]
 stop_shell
 
 first_write_file="$tmp_dir/first-write/config/desktop-shell/shell.json"
