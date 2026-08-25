@@ -66,6 +66,8 @@ function emptyHostStat() {
     available: false,
     stale: false,
     text: "",
+    icon: "",
+    value: "",
     tooltip: "",
     percent: undefined
   }
@@ -78,12 +80,18 @@ function normalizeHostStat(raw) {
     if (typeof payload.text !== "string") throw new Error("host stat text must be a string")
     if (typeof payload.tooltip !== "string") throw new Error("host stat tooltip must be a string")
     if (typeof payload.class !== "string") throw new Error("host stat class must be a string")
+    var hasIcon = Object.prototype.hasOwnProperty.call(payload, "icon")
+    var hasValue = Object.prototype.hasOwnProperty.call(payload, "value")
+    if (hasIcon !== hasValue || (hasIcon && (typeof payload.icon !== "string" || typeof payload.value !== "string")))
+      throw new Error("host stat icon and value must both be strings")
     var percent = nonNegativeNumber(payload.percentage)
     if (percent === null || percent > 100) throw new Error("host stat percentage must be between 0 and 100")
     return {
       available: true,
       stale: payload.class === "stale",
       text: payload.text,
+      icon: hasIcon ? payload.icon : "",
+      value: hasValue ? payload.value : payload.text,
       tooltip: payload.tooltip,
       percent: percent
     }

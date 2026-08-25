@@ -161,12 +161,12 @@ Panel {
     id: statRow
     spacing: 0
 
-    WidgetButton {
+    BarMetricButton {
       id: hostMemoryButton
       bar: root.bar
-      text: root.hostMemoryState.available ? root.hostMemoryState.text : ""
+      iconText: root.hostMemoryState.available ? root.hostMemoryState.icon : ""
+      valueText: root.hostMemoryState.available ? root.hostMemoryState.value : ""
       tooltipText: root.hostMemoryState.tooltip
-      horizontalMargin: 2.5
       foreground: root.hostMemoryCritical ? root.urgent : root.statForeground
       onPressed: function(mouseButton) {
         if (mouseButton === Qt.LeftButton) root.openHostMonitor()
@@ -187,12 +187,12 @@ Panel {
       }
     }
 
-    WidgetButton {
+    BarMetricButton {
       id: hostCpuButton
       bar: root.bar
-      text: root.hostCpuState.available ? root.hostCpuState.text : ""
+      iconText: root.hostCpuState.available ? root.hostCpuState.icon : ""
+      valueText: root.hostCpuState.available ? root.hostCpuState.value : ""
       tooltipText: root.hostCpuState.tooltip
-      horizontalMargin: 2.5
       foreground: root.statForeground
       onPressed: function(mouseButton) {
         if (mouseButton === Qt.LeftButton) root.openHostMonitor()

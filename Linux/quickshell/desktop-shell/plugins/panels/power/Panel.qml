@@ -110,16 +110,18 @@ Panel {
     onExited: root.refresh()
   }
 
-  BarIconButton {
+  BarMetricButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: !root.batteryAvailable
+    iconText: !root.batteryAvailable
       ? Model.profileIcon(root.activeProfile)
-      : Model.batteryBarText(root.batteryPercent, root.batteryState, root.batteryOnBattery)
-    slotSize: Style.bar.iconSlot * (root.batteryAvailable
-      ? Model.batteryBarSlots(root.batteryPercent, root.batteryState, root.batteryOnBattery)
-      : 1)
+      : Model.batteryBarIcon(root.batteryPercent, root.batteryState, root.batteryOnBattery)
+    valueText: root.batteryAvailable
+      ? Model.batteryBarValue(root.batteryPercent, root.batteryState, root.batteryOnBattery)
+      : ""
+    valueIsIcon: root.batteryAvailable
+      && Model.batteryBarValueIsIcon(root.batteryPercent, root.batteryState, root.batteryOnBattery)
     onPressed: root.toggle()
   }
 

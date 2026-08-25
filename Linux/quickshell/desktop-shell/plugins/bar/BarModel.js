@@ -96,16 +96,23 @@ function tooltipDisplayText(value) {
 function commandModuleState(data, raw, settings) {
   var payload = isPlainObject(data) ? data : {}
   var config = isPlainObject(settings) ? settings : {}
-  var icon = payload.icon !== undefined ? String(payload.icon || "") : String(config.icon || "")
-  var value = payload.value !== undefined
-    ? String(payload.value === null ? "" : payload.value)
-    : (payload.text !== undefined ? String(payload.text === null ? "" : payload.text) : String(raw || "").trim())
+  var structuredMetric = typeof payload.icon === "string" && typeof payload.value === "string"
+  var icon = structuredMetric ? payload.icon : ""
+  var value = structuredMetric ? payload.value : ""
+  var legacyIcon = structuredMetric
+    ? "" : (payload.icon !== undefined ? String(payload.icon || "") : String(config.icon || ""))
+  var legacyValue = payload.text !== undefined
+    ? String(payload.text === null ? "" : payload.text) : String(raw || "").trim()
   var tooltip = payload.tooltip !== undefined
     ? String(payload.tooltip || "")
     : String(config.tooltip || "")
   var klass = payload.class !== undefined ? payload.class : payload.alt
   return {
-    text: icon + value,
+    text: structuredMetric
+      ? (payload.text !== undefined ? String(payload.text || "") : icon + " " + value)
+      : legacyIcon + legacyValue,
+    icon: icon,
+    value: value,
     tooltip: tooltip,
     active: commandClassHas(klass, "active"),
     muted: commandClassHas(klass, "muted")

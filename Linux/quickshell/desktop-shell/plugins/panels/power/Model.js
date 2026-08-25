@@ -43,14 +43,18 @@ function batteryIcon(percent, state) {
   return isCharging(state) ? chargingIcons[index] : defaultIcons[index]
 }
 
-function batteryBarText(percent, state, onBattery) {
-  if (isFullyCharged(percent, state, onBattery)) return "󰚥"
-  if (isPluggedIn(onBattery)) return batteryIcon(percent, state) + " 󰚥"
-  return batteryIcon(percent, state) + " " + percent + "%"
+function batteryBarIcon(percent, state, onBattery) {
+  return isFullyCharged(percent, state, onBattery) ? "󰚥" : batteryIcon(percent, state)
 }
 
-function batteryBarSlots(percent, state, onBattery) {
-  return isFullyCharged(percent, state, onBattery) ? 1 : 2
+function batteryBarValue(percent, state, onBattery) {
+  if (isFullyCharged(percent, state, onBattery)) return ""
+  if (isPluggedIn(onBattery)) return "󰚥"
+  return percent + "%"
+}
+
+function batteryBarValueIsIcon(percent, state, onBattery) {
+  return !isFullyCharged(percent, state, onBattery) && isPluggedIn(onBattery)
 }
 
 function modeLabel(state) {
@@ -88,8 +92,9 @@ if (typeof module !== "undefined") {
     isPluggedIn: isPluggedIn,
     isFullyCharged: isFullyCharged,
     batteryIcon: batteryIcon,
-    batteryBarText: batteryBarText,
-    batteryBarSlots: batteryBarSlots,
+    batteryBarIcon: batteryBarIcon,
+    batteryBarValue: batteryBarValue,
+    batteryBarValueIsIcon: batteryBarValueIsIcon,
     modeLabel: modeLabel,
     parseState: parseState,
     profileIcon: profileIcon

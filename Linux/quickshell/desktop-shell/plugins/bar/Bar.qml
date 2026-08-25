@@ -647,13 +647,15 @@ Item {
     }
   }
 
-  component CustomCommandModule: WidgetButton {
+  component CustomCommandModule: BarMetricButton {
     id: customRoot
 
     required property var entry
     readonly property string moduleName: root.entryId(entry)
     readonly property var settings: root.entrySettings(entry)
     property string outputText: ""
+    property string outputIcon: ""
+    property string outputValue: ""
     property string outputTooltip: ""
     property bool outputActive: false
     property bool outputMuted: false
@@ -667,6 +669,8 @@ Item {
       var data = Util.parseModuleJson(raw)
       var state = BarModel.commandModuleState(data, raw, settings)
       outputText = state.text
+      outputIcon = state.icon
+      outputValue = state.value
       outputTooltip = state.tooltip
       outputActive = state.active
       outputMuted = state.muted
@@ -674,6 +678,8 @@ Item {
 
     bar: root
     text: outputText || String(setting("text", ""))
+    iconText: outputIcon
+    valueText: outputValue
     tooltipText: outputTooltip || String(setting("tooltip", ""))
     active: outputActive
     dimmed: outputMuted
