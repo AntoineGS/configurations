@@ -76,7 +76,9 @@ is_correctly_enabled() {
   listing=$(plugin_list) || return 1
   jq -e --arg id "$marketplace_id" 'any(.[]; .id == $id and .enabled == true and .firstParty == false)' <<<"$listing" >/dev/null || return 1
   config=$("$ipc" shell listShellConfig) || return 1
-  jq -e --arg id "$marketplace_id" 'any(.bar.layout.right[]?; .id == $id)' <<<"$config" >/dev/null
+  jq -e --arg id "$marketplace_id" \
+    '[.bar.layout.left[]?, .bar.layout.center[]?, .bar.layout.right[]?] | all(.id != $id)' \
+    <<<"$config" >/dev/null
 }
 
 check_all() {
@@ -121,7 +123,7 @@ apply_marketplace() {
   "$ipc" shell rescanPlugins || fail "cannot rescan desktop-shell plugins"
   wait_for_discovery
   if (( checkout_missing )) || ! is_correctly_enabled >/dev/null 2>&1; then
-    "$manager" enable "$marketplace_id" --section right || fail "cannot enable marketplace in right section"
+    "$manager" enable "$marketplace_id" --headless || fail "cannot enable marketplace without bar placement"
   fi
   check_all
 }
