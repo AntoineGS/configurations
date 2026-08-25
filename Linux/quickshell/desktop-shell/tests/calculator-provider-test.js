@@ -1,0 +1,11 @@
+const assert = require("node:assert/strict")
+const calculator = require("../services/CalculatorProvider.js")
+
+assert.equal(calculator.isExpressionLike("2 + 2"), true)
+assert.equal(calculator.isExpressionLike("10 km to mi"), true)
+assert.equal(calculator.isExpressionLike("calculator"), false)
+assert.equal(calculator.normalizeResult("4\n", 4096), "4")
+assert.equal(calculator.normalizeResult("error: bad input\n", 4096), "")
+assert.equal(calculator.normalizeResult("x".repeat(4097), 4096), "")
+assert.equal(calculator.shouldAcceptResult(3, 3, "2+2", "2+2"), true)
+assert.equal(calculator.shouldAcceptResult(2, 3, "2+2", "3+3"), false)

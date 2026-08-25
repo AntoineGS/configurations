@@ -789,6 +789,12 @@ applications:
     entries: []
   - package:
       managers:
+        pacman: libqalculate
+    name: libqalculate
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: quickshell
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
