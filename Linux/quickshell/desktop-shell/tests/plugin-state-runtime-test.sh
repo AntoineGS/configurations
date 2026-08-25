@@ -4,6 +4,8 @@ set -Eeuo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 shell_dir="$repo_root/Linux/quickshell/desktop-shell"
 tmp_dir=$(mktemp -d)
+isolated_shell_dir="$tmp_dir/desktop-shell"
+cp -a -- "$shell_dir" "$isolated_shell_dir"
 shell_pid=""
 trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$tmp_dir"' EXIT
 
@@ -25,7 +27,7 @@ start_shell() {
   if [[ $allow_mutation == 1 ]]; then
     launch_env+=("DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION=1")
   fi
-  env "${launch_env[@]}" quickshell -n -p "$shell_dir" >"$log_file" 2>&1 &
+  env "${launch_env[@]}" quickshell -n -p "$isolated_shell_dir" >"$log_file" 2>&1 &
   shell_pid=$!
 
   local config=""
