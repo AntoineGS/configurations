@@ -40,6 +40,7 @@ commands=(
   launch-audio
   launch-wifi
   launch-bluetooth
+  desktop-shell-prompt-action
 )
 for command in "${commands[@]}"; do
   ln -s action-stub "$bin/$command"
@@ -66,6 +67,8 @@ assert_action trigger.toggle.idle-lock 'toggle-idle'
 assert_action setup.audio-tui 'launch-audio'
 assert_action setup.wifi-tui 'launch-wifi'
 assert_action setup.bluetooth-tui 'launch-bluetooth'
+assert_action system.suspend-in 'desktop-shell-prompt-action system.suspend-in'
+assert_action system.close-rustdesk-in 'desktop-shell-prompt-action system.close-rustdesk-in'
 
 rm -f "$log"
 if ACTION_LOG=$log PATH="$bin:$PATH" "$action_helper" unknown.action >/dev/null 2>&1; then

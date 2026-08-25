@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s <system.suspend-in|system.close-rustdesk-in>\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 1 )) || usage
+case $1 in
+  system.suspend-in)
+    prompt='Minutes until suspend'
+    argv=(suspend-in)
+    ;;
+  system.close-rustdesk-in)
+    prompt='Minutes until RustDesk windows close'
+    argv=(close-rustdesk-windows-in)
+    ;;
+  *) usage ;;
+esac
+
+if ! minutes=$(menu-input "$prompt"); then
+  exit 1
+fi
+if [[ ! $minutes =~ ^0*[1-9][0-9]*$ ]]; then
+  notify-send -a desktop-shell -u critical "Action not scheduled" "Enter a positive whole number of minutes." || true
+  exit 1
+fi
+
+exec "${argv[@]}" "$minutes"

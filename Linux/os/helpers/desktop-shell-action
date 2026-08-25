@@ -53,6 +53,8 @@ case "$action" in
 
   system.lock)              argv=(lock-screen) ;;
   system.suspend)           argv=(systemctl suspend) ;;
+  system.suspend-in)        argv=(desktop-shell-prompt-action system.suspend-in) ;;
+  system.close-rustdesk-in) argv=(desktop-shell-prompt-action system.close-rustdesk-in) ;;
   system.hibernate)         argv=(systemctl hibernate) ;;
   system.logout)            argv=(system-logout) ;;
   system.reboot)            argv=(system-reboot) ;;
