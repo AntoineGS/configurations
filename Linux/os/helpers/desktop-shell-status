@@ -48,6 +48,9 @@ validate_status() {
       (.[0].tooltip | type) != "string" or
       (.[0].class | type) != "string" then
       error("status payload requires string text, tooltip, and class")
+    elif ((.[0] | has("icon")) or (.[0] | has("value"))) and
+      ((.[0].icon | type) != "string" or (.[0].value | type) != "string") then
+      error("status payload requires icon and value to both be strings")
     else
       .[0]
     end
@@ -115,9 +118,15 @@ json_output() {
     '{text: $text, tooltip: $tooltip, class: $class}'
 }
 
+json_metric_output() {
+  jq -cn --arg icon "$1" --arg value "$2" --arg tooltip "$3" --arg class "$4" \
+    '{icon: $icon, value: $value, text: ($icon + " " + $value), tooltip: $tooltip, class: $class}'
+}
+
 json_percentage_output() {
-  jq -cn --arg text "$1" --arg tooltip "$2" --arg class "$3" --argjson percentage "$4" \
-    '{text: $text, tooltip: $tooltip, class: $class, percentage: $percentage}'
+  jq -cn --arg icon "$1" --arg value "$2" --arg tooltip "$3" --arg class "$4" --argjson percentage "$5" \
+    '{icon: $icon, value: $value, text: ($icon + " " + $value), tooltip: $tooltip, class: $class,
+      percentage: $percentage}'
 }
 
 recording_status() {
@@ -285,7 +294,7 @@ disk_status() {
   fi
 
   device=${filesystem##*/}
-  result=$(json_output $' '"$capacity" \
+  result=$(json_metric_output '' "$capacity" \
     "$device: $(format_kib_gib "$used") / $(format_kib_gib "$total") GiB" '')
   write_result disk "$result"
 }
@@ -354,7 +363,7 @@ memory_status() {
 
   total_gib=$(format_kib_gib "$total")
   total_gib=${total_gib%.0}
-  result=$(json_percentage_output $'\uefc5 '"$percentage%" \
+  result=$(json_percentage_output $'\uefc5' "$percentage%" \
     "$(format_kib_gib "$used_kib") / $total_gib GiB"$'\n'"/tmp: $(format_kib_gib "$tmp_used") GiB ($tmp_percentage%)" \
     '' "$percentage")
   write_result memory "$result"
@@ -428,7 +437,7 @@ cpu_status() {
   if ((usage > 100)); then
     usage=100
   fi
-  result=$(json_percentage_output $' '"$usage%" "CPU usage: $usage%" '' "$usage")
+  result=$(json_percentage_output '' "$usage%" "CPU usage: $usage%" '' "$usage")
   write_result cpu "$result"
 }
 
