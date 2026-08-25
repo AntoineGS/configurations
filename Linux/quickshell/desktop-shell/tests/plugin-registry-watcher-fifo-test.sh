@@ -22,7 +22,7 @@ mkdir -p -- "$config" "$plugins_dir/acme.widget" "$bin_dir"
 mkfifo -- "$watch_fifo"
 # The generated watcher must expand its runtime variables, not this test's.
 # shellcheck disable=SC2016
-printf '%s\n' '#!/usr/bin/env bash' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$bin_dir/inotifywait"
+printf '%s\n' '#!/usr/bin/env bash' '[[ ${1-} == --help ]] && exit 0' 'while IFS= read -r path; do printf "%s\n" "$path"; done < "$PLUGIN_REGISTRY_WATCH_FIFO"' >"$bin_dir/inotifywait"
 chmod 0755 -- "$bin_dir/inotifywait"
 printf '%s\n' '{"schemaVersion":1,"id":"acme.widget","name":"Acme Widget","version":"1.0.0","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}}' >"$plugins_dir/acme.widget/manifest.json"
 touch "$plugins_dir/acme.widget/Widget.qml"
