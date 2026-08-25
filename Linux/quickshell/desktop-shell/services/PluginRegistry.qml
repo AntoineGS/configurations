@@ -30,6 +30,8 @@ QtObject {
   property int watcherRetryBaseDelay: 100
   property bool watcherStopRequested: false
   property bool watcherRetryPending: false
+  property bool watcherRetryProcessStopped: false
+  property bool watcherRetryElapsed: false
   property var pendingWatchIds: ({})
   property var activeWatchIds: ({})
   property bool watchIdsEmitted: false
@@ -529,6 +531,9 @@ QtObject {
     registry.watcherReady = true
     registry.watcherUnavailable = false
     registry.watcherRetryCount = 0
+    registry.watcherRetryPending = false
+    registry.watcherRetryProcessStopped = false
+    registry.watcherRetryElapsed = false
     registry.watcherRetryTimer.stop()
     registry.clearPluginError("registry", "watcher")
   }
@@ -538,19 +543,46 @@ QtObject {
     registry.watcherUnavailable = true
     if (registry.watcherRetryCount >= registry.watcherRetryLimit) {
       registry.watcherRetryPending = false
+      registry.watcherRetryProcessStopped = false
+      registry.watcherRetryElapsed = false
       registry.recordPluginError("registry", String(detail), "watcher")
       return
     }
     registry.watcherRetryCount++
     registry.watcherRetryPending = true
+    registry.watcherRetryProcessStopped = !registry.watcherProcess.running
+    registry.watcherRetryElapsed = false
     registry.watcherRetryTimer.interval = Math.min(
       registry.watcherRetryBaseDelay * Math.pow(2, registry.watcherRetryCount - 1), 2000)
     registry.watcherRetryTimer.restart()
   }
 
+  function maybeStartWatcherRetry() {
+    if (!registry.watcherRetryPending || !registry.watcherRetryProcessStopped
+        || !registry.watcherRetryElapsed) return
+    registry.watcherRetryPending = false
+    registry.watcherRetryProcessStopped = false
+    registry.watcherRetryElapsed = false
+    registry.initProcess()
+  }
+
+  function markWatcherProcessStopped() {
+    if (!registry.watcherRetryPending) return
+    registry.watcherRetryProcessStopped = true
+    registry.maybeStartWatcherRetry()
+  }
+
+  function markWatcherRetryElapsed() {
+    if (!registry.watcherRetryPending) return
+    registry.watcherRetryElapsed = true
+    registry.maybeStartWatcherRetry()
+  }
+
   function stopWatcher() {
     if (!registry.watcherProcess.running) return
     registry.watcherRetryPending = false
+    registry.watcherRetryProcessStopped = false
+    registry.watcherRetryElapsed = false
     registry.watcherStopRequested = true
     registry.watcherProcess.running = false
   }
@@ -564,10 +596,7 @@ QtObject {
   property Process watcherProcess: Process {
     onExited: function(exitCode) { registry.handleWatcherExit(exitCode) }
     onRunningChanged: {
-      if (!running && registry.watcherRetryPending) {
-        registry.watcherRetryPending = false
-        registry.initProcess()
-      }
+      if (!running) registry.markWatcherProcessStopped()
     }
     stdout: StdioCollector {
       id: watcherStdout
@@ -637,10 +666,7 @@ QtObject {
     interval: 100
     repeat: false
     onTriggered: {
-      if (!registry.watcherProcess.running && registry.watcherRetryPending) {
-        registry.watcherRetryPending = false
-        registry.initProcess()
-      }
+      registry.markWatcherRetryElapsed()
     }
   }
 
