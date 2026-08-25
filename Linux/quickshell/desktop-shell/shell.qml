@@ -1462,6 +1462,11 @@ ShellRoot {
       return "recorded"
     }
 
+    function syncHeadlessWidgetsForTest(): string {
+      shell.syncHeadlessWidgetInstances()
+      return "synced"
+    }
+
     function pluginBarTestProbe(): string {
       return shell.pluginBarTestProbe()
     }

@@ -171,11 +171,21 @@ jq -e 'any(.[]; .id == "acme.widget")' <<<"$(quickshell ipc --pid "$shell_pid" c
 for _ in {1..100}; do
   headless_after_reload=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget 2>/dev/null || true)
   if jq -e --arg count "$headless_creation_count" \
-    '.creationCount > ($count | tonumber)' <<<"$headless_after_reload" >/dev/null 2>&1; then break; fi
+    '.creationCount == (($count | tonumber) + 1)' <<<"$headless_after_reload" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
 jq -e --arg count "$headless_creation_count" \
-  '.creationCount > ($count | tonumber)' <<<"$headless_after_reload" >/dev/null
+  '.creationCount == (($count | tonumber) + 1)' <<<"$headless_after_reload" >/dev/null
+stable_creation_count=$(jq -r '.creationCount' <<<"$headless_after_reload")
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test syncHeadlessWidgetsForTest) == synced ]]
+for _ in {1..100}; do
+  stable_after_sync=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget 2>/dev/null || true)
+  if jq -e --arg count "$stable_creation_count" \
+    '.creationCount == ($count | tonumber)' <<<"$stable_after_sync" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e --arg count "$stable_creation_count" \
+  '.creationCount == ($count | tonumber)' <<<"$stable_after_sync" >/dev/null
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test recordWidgetHostErrorForTest acme.widget) == recorded ]]
 set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
 [[ -n $set_result ]]
