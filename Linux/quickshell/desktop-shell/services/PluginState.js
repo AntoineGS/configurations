@@ -135,6 +135,7 @@ function failure(state, error) { return { ok: false, state: clone(state), error:
 function placementFor(manifest, placement) {
   var section = placement && placement.section
   if (!section && manifest.barWidget) section = manifest.barWidget.defaultSection
+  if (!section) section = "center"
   if (SECTIONS.indexOf(section) === -1) return null
   return { section: section, index: Number.isInteger(placement && placement.index) ? placement.index : 0 }
 }

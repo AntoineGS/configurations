@@ -117,6 +117,17 @@ env "${manager_env[@]}" "$manager" add "$source_repo" --yes >/dev/null || fail "
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "add did not request rescan"
 
 jq -n '[{id:"acme.widget",name:"Acme Widget",kinds:["bar-widget"],enabled:false,clonedFrom:"local"}]' >"$IPC_LIST"
+for accepted_id in weather Acme_Widget acme-widget; do
+  make_repo "$test_root/$accepted_id" "$accepted_id"
+  env "${manager_env[@]}" "$manager" validate "$test_root/$accepted_id" >/dev/null \
+    || fail "approved plugin ID was rejected: $accepted_id"
+done
+for rejected_id in desktop.clock omarchy.fake acme..widget; do
+  make_repo "$test_root/rejected-$rejected_id" "$rejected_id"
+  if env "${manager_env[@]}" "$manager" validate "$test_root/rejected-$rejected_id" >/dev/null 2>&1; then
+    fail "rejected plugin ID was accepted: $rejected_id"
+  fi
+done
 json_output=$(env "${manager_env[@]}" "$manager" list --json)
 [[ $(jq -r '.[0].id' <<<"$json_output") == acme.widget ]] || fail "list --json changed plugin data"
 plain_output=$(env "${manager_env[@]}" "$manager" list)
@@ -348,6 +359,7 @@ git -C "$no_origin" remote remove origin
 if env "${manager_env[@]}" "$manager" update no-origin.widget --yes >/dev/null 2>&1; then
   fail "missing-origin update was accepted"
 fi
+rm -rf -- "$no_origin"
 
 invalid_remote="$test_root/invalid.git"
 invalid_head="$plugins_dir/invalid-head.widget"
@@ -756,11 +768,12 @@ if [[ $1 == before-rescan ]]; then
   mkdir -- "$RACE_TARGET"
   printf 'replacement\n' >"$RACE_TARGET/marker"
 fi
+exit 0
 EOF
 chmod +x -- "$rescan_hook"
 if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$rescan_hook" \
   RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$rescan_swap_backup" RACE_RESCAN_LOG="$test_root/rescan-hook.log" \
-  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  "$manager" update lifecycle.widget --yes >"$test_root/rescan-manager.out" 2>&1; then
   fail "public target replacement before rescan was accepted: $(<"$test_root/rescan-hook.log")"
 fi
 [[ -f "$plugins_dir/lifecycle.widget/marker" ]] || fail "rescan replacement was removed"
@@ -982,5 +995,47 @@ if IPC_DISABLE_RESULT=failed env "${manager_env[@]}" "$manager" remove disable-f
   fail "disable failure was accepted"
 fi
 [[ -d $disable_dir ]] || fail "disable failure touched source directory"
+
+identity_remote="$remote_root/identity.widget.git"
+identity_seed="$test_root/identity-seed"
+cp -a -- "$validation_repo" "$identity_seed"
+jq '.id = "identity.widget"' "$identity_seed/manifest.json" >"$identity_seed/manifest.tmp"
+mv -- "$identity_seed/manifest.tmp" "$identity_seed/manifest.json"
+git -C "$identity_seed" add manifest.json
+git -C "$identity_seed" -c user.name=test -c user.email=test@example.invalid commit -qm identity
+git clone -q --bare -- "$identity_seed" "$identity_remote"
+git -C "$identity_remote" symbolic-ref HEAD refs/heads/main
+identity_target="$plugins_dir/identity.widget"
+git clone -q -- "$identity_remote" "$identity_target"
+
+renamed_seed="$test_root/renamed-identity"
+cp -a -- "$identity_seed" "$renamed_seed"
+jq '.id = "renamed.widget"' "$renamed_seed/manifest.json" >"$renamed_seed/manifest.tmp"
+mv -- "$renamed_seed/manifest.tmp" "$renamed_seed/manifest.json"
+git -C "$renamed_seed" add manifest.json
+git -C "$renamed_seed" -c user.name=test -c user.email=test@example.invalid commit -qm renamed
+git -C "$renamed_seed" push -q --force "$identity_remote" main
+identity_prior=$(git -C "$identity_target" rev-parse HEAD)
+identity_rescans=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+if env "${manager_env[@]}" "$manager" update identity.widget --yes >/dev/null 2>&1; then
+  fail "renamed manifest ID update was accepted"
+fi
+[[ $(git -C "$identity_target" rev-parse HEAD) == "$identity_prior" ]] || fail "renamed ID update was not rolled back"
+[[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$identity_rescans" ]] || fail "renamed ID update requested rescan"
+
+duplicate_seed="$test_root/duplicate-identity"
+cp -a -- "$identity_seed" "$duplicate_seed"
+printf 'duplicate-check\n' >>"$duplicate_seed/Widget.qml"
+git -C "$duplicate_seed" add Widget.qml
+git -C "$duplicate_seed" -c user.name=test -c user.email=test@example.invalid commit -qm duplicate
+git -C "$duplicate_seed" push -q --force "$identity_remote" main
+cp -a -- "$identity_target" "$plugins_dir/identity-duplicate-root"
+identity_prior=$(git -C "$identity_target" rev-parse HEAD)
+identity_rescans=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
+if env "${manager_env[@]}" "$manager" update identity.widget --yes >/dev/null 2>&1; then
+  fail "duplicate manifest ID update was accepted"
+fi
+[[ $(git -C "$identity_target" rev-parse HEAD) == "$identity_prior" ]] || fail "duplicate ID update was not rolled back"
+[[ $(grep -c $'rescanPlugins\t\t' "$log_file" || true) == "$identity_rescans" ]] || fail "duplicate ID update requested rescan"
 
 printf 'PASS: desktop-shell plugin manager\n'
