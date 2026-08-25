@@ -105,6 +105,7 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget) == ready ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test visibleFirstRoutingForTest acme.widget) == visible ]]
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell summon acme.widget '{}') == ok ]]
 jq -e '.opened == true and .openCount == 1' \
   <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
@@ -114,6 +115,8 @@ jq -e '.opened == false' \
 quickshell ipc --pid "$shell_pid" call -- desktop-shell toggle acme.widget '{}' >/dev/null
 jq -e '.opened == true' \
   <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
+headless_before_reload=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)
+headless_creation_count=$(jq -r '.creationCount' <<<"$headless_before_reload")
 lock_release="$tmp_dir/release-manager-lock"
 lock_held="$tmp_dir/manager-lock-held"
 sleep 0.2
@@ -165,6 +168,15 @@ wait "$holder_pid"
 holder_pid=""
 jq -e 'any(.[]; .id == "acme.widget")' <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell listPlugins)" >/dev/null
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test pluginWidgetReady acme.widget) == ready ]]
+for _ in {1..100}; do
+  headless_after_reload=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget 2>/dev/null || true)
+  if jq -e --arg count "$headless_creation_count" \
+    '.creationCount > ($count | tonumber)' <<<"$headless_after_reload" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e --arg count "$headless_creation_count" \
+  '.creationCount > ($count | tonumber)' <<<"$headless_after_reload" >/dev/null
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test recordWidgetHostErrorForTest acme.widget) == recorded ]]
 set_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell setPluginEnabled acme.widget false)
 [[ -n $set_result ]]
 for _ in {1..100}; do
@@ -173,6 +185,12 @@ for _ in {1..100}; do
   sleep 0.1
 done
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetReady acme.widget) == absent ]]
+for _ in {1..100}; do
+  health=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell health 2>/dev/null || true)
+  if jq -e 'all(.pluginErrors[]?; .id != "acme.widget" or .scope != "widget-host")' <<<"$health" >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+jq -e 'all(.pluginErrors[]?; .id != "acme.widget" or .scope != "widget-host")' <<<"$health" >/dev/null
 stop_shell
 
 failure_state_file="$tmp_dir/failure-state"

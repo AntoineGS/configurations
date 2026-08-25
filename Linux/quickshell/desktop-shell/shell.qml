@@ -962,6 +962,7 @@ ShellRoot {
   }
 
   property var headlessWidgetInstances: ({})
+  property var headlessWidgetCreationCounts: ({})
 
   function shouldHostHeadlessWidget(pluginId) {
     var manifest = shell.pluginRegistry.installedPlugins[String(pluginId || "")]
@@ -979,6 +980,10 @@ ShellRoot {
 
   function syncHeadlessWidgetInstances() {
     var next = ({})
+    for (var installedId in shell.pluginRegistry.installedPlugins) {
+      if (!shell.shouldHostHeadlessWidget(installedId))
+        shell.pluginRegistry.clearPluginError(installedId, "widget-host")
+    }
     for (var existingId in shell.headlessWidgetInstances) {
       if (shell.shouldHostHeadlessWidget(existingId)) next[existingId] = shell.headlessWidgetInstances[existingId]
       else {
@@ -988,7 +993,11 @@ ShellRoot {
     }
 
     for (var id in shell.pluginWidgetComponents) {
-      if (!shell.shouldHostHeadlessWidget(id) || next[id]) continue
+      if (!shell.shouldHostHeadlessWidget(id)) {
+        shell.pluginRegistry.clearPluginError(id, "widget-host")
+        continue
+      }
+      if (next[id]) continue
       var entry = shell.pluginWidgetComponents[id]
       if (!entry || !entry.component || entry.component.status !== Component.Ready) continue
       var instance = entry.component.createObject(shell)
@@ -1001,6 +1010,11 @@ ShellRoot {
       }
       if (typeof instance.visible !== "undefined") instance.visible = false
       next[id] = instance
+      var counts = ({})
+      for (var countId in shell.headlessWidgetCreationCounts)
+        counts[countId] = shell.headlessWidgetCreationCounts[countId]
+      counts[id] = Number(counts[id] || 0) + 1
+      shell.headlessWidgetCreationCounts = counts
       shell.pluginRegistry.clearPluginError(id, "widget-host")
     }
     shell.headlessWidgetInstances = next
@@ -1419,7 +1433,33 @@ ShellRoot {
 
     function headlessWidgetState(id: string): string {
       var widget = shell.headlessWidgetFor(id)
-      return widget ? JSON.stringify({ opened: widget.opened === true, openCount: Number(widget.openCount || 0) }) : "{}"
+      return widget ? JSON.stringify({
+        opened: widget.opened === true,
+        openCount: Number(widget.openCount || 0),
+        creationCount: Number(shell.headlessWidgetCreationCounts[String(id || "")] || 0)
+      }) : "{}"
+    }
+
+    function visibleFirstRoutingForTest(id: string): string {
+      var hidden = shell.headlessWidgetFor(id)
+      if (!hidden) return "absent"
+      var previousBar = shell.bar
+      var visible = Qt.createQmlObject(
+        "import QtQuick; Item { property bool opened: false; function open() {} function close() {} }",
+        shell)
+      shell.bar = {
+        findPanelWidget: function (candidate) { return candidate === id ? visible : null }
+      }
+      var selected = shell.barWidgetFor(id)
+      shell.bar = previousBar
+      visible.destroy()
+      return selected === visible ? "visible" : "hidden"
+    }
+
+    function recordWidgetHostErrorForTest(id: string): string {
+      pluginRegistry.pluginLoadFailed(id, "test widget host error",
+        pluginRegistry.pluginSourceGeneration, "widget-host")
+      return "recorded"
     }
 
     function pluginBarTestProbe(): string {
