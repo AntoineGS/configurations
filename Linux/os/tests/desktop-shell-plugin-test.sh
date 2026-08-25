@@ -122,16 +122,14 @@ case "${2-}" in
       mkdir -- "$IPC_TARGET"
       printf 'repopulated-during-ipc\n' >"$IPC_TARGET/marker"
     fi
-    if [[ -n ${IPC_BEGIN_REQUEST:-} ]]; then
-      printf '1:1\n'
-      while [[ ! -e ${IPC_BEGIN_RELEASE:?} ]]; do sleep 0.01; done
-    else
-      printf '1:1\n'
-    fi
+    printf '1:1\n'
     ;;
   pluginRescanStatus)
     [[ $# -eq 3 ]] || exit 2
-    if [[ ${IPC_RESCAN_RESULT:-ok} == ok ]]; then printf 'ok\n'; else printf 'error: %s\n' "${IPC_RESCAN_RESULT}"; fi
+    if [[ -n ${IPC_STATUS_PENDING_MARKER:-} && ! -e ${IPC_BEGIN_RELEASE:-} ]]; then
+      : >"$IPC_STATUS_PENDING_MARKER"
+      printf 'pending\n'
+    elif [[ ${IPC_RESCAN_RESULT:-ok} == ok ]]; then printf 'ok\n'; else printf 'error: %s\n' "${IPC_RESCAN_RESULT}"; fi
     ;;
   listPlugins)
     count_file="$IPC_LOG.list-count"
@@ -1196,10 +1194,11 @@ make_repo "$manager_a_repo" manager-a.widget
 make_repo "$manager_b_repo" manager-b.widget
 manager_a_release="$test_root/manager-a-release"
 manager_a_ready="$test_root/manager-a-ready"
+manager_a_pending="$test_root/manager-a-pending"
 manager_b_scan="$test_root/manager-b-scan"
 manager_a_status=0
 env "${manager_env[@]}" IPC_BEGIN_REQUEST=1 IPC_BEGIN_RELEASE="$manager_a_release" \
-  IPC_RESCAN_MARKER="$manager_a_ready" "$manager" add "$manager_a_repo" --yes \
+  IPC_STATUS_PENDING_MARKER="$manager_a_pending" IPC_RESCAN_MARKER="$manager_a_ready" "$manager" add "$manager_a_repo" --yes \
   >"$test_root/manager-a.out" 2>&1 &
 manager_a_pid=$!
 for _ in {1..100}; do
@@ -1207,6 +1206,11 @@ for _ in {1..100}; do
   sleep 0.01
 done
 [[ -f $manager_a_ready ]] || fail "manager A did not reach explicit reload"
+for _ in {1..100}; do
+  [[ -f $manager_a_pending ]] && break
+  sleep 0.01
+done
+[[ -f $manager_a_pending ]] || fail "manager A did not poll pending status"
 manager_b_status=0
 env "${manager_env[@]}" IPC_BEGIN_REQUEST= IPC_BEGIN_RELEASE= \
   IPC_RESCAN_MARKER="$manager_b_scan" "$manager" add "$manager_b_repo" --yes \

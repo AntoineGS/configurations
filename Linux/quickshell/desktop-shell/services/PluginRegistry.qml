@@ -20,6 +20,7 @@ QtObject {
   property int registryRevision: 0
   property bool scanning: false
   property bool scanAbortRequested: false
+  property bool scanExitAcknowledged: true
   property var pluginErrors: []
   property string lastScanError: ""
   property string lastEnableError: ""
@@ -44,7 +45,7 @@ QtObject {
 
   signal pluginsChanged()
   signal scanFinished()
-  signal pluginLoadFailed(string id, string error)
+  signal pluginLoadFailed(string id, string error, int generation)
   signal localPluginChanged(string id)
   signal watchReloadReady(int serial)
 
@@ -431,6 +432,7 @@ QtObject {
   }
 
   function handleScanExit(exitCode, rawOutput) {
+    registry.scanExitAcknowledged = true
     if (registry.scanAbortRequested) {
       registry.scanAbortRequested = false
       registry.scanning = false
@@ -588,6 +590,7 @@ QtObject {
   function rescan() {
     if (scanning) return
     registry.scanAbortRequested = false
+    registry.scanExitAcknowledged = false
     scanning = true
     var script = ""
       + "emit_manifest() { local manifest=\"$1\"; "
@@ -625,6 +628,5 @@ QtObject {
     if (!registry.scanning) return
     registry.scanAbortRequested = true
     registry.scanProcess.running = false
-    registry.scanning = false
   }
 }

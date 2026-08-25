@@ -285,10 +285,25 @@ rescan() {
     printf '%s: plugin rescan returned an invalid request ID\n' "$script_name" >&2
     return 1
   }
-  for ((attempt = 0; attempt < 150; attempt++)); do
-    if ! status=$("$ipc" shell pluginRescanStatus "$request"); then
-      printf '%s: plugin rescan status IPC failed\n' "$script_name" >&2
-      return 1
+  # Keep the manager lock until the shell acknowledges a terminal result. The
+  # shell fail-safe is 15s; transport retries below add margin without making
+  # a live, pending shell eligible for rollback.
+  attempt=0
+  while :; do
+    attempt=$((attempt + 1))
+    status=""
+    for retry in {1..5}; do
+      if status=$("$ipc" shell pluginRescanStatus "$request"); then
+        break
+      fi
+      if ((retry < 5)); then sleep 0.1; fi
+    done
+    if [[ -z $status ]]; then
+      if ! "$ipc" shell health >/dev/null 2>&1; then
+        printf '%s: plugin shell became unavailable during rescan\n' "$script_name" >&2
+        return 1
+      fi
+      continue
     fi
     case $status in
       pending) sleep 0.1 ;;
@@ -297,14 +312,10 @@ rescan() {
         printf '%s: plugin rescan failed: %s\n' "$script_name" "${status#error: }" >&2
         return 1
         ;;
-      *)
-        printf '%s: plugin rescan returned an invalid status\n' "$script_name" >&2
-        return 1
-        ;;
+      *) sleep 0.1 ;;
     esac
+    if ((attempt >= 180)); then attempt=0; fi
   done
-  printf '%s: plugin rescan timed out\n' "$script_name" >&2
-  return 1
 }
 
 list_json() {
