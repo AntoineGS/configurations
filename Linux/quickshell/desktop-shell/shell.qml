@@ -9,6 +9,7 @@ import qs.Commons
 import "plugins/bar"
 import "plugins/osd/OsdModel.js" as OsdModel
 import "services"
+import "services/PluginState.js" as PluginState
 
 ShellRoot {
   id: shell
@@ -25,10 +26,20 @@ ShellRoot {
 
   readonly property string shellPath: Quickshell.shellDir
   readonly property string firstPartyPluginsDir: shellPath + "/plugins"
-  readonly property string configPath: shellPath + "/config/shell.json"
+  readonly property string defaultConfigPath: shellPath + "/config/shell.json"
+  readonly property string configPath: defaultConfigPath
+  readonly property string configuredPluginStatePath: Quickshell.env("DESKTOP_SHELL_STATE_PATH")
+  readonly property string pluginStatePath: configuredPluginStatePath !== ""
+    ? configuredPluginStatePath : home + "/.config/desktop-shell/shell.json"
   readonly property string defaultBarId: "desktop.bar"
   readonly property bool previewMode: Quickshell.env("DESKTOP_SHELL_PREVIEW") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
+  readonly property bool testMutationEnabled: Quickshell.env("DESKTOP_SHELL_TEST_ALLOW_PLUGIN_STATE_MUTATION") === "1"
+    && configuredPluginStatePath !== "" && testSurfaceSuppressed
+  readonly property bool testPluginWidgetLoadEnabled: testMutationEnabled
+    && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_WIDGETS") === "1"
+  readonly property bool testPluginBarLoadEnabled: testMutationEnabled
+    && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_BAR") === "1"
   readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
@@ -56,14 +67,42 @@ ShellRoot {
     disabledPlugins: []
   })
 
-  property var shellConfig: builtinShellConfig
+  property var defaultShellConfig: builtinShellConfig
+  property var pluginState: PluginState.emptyState()
+  property bool pluginStateValid: true
+  property string pluginStateError: ""
+  property bool pluginStateDirectoryReady: false
+  property bool pluginStateWritePending: false
+  property string pluginStateWriteError: ""
+  property var pendingPluginState: null
+  property bool pluginStateWriteResult: false
+  property var shellConfig: PluginState.mergeConfig(defaultShellConfig, pluginState)
   property bool configValid: false
   readonly property var pluginErrors: pluginRegistry ? pluginRegistry.pluginErrors : []
   readonly property var notificationService: shell.serviceFor("desktop.notifications")
   readonly property var polkitService: shell.serviceFor("desktop.polkit")
   readonly property var healthState: ({
     configValid: shell.configValid,
+    pluginStateValid: shell.pluginStateValid,
+    pluginStateError: shell.pluginStateError,
+    pluginStatePath: shell.pluginStatePath,
+    pluginStateDirectoryReady: shell.pluginStateDirectoryReady,
+    pluginStateWritePending: shell.pluginStateWritePending,
+    pluginStateWriteError: shell.pluginStateWriteError,
     pluginErrors: shell.pluginErrors,
+    watcherGuardError: pluginRegistry ? pluginRegistry.watcherGuardError : "",
+    watcherGuardRetryCount: pluginRegistry ? pluginRegistry.guardRetryCount : 0,
+    watcherUnavailable: pluginRegistry ? pluginRegistry.watcherUnavailable : false,
+    watcherRetryCount: pluginRegistry ? pluginRegistry.watcherRetryCount : 0,
+    reloadGeneration: shell.pluginReloadGeneration,
+    pluginLoadEpoch: shell.pluginLoadEpoch,
+    pluginBarLoadCount: shell.pluginBarLoadCount,
+    pluginBarInstanceGeneration: shell.pluginBarInstanceGeneration,
+    pluginBarDestroyedCount: shell.pluginBarDestroyedCount,
+    serviceCreateAttemptCount: shell.serviceCreateAttemptCount,
+    thirdPartyServiceCreateAttemptCount: shell.thirdPartyServiceCreateAttemptCount,
+    scanFinishedCount: pluginRegistry ? pluginRegistry.scanFinishedCount : 0,
+    watchChangeCount: pluginRegistry ? pluginRegistry.watchChangeCount : 0,
     activeBarId: shell.activeBarId,
     previewMode: shell.previewMode,
     testSurfaceSuppressed: shell.testSurfaceSuppressed,
@@ -81,6 +120,17 @@ ShellRoot {
   })
   property bool pluginReloading: false
   property bool pluginReloadPending: false
+  property int pluginReloadGeneration: 0
+  property int pluginLoadEpoch: 0
+  property int pluginBarLoadCount: 0
+  property int pluginBarInstanceGeneration: 0
+  property int pluginBarDestroyedCount: 0
+  property int serviceCreateAttemptCount: 0
+  property int thirdPartyServiceCreateAttemptCount: 0
+  property bool pluginBarReloadEnabled: true
+  property var reloadComponentStates: ({})
+  property int reloadTokenCounter: 0
+  property string reloadGenerationError: ""
 
   onShellConfigChanged: {
     if (failedBarId !== "") failedBarId = ""
@@ -92,7 +142,8 @@ ShellRoot {
     var text = String(raw || "").trim()
     if (!text) {
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config missing, using builtin fallback")
       return
     }
@@ -100,38 +151,75 @@ ShellRoot {
       var parsed = JSON.parse(text)
       if (Util.isPlainObject(parsed) && parsed.version === 1) {
         configValid = true
-        shellConfig = parsed
+        defaultShellConfig = parsed
+        rebuildShellConfig()
         return
       }
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config missing version: 1, using builtin fallback")
     } catch (e) {
       configValid = false
-      shellConfig = builtinShellConfig
+      defaultShellConfig = builtinShellConfig
+      rebuildShellConfig()
       console.warn("shell config parse failed, using builtin fallback:", e)
     }
   }
 
-  function persistShellConfig(nextConfig) {
-    if (!shell.configValid) {
-      console.warn("shell config is invalid; refusing to overwrite it")
+  function rebuildShellConfig() {
+    shellConfig = PluginState.mergeConfig(defaultShellConfig, pluginState)
+  }
+
+  function applyPluginState(raw) {
+    var parsed = PluginState.parseState(raw)
+    if (!parsed.valid) {
+      pluginStateValid = false
+      pluginStateError = parsed.error
+      pluginState = PluginState.emptyState()
+      rebuildShellConfig()
+      return
+    }
+    pluginState = parsed.state
+    pluginStateValid = true
+    pluginStateError = ""
+    rebuildShellConfig()
+  }
+
+  function persistPluginState(nextState) {
+    if (!pluginStateValid) {
+      pluginStateError = "invalid plugin state must be recovered before mutation"
       return false
     }
-    var payload = JSON.parse(JSON.stringify(nextConfig))
-    payload.version = 1
-    shellConfig = payload
-    configFile.setText(JSON.stringify(payload, null, 2) + "\n")
-    return true
+    if (!pluginStateDirectoryReady) {
+      pluginStateError = "plugin state directory is not ready"
+      return false
+    }
+    if (pluginStateWritePending) {
+      pluginStateError = "plugin state write is already pending"
+      return false
+    }
+    var parsed = PluginState.parseState(JSON.stringify(nextState || {}))
+    if (!parsed.valid) {
+      pluginStateValid = false
+      pluginStateError = parsed.error
+      return false
+    }
+    pendingPluginState = parsed.state
+    pluginStateWritePending = true
+    pluginStateWriteError = ""
+    pluginStateWriteResult = false
+    pluginStateError = "plugin state write pending"
+    pluginStateFile.setText(JSON.stringify(parsed.state, null, 2) + "\n")
+    return pluginStateWriteResult
   }
 
   readonly property var barConfig: shellConfig && Util.isPlainObject(shellConfig.bar) ? shellConfig.bar : builtinShellConfig.bar
   onBarConfigChanged: if (bar && "barConfig" in bar) bar.barConfig = shell.barConfig
   FileView {
-    id: configFile
-    path: shell.configPath
+    id: defaultsFile
+    path: shell.defaultConfigPath
     watchChanges: true
-    atomicWrites: true
     printErrors: false
     onLoaded: shell.applyShellConfig(text())
     onLoadFailed: function(error) {
@@ -141,21 +229,59 @@ ShellRoot {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: pluginStateFile
+    path: shell.pluginStatePath
+    watchChanges: true
+    atomicWrites: true
+    blockWrites: true
+    printErrors: false
+    onLoaded: shell.applyPluginState(text())
+    onLoadFailed: shell.applyPluginState("")
+    onFileChanged: reload()
+    onSaved: {
+      if (shell.pluginStateWritePending) {
+        shell.pluginState = shell.pendingPluginState
+        shell.pendingPluginState = null
+        shell.pluginStateWritePending = false
+        shell.pluginStateWriteError = ""
+        shell.pluginStateWriteResult = true
+        shell.pluginStateValid = true
+        shell.pluginStateError = ""
+        shell.rebuildShellConfig()
+      }
+    }
+    onSaveFailed: function(error) {
+      shell.pendingPluginState = null
+      shell.pluginStateWritePending = false
+      shell.pluginStateWriteError = String(error || "plugin state save failed")
+      shell.pluginStateWriteResult = false
+      shell.pluginStateError = shell.pluginStateWriteError
+    }
+  }
+
+  Process {
+    id: pluginStateDirectoryProcess
+    onExited: function(exitCode) {
+      shell.pluginStateDirectoryReady = Number(exitCode) === 0
+      if (!shell.pluginStateDirectoryReady) shell.pluginStateError = "plugin state directory could not be created"
+    }
+  }
+
   Component.onCompleted: {
     console.log("desktop-shell paths",
       "shellDir=" + Quickshell.shellDir,
       "firstPartyPluginsDir=" + shell.firstPartyPluginsDir,
-      "configPath=" + shell.configPath)
+      "configPath=" + shell.configPath,
+      "pluginStatePath=" + shell.pluginStatePath)
+    pluginStateDirectoryProcess.command = ["bash", "-c", "mkdir -p -- \"$(dirname -- \"$0\")\"", shell.pluginStatePath]
+    pluginStateDirectoryProcess.running = true
     pluginRegistry.firstPartyDir = shell.firstPartyPluginsDir
     pluginRegistry.shellConfigProvider = function() { return shell.shellConfig }
+    pluginRegistry.pluginStateProvider = function() { return shell.pluginState }
+    pluginRegistry.pluginStateWriter = function(nextState) { return shell.persistPluginState(nextState) }
     pluginRegistry.rescan()
     shell._syncServices()
-  }
-
-  function mutateShellConfig(mutator) {
-    var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
-    mutator(copy)
-    persistShellConfig(copy)
   }
 
   // Exposed as a property so child plugins (notifications, future panels)
@@ -242,19 +368,64 @@ ShellRoot {
   Loader {
     id: pluginBarLoader
 
-    active: !shell.testSurfaceSuppressed && !shell.pluginReloading
+    active: (!shell.testSurfaceSuppressed || shell.testPluginBarLoadEnabled)
+      && shell.pluginBarReloadEnabled
       && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
     asynchronous: true
-    onLoaded: shell.configureBar(item, shell.activeBarManifest)
+    property int loadEpoch: -1
+    property int loadGeneration: -1
+    property string loadId: ""
+    property string loadUrl: ""
+    property var loadManifest: null
+    property string reloadToken: ""
+    onLoaded: {
+      if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
+      shell.pluginBarLoadCount++
+      shell.pluginBarInstanceGeneration++
+      shell.pluginRegistry.clearPluginError(loadId, "bar")
+      shell.configureBar(item, shell.activeBarManifest)
+    }
     onActiveChanged: if (!active) shell.bar = null
     onStatusChanged: {
+      if (status === Loader.Loading && reloadToken === "") {
+        loadEpoch = shell.pluginLoadEpoch
+        loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+        loadId = shell.activeBarId
+        loadUrl = shell.activeBarSourceUrl
+        loadManifest = shell.activeBarManifest
+        reloadToken = shell.beginReloadOperation("bar:" + loadId)
+      }
+      if (status !== Loader.Loading && reloadToken !== "") {
+        if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
+        shell.finishReloadOperation(reloadToken, status, errorString())
+        reloadToken = ""
+      }
       if (status === Loader.Error) {
+        if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
         var detail = errorString && errorString() ? errorString() : ""
-        console.warn("bar option " + shell.activeBarId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
-        shell.failedBarId = shell.activeBarId
+        console.warn("bar option " + loadId + " failed to load, falling back to " + shell.defaultBarId + ":", detail)
+        shell.pluginRegistry.pluginLoadFailed(loadId, detail, loadGeneration, "bar")
+        shell.failedBarId = loadId
       }
     }
+    Component.onDestruction: {
+      reloadToken = ""
+    }
+  }
+
+  function recordPluginBarDestroyed() {
+    if (shell.testPluginBarLoadEnabled) shell.pluginBarDestroyedCount++
+  }
+
+  function pluginBarTestProbe() {
+    if (!shell.testPluginBarLoadEnabled) return "disabled"
+    return JSON.stringify({
+      loadCount: shell.pluginBarLoadCount,
+      instanceGeneration: shell.pluginBarInstanceGeneration,
+      destroyedCount: shell.pluginBarDestroyedCount,
+      version: shell.bar && "version" in shell.bar ? String(shell.bar.version) : ""
+    })
   }
 
   // ------------------------------------------------------------- services
@@ -288,26 +459,39 @@ ShellRoot {
     var url = pluginRegistry.entryPointUrl(manifest, "service")
     if (!url) return null
 
+    var loadEpoch = shell.pluginLoadEpoch
+    var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+    var loadManifest = manifest
+    var loadUrl = url
+    shell.serviceCreateAttemptCount++
+    if (!manifest.__isFirstParty) shell.thirdPartyServiceCreateAttemptCount++
     var comp = Qt.createComponent(url, Component.PreferSynchronous)
     function finalize() {
+      if (comp.status === Component.Loading) return
+      var currentManifest = shell.pluginRegistry.installedPlugins[key]
+      if (!shell.isPluginLoadCurrent(key, "service", loadEpoch, loadGeneration, loadUrl, loadManifest)
+          || !currentManifest || !shell.pluginRegistry.isEnabled(key)) return
       if (comp.status !== Component.Ready) {
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
+        shell.pluginRegistry.pluginLoadFailed(key, comp.errorString(), loadGeneration, "service")
         return
       }
       var inst = comp.createObject(serviceHost)
       if (!inst) {
         console.warn("service plugin createObject returned null for", key)
+        shell.pluginRegistry.pluginLoadFailed(key, "service createObject returned null", loadGeneration, "service")
         return
       }
       if ("shellPath" in inst) inst.shellPath = shell.shellPath
       if ("shell" in inst) inst.shell = shell
-      if ("manifest" in inst) inst.manifest = manifest
+       if ("manifest" in inst) inst.manifest = loadManifest
       if ("barWidgetRegistry" in inst) inst.barWidgetRegistry = shell.barWidgetRegistry
       if ("pluginRegistry" in inst) inst.pluginRegistry = shell.pluginRegistry
       var snext = ({})
       for (var sk in _services) snext[sk] = _services[sk]
-      snext[key] = inst
-      _services = snext
+       snext[key] = inst
+       _services = snext
+        shell.pluginRegistry.clearPluginError(key, "service")
     }
     if (comp.status === Component.Loading) {
       comp.statusChanged.connect(finalize)
@@ -356,52 +540,25 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { if (!shell.pluginReloading) shell._syncServices() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell._syncServices()
+    }
   }
 
-  // Writes inline settings to a bar layout entry or top-level plugin entry in
-  // shell.json. moduleName is the entry id; settings is the merged plugin
-  // state. Returns true if anything actually changed. Compute the proposed
-  // new shellConfig in a local clone, and only persist if anything actually
-  // changed so reactive bindings do not dirty shell.json unnecessarily.
+  // Writes inline settings to a mutable bar-widget state entry. Returns true
+  // if anything actually changed.
   function updateEntryInline(moduleName, settings) {
     var stripped = Util.canonicalWidgetId(moduleName)
-    var copy = JSON.parse(JSON.stringify(shellConfig || builtinShellConfig))
-    if (!Util.isPlainObject(copy.bar)) copy.bar = { layout: { left: [], center: [], right: [] } }
-    if (!Util.isPlainObject(copy.bar.layout)) copy.bar.layout = { left: [], center: [], right: [] }
-    if (!Array.isArray(copy.plugins)) copy.plugins = []
-
-    var sections = ["left", "center", "right"]
-    var foundInLayout = false
-    var dirty = false
-    for (var s = 0; s < sections.length; s++) {
-      var arr = copy.bar.layout[sections[s]] || []
-      for (var i = 0; i < arr.length; i++) {
-        if (arr[i] && Util.canonicalWidgetId(arr[i].id) === stripped) {
-          var next = { id: stripped }
-          for (var k in settings) if (k !== "id") next[k] = settings[k]
-          if (JSON.stringify(arr[i]) !== JSON.stringify(next)) {
-            arr[i] = next
-            dirty = true
-          }
-          foundInLayout = true
-        }
-      }
+    var copy = JSON.parse(JSON.stringify(pluginState || PluginState.emptyState()))
+    var widget = (copy.barWidgets || []).find(function (item) { return item.id === stripped })
+    if (!widget) return false
+    var before = JSON.stringify(copy)
+    for (var key in settings) {
+      if (key !== "id") copy = PluginState.setWidget(copy, stripped, key, settings[key]).state
     }
-    if (!foundInLayout) {
-      for (var j = 0; j < copy.plugins.length; j++) {
-        if (copy.plugins[j] && copy.plugins[j].id === stripped) {
-          var pnext = { id: stripped }
-          for (var pk in settings) if (pk !== "id") pnext[pk] = settings[pk]
-          if (JSON.stringify(copy.plugins[j]) !== JSON.stringify(pnext)) {
-            copy.plugins[j] = pnext
-            dirty = true
-          }
-        }
-      }
-    }
-    if (!dirty) return false
-    return persistShellConfig(copy)
+    if (JSON.stringify(copy) === before) return false
+    return persistPluginState(copy)
   }
 
   // ---------------------------------------------------------- on-demand panels
@@ -637,7 +794,10 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { if (!shell.pluginReloading) shell.panelEntries = shell.computePanelEntries() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell.panelEntries = shell.computePanelEntries()
+    }
   }
 
   Instantiator {
@@ -654,11 +814,18 @@ ShellRoot {
       readonly property string sourceUrl: shell.pluginRegistry.entryPointUrl(manifest, entryKind)
 
       property Loader panelLoader: Loader {
+        property int loadEpoch: shell.pluginLoadEpoch
+        property int loadGeneration: shell.pluginReloadGeneration
+        property string loadUrl: panelEntry.sourceUrl
+        property string reloadToken: ""
         source: panelEntry.sourceUrl
         active: panelEntry.sourceUrl !== "" && (panelEntry.keepLoaded || shell.openPanelIds[panelEntry.pluginId] === true)
         asynchronous: true
         onLoaded: {
           if (!item) return
+          if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+              loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
+          shell.pluginRegistry.clearPluginError(panelEntry.pluginId, "panel:" + panelEntry.entryKind)
           if ("shellPath" in item) item.shellPath = shell.shellPath
           if ("shell" in item) item.shell = shell
           if ("manifest" in item) item.manifest = panelEntry.manifest
@@ -671,17 +838,41 @@ ShellRoot {
           shell.registerPanelLoader(panelEntry.pluginId, this)
         }
         onStatusChanged: {
+          if (status === Loader.Loading && reloadToken === "") {
+            loadEpoch = shell.pluginLoadEpoch
+            loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+            loadUrl = panelEntry.sourceUrl
+            reloadToken = shell.beginReloadOperation("panel:" + panelEntry.pluginId
+              + ":" + panelEntry.entryKind, loadGeneration)
+          }
+          if (status !== Loader.Loading && reloadToken !== "") {
+            if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+                loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
+            shell.finishReloadOperation(reloadToken, status, errorString())
+            reloadToken = ""
+          }
           if (status === Loader.Error) {
+            if (!shell.isPluginLoadCurrent(panelEntry.pluginId, panelEntry.entryKind,
+                loadEpoch, loadGeneration, loadUrl, panelEntry.manifest)) return
             // Loader.errorString() reflects the source-load failure even when
             // sourceComponent is null. Surface both so the user sees something
             // actionable instead of a panel that silently refuses to open.
             var detail = errorString && errorString() ? errorString() : ""
             if (!detail && sourceComponent) detail = sourceComponent.errorString()
             console.warn("panel plugin " + panelEntry.pluginId + " failed to load:", detail)
+            shell.pluginRegistry.pluginLoadFailed(panelEntry.pluginId, detail, loadGeneration,
+              "panel:" + panelEntry.entryKind)
             shell.hide(panelEntry.pluginId)
           }
         }
-        Component.onDestruction: shell.unregisterPanelLoader(panelEntry.pluginId)
+        Component.onCompleted: {
+          loadEpoch = shell.pluginLoadEpoch
+          loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+        }
+        Component.onDestruction: {
+          reloadToken = ""
+          shell.unregisterPanelLoader(panelEntry.pluginId)
+        }
       }
     }
   }
@@ -694,13 +885,16 @@ ShellRoot {
   // widgets use the same first-party manifest contract as third-party widgets.
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { if (!shell.pluginReloading) shell.syncPluginWidgets() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell.syncPluginWidgets()
+    }
   }
 
   property var pluginWidgetComponents: ({})
 
   function syncPluginWidgets() {
-    if (shell.testSurfaceSuppressed) {
+    if (shell.testSurfaceSuppressed && !shell.testPluginWidgetLoadEnabled) {
       shell.unloadPluginWidgets()
       return
     }
@@ -740,7 +934,7 @@ ShellRoot {
       // finishes. Starting a second one produces a second Component for the
       // same widget, and swapping a slot's component rebuilds its item —
       // briefly running two of the widget, each registering its IPC handler.
-      if (existing && existing.url === url && !existing.component) continue
+       if (existing && existing.url === url && existing.loading === true) continue
 
       // If the component URL is unchanged, just refresh the metadata in
       // place. We can't skip this even when the URL matches: manifests can
@@ -774,11 +968,18 @@ ShellRoot {
   }
 
   function reloadPlugins() {
+    shell.pluginLoadEpoch++
     if (shell.pluginReloading || shell.pluginRegistry.scanning) {
       shell.pluginReloadPending = true
       return
     }
+    shell.pluginReloadGeneration++
+    shell.reloadGenerationError = ""
+    shell.reloadComponentStates = ({})
     shell.pluginReloading = true
+    pluginBarLoader.reloadToken = ""
+    pluginBarLoader.loadGeneration = -1
+    shell.pluginBarReloadEnabled = false
     shell.unloadPanels()
     shell.unloadPluginServices()
     shell.unloadPluginWidgets()
@@ -795,19 +996,72 @@ ShellRoot {
     shell.pluginRegistry.rescan()
   }
 
+  function beginReloadOperation(kind, operationGeneration) {
+    if (!shell.pluginReloading) return ""
+    var generation = operationGeneration === undefined
+      ? shell.pluginReloadGeneration : Number(operationGeneration)
+    if (generation !== shell.pluginReloadGeneration) return ""
+    shell.reloadTokenCounter++
+    var token = String(generation) + ":" + String(shell.reloadTokenCounter)
+    var next = ({})
+    for (var existing in shell.reloadComponentStates) next[existing] = shell.reloadComponentStates[existing]
+    next[token] = { generation: generation, kind: String(kind) }
+    shell.reloadComponentStates = next
+    return token
+  }
+
+  function finishReloadOperation(token, status, detail) {
+    var key = String(token || "")
+    if (!key || !shell.reloadComponentStates[key]) return false
+    var operation = shell.reloadComponentStates[key]
+    if (Number(operation.generation) !== shell.pluginReloadGeneration) return false
+    var next = ({})
+    for (var existing in shell.reloadComponentStates) {
+      if (existing !== key) next[existing] = shell.reloadComponentStates[existing]
+    }
+    shell.reloadComponentStates = next
+    return true
+  }
+
+  function isReloadTokenCurrent(token) {
+    var key = String(token || "")
+    return key === "" && !shell.pluginReloading || !!shell.reloadComponentStates[key]
+  }
+
+  function isPluginLoadCurrent(id, kind, epoch, generation, url, manifest) {
+    var current = shell.pluginRegistry.installedPlugins[String(id)]
+    return Number(epoch) === shell.pluginLoadEpoch
+      && Number(generation) === shell.pluginRegistry.pluginSourceGeneration
+      && !!current
+      && shell.pluginRegistry.entryPointUrl(current, kind) === String(url)
+      && String(current.__sourceDir || "") === String(manifest.__sourceDir || "")
+  }
+
   Connections {
     target: shell.pluginRegistry
+    function onWatchReloadReady() {
+      if (shell.pluginReloading || shell.pluginRegistry.scanning) {
+        shell.pluginLoadEpoch++
+        shell.pluginReloadPending = true
+        return
+      }
+      shell.reloadPlugins()
+    }
     function onScanFinished() {
       if (shell.pluginReloadPending) {
         shell.pluginReloadPending = false
         shell.pluginReloading = false
-        Qt.callLater(shell.reloadPlugins)
+        shell.reloadPlugins()
         return
       }
       shell.pluginReloading = false
       shell._syncServices()
       shell.panelEntries = shell.computePanelEntries()
       shell.syncPluginWidgets()
+      shell.pluginBarReloadEnabled = true
+    }
+    function onRescanRequested() {
+      shell.reloadPlugins()
     }
   }
 
@@ -823,18 +1077,26 @@ ShellRoot {
     // asynchronous and syncPluginWidgets runs several times while the shell
     // starts, so without a marker the later passes cannot tell a load in
     // flight from one that never happened.
-    setPluginWidgetComponent(registryKey, { url: url, component: null })
-
-    var comp = Qt.createComponent(url, Component.Asynchronous)
+    var loadEpoch = shell.pluginLoadEpoch
+    var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
+    var loadManifest = shell.pluginRegistry.installedPlugins[registryKey]
+    var reloadToken = shell.beginReloadOperation("widget:" + registryKey)
+    setPluginWidgetComponent(registryKey, { url: url, component: null, loading: true })
+    var comp = shell.testPluginWidgetLoadEnabled
+      ? Qt.createComponent(url) : Qt.createComponent(url, Component.Asynchronous)
     function finalize() {
+      if (comp.status === Component.Loading) return
+      if (!shell.isPluginLoadCurrent(registryKey, "barWidget", loadEpoch, loadGeneration, url, loadManifest)) return
+      if (reloadToken !== "" && !shell.finishReloadOperation(reloadToken, comp.status, comp.errorString())) return
       if (comp.status === Component.Ready) {
+        shell.pluginRegistry.clearPluginError(registryKey, "widget")
         shell.barWidgetRegistry.register(registryKey, comp, meta)
-        shell.setPluginWidgetComponent(registryKey, { url: url, component: comp })
+        shell.setPluginWidgetComponent(registryKey, { url: url, component: comp, loading: false })
       } else if (comp.status === Component.Error) {
         console.warn("Plugin widget " + registryKey + " failed: " + comp.errorString())
         // Drop the claim so a later rescan can retry.
         shell.setPluginWidgetComponent(registryKey, null)
-        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString())
+        shell.pluginRegistry.pluginLoadFailed(registryKey, comp.errorString(), loadGeneration, "widget")
       }
     }
     if (comp.status === Component.Loading) {
@@ -842,6 +1104,17 @@ ShellRoot {
     } else {
       finalize()
     }
+  }
+
+  function testPluginWidgetReady(id) {
+    if (!shell.testPluginWidgetLoadEnabled) return "disabled"
+    var key = String(id || "")
+    if (!shell.pluginRegistry.installedPlugins[key]) return "absent"
+    if (!shell.pluginRegistry.isEnabled(key)) return "absent"
+    var entry = shell.pluginWidgetComponents[key]
+    if (!entry) return "absent"
+    if (!entry.component) return "loading"
+    return entry.component.status === Component.Ready ? "ready" : "loading"
   }
 
   // Bar widgets are instantiated once per screen, but their IPC targets are
@@ -914,6 +1187,7 @@ ShellRoot {
   // ---------------------------------------------------------- shell IPC
 
   IpcHandler {
+    id: shellIpc
     target: "desktop-shell"
 
     function toggleBar(): string {
@@ -930,17 +1204,95 @@ ShellRoot {
     }
 
     function reloadConfig(): string {
-      configFile.reload()
+      defaultsFile.reload()
       return "ok"
     }
 
     function rescanPlugins(): string {
-      pluginRegistry.rescan()
+      shell.reloadPlugins()
       return "ok"
     }
 
     function listPlugins(): string {
-      return JSON.stringify(pluginRegistry.installedPlugins)
+      var result = []
+      var plugins = pluginRegistry.installedPlugins || ({})
+      var ids = Object.keys(plugins).sort()
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i]
+        var manifest = plugins[id]
+        var kinds = Array.isArray(manifest.kinds) ? manifest.kinds : []
+        var isBarOption = kinds.indexOf("bar") !== -1
+        var isBarWidget = kinds.indexOf("bar-widget") !== -1
+        var active = isBarOption
+          ? shell.activeBarId === id
+          : isBarWidget ? !!shell.barWidgetFor(id) : pluginRegistry.isEnabled(id)
+        result.push({
+          id: id,
+          name: String(manifest.name || id),
+          kinds: kinds,
+          enabled: isBarOption ? active
+            : (isBarWidget ? pluginRegistry.inBar(id) : pluginRegistry.isEnabled(id)),
+          active: active,
+          canDisable: !manifest.__isFirstParty && !isBarOption,
+          firstParty: !!manifest.__isFirstParty,
+          clonedFrom: "",
+        })
+      }
+      return JSON.stringify(result)
+    }
+
+    function parseJsonValue(raw, fallback) {
+      if (raw === undefined || raw === null || String(raw).trim() === "") return { valid: true, value: fallback }
+      try {
+        return { valid: true, value: JSON.parse(String(raw)) }
+      } catch (error) {
+        return { valid: false, value: fallback }
+      }
+    }
+
+    function parseJsonObject(raw, fallback) {
+      var parsed = shellIpc.parseJsonValue(raw, fallback)
+      return parsed.valid && parsed.value && typeof parsed.value === "object" && !Array.isArray(parsed.value)
+        ? parsed.value : null
+    }
+
+    function pluginMutationResult(ok) {
+      var error = String(pluginRegistry.lastEnableError || "")
+      if (ok) return "ok"
+      if (error.indexOf("unknown plugin ") === 0) return "unknown"
+      if (error !== "") return error
+      if (shell.pluginStateWriteError !== "") return "plugin state write failed: " + shell.pluginStateWriteError
+      if (shell.pluginStateError !== "") return shell.pluginStateError
+      return "plugin state write failed"
+    }
+
+    function setPluginEnabled(id: string, enabled: bool): string {
+      return shellIpc.pluginMutationResult(pluginRegistry.setEnabled(id, enabled, {}))
+    }
+
+    function enablePlugin(id: string, placementJson: string): string {
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shellIpc.pluginMutationResult(pluginRegistry.setEnabled(id, true, placement))
+    }
+
+    function putBarWidget(id: string, placementJson: string): string {
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shellIpc.pluginMutationResult(pluginRegistry.putBarWidget(id, placement))
+    }
+
+    function moveBarWidget(id: string, placementJson: string): string {
+      var placement = shellIpc.parseJsonObject(placementJson, ({}))
+      if (placement === null) return "invalid placement JSON"
+      return shellIpc.pluginMutationResult(pluginRegistry.moveBarWidget(id, placement))
+    }
+
+    function setBarWidget(id: string, key: string, valueJson: string, selectorJson: string): string {
+      var parsedValue = shellIpc.parseJsonValue(valueJson, null)
+      var selector = shellIpc.parseJsonObject(selectorJson, ({}))
+      if (!parsedValue.valid || selector === null) return "invalid widget JSON"
+      return shellIpc.pluginMutationResult(pluginRegistry.setBarWidget(id, key, parsedValue.value))
     }
 
     // Returns the effective shell.json content as JSON. Useful for debugging
@@ -981,6 +1333,38 @@ ShellRoot {
 
     function call(id: string, method: string, arg: string): string {
       return shell.callIfLoaded(id, method, arg)
+    }
+  }
+
+  IpcHandler {
+    target: "desktop-shell-test"
+    enabled: shell.testMutationEnabled
+
+    function persistPluginStateForTest(rawState: string): string {
+      var nextState
+      try {
+        nextState = JSON.parse(rawState)
+      } catch (error) {
+        return "rejected-invalid-state"
+      }
+      if (shell.persistPluginState(nextState)) return "saved"
+      if (!shell.pluginStateValid) return "rejected-invalid-state"
+      if (shell.pluginStateWriteError !== "") return "rejected-write-failed"
+      if (!shell.pluginStateDirectoryReady) return "rejected-not-ready"
+      return "pending"
+    }
+
+    function pluginWidgetReady(id: string): string {
+      return shell.testPluginWidgetReady(id)
+    }
+
+    function pluginBarTestProbe(): string {
+      return shell.pluginBarTestProbe()
+    }
+
+    function queuePluginChangeForTest(path: string): string {
+      pluginRegistry.queueLocalPluginChange(path)
+      return "queued"
     }
   }
 }

@@ -794,6 +794,30 @@ applications:
     entries: []
   - package:
       managers:
+        pacman: curl
+    name: desktop-shell-curl
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: coreutils
+    name: desktop-shell-coreutils
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: openssh
+    name: desktop-shell-openssh
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
+        pacman: inotify-tools
+    name: desktop-shell-inotify-tools
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries: []
+  - package:
+      managers:
         pacman: quickshell
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -817,6 +841,11 @@ applications:
         run:
           linux: systemctl --user stop desktop-shell.service && systemctl --user daemon-reload && systemctl --user enable desktop-shell.service
         name: enable-service
+      - check:
+          linux: setup-desktop-shell-marketplace --check
+        run:
+          linux: setup-desktop-shell-marketplace --apply
+        name: plugin-marketplace
   - package:
       managers:
         yay: codexbar-cli

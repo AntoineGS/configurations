@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: omarchy-shell [-q] shell <method> [args...]\n' >&2
+  exit 2
+}
+
+fail() {
+  printf 'omarchy-shell: %s\n' "$1" >&2
+  exit 2
+}
+
+quiet=0
+if [[ ${1-} == -q ]]; then
+  quiet=1
+  shift
+fi
+[[ ${1-} == shell ]] || fail "unsupported target: ${1-}"
+shift
+method=${1-}
+[[ -n $method ]] || usage
+shift
+
+helper_dir=$(dirname -- "$(realpath -- "$0")")
+desktop_shell="$helper_dir/desktop-shell"
+
+forward() {
+  if (( quiet )); then
+    "$@" >/dev/null 2>&1 || true
+    exit 0
+  fi
+  exec "$@"
+}
+
+case "$method" in
+  ping|rescanPlugins|listPlugins|listShellConfig)
+    (($# == 0)) || usage
+    ;;
+  enablePlugin|putBarWidget|moveBarWidget)
+    (($# >= 1 && $# <= 2)) || usage
+    ;;
+  setPluginEnabled)
+    (($# == 2)) || usage
+    ;;
+  setBarWidget)
+    (($# >= 3 && $# <= 4)) || usage
+    ;;
+  summon|toggle)
+    (($# >= 1 && $# <= 2)) || usage
+    ;;
+  hide)
+    (($# == 1)) || usage
+    ;;
+  *)
+    fail "unsupported shell method: $method"
+    ;;
+esac
+
+case "$method" in
+  ping)             forward "$desktop_shell" ping ;;
+  rescanPlugins)    forward "$desktop_shell" plugin-rescan ;;
+  listPlugins)      forward "$desktop_shell" plugin-list ;;
+  listShellConfig)  forward "$desktop_shell" list-shell-config ;;
+  enablePlugin)     forward "$desktop_shell" plugin-enable "$1" "${2:-"{}"}" ;;
+  setPluginEnabled) forward "$desktop_shell" plugin-set-enabled "$1" "$2" ;;
+  putBarWidget)     forward "$desktop_shell" plugin-put "$1" "${2:-"{}"}" ;;
+  moveBarWidget)    forward "$desktop_shell" plugin-move "$1" "${2:-"{}"}" ;;
+  setBarWidget)     forward "$desktop_shell" plugin-set-widget "$1" "$2" "$3" "${4:-"{}"}" ;;
+  summon|toggle)    forward "$desktop_shell" "$method" "$1" "${2:-"{}"}" ;;
+  hide)             forward "$desktop_shell" hide "$1" ;;
+esac
