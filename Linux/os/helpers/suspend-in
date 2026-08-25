@@ -24,8 +24,8 @@ if ! suspend_at=$(date --date="+$minutes minutes" "+%H:%M"); then
   exit 1
 fi
 
-systemctl --user stop vicinae-suspend.timer vicinae-suspend.service desktop-shell-suspend.timer desktop-shell-suspend.service 2>/dev/null || true
-systemctl --user reset-failed vicinae-suspend.timer vicinae-suspend.service desktop-shell-suspend.timer desktop-shell-suspend.service 2>/dev/null || true
+systemctl --user stop desktop-shell-suspend.timer desktop-shell-suspend.service 2>/dev/null || true
+systemctl --user reset-failed desktop-shell-suspend.timer desktop-shell-suspend.service 2>/dev/null || true
 
 if ! systemd-run --user --unit=desktop-shell-suspend --on-active="${minutes}m" --collect systemctl suspend >/dev/null 2>&1; then
   exec {lock_fd}>&-
