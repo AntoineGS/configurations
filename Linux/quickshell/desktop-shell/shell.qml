@@ -37,6 +37,8 @@ ShellRoot {
     && configuredPluginStatePath !== "" && testSurfaceSuppressed
   readonly property bool testPluginWidgetLoadEnabled: testMutationEnabled
     && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_WIDGETS") === "1"
+  readonly property bool testPluginBarLoadEnabled: testMutationEnabled
+    && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_BAR") === "1"
   readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
@@ -92,6 +94,10 @@ ShellRoot {
     reloadGeneration: shell.pluginReloadGeneration,
     pluginLoadEpoch: shell.pluginLoadEpoch,
     pluginBarLoadCount: shell.pluginBarLoadCount,
+    pluginBarInstanceGeneration: shell.pluginBarInstanceGeneration,
+    pluginBarDestroyedCount: shell.pluginBarDestroyedCount,
+    serviceCreateAttemptCount: shell.serviceCreateAttemptCount,
+    thirdPartyServiceCreateAttemptCount: shell.thirdPartyServiceCreateAttemptCount,
     scanFinishedCount: pluginRegistry ? pluginRegistry.scanFinishedCount : 0,
     watchChangeCount: pluginRegistry ? pluginRegistry.watchChangeCount : 0,
     activeBarId: shell.activeBarId,
@@ -114,6 +120,10 @@ ShellRoot {
   property int pluginReloadGeneration: 0
   property int pluginLoadEpoch: 0
   property int pluginBarLoadCount: 0
+  property int pluginBarInstanceGeneration: 0
+  property int pluginBarDestroyedCount: 0
+  property int serviceCreateAttemptCount: 0
+  property int thirdPartyServiceCreateAttemptCount: 0
   property bool pluginBarReloadEnabled: true
   property var reloadComponentStates: ({})
   property int reloadTokenCounter: 0
@@ -355,7 +365,7 @@ ShellRoot {
   Loader {
     id: pluginBarLoader
 
-    active: !shell.testSurfaceSuppressed
+    active: (!shell.testSurfaceSuppressed || shell.testPluginBarLoadEnabled)
       && shell.pluginBarReloadEnabled
       && shell.activeBarId !== shell.defaultBarId && shell.activeBarSourceUrl !== ""
     source: shell.activeBarId !== shell.defaultBarId ? shell.activeBarSourceUrl : ""
@@ -369,6 +379,7 @@ ShellRoot {
     onLoaded: {
       if (!shell.isPluginLoadCurrent(loadId, "bar", loadEpoch, loadGeneration, loadUrl, loadManifest)) return
       shell.pluginBarLoadCount++
+      shell.pluginBarInstanceGeneration++
       shell.pluginRegistry.clearPluginError(loadId, "bar")
       shell.configureBar(item, shell.activeBarManifest)
     }
@@ -398,6 +409,20 @@ ShellRoot {
     Component.onDestruction: {
       reloadToken = ""
     }
+  }
+
+  function recordPluginBarDestroyed() {
+    if (shell.testPluginBarLoadEnabled) shell.pluginBarDestroyedCount++
+  }
+
+  function pluginBarTestProbe() {
+    if (!shell.testPluginBarLoadEnabled) return "disabled"
+    return JSON.stringify({
+      loadCount: shell.pluginBarLoadCount,
+      instanceGeneration: shell.pluginBarInstanceGeneration,
+      destroyedCount: shell.pluginBarDestroyedCount,
+      version: shell.bar && "version" in shell.bar ? String(shell.bar.version) : ""
+    })
   }
 
   // ------------------------------------------------------------- services
@@ -435,6 +460,8 @@ ShellRoot {
     var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
     var loadManifest = manifest
     var loadUrl = url
+    shell.serviceCreateAttemptCount++
+    if (!manifest.__isFirstParty) shell.thirdPartyServiceCreateAttemptCount++
     var comp = Qt.createComponent(url, Component.PreferSynchronous)
     function finalize() {
       if (comp.status === Component.Loading) return
@@ -510,7 +537,10 @@ ShellRoot {
 
   Connections {
     target: shell.pluginRegistry
-    function onPluginsChanged() { if (!shell.pluginReloading) shell._syncServices() }
+    function onPluginsChanged() {
+      if (shell.pluginReloading || shell.pluginReloadPending || shell.pluginRegistry.scanning) return
+      shell._syncServices()
+    }
   }
 
   // Writes inline settings to a mutable bar-widget state entry. Returns true
@@ -1323,6 +1353,10 @@ ShellRoot {
 
     function pluginWidgetReady(id: string): string {
       return shell.testPluginWidgetReady(id)
+    }
+
+    function pluginBarTestProbe(): string {
+      return shell.pluginBarTestProbe()
     }
 
     function queuePluginChangeForTest(path: string): string {
