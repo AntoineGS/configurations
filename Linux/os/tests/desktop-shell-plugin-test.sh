@@ -399,18 +399,68 @@ env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || f
 rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $rescan_after == "$rescan_before" ]] || fail "up-to-date update requested rescan"
 
+write_transaction_fixture() {
+  local id=$1 old_commit=$2 new_commit=$3 old_origin=$4 new_origin=$5 old_identity=$6 new_identity=$7
+  local stage_name=$8 rollback_name=$9 rejected_name=${10} fixture_tmp
+  fixture_tmp="$plugins_dir/.transaction.$id.tmp"
+  jq -n --arg id "$id" --arg old_commit "$old_commit" --arg new_commit "$new_commit" \
+    --arg old_origin "$old_origin" --arg new_origin "$new_origin" --arg old_identity "$old_identity" \
+    --arg new_identity "$new_identity" --arg stage_name "$stage_name" --arg rollback_name "$rollback_name" \
+    --arg rejected_name "$rejected_name" \
+    '{version:1,id:$id,old_commit:$old_commit,new_commit:$new_commit,old_origin:$old_origin,new_origin:$new_origin,
+      old_identity:$old_identity,new_identity:$new_identity,stage_name:$stage_name,rollback_name:$rollback_name,
+      rejected_name:$rejected_name}' >"$fixture_tmp"
+  mv -- "$fixture_tmp" "$plugins_dir/.transaction.$id"
+}
 recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.recovery"
+recovery_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
+recovery_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+recovery_origin=$(git -C "$plugins_dir/lifecycle.widget" remote get-url origin)
+write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
+  "$recovery_identity" "$recovery_identity" .update.lifecycle.widget.recovery .rollback.lifecycle.widget.recovery .rejected.lifecycle.widget.recovery
 mv -T -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
 env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "rollback artifact recovery failed"
 [[ -d "$plugins_dir/lifecycle.widget" && ! -e "$recovery_rollback" ]] || fail "rollback artifact was not recovered"
 recovery_rollback="$plugins_dir/.rollback.lifecycle.widget.published"
 cp -a -- "$plugins_dir/lifecycle.widget" "$recovery_rollback"
+recovery_old_identity=$(stat -c '%d:%i' "$recovery_rollback")
+recovery_new_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
+write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
+  "$recovery_old_identity" "$recovery_new_identity" .update.lifecycle.widget.published .rollback.lifecycle.widget.published .rejected.lifecycle.widget.published
 env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "published rollback cleanup failed"
 [[ ! -e "$recovery_rollback" ]] || fail "stale rollback artifact was not removed"
 recovery_stage="$plugins_dir/.update.lifecycle.widget.stale"
-mkdir -- "$recovery_stage"
+cp -a -- "$plugins_dir/lifecycle.widget" "$recovery_stage"
+recovery_stage_identity=$(stat -c '%d:%i' "$recovery_stage")
+recovery_public_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
+write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
+  "$recovery_public_identity" "$recovery_stage_identity" .update.lifecycle.widget.stale .rollback.lifecycle.widget.stale .rejected.lifecycle.widget.stale
 env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null || fail "stale stage cleanup failed"
 [[ ! -e "$recovery_stage" ]] || fail "stale stage artifact was not removed"
+replacement_stage="$plugins_dir/.update.lifecycle.widget.replacement"
+cp -a -- "$plugins_dir/lifecycle.widget" "$replacement_stage"
+replacement_stage_identity=$(stat -c '%d:%i' "$replacement_stage")
+replacement_public_identity=$(stat -c '%d:%i' "$plugins_dir/lifecycle.widget")
+write_transaction_fixture lifecycle.widget "$recovery_commit" "$recovery_commit" "$recovery_origin" "$recovery_origin" \
+  "$replacement_public_identity" "$replacement_stage_identity" .update.lifecycle.widget.replacement .rollback.lifecycle.widget.replacement .rejected.lifecycle.widget.replacement
+artifact_race_hook="$test_root/artifact-race-hook"
+artifact_race_backup="$test_root/artifact-race-backup"
+cat >"$artifact_race_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == artifact-after-open && $2 == *'.update.lifecycle.widget.'* ]]; then
+  mv -- "$2" "$ARTIFACT_RACE_BACKUP"
+  mkdir -- "$2"
+  printf 'replacement\n' >"$2/marker"
+fi
+EOF
+chmod +x -- "$artifact_race_hook"
+if DESKTOP_SHELL_PLUGIN_TEST_HOOK="$artifact_race_hook" ARTIFACT_RACE_BACKUP="$artifact_race_backup" \
+  env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "artifact replacement during deletion was accepted"
+fi
+[[ -f "$replacement_stage/marker" && -d "$artifact_race_backup" ]] || fail "artifact replacement safety state was lost"
+rm -rf -- "$replacement_stage" "$artifact_race_backup" "$plugins_dir/.transaction.lifecycle.widget"
 mkdir -- "$plugins_dir/.update.lifecycle.widget.ambiguous-a" "$plugins_dir/.update.lifecycle.widget.ambiguous-b"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
   fail "ambiguous update artifacts were accepted"
@@ -418,6 +468,12 @@ fi
 [[ -d "$plugins_dir/.update.lifecycle.widget.ambiguous-a" && -d "$plugins_dir/.update.lifecycle.widget.ambiguous-b" ]] ||
   fail "ambiguous update artifacts were deleted"
 rm -rf -- "$plugins_dir"/.update.lifecycle.widget.ambiguous-*
+ln -s -- "$plugins_dir/lifecycle.widget" "$plugins_dir/.update.lifecycle.widget.invalid-type"
+if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "invalid recovery artifact type was accepted"
+fi
+[[ -L "$plugins_dir/.update.lifecycle.widget.invalid-type" ]] || fail "invalid recovery artifact was deleted"
+rm -f -- "$plugins_dir/.update.lifecycle.widget.invalid-type"
 
 git -C "$remote_seed" checkout -q -b main
 printf 'updated\n' >"$remote_seed/Widget.qml"
@@ -444,18 +500,25 @@ cat >"$atomic_validator" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 candidate=$1
-[[ $candidate == "$ATOMIC_PLUGINS"/.update.lifecycle.widget.* ]] || exit 1
-[[ $(sha256sum "$ATOMIC_PUBLIC/manifest.json") == "$ATOMIC_MANIFEST_HASH" ]] || exit 1
-[[ $(sha256sum "$ATOMIC_PUBLIC/Widget.qml") == "$ATOMIC_QML_HASH" ]] || exit 1
+candidate_real=$(realpath -- "$candidate")
+if [[ $candidate_real == "$ATOMIC_PUBLIC" ]]; then
+  exec "$ATOMIC_REAL_VALIDATOR" "$candidate_real"
+fi
+[[ $candidate_real == "$ATOMIC_PLUGINS"/.update.lifecycle.widget.* ]] || { printf 'bad candidate path: %s\n' "$candidate_real" >&2; exit 1; }
+[[ $(sha256sum "$ATOMIC_PUBLIC/manifest.json") == "$ATOMIC_MANIFEST_HASH" ]] || { printf 'manifest changed\n' >&2; exit 1; }
+[[ $(sha256sum "$ATOMIC_PUBLIC/Widget.qml") == "$ATOMIC_QML_HASH" ]] || { printf 'qml changed\n' >&2; exit 1; }
 stages=("$ATOMIC_PLUGINS"/.update.lifecycle.widget.*)
-[[ ${#stages[@]} == 1 && -d ${stages[0]} ]] || exit 1
-exec "$ATOMIC_REAL_VALIDATOR" "$candidate"
+[[ ${#stages[@]} == 1 && -d ${stages[0]} ]] || { printf 'stage count: %s\n' "${#stages[@]}" >&2; exit 1; }
+exec "$ATOMIC_REAL_VALIDATOR" "$candidate_real"
 EOF
 chmod +x -- "$atomic_validator"
 env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$atomic_hook" \
   DESKTOP_SHELL_PLUGIN_VALIDATE="$atomic_validator" ATOMIC_PUBLIC="$plugins_dir/lifecycle.widget" \
   ATOMIC_PLUGINS="$plugins_dir" ATOMIC_MANIFEST_HASH="$atomic_manifest_hash" ATOMIC_QML_HASH="$atomic_qml_hash" \
-  ATOMIC_REAL_VALIDATOR="$validator" "$manager" update lifecycle.widget --yes >/dev/null || fail "atomic update failed"
+  ATOMIC_REAL_VALIDATOR="$validator" "$manager" update lifecycle.widget --yes >"$test_root/atomic.out" 2>"$test_root/atomic.err" || {
+    printf 'atomic update output:\n%s\n' "$(<"$test_root/atomic.err")" >&2
+    fail "atomic update failed"
+  }
 updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 [[ $updated_commit != "$prior_commit" ]] || fail "fast-forward update did not advance"
 [[ $(git -C "$plugins_dir/lifecycle.widget" remote get-url origin) == "$remote_root/lifecycle.git" ]] ||
@@ -464,6 +527,109 @@ updated_commit=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 [[ $(stat -c '%d:%i' "$plugins_dir/lifecycle.widget") != "$atomic_inode" ]] || fail "publication did not swap directory identity"
 [[ $(sha256sum "$plugins_dir/lifecycle.widget/manifest.json") == "$atomic_manifest_hash" ]] || fail "manifest changed unexpectedly"
 grep -Fq $'rescanPlugins\t\t' "$log_file" || fail "successful update did not request rescan"
+printf 'post-verify-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm post-verify-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+post_verify_validator="$test_root/post-verify-validator"
+cat >"$post_verify_validator" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $(realpath -- "$1") == "$POST_VERIFY_PUBLIC" ]]; then
+  exit 1
+fi
+exec "$POST_VERIFY_REAL_VALIDATOR" "$1"
+EOF
+chmod +x -- "$post_verify_validator"
+post_verify_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$post_verify_validator" \
+  POST_VERIFY_PUBLIC="$plugins_dir/lifecycle.widget" POST_VERIFY_REAL_VALIDATOR="$validator" \
+  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "post-publication verification failure was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$post_verify_prior" ]] ||
+  fail "post-publication verification did not restore old checkout"
+post_verify_artifacts=("$plugins_dir"/.{update,rollback,rejected}.lifecycle.widget.*)
+[[ ${#post_verify_artifacts[@]} == 0 ]] || fail "post-publication failure left artifacts: ${post_verify_artifacts[*]}"
+
+printf 'second-rename-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm second-rename-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+rename_bin="$test_root/rename-bin"
+mkdir -p -- "$rename_bin"
+cat >"$rename_bin/mv" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ ${FAIL_SECOND_RENAME:-0} == 1 && $* == *'.update.lifecycle.widget.'* && $* == *'lifecycle.widget'* ]]; then
+  exit 1
+fi
+exec /bin/mv "$@"
+EOF
+chmod +x -- "$rename_bin/mv"
+second_rename_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" PATH="$rename_bin:$PATH" FAIL_SECOND_RENAME=1 "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "second publication rename failure was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$second_rename_prior" ]] ||
+  fail "second publication rename failure lost old checkout"
+
+printf 'candidate-race-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm candidate-race-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+candidate_race_hook="$test_root/candidate-race-hook"
+candidate_race_backup="$test_root/candidate-race-backup"
+cat >"$candidate_race_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ $1 == candidate-after-validation ]]; then
+  mv -- "$2" "$CANDIDATE_RACE_BACKUP"
+  mkdir -- "$2"
+  printf 'replacement\n' >"$2/marker"
+fi
+EOF
+chmod +x -- "$candidate_race_hook"
+candidate_race_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$candidate_race_hook" \
+  CANDIDATE_RACE_BACKUP="$candidate_race_backup" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "candidate replacement after validation was accepted"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$candidate_race_prior" ]] ||
+  fail "candidate replacement changed public checkout"
+[[ -f "$candidate_race_backup/manifest.json" ]] || fail "candidate race lost validated candidate"
+rm -rf -- "$candidate_race_backup" "$plugins_dir"/.update.lifecycle.widget.*
+
+printf 'reload-warning-update\n' >>"$remote_seed/Widget.qml"
+git -C "$remote_seed" add Widget.qml
+git -C "$remote_seed" -c user.name=test -c user.email=test@example.invalid commit -qm reload-warning-update
+git -C "$remote_seed" push -q "$remote_root/lifecycle.git" main
+reload_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+if ! IPC_RESCAN_RESULT=failed env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "reload failure changed publication result"
+fi
+[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) != "$reload_prior" ]] ||
+  fail "reload failure discarded committed publication"
+[[ ! -e "$plugins_dir/.transaction.lifecycle.widget" ]] || fail "publication transaction record was not removed"
+public_id_drift_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
+jq '.id = "drifted.widget"' "$plugins_dir/lifecycle.widget/manifest.json" >"$plugins_dir/lifecycle.widget/manifest.tmp"
+mv -- "$plugins_dir/lifecycle.widget/manifest.tmp" "$plugins_dir/lifecycle.widget/manifest.json"
+git -C "$plugins_dir/lifecycle.widget" add manifest.json
+git -C "$plugins_dir/lifecycle.widget" -c user.name=test -c user.email=test@example.invalid commit -qm public-id-drift
+public_id_drift_hook="$test_root/public-id-drift-hook"
+cat >"$public_id_drift_hook" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $1 != update-after-fetch ]] || : >"$PUBLIC_ID_DRIFT_FETCHED"
+EOF
+chmod +x -- "$public_id_drift_hook"
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_TEST_HOOK="$public_id_drift_hook" \
+  PUBLIC_ID_DRIFT_FETCHED="$test_root/public-id-drift-fetched" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+  fail "public manifest ID drift was accepted"
+fi
+[[ ! -e "$test_root/public-id-drift-fetched" ]] || fail "public ID drift fetched before rejection"
+git -C "$plugins_dir/lifecycle.widget" reset --hard -q "$public_id_drift_prior"
+git -C "$plugins_dir/lifecycle.widget" checkout -q --detach "$public_id_drift_prior"
 hidden_dir="$plugins_dir/.hidden.widget"
 mkdir -p -- "$hidden_dir"
 env "${manager_env[@]}" "$manager" update --yes >/dev/null || fail "bulk update failed"
@@ -507,10 +673,13 @@ git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid c
 git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
 validation_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 validation_rescan_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
+if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE=/bin/false "$manager" update lifecycle.widget --yes >"$test_root/validation.out" 2>"$test_root/validation.err"; then
   fail "validation-failing update was accepted"
 fi
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$validation_prior" ]] || fail "validation rollback changed commit"
+[[ ! -e "$plugins_dir/.transaction.lifecycle.widget" ]] || fail "validation failure left transaction record"
+validation_stages=("$plugins_dir"/.update.lifecycle.widget.*)
+[[ ${#validation_stages[@]} == 0 ]] || { printf 'validation output:\n%s\n' "$(<"$test_root/validation.err")" >&2; fail "validation failure left update stage: ${validation_stages[*]}"; }
 validation_rescan_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
 [[ $validation_rescan_after == "$validation_rescan_before" ]] || fail "validation rollback requested rescan"
 
@@ -525,8 +694,8 @@ EOF
 chmod +x -- "$signal_validator"
 signal_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 signal_status=0
-env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$signal_validator" "$manager" update lifecycle.widget --yes >/dev/null 2>&1 || signal_status=$?
-[[ $signal_status == 143 ]] || fail "signal after merge returned status $signal_status"
+env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$signal_validator" "$manager" update lifecycle.widget --yes >"$test_root/signal.out" 2>"$test_root/signal.err" || signal_status=$?
+[[ $signal_status == 143 ]] || { printf 'signal output:\n%s\n' "$(<"$test_root/signal.err")" >&2; fail "signal after merge returned status $signal_status"; }
 [[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$signal_prior" ]] || fail "signal after merge did not roll back"
 
 race_hook="$test_root/race-hook"
@@ -570,6 +739,9 @@ case "$1" in
     [[ ${RACE_DELETE_AFTER:-0} == 1 ]] || exit 0
     mv -- "$2" "$RACE_TARGET_BACKUP"
     mkdir -- "$2"
+    ;;
+  before-publication)
+    exit 0
     ;;
   before-rescan)
     case ${RACE_RESCAN_MODE:-} in
@@ -676,10 +848,9 @@ if env "${manager_env[@]}" DESKTOP_SHELL_PLUGIN_VALIDATE="$validator_swap" \
   RACE_TARGET="$plugins_dir/lifecycle.widget" RACE_TARGET_BACKUP="$validator_swap_backup" \
   RACE_REMOTE="$remote_root/lifecycle.git" RACE_VALIDATOR="$validator" \
   "$manager" update lifecycle.widget --yes >"$validator_swap_error" 2>&1; then
-  :
+  fail "public target replacement during candidate validation was accepted"
 else
   printf 'validator race command output:\n%s\n' "$(<"$validator_swap_error")" >&2
-  fail "candidate validation unexpectedly failed"
 fi
 [[ -d "$validator_swap_backup" && -d "$plugins_dir/lifecycle.widget" ]] || fail "validator target race fixture was lost"
 rm -rf -- "$validator_swap_backup"
@@ -858,112 +1029,6 @@ env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$duplicate_plugins" "$manager
   fail "remove did not resolve duplicate A by its original ID"
 [[ ! -e "$duplicate_a" ]] || fail "remove did not remove duplicate A by its original ID"
 
-if false; then
-abort_plugins="$test_root/abort-plugins"
-mkdir -p -- "$abort_plugins"
-abort_first="$abort_plugins/abort-a.widget"
-abort_second="$abort_plugins/abort-b.widget"
-make_identity_plugin "$test_root/abort-a.git" "$test_root/abort-a-seed" "$abort_first" abort-a.widget
-make_identity_plugin "$test_root/abort-b.git" "$test_root/abort-b-seed" "$abort_second" abort-b.widget
-commit_identity_remote_change "$test_root/abort-a-seed" abort-rollback-a
-commit_identity_remote_change "$test_root/abort-b-seed" abort-rollback-b
-printf 'abort-rollback\n' >>"$validation_repo/Widget.qml"
-git -C "$validation_repo" add Widget.qml
-git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm abort-rollback
-git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
-abort_validator="$test_root/abort-validator"
-cat >"$abort_validator" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-count=0
-[[ -f $ABORT_COUNT ]] && count=$(<"$ABORT_COUNT")
-count=$((count + 1))
-printf '%s\n' "$count" >"$ABORT_COUNT"
-exit 1
-EOF
-chmod +x -- "$abort_validator"
-abort_bin="$test_root/abort-bin"
-mkdir -p -- "$abort_bin"
-abort_git="$abort_bin/git"
-cat >"$abort_git" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-printf '%s\n' "$*" >>"$ABORT_GIT_LOG"
-if [[ " $* " == *' reset --hard '* ]]; then
-  exit 1
-fi
-exec /usr/bin/git "$@"
-EOF
-chmod +x -- "$abort_git"
-abort_hook="$test_root/abort-hook"
-cat >"$abort_hook" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-printf '%s\n' "$1" >>"$ABORT_HOOK_LOG"
-EOF
-chmod +x -- "$abort_hook"
-abort_status=0
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$abort_plugins" \
-  DESKTOP_SHELL_PLUGIN_VALIDATE="$abort_validator" ABORT_COUNT="$test_root/abort-count" \
-  ABORT_GIT_LOG="$test_root/abort-git.log" \
-  DESKTOP_SHELL_PLUGIN_TEST_HOOK="$abort_hook" ABORT_HOOK_LOG="$test_root/abort-hook.log" \
-  PATH="$abort_bin:$PATH" "$manager" update --yes >/dev/null 2>&1; then
-  abort_status=0
-else
-  abort_status=$?
-fi
-[[ $abort_status != 0 ]] || fail "failed rollback bulk update unexpectedly succeeded"
-[[ $(<"$test_root/abort-count") == 1 ]] || fail "bulk update continued after failed rollback: $(<"$test_root/abort-count")"
-[[ $(grep -c 'update-after-status' "$test_root/abort-hook.log") == 1 ]] ||
-  fail "bulk update started another plugin after failed rollback: $(<"$test_root/abort-hook.log")"
-
-retained_abort_plugins="$test_root/retained-abort-plugins"
-mkdir -p -- "$retained_abort_plugins"
-retained_abort_a="$retained_abort_plugins/retained-a.widget"
-retained_abort_b="$retained_abort_plugins/retained-b.widget"
-make_identity_plugin "$test_root/retained-a.git" "$test_root/retained-a-seed" "$retained_abort_a" retained-a.widget
-make_identity_plugin "$test_root/retained-b.git" "$test_root/retained-b-seed" "$retained_abort_b" retained-b.widget
-commit_identity_remote_change "$test_root/retained-a-seed" retained-abort-a
-commit_identity_remote_change "$test_root/retained-b-seed" retained-abort-b
-printf 'retained-abort-update\n' >>"$validation_repo/Widget.qml"
-git -C "$validation_repo" add Widget.qml
-git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm retained-abort-update
-git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
-retained_abort_validator="$test_root/retained-abort-validator"
-cat >"$retained_abort_validator" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-count=0
-[[ -f $RETAINED_ABORT_COUNT ]] && count=$(<"$RETAINED_ABORT_COUNT")
-count=$((count + 1))
-printf '%s\n' "$count" >"$RETAINED_ABORT_COUNT"
-if [[ $count == 1 ]]; then
-  exec "$RETAINED_ABORT_REAL_VALIDATOR" "$1"
-fi
-exit 1
-EOF
-chmod +x -- "$retained_abort_validator"
-retained_abort_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-retained_abort_status=0
-if env "${manager_env[@]}" DESKTOP_SHELL_PLUGINS_DIR="$retained_abort_plugins" \
-  DESKTOP_SHELL_PLUGIN_VALIDATE="$retained_abort_validator" RETAINED_ABORT_COUNT="$test_root/retained-abort-count" \
-  RETAINED_ABORT_REAL_VALIDATOR="$validator" ABORT_GIT_LOG="$test_root/retained-abort-git.log" \
-  DESKTOP_SHELL_PLUGIN_TEST_HOOK="$abort_hook" ABORT_HOOK_LOG="$test_root/retained-abort-hook.log" \
-  PATH="$abort_bin:$PATH" "$manager" update --yes >/dev/null 2>&1; then
-  retained_abort_status=0
-else
-  retained_abort_status=$?
-fi
-[[ $retained_abort_status != 0 ]] || fail "retained success/current failure unexpectedly succeeded"
-[[ $(<"$test_root/retained-abort-count") == 2 ]] || fail "bulk update began after current rollback failure"
-[[ $(grep -c 'update-after-status' "$test_root/retained-abort-hook.log") == 2 ]] ||
-  fail "retained rollback scenario started an unexpected plugin"
-[[ $(grep -c ' reset --hard ' "$test_root/retained-abort-git.log") -ge 3 ]] ||
-  fail "armed current transaction was not available for cleanup retry"
-retained_abort_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-[[ $retained_abort_after == "$retained_abort_before" ]] || fail "rescan occurred before rollback was safe"
-fi
-
 rescan_swap_backup="$test_root/rescan-swap-backup"
 rescan_swap_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
 rescan_hook="$test_root/rescan-hook"
@@ -1005,106 +1070,6 @@ fi
   fail "IPC rescan replacement rolled back published update"
 rm -rf -- "$plugins_dir/lifecycle.widget"
 mv -- "$ipc_rescan_backup" "$plugins_dir/lifecycle.widget"
-
-if false; then
-rescan_rollback_bin="$test_root/rescan-rollback-bin"
-mkdir -p -- "$rescan_rollback_bin"
-rescan_rollback_git="$rescan_rollback_bin/git"
-cat >"$rescan_rollback_git" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if [[ " $* " == *' reset --hard '* ]]; then
-  count=0
-  [[ -f $RESCAN_ROLLBACK_RESET_COUNT ]] && count=$(<"$RESCAN_ROLLBACK_RESET_COUNT")
-  printf '%s\n' "$((count + 1))" >"$RESCAN_ROLLBACK_RESET_COUNT"
-  if [[ ! -f $RESCAN_ROLLBACK_RESET_FAILED ]]; then
-    : >"$RESCAN_ROLLBACK_RESET_FAILED"
-    exit 1
-  fi
-fi
-if [[ " $* " == *' rev-parse --absolute-git-dir '* && -f $RESCAN_ROLLBACK_REVALIDATE_FAILURE ]]; then
-  rm -f -- "$RESCAN_ROLLBACK_REVALIDATE_FAILURE"
-  exit 1
-fi
-exec /usr/bin/git "$@"
-EOF
-chmod +x -- "$rescan_rollback_git"
-rescan_rollback_reset_failed="$test_root/rescan-rollback-reset-failed"
-rescan_rollback_reset_count="$test_root/rescan-rollback-reset-count"
-rescan_rollback_revalidate_failure="$test_root/rescan-rollback-revalidate-failure"
-rescan_rollback_log_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-rescan_rollback_status=0
-if env "${manager_env[@]}" PATH="$rescan_rollback_bin:$PATH" \
-  IPC_RESCAN_MARKER="$rescan_rollback_revalidate_failure" \
-  RESCAN_ROLLBACK_RESET_FAILED="$rescan_rollback_reset_failed" \
-  RESCAN_ROLLBACK_RESET_COUNT="$rescan_rollback_reset_count" \
-  RESCAN_ROLLBACK_REVALIDATE_FAILURE="$rescan_rollback_revalidate_failure" \
-  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
-  rescan_rollback_status=0
-else
-  rescan_rollback_status=$?
-fi
-[[ $rescan_rollback_status != 0 ]] || fail "failed retained rollback unexpectedly succeeded"
-rescan_rollback_log_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-[[ $((rescan_rollback_log_after - rescan_rollback_log_before)) == 1 ]] ||
-  fail "failed retained rollback requested a compensating rescan"
-[[ -f "$rescan_rollback_reset_failed" ]] || fail "retained rollback failure was not exercised"
-[[ $(<"$rescan_rollback_reset_count") -ge 2 ]] || fail "failed retained record was not retried during EXIT cleanup"
-[[ ! -f "$rescan_rollback_revalidate_failure" ]] || fail "post-rescan identity mismatch was not exercised"
-
-rescan_compensation_bin="$test_root/rescan-compensation-bin"
-mkdir -p -- "$rescan_compensation_bin"
-rescan_compensation_git="$rescan_compensation_bin/git"
-cat >"$rescan_compensation_git" <<'EOF'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-if [[ " $* " == *' reset --hard '* ]]; then
-  count=0
-  [[ -f $RESCAN_COMPENSATION_RESET_COUNT ]] && count=$(<"$RESCAN_COMPENSATION_RESET_COUNT")
-  printf '%s\n' "$((count + 1))" >"$RESCAN_COMPENSATION_RESET_COUNT"
-fi
-if [[ $* == *absolute-git-dir* && -f $RESCAN_COMPENSATION_REVALIDATE_FAILURE ]]; then
-  count=0
-  [[ -f $RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT ]] && count=$(<"$RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT")
-  printf '%s\n' "$((count + 1))" >"$RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT"
-  rm -f -- "$RESCAN_COMPENSATION_REVALIDATE_FAILURE"
-  exit 1
-fi
-exec /usr/bin/git "$@"
-EOF
-chmod +x -- "$rescan_compensation_git"
-printf 'compensation-update\n' >>"$validation_repo/Widget.qml"
-git -C "$validation_repo" add Widget.qml
-git -C "$validation_repo" -c user.name=test -c user.email=test@example.invalid commit -qm compensation-update
-git -C "$validation_repo" push -q "$remote_root/lifecycle.git" main
-rescan_compensation_prior=$(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD)
-rescan_compensation_reset_count="$test_root/rescan-compensation-reset-count"
-rescan_compensation_revalidate_failure="$test_root/rescan-compensation-revalidate-failure"
-rescan_compensation_revalidate_failure_count="$test_root/rescan-compensation-revalidate-failure-count"
-rescan_compensation_before=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-rescan_compensation_status=0
-if env "${manager_env[@]}" PATH="$rescan_compensation_bin:$PATH" \
-  IPC_RESCAN_MARKER="$rescan_compensation_revalidate_failure" \
-  RESCAN_COMPENSATION_RESET_COUNT="$rescan_compensation_reset_count" \
-  RESCAN_COMPENSATION_REVALIDATE_FAILURE="$rescan_compensation_revalidate_failure" \
-  RESCAN_COMPENSATION_REVALIDATE_FAILURE_COUNT="$rescan_compensation_revalidate_failure_count" \
-  "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
-  rescan_compensation_status=0
-else
-  rescan_compensation_status=$?
-fi
-[[ $rescan_compensation_status != 0 ]] || fail "compensating-rescan update unexpectedly succeeded"
-rescan_compensation_after=$(grep -c $'rescanPlugins\t\t' "$log_file" || true)
-[[ $((rescan_compensation_after - rescan_compensation_before)) == 2 ]] ||
-  fail "successful retained rollback did not request exactly one compensating rescan"
-[[ $(git -C "$plugins_dir/lifecycle.widget" rev-parse HEAD) == "$rescan_compensation_prior" ]] ||
-  fail "compensating-rescan rollback did not restore the prior revision"
-[[ $(<"$rescan_compensation_reset_count") -ge 2 ]] ||
-  fail "retained cleanup did not safely retry the successful rollback"
-[[ $(<"$rescan_compensation_revalidate_failure_count") == 1 ]] ||
-  fail "initial post-rescan identity mismatch did not occur exactly once"
-[[ -f "$rescan_compensation_revalidate_failure" ]] || fail "compensating rescan did not occur"
-fi
 
 printf 'dirty\n' >>"$plugins_dir/lifecycle.widget/Widget.qml"
 if env "${manager_env[@]}" "$manager" update lifecycle.widget --yes >/dev/null 2>&1; then
