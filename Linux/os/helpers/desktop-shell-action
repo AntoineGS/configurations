@@ -50,7 +50,7 @@ case "$action" in
   setup.dns)                argv=(launch-tui-large setup-dns) ;;
   setup.security)           argv=(launch-tui-large setup-fingerprint) ;;
   setup.shell-config)       argv=(launch-editor "$HOME/.config/quickshell/desktop-shell/config/shell.json") ;;
-  setup.shell-health)       argv=(launch-tui-large watch -n 2 desktop-shell health) ;;
+  setup.shell-health)       argv=(launch-tui-large watch -n 2 'desktop-shell health | jq .') ;;
   setup.keybindings)           argv=(menu-keybindings) ;;
   setup.cycle-display-scaling) argv=(hyprland-monitor-scaling-cycle) ;;
   setup.audio-tui)             argv=(launch-audio) ;;
