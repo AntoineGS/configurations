@@ -98,8 +98,8 @@ Item {
   property int admissionDropped: 0
   property int historyCount: 0
   property bool historyCountQueued: false
-  readonly property int lowPopupDuration: 5000
-  readonly property int normalPopupDuration: 8000
+  readonly property int lowPopupDuration: 10000
+  readonly property int normalPopupDuration: 15000
   readonly property int maxPopupDuration: 30000
 
   PersistentProperties {
