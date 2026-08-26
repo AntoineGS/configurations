@@ -431,6 +431,40 @@ function launcherCardTop(panelHeight, cardHeight, margin) {
   return Math.max(inset, Math.min(preferred, maxTop))
 }
 
+function rowsHaveIcons(rows) {
+  var values = Array.isArray(rows) ? rows : []
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i] || {}
+    if (String(row.icon || "") !== "" || String(row.appIcon || "") !== "") return true
+  }
+  return false
+}
+
+function rowsHaveChevrons(rows) {
+  var values = Array.isArray(rows) ? rows : []
+  for (var i = 0; i < values.length; i++) {
+    var kind = String((values[i] && values[i].kind) || "")
+    if (kind === "menu" || kind === "link") return true
+  }
+  return false
+}
+
+function adaptiveMenuWidth(contentWidth, cardInsets, outputWidth, margin) {
+  function finiteNonNegative(value) {
+    var number = Number(value)
+    return isFinite(number) ? Math.max(0, number) : 0
+  }
+
+  var content = finiteNonNegative(contentWidth)
+  var insets = finiteNonNegative(cardInsets)
+  var desired = content + insets
+  var output = finiteNonNegative(outputWidth)
+  if (output === 0) return desired
+  var gap = finiteNonNegative(margin)
+  var available = Math.max(0, output - gap * 2)
+  return Math.min(desired, output * 0.75, available)
+}
+
 function planRowReconciliation(currentRows, nextRows) {
   var current = Array.isArray(currentRows) ? currentRows.slice() : []
   var next = Array.isArray(nextRows) ? nextRows : []
@@ -533,6 +567,9 @@ if (typeof module !== "undefined") {
     composeSearchResults: composeSearchResults,
     dmenuRows: dmenuRows,
     launcherCardTop: launcherCardTop,
+    rowsHaveIcons: rowsHaveIcons,
+    rowsHaveChevrons: rowsHaveChevrons,
+    adaptiveMenuWidth: adaptiveMenuWidth,
     planRowReconciliation: planRowReconciliation
   }
 }

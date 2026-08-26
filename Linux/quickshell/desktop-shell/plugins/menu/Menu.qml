@@ -33,6 +33,14 @@ Item {
   property string requestDir: ""
   property string pendingAction: ""
   property real animatedListHeight: listHeight
+  property real measuredRouteContentWidth: 0
+  property real animatedCardWidth: boundedCardWidth
+  property bool hasVisibleIcons: false
+  property bool hasVisibleChevrons: false
+  property real iconColumnWidth: hasVisibleIcons ? Style.space(28) : 0
+  property real iconColumnGap: hasVisibleIcons ? Style.space(8) : 0
+  property real chevronColumnWidth: hasVisibleChevrons ? Style.space(14) : 0
+  property real chevronColumnGap: hasVisibleChevrons ? Style.space(8) : 0
   property string motionState: "closed"
   property real materialXScale: 0
   property real materialYScale: 0
@@ -44,6 +52,8 @@ Item {
   property real closeTargetXScale: 0
   property real closeTargetYScale: 0
   property bool preparingCardHeight: false
+  property bool routeWidthReady: false
+  property bool preparingCardWidth: false
   property bool pendingCardFinalization: false
   property int readinessGeneration: 0
   property bool listTransitionsEnabled: motionState === "open"
@@ -74,6 +84,17 @@ Item {
   readonly property int contentMargin: Style.spacing.popupPadding
   readonly property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.rowPaddingX * 2)
   readonly property int rowSpacing: Style.space(2)
+  readonly property string searchPlaceholder: root.dmenuActive ? root.dmenuPrompt
+    : root.calculatorFocused ? "Calculate…"
+    : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
+  readonly property real outputWidth: panel.screen && panel.screen.width > 0
+    ? panel.screen.width : Math.max(0, panel.width)
+  readonly property real boundedCardWidth: MenuModel.adaptiveMenuWidth(
+    root.measuredRouteContentWidth,
+    root.contentMargin * 2,
+    root.outputWidth,
+    Style.gapsOut
+  )
   readonly property int listHeight: Math.min(
     Math.max(rowHeight, displayModel.count * rowHeight + Math.max(0, displayModel.count - 1) * rowSpacing),
     Style.space(440)
@@ -99,12 +120,58 @@ Item {
       easing.type: Motion.spatialEasing
     }
   }
+
+  Behavior on animatedCardWidth {
+    enabled: root.opened && root.routeWidthReady && !root.preparingCardWidth && Motion.enabled
+    NumberAnimation {
+      duration: Motion.spatialDuration
+      easing.type: Motion.spatialEasing
+    }
+  }
+
+  Behavior on iconColumnWidth {
+    enabled: Motion.enabled
+    NumberAnimation { duration: Motion.normalDuration; easing.type: Motion.spatialEasing }
+  }
+
+  Behavior on iconColumnGap {
+    enabled: Motion.enabled
+    NumberAnimation { duration: Motion.normalDuration; easing.type: Motion.spatialEasing }
+  }
+
+  Behavior on chevronColumnWidth {
+    enabled: Motion.enabled
+    NumberAnimation { duration: Motion.normalDuration; easing.type: Motion.spatialEasing }
+  }
+
+  Behavior on chevronColumnGap {
+    enabled: Motion.enabled
+    NumberAnimation { duration: Motion.normalDuration; easing.type: Motion.spatialEasing }
+  }
   readonly property string healthSummary: {
     var health = root.shell && root.shell.healthState ? root.shell.healthState : null
     if (!health) return ""
     if (health.configValid === false) return "Shell config needs attention"
     if (health.pluginErrors && health.pluginErrors.length > 0) return "Shell health has warnings"
     return ""
+  }
+
+  FontMetrics {
+    id: labelMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.heading
+  }
+
+  FontMetrics {
+    id: detailMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  FontMetrics {
+    id: searchMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
   }
 
   function item(id) {
@@ -117,7 +184,7 @@ Item {
     root.itemOrder = merged.itemOrder
     root.menuReady = true
     if (!root.item(root.activeMenu)) root.activeMenu = "root"
-    if (root.opened) root.rebuildDisplay()
+    if (root.opened) root.rebuildDisplay(false, false)
   }
 
   function applyMenuSource(raw) {
@@ -190,6 +257,8 @@ Item {
   }
 
   function applyDisplayRows(rows) {
+    root.hasVisibleIcons = MenuModel.rowsHaveIcons(rows)
+    root.hasVisibleChevrons = MenuModel.rowsHaveChevrons(rows)
     var operations = MenuModel.planRowReconciliation(root.currentDisplayRows(), rows)
     for (var i = 0; i < operations.length; i++) {
       var operation = operations[i]
@@ -200,7 +269,69 @@ Item {
     }
   }
 
-  function rebuildDisplay() {
+  function measuredTextWidth(metrics, text) {
+    var width = Number(metrics.advanceWidth(String(text || "")))
+    return isFinite(width) && width > 0 ? Math.ceil(width) : 0
+  }
+
+  function measureRouteContent(rows) {
+    var values = Array.isArray(rows) ? rows : []
+    var textWidth = 0
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i] || {}
+      textWidth = Math.max(
+        textWidth,
+        root.measuredTextWidth(labelMetrics, row.label),
+        root.measuredTextWidth(detailMetrics, row.detail)
+      )
+    }
+
+    var hasIcons = MenuModel.rowsHaveIcons(values)
+    var hasChevrons = MenuModel.rowsHaveChevrons(values)
+    var iconWidth = hasIcons ? Style.space(28) : 0
+    var iconGap = hasIcons ? Style.space(8) : 0
+    var chevronWidth = hasChevrons ? Style.space(14) : 0
+    var chevronGap = hasChevrons ? Style.space(8) : 0
+    var rowWidth = Style.space(16) + iconWidth + iconGap + textWidth + chevronWidth + chevronGap
+    var promptLeftBorder = Math.max(
+      Border.left(Border.controlSpec("normal", root.foreground, root.accent)),
+      Border.left(Border.controlSpec("hover-cursor", root.foreground, root.accent)),
+      Border.left(Border.controlSpec("focus", root.foreground, root.accent)))
+    var promptRightBorder = Math.max(
+      Border.right(Border.controlSpec("normal", root.foreground, root.accent)),
+      Border.right(Border.controlSpec("hover-cursor", root.foreground, root.accent)),
+      Border.right(Border.controlSpec("focus", root.foreground, root.accent)))
+    var fieldWidth = root.measuredTextWidth(searchMetrics, root.searchPlaceholder)
+      + searchField.horizontalPadding * 2 + promptLeftBorder + promptRightBorder
+    return Math.max(rowWidth, fieldWidth)
+  }
+
+  function captureRouteWidth(rows, snap) {
+    root.preparingCardWidth = snap === true
+    root.measuredRouteContentWidth = root.measureRouteContent(rows)
+    if (snap === true) {
+      root.animatedCardWidth = root.boundedCardWidth
+      root.animatedCardWidth = Qt.binding(function() { return root.boundedCardWidth })
+    }
+    root.routeWidthReady = true
+    root.preparingCardWidth = false
+  }
+
+  function settleCardWidth(targetWidth) {
+    if (!root.routeWidthReady) return
+    root.preparingCardWidth = true
+    root.animatedCardWidth = targetWidth === undefined ? root.boundedCardWidth : targetWidth
+    root.animatedCardWidth = Qt.binding(function() {
+      return MenuModel.adaptiveMenuWidth(
+        root.measuredRouteContentWidth,
+        root.contentMargin * 2,
+        root.outputWidth,
+        Style.gapsOut)
+    })
+    root.preparingCardWidth = false
+  }
+
+  function rebuildDisplay(captureWidth, snapWidth) {
     if (!root.menuReady) {
       root.applyDisplayRows([])
       return
@@ -213,6 +344,7 @@ Item {
     if (root.dmenuActive) {
       var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
       root.applyDisplayRows(dmenuRows)
+      if (captureWidth === true) root.captureRouteWidth(dmenuRows, snapWidth === true)
       root.settleCursor()
       if (root.menuMode === "input") root.cursorActive = false
       root.syncResultSelection()
@@ -256,6 +388,7 @@ Item {
 
     var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
     root.applyDisplayRows(rows)
+    if (captureWidth === true) root.captureRouteWidth(rows, snapWidth === true)
     root.settleCursor()
     Qt.callLater(root.syncResultSelection)
   }
@@ -285,7 +418,7 @@ Item {
     root.selectedIndex = 0
     root.cursorActive = true
     if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
-    root.rebuildDisplay()
+    root.rebuildDisplay(false, false)
   }
 
   function scheduleCalculator(query) {
@@ -307,7 +440,7 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    root.rebuildDisplay()
+    root.rebuildDisplay(true, false)
   }
 
   function goBack() {
@@ -359,7 +492,7 @@ Item {
   }
 
   function openExistingMenu(initialMenu) {
-    var reopening = root.motionState === "closing"
+    var firstMaterialization = !root.surfaceVisible
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = "menu"
     root.dmenuPrompt = ""
@@ -370,9 +503,9 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    if (reopening) root.opened = true
-    root.rebuildDisplay()
-    if (!reopening) {
+    if (!firstMaterialization) root.opened = true
+    root.rebuildDisplay(true, firstMaterialization)
+    if (firstMaterialization) {
       root.prepareCardHeight()
       root.opened = true
     }
@@ -381,7 +514,7 @@ Item {
   }
 
   function openDmenu(payload) {
-    var reopening = root.motionState === "closing"
+    var firstMaterialization = !root.surfaceVisible
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = payload.mode === "input" ? "input" : "select"
     root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
@@ -393,9 +526,9 @@ Item {
     root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
     root.selectedIndex = 0
     root.cursorActive = root.menuMode === "select"
-    if (reopening) root.opened = true
-    root.rebuildDisplay()
-    if (!reopening) {
+    if (!firstMaterialization) root.opened = true
+    root.rebuildDisplay(true, firstMaterialization)
+    if (firstMaterialization) {
       root.prepareCardHeight()
       root.opened = true
     }
@@ -460,7 +593,7 @@ Item {
       if (generation !== root.readinessGeneration || !root.pendingCardFinalization
           || !root.menuReady || !root.opened) return
       root.pendingCardFinalization = false
-      root.rebuildDisplay()
+      root.rebuildDisplay(true, true)
       root.prepareCardHeight()
       root.beginOpenMotion()
       searchField.forceActiveFocus()
@@ -519,7 +652,13 @@ Item {
     closeMotion.restart()
   }
 
-  onWhenResultsChanged: if (root.opened) root.rebuildDisplay()
+  onWhenResultsChanged: if (root.opened) root.rebuildDisplay(false, false)
+
+  onOutputWidthChanged: root.settleCardWidth(MenuModel.adaptiveMenuWidth(
+    root.measuredRouteContentWidth,
+    root.contentMargin * 2,
+    root.outputWidth,
+    Style.gapsOut))
 
   onOpenedChanged: {
     if (root.opened) {
@@ -538,7 +677,7 @@ Item {
   Connections {
     target: root.appLibrary
     function onAppsChanged() {
-      if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay()
+      if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay(false, false)
     }
   }
 
@@ -549,6 +688,23 @@ Item {
       if (Motion.enabled) return
       openMotion.stop()
       closeMotion.stop()
+      root.settleCardWidth()
+      root.iconColumnWidth = root.hasVisibleIcons ? Style.space(28) : 0
+      root.iconColumnWidth = Qt.binding(function() {
+        return root.hasVisibleIcons ? Style.space(28) : 0
+      })
+      root.iconColumnGap = root.hasVisibleIcons ? Style.space(8) : 0
+      root.iconColumnGap = Qt.binding(function() {
+        return root.hasVisibleIcons ? Style.space(8) : 0
+      })
+      root.chevronColumnWidth = root.hasVisibleChevrons ? Style.space(14) : 0
+      root.chevronColumnWidth = Qt.binding(function() {
+        return root.hasVisibleChevrons ? Style.space(14) : 0
+      })
+      root.chevronColumnGap = root.hasVisibleChevrons ? Style.space(8) : 0
+      root.chevronColumnGap = Qt.binding(function() {
+        return root.hasVisibleChevrons ? Style.space(8) : 0
+      })
       if (root.opened && (!root.menuReady || root.pendingCardFinalization)) {
         root.motionState = "closed"
       } else if (root.opened) {
@@ -756,7 +912,7 @@ Item {
           requestQuery, root.filterText.trim())) return
       root.calculatorResult = result
       root.calculatorResultQuery = requestQuery
-      if (root.opened) root.rebuildDisplay()
+      if (root.opened) root.rebuildDisplay(false, false)
     }
   }
 
@@ -814,10 +970,7 @@ Item {
     Item {
       id: cardFrame
 
-      width: Math.min(
-        Style.space(root.dmenuActive && root.menuMode === "select" ? 720 : 460),
-        panel.width - Style.gapsOut * 2
-      )
+      width: root.animatedCardWidth
       height: root.cardHeight
       anchors.horizontalCenter: parent.horizontalCenter
       y: root.cardTop
@@ -857,8 +1010,7 @@ Item {
             width: parent.width
             height: Style.space(34)
             text: root.filterText
-            placeholderText: root.dmenuActive ? root.dmenuPrompt : root.calculatorFocused ? "Calculate…"
-              : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
+            placeholderText: root.searchPlaceholder
             foreground: root.foreground
             accent: root.accent
             opacity: root.searchOpacity
@@ -978,15 +1130,17 @@ Item {
                   anchors.fill: parent
                   anchors.leftMargin: Style.space(8)
                   anchors.rightMargin: Style.space(8)
-                  spacing: Style.space(8)
+                  spacing: root.iconColumnGap
 
                   Item {
-                    width: Style.space(28)
+                    id: iconSlot
+                    width: root.iconColumnWidth
                     height: parent.height
+                    clip: true
 
                     Text {
                       anchors.fill: parent
-                      visible: row.kind !== "application"
+                      visible: iconSlot.width > 0 && row.kind !== "application"
                       text: row.icon
                       color: root.foreground
                       font.family: row.iconFont || root.fontFamily
@@ -998,7 +1152,7 @@ Item {
                     Image {
                       anchors.fill: parent
                       anchors.margins: Style.space(2)
-                      visible: row.kind === "application"
+                      visible: iconSlot.width > 0 && row.kind === "application"
                       source: visible && root.appLibrary ? root.appLibrary.iconSource(row.appIcon) : ""
                       fillMode: Image.PreserveAspectFit
                       asynchronous: true
@@ -1006,40 +1160,46 @@ Item {
                     }
                   }
 
-                  Column {
-                    width: parent.width - Style.space(58)
-                    anchors.verticalCenter: parent.verticalCenter
+                  Row {
+                    width: parent.width - iconSlot.width - parent.spacing
+                    height: parent.height
+                    spacing: root.chevronColumnGap
+
+                    Column {
+                      width: parent.width - root.chevronColumnWidth - parent.spacing
+                      anchors.verticalCenter: parent.verticalCenter
+
+                      Text {
+                        width: parent.width
+                        text: row.label
+                        color: root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.heading
+                        elide: Text.ElideRight
+                      }
+
+                      Text {
+                        width: parent.width
+                        visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
+                        text: row.detail
+                        color: root.secondaryForeground
+                        opacity: 0.5
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
+                        elide: Text.ElideRight
+                      }
+                    }
 
                     Text {
-                      width: parent.width
-                      text: row.label
-                      color: root.foreground
+                      width: root.chevronColumnWidth
+                      height: parent.height
+                      text: row.kind === "menu" || row.kind === "link" ? "›" : ""
+                      color: root.secondaryForeground
+                      opacity: text !== "" ? 0.5 : 0
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.heading
-                      elide: Text.ElideRight
+                      verticalAlignment: Text.AlignVCenter
                     }
-
-                    Text {
-                      width: parent.width
-                      visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
-                      text: row.detail
-                      color: root.secondaryForeground
-                      opacity: 0.5
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.bodySmall
-                      elide: Text.ElideRight
-                    }
-                  }
-
-                  Text {
-                    width: Style.space(14)
-                    height: parent.height
-                    text: row.kind === "menu" || row.kind === "link" ? "›" : ""
-                    color: root.secondaryForeground
-                    opacity: row.kind === "menu" || row.kind === "link" ? 0.5 : 0
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.heading
-                    verticalAlignment: Text.AlignVCenter
                   }
                 }
 
