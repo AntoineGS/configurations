@@ -52,12 +52,10 @@ Item {
     return value
   }
 
-  function launch(desktopId, name) {
+  function launch(desktopId) {
     var id = root.normalizeDesktopId(desktopId)
-    if (!id || launchProcess.running) return false
-    launchProcess.displayName = String(name || id)
-    launchProcess.command = ["uwsm-app", "--", "gtk-launch", id + ".desktop"]
-    launchProcess.running = true
+    if (!id) return false
+    Quickshell.execDetached(["uwsm-app", "--", "gtk-launch", id + ".desktop"])
     return true
   }
 
@@ -105,16 +103,6 @@ Item {
   QtObject {
     id: hiddenEntryOutput
     property string text: ""
-  }
-
-  Process {
-    id: launchProcess
-    property string displayName: ""
-    command: []
-    onExited: function(exitCode) {
-      if (Number(exitCode) !== 0)
-        Quickshell.execDetached(["notify-send", "-a", "desktop-shell", "Application launch failed", displayName])
-    }
   }
 
   Process {
