@@ -2,6 +2,7 @@
   // Repository-owned menu data. Leaf actions are opaque IDs; the action
   // helper owns their fixed argv and rejects every other value.
   "root": { "label": "Control" },
+  "applications": { "label": "Applications" },
 
   "trigger": { "label": "Trigger" },
   "trigger.screenshot": { "label": "Screenshot", "action": "trigger.screenshot" },
