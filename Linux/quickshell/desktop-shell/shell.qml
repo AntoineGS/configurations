@@ -611,8 +611,22 @@ ShellRoot {
     }
     // Bar widgets take no payload; payloadJson is dropped on this path.
     if (shell.isBarWidgetPanelPlugin(id)) {
+      var isMarketplace = id === shell.marketplacePluginId
+      if (isMarketplace) {
+        shell.marketplaceEscapeFallbackPending = true
+        marketplaceEscapeFallbackTimer.restart()
+      }
       var summoned = shell.invokeBarWidget(id, "open")
       if (!summoned) console.warn("summon: no live bar widget for:", id)
+      if (isMarketplace) {
+        var marketplace = shell.headlessWidgetFor(id)
+        if (summoned !== true) shell.marketplaceEscapeFallbackPending = false
+        else if (marketplace && marketplace.opened === true) {
+          shell.marketplaceEscapeFallbackArmed = true
+          shell.marketplaceEscapeFallbackPending = false
+          marketplaceEscapeFallbackTimer.stop()
+        }
+      }
       return summoned === true
     }
     var panelAvailable = false
@@ -650,6 +664,11 @@ ShellRoot {
     if (shell.isBarWidgetPanelPlugin(id)) {
       var hidden = shell.invokeBarWidget(id, "close")
       if (!hidden) console.warn("hide: no live bar widget for:", id)
+      if (id === shell.marketplacePluginId) {
+        shell.marketplaceEscapeFallbackArmed = false
+        shell.marketplaceEscapeFallbackPending = false
+        marketplaceEscapeFallbackTimer.stop()
+      }
       return hidden === true
     }
     invokeIfLoaded(id, "close", null)
@@ -963,6 +982,39 @@ ShellRoot {
 
   property var headlessWidgetInstances: ({})
   property var headlessWidgetCreationCounts: ({})
+  readonly property string marketplacePluginId: "io.yasino55.omarchy-plugin-marketplace"
+  property bool marketplaceEscapeFallbackArmed: false
+  property bool marketplaceEscapeFallbackPending: false
+
+  Timer {
+    id: marketplaceEscapeFallbackTimer
+    interval: 1000
+    onTriggered: shell.marketplaceEscapeFallbackPending = false
+  }
+
+  Connections {
+    target: shell.headlessWidgetInstances[shell.marketplacePluginId] || null
+    ignoreUnknownSignals: true
+
+    function onOpenedChanged() {
+      if (target && target.opened === true && shell.marketplaceEscapeFallbackPending) {
+        shell.marketplaceEscapeFallbackArmed = true
+        shell.marketplaceEscapeFallbackPending = false
+        marketplaceEscapeFallbackTimer.stop()
+      } else if (!target || target.opened !== true) {
+        shell.marketplaceEscapeFallbackArmed = false
+        shell.marketplaceEscapeFallbackPending = false
+        marketplaceEscapeFallbackTimer.stop()
+      }
+    }
+  }
+
+  Shortcut {
+    sequence: "Esc"
+    context: Qt.ApplicationShortcut
+    enabled: shell.marketplaceEscapeFallbackArmed
+    onActivated: shell.dismissHeadlessWidget(shell.marketplacePluginId)
+  }
 
   function shouldHostHeadlessWidget(pluginId) {
     var manifest = shell.pluginRegistry.installedPlugins[String(pluginId || "")]
@@ -976,6 +1028,19 @@ ShellRoot {
 
   function headlessWidgetFor(pluginId) {
     return shell.headlessWidgetInstances[String(pluginId || "")] || null
+  }
+
+  function dismissHeadlessWidget(pluginId) {
+    var id = String(pluginId || "")
+    var widget = shell.headlessWidgetFor(id)
+    if (!widget || widget.opened !== true || typeof widget.close !== "function") return false
+    try {
+      widget.close()
+      return true
+    } catch (error) {
+      console.warn("headless widget " + id + " close() threw:", error)
+      return false
+    }
   }
 
   function syncHeadlessWidgetInstances() {
@@ -1017,10 +1082,18 @@ ShellRoot {
       shell.headlessWidgetCreationCounts = counts
       shell.pluginRegistry.clearPluginError(id, "widget-host")
     }
+    if (!next[shell.marketplacePluginId]) {
+      shell.marketplaceEscapeFallbackArmed = false
+      shell.marketplaceEscapeFallbackPending = false
+      marketplaceEscapeFallbackTimer.stop()
+    }
     shell.headlessWidgetInstances = next
   }
 
   function unloadHeadlessWidgetInstances() {
+    shell.marketplaceEscapeFallbackArmed = false
+    shell.marketplaceEscapeFallbackPending = false
+    marketplaceEscapeFallbackTimer.stop()
     for (var id in shell.headlessWidgetInstances) {
       var instance = shell.headlessWidgetInstances[id]
       if (instance && typeof instance.destroy === "function") instance.destroy()
@@ -1437,6 +1510,10 @@ ShellRoot {
         openCount: Number(widget.openCount || 0),
         creationCount: Number(shell.headlessWidgetCreationCounts[String(id || "")] || 0)
       }) : "{}"
+    }
+
+    function dismissHeadlessWidgetForTest(id: string): string {
+      return shell.dismissHeadlessWidget(id) ? "closed" : "absent"
     }
 
     function visibleFirstRoutingForTest(id: string): string {

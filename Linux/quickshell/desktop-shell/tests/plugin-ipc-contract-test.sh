@@ -39,12 +39,36 @@ cat >"$plugins_dir/acme.widget/manifest.json" <<'JSON'
 JSON
 cat >"$plugins_dir/acme.widget/BarWidget.qml" <<'QML'
 import QtQuick
+import qs.Commons
+import qs.Ui
 Item {
   property bool opened: false
   property int openCount: 0
-  function open() { opened = true; openCount++ }
+  readonly property bool menuPaletteReady: Color.menu !== undefined
+    && Color.menu.background !== undefined
+    && Color.menu.text !== undefined
+    && Color.menu.border !== undefined
+    && Color.menu.scrim !== undefined
+    && Color.menu.selectedBackground !== undefined
+    && Color.menu.selectedText !== undefined
+  function open() { if (menuPaletteReady) { opened = true; openCount++ } }
   function close() { opened = false }
   function toggle() { opened = !opened }
+
+  Dropdown {
+    visible: false
+    showLabel: false
+    value: "recent"
+    options: [{ value: "recent", label: "Recent" }]
+  }
+
+  ConfirmDialog {
+    visible: false
+    background: "black"
+    selectedBackground: "gray"
+    selectedText: "white"
+    cornerRadius: 4
+  }
 }
 QML
 git -C "$plugins_dir" init --quiet
@@ -120,6 +144,10 @@ jq -e '.opened == false' \
 quickshell ipc --pid "$shell_pid" call -- desktop-shell toggle acme.widget '{}' >/dev/null
 jq -e '.opened == true' \
   <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test dismissHeadlessWidgetForTest acme.widget) == closed ]]
+jq -e '.opened == false' \
+  <<<"$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)" >/dev/null
+quickshell ipc --pid "$shell_pid" call -- desktop-shell toggle acme.widget '{}' >/dev/null
 headless_before_reload=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test headlessWidgetState acme.widget)
 headless_creation_count=$(jq -r '.creationCount' <<<"$headless_before_reload")
 lock_release="$tmp_dir/release-manager-lock"
