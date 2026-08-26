@@ -537,7 +537,7 @@ def limit_window(window):
 
 
 def fetch_codex_rpc():
-  result = {"limits": [], "tierLabel": "", "usageStatusText": "", "authHelpText": AUTH_HELP}
+  result = {"limits": [], "tierLabel": "", "usageStatusText": "", "authHelpText": ""}
   codex = find_command("codex")
   if not codex:
     result["usageStatusText"] = "Codex unavailable"
@@ -546,7 +546,7 @@ def fetch_codex_rpc():
 
   try:
     proc = subprocess.Popen(
-      [codex, "-s", "read-only", "-a", "untrusted", "app-server"],
+      [codex, "-s", "read-only", "-a", "never", "app-server"],
       stdin=subprocess.PIPE,
       stdout=subprocess.PIPE,
       stderr=subprocess.DEVNULL,
