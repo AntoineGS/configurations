@@ -4,7 +4,6 @@ shopt -s inherit_errexit
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 helper="$script_dir/../check-office-shares-auth"
-credentials_helper="$script_dir/../refresh-office-shares-credentials"
 tmp_dir="$(mktemp -d)"
 bin_dir="$tmp_dir/bin"
 cache_dir="$tmp_dir/caches"
@@ -70,16 +69,6 @@ set -eu
 printf '%s\n' "$@" >"$AUTH_TEST_STATE/systemd-run.log"
 STUB
 
-cat >"$bin_dir/pkexec" <<'STUB'
-#!/usr/bin/env bash
-set -eu
-printf '%s\n' "$@" >"$AUTH_TEST_STATE/pkexec.log"
-if [[ "${AUTH_TEST_PKEXEC_CREATES_TICKET:-1}" == 1 ]]; then
-  touch -- "$OFFICE_SHARES_CACHE_DIR/krb5cc_${UID}_valid"
-fi
-exit "${AUTH_TEST_PKEXEC_STATUS:-0}"
-STUB
-
 cat >"$bin_dir/kinit" <<'STUB'
 #!/usr/bin/env bash
 set -eu
@@ -116,19 +105,11 @@ run_helper() {
     AUTH_TEST_STATE="$state_dir" \
     AUTH_TEST_ACTION="${AUTH_TEST_ACTION:-}" \
     AUTH_TEST_KINIT_STATUS="${AUTH_TEST_KINIT_STATUS:-0}" \
-    AUTH_TEST_PKEXEC_CREATES_TICKET="${AUTH_TEST_PKEXEC_CREATES_TICKET:-1}" \
-    AUTH_TEST_PKEXEC_STATUS="${AUTH_TEST_PKEXEC_STATUS:-0}" \
     OFFICE_SHARES_CACHE_DIR="$cache_dir" \
-    "$helper"
+    "$helper" "$@"
 }
 
 [[ -x "$helper" ]] || fail 'authentication check helper is missing or not executable'
-[[ -x "$credentials_helper" ]] || fail 'polkit credentials helper is missing or not executable'
-
-if PKEXEC_UID="$((UID + 1))" "$credentials_helper" 2>/dev/null; then
-  fail 'polkit credentials helper accepted a different target user'
-fi
-PKEXEC_UID="$UID" "$credentials_helper" || fail 'polkit credentials helper rejected the calling user'
 
 touch -- "$cache_dir/krb5cc_${UID}_valid"
 run_helper || fail 'valid-ticket check failed'
@@ -137,31 +118,36 @@ run_helper || fail 'valid-ticket check failed'
 rm -- "$cache_dir/krb5cc_${UID}_valid"
 touch -- "$cache_dir/krb5cc_${UID}_wrong"
 run_helper || fail 'missing-ticket notification failed'
-expected_notification=$'--app-name=Office Shares\n--icon=dialog-password\n--urgency=critical\n--expire-time=0\n--action=default=Authenticate\n--wait\n--\nDomain authentication required\nNetwork shares need a fresh Kerberos ticket.'
+expected_notification=$'--app-name=Office Shares\n--icon=dialog-password\n--urgency=critical\n--expire-time=0\n--action=authenticate=Authenticate\n--wait\n--\nDomain authentication required\nNetwork shares need a fresh Kerberos ticket.'
 assert_file_equals "$expected_notification" "$state_dir/notify.log" 'persistent notification arguments differ'
 [[ ! -e "$state_dir/systemd-run.log" ]] || fail 'dismissed notification launched authentication'
 
-AUTH_TEST_ACTION=default run_helper || fail 'default authentication action failed'
-expected_pkexec="--disable-internal-agent
---user
-$session_user
-/usr/local/libexec/antoinews-linux/refresh-office-shares-credentials"
-assert_file_equals "$expected_pkexec" "$state_dir/pkexec.log" 'polkit authentication launch differs'
+AUTH_TEST_ACTION=authenticate run_helper || fail 'authentication action failed'
+expected_launch="--user
+--unit=office-shares-authenticate
+--collect
+--
+uwsm
+app
+--
+ghostty
+--class=office-shares-auth
+-e
+$helper
+--authenticate"
+assert_file_equals "$expected_launch" "$state_dir/systemd-run.log" 'authentication terminal launch differs'
+
+rm -f -- "$state_dir/kinit.log" "$state_dir/systemctl.log"
+run_helper --authenticate || fail 'interactive authentication mode failed'
+expected_kinit="KRB5CCNAME=FILE:$cache_dir/krb5cc_${UID} principal=$expected_principal"
+assert_file_equals "$expected_kinit" "$state_dir/kinit.log" 'Kerberos cache or principal differs'
 assert_file_equals $'--user\nstart\noffice-shares-mount.service' "$state_dir/systemctl.log" \
   'successful authentication did not retry share mounts'
-[[ ! -e "$state_dir/systemd-run.log" ]] || fail 'authentication launched a terminal service'
-[[ ! -e "$state_dir/kinit.log" ]] || fail 'authentication invoked kinit directly'
 
-rm -f -- "$cache_dir/krb5cc_${UID}_valid" "$state_dir/pkexec.log" "$state_dir/systemctl.log"
-if AUTH_TEST_ACTION=default AUTH_TEST_PKEXEC_STATUS=127 run_helper 2>/dev/null; then
-  fail 'failed polkit authentication returned success'
+rm -f -- "$state_dir/kinit.log" "$state_dir/systemctl.log"
+if AUTH_TEST_KINIT_STATUS=1 run_helper --authenticate 2>/dev/null; then
+  fail 'failed authentication returned success'
 fi
 [[ ! -e "$state_dir/systemctl.log" ]] || fail 'failed authentication retried share mounts'
-
-rm -f -- "$cache_dir/krb5cc_${UID}_valid" "$state_dir/pkexec.log" "$state_dir/systemctl.log"
-if AUTH_TEST_ACTION=default AUTH_TEST_PKEXEC_CREATES_TICKET=0 run_helper 2>/dev/null; then
-  fail 'missing Kerberos ticket returned success after polkit authentication'
-fi
-[[ ! -e "$state_dir/systemctl.log" ]] || fail 'missing Kerberos ticket retried share mounts'
 
 printf 'PASS: office share authentication check\n'
