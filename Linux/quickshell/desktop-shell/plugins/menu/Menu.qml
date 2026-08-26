@@ -44,15 +44,11 @@ Item {
   property real chevronColumnWidth: hasVisibleChevrons ? Style.space(14) : 0
   property real chevronColumnGap: hasVisibleChevrons ? Style.space(8) : 0
   property string motionState: "closed"
-  property real materialXScale: 0
   property real materialYScale: 0
   property real surfaceOpacity: 0
-  property real seedOpacity: 0
   property real searchOpacity: 0
   property real resultsOpacity: 0
   property real scrimOpacity: 0
-  property real closeTargetXScale: 0
-  property real closeTargetYScale: 0
   property bool preparingCardHeight: false
   property bool routeWidthReady: false
   property bool preparingCardWidth: false
@@ -68,10 +64,12 @@ Item {
   readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
   readonly property bool surfaceVisible: menuReady
     && (opened || motionState !== "closed" || surfaceOpacity > 0)
-  readonly property real seedSize: Style.space(8)
-  readonly property real seedXScale: seedSize / Math.max(1, card.width)
-  readonly property real seedYScale: seedSize / Math.max(1, card.height)
-  readonly property real searchCenterY: contentMargin + Style.space(17)
+  readonly property real topBarHeight: root.shell && root.shell.barVisible === false ? 0
+    : root.shell && root.shell.bar && Number(root.shell.bar.barSize) > 0
+      ? Number(root.shell.bar.barSize) : Style.space(28)
+  readonly property real topSpacing: 12
+  readonly property real shadowPadding: 24
+  readonly property real shadowBottomPadding: root.shadowPadding + 4
 
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
@@ -99,12 +97,19 @@ Item {
     Math.max(rowHeight, displayModel.count * rowHeight + Math.max(0, displayModel.count - 1) * rowSpacing),
     Style.space(440)
   )
-  readonly property real desiredCardHeight: root.contentMargin * 2 + Style.space(54) + root.animatedListHeight
+  readonly property real desiredCardHeight: root.topSpacing + root.contentMargin * 2 + Style.space(54)
+    + root.animatedListHeight
     + (root.healthSummary ? Style.space(24) : 0)
+  readonly property real availableCardHeight: MenuModel.launcherCardAvailableHeight(
+    panel.height, Style.gapsOut, root.topBarHeight, 0)
   readonly property real cardHeight: panel.height > 0
-    ? Math.min(root.desiredCardHeight, Math.max(1, panel.height - Style.gapsOut * 2))
+    ? Math.min(root.desiredCardHeight, root.availableCardHeight)
     : root.desiredCardHeight
-  readonly property real cardTop: MenuModel.launcherCardTop(panel.height, root.cardHeight, Style.gapsOut)
+  readonly property real cardTop: MenuModel.launcherCardTop(
+    panel.height, root.cardHeight, Style.gapsOut, root.topBarHeight, 0)
+  readonly property real listViewportHeight: Math.min(root.animatedListHeight, Math.max(0,
+    root.cardHeight - root.topSpacing - root.contentMargin * 2 - Style.space(54)
+      - (root.healthSummary ? Style.space(24) : 0)))
 
   function prepareCardHeight() {
     root.preparingCardHeight = true
@@ -655,10 +660,8 @@ Item {
   }
 
   function settleOpenMotion() {
-    root.materialXScale = 1
     root.materialYScale = 1
     root.surfaceOpacity = 1
-    root.seedOpacity = 0
     root.searchOpacity = 1
     root.resultsOpacity = 1
     root.scrimOpacity = 1
@@ -667,7 +670,6 @@ Item {
 
   function settleClosedMotion() {
     root.surfaceOpacity = 0
-    root.seedOpacity = 0
     root.searchOpacity = 0
     root.resultsOpacity = 0
     root.scrimOpacity = 0
@@ -679,10 +681,8 @@ Item {
     closeMotion.stop()
     root.closingDetailsVisible = false
     if (root.motionState === "closed") {
-      root.materialXScale = root.seedXScale
-      root.materialYScale = root.seedYScale
-      root.surfaceOpacity = 0
-      root.seedOpacity = 1
+      root.materialYScale = 0
+      root.surfaceOpacity = 1
       root.searchOpacity = 0
       root.resultsOpacity = 0
       root.scrimOpacity = 0
@@ -699,8 +699,6 @@ Item {
     openMotion.stop()
     if (root.motionState === "closed") return
     root.closingDetailsVisible = root.filterText.trim() !== "" || root.dmenuActive
-    root.closeTargetXScale = root.materialXScale * 0.98
-    root.closeTargetYScale = root.materialYScale * 0.94
     root.motionState = "closing"
     if (!Motion.enabled) {
       root.settleClosedMotion()
@@ -814,37 +812,13 @@ Item {
 
     NumberAnimation {
       target: root
-      property: "materialXScale"
+      property: "materialYScale"
       to: 1
-      duration: Motion.normalDuration
+      duration: Motion.spatialDuration
       easing.type: Motion.spatialEasing
     }
     SequentialAnimation {
-      PauseAnimation { duration: 80 }
-      NumberAnimation {
-        target: root
-        property: "materialYScale"
-        to: 1
-        duration: Motion.spatialDuration
-        easing.type: Motion.spatialEasing
-      }
-    }
-    NumberAnimation {
-      target: root
-      property: "surfaceOpacity"
-      to: 1
-      duration: 80
-      easing.type: Motion.effectEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "seedOpacity"
-      to: 0
-      duration: 100
-      easing.type: Motion.effectEasing
-    }
-    SequentialAnimation {
-      PauseAnimation { duration: 80 }
+      PauseAnimation { duration: 60 }
       NumberAnimation {
         target: root
         property: "searchOpacity"
@@ -854,7 +828,7 @@ Item {
       }
     }
     SequentialAnimation {
-      PauseAnimation { duration: 140 }
+      PauseAnimation { duration: 100 }
       NumberAnimation {
         target: root
         property: "resultsOpacity"
@@ -879,13 +853,6 @@ Item {
 
     NumberAnimation {
       target: root
-      property: "surfaceOpacity"
-      to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
-    }
-    NumberAnimation {
-      target: root
       property: "searchOpacity"
       to: 0
       duration: 120
@@ -900,22 +867,8 @@ Item {
     }
     NumberAnimation {
       target: root
-      property: "seedOpacity"
-      to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "materialXScale"
-      to: root.closeTargetXScale
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
-    }
-    NumberAnimation {
-      target: root
       property: "materialYScale"
-      to: root.closeTargetYScale
+      to: 0
       duration: Motion.fastDuration
       easing.type: Motion.exitEasing
     }
@@ -989,6 +942,7 @@ Item {
     id: panel
     visible: root.surfaceVisible
     color: "transparent"
+    mask: Region { item: root.opened ? scrimSurface : null }
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.namespace: "desktop-menu"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -1002,50 +956,48 @@ Item {
       right: true
     }
 
-      Rectangle {
-        anchors.fill: parent
-        color: root.scrim
-        opacity: root.scrimOpacity
-
-        MouseArea {
-          anchors.fill: parent
-          enabled: root.opened
-          onClicked: root.close()
-        }
-      }
-
     Rectangle {
-      id: materialSeed
+      id: scrimSurface
 
-      width: root.seedSize
-      height: root.seedSize
-      radius: width / 2
-      x: Math.round(panel.width / 2 - width / 2)
-      y: Math.round(root.cardTop + root.searchCenterY - height / 2)
-      color: root.accent
-      opacity: root.seedOpacity
+      anchors {
+        top: parent.top
+        topMargin: root.topBarHeight
+        bottom: parent.bottom
+        left: parent.left
+        right: parent.right
+      }
+      color: root.scrim
+      opacity: root.scrimOpacity
+
+      MouseArea {
+        anchors.fill: parent
+        enabled: root.opened
+        onClicked: root.close()
+      }
     }
 
     Item {
       id: cardFrame
 
-      width: root.animatedCardWidth
-      height: root.cardHeight
+      width: root.animatedCardWidth + root.shadowPadding * 2
+      height: root.cardHeight + root.shadowBottomPadding
       anchors.horizontalCenter: parent.horizontalCenter
       y: root.cardTop
       opacity: root.surfaceOpacity
+      clip: true
 
       transform: Scale {
         origin.x: cardFrame.width / 2
-        origin.y: root.searchCenterY
-        xScale: root.materialXScale
+        origin.y: 0
         yScale: root.materialYScale
       }
 
       PanelSurface {
         id: card
 
-        anchors.fill: parent
+        x: root.shadowPadding
+        width: root.animatedCardWidth
+        height: root.cardHeight
         padding: root.contentMargin
         revealed: true
         motionEnabled: false
@@ -1057,8 +1009,13 @@ Item {
 
         Item {
           id: content
-          anchors.fill: parent
-          anchors.margins: card.padding
+          anchors {
+            fill: parent
+            leftMargin: card.padding
+            rightMargin: card.padding
+            topMargin: card.padding + root.topSpacing
+            bottomMargin: card.padding
+          }
 
         Column {
           anchors.fill: parent
@@ -1122,7 +1079,7 @@ Item {
 
           Item {
             width: parent.width
-            height: root.animatedListHeight
+            height: root.listViewportHeight
             opacity: root.resultsOpacity
 
             AnimatedListView {

@@ -86,7 +86,7 @@ QtObject {
   }
 
   readonly property QtObject bar: QtObject {
-    property color background: root.composed("bar.background", "bar.background-alpha", root.background, 1.0)
+    property color background: root.barPanels.background
     property color text: root.pick("bar.text", root.foreground)
     property color active: root.pick("bar.active", root.urgent)
   }

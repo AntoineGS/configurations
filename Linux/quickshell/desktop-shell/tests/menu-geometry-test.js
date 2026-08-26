@@ -1,11 +1,16 @@
 const assert = require("node:assert/strict")
 const model = require("../plugins/menu/MenuModel.js")
 
-assert.equal(model.launcherCardTop(1080, 399, 5), 360)
-assert.equal(model.launcherCardTop(1080, 304, 5), 360)
-assert.equal(model.launcherCardTop(720, 500, 5), 215)
-assert.equal(model.launcherCardTop(720, 710, 5), 5)
-assert.equal(model.launcherCardTop(0, 399, 5), 0)
+assert.equal(model.launcherCardTop(1080, 399, 5, 28, 12), 40)
+assert.equal(model.launcherCardTop(1080, 304, 5, 28, 12), 40)
+assert.equal(model.launcherCardTop(720, 500, 5, 28, 12), 40)
+assert.equal(model.launcherCardTop(720, 710, 5, 28, 12), 5)
+assert.equal(model.launcherCardTop(0, 399, 5, 28, 12), 0)
+
+assert.equal(model.launcherCardAvailableHeight(1080, 5, 28, 12), 1035)
+assert.equal(model.launcherCardAvailableHeight(720, 5, 28, 12), 675)
+assert.equal(model.launcherCardAvailableHeight(45, 5, 28, 12), 1)
+assert.equal(model.launcherCardAvailableHeight(0, 5, 28, 12), 0)
 
 assert.equal(model.rowsHaveIcons([]), false)
 assert.equal(model.rowsHaveIcons([{ icon: "", appIcon: "" }]), false)
