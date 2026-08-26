@@ -103,7 +103,6 @@ tree-sitter-cli
 uv
 virt-manager
 waypipe
-wezterm
 whois
 winetricks
 wiremix
