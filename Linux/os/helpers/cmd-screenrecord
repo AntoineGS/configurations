@@ -25,6 +25,7 @@ CAPTURE_TARGET="portal"
 RESOLUTION=""
 STOP_RECORDING="false"
 RECORDING_FILE="${SCREENRECORD_STATE_FILE:-/tmp/screenrecord-filename}"
+RECORDING_LOG="${SCREENRECORD_LOG_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/screenrecord/gpu-screen-recorder.log}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -122,8 +123,31 @@ start_screenrecording() {
   [[ -n $audio_devices ]] && audio_args+=(-a "$audio_devices" -ac aac)
 
   local resolution="${RESOLUTION:-$(default_resolution)}"
-  gpu-screen-recorder -w "$CAPTURE_TARGET" -k auto -s "$resolution" -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" &
+  local log_dir recording_log_fd saved_umask
+  log_dir=$(dirname -- "$RECORDING_LOG")
+  if ! mkdir -p -- "$log_dir" || [[ -e $RECORDING_LOG && ! -f $RECORDING_LOG ]]; then
+    notify-send "Screen recording error" "Could not prepare recorder log: $RECORDING_LOG" -u critical -t 5000
+    return 1
+  fi
+
+  saved_umask=$(umask)
+  umask 077
+  if ! exec {recording_log_fd}>"$RECORDING_LOG"; then
+    umask "$saved_umask"
+    notify-send "Screen recording error" "Could not prepare recorder log: $RECORDING_LOG" -u critical -t 5000
+    return 1
+  fi
+  umask "$saved_umask"
+  if ! chmod 600 "$RECORDING_LOG"; then
+    exec {recording_log_fd}>&-
+    notify-send "Screen recording error" "Could not prepare recorder log: $RECORDING_LOG" -u critical -t 5000
+    return 1
+  fi
+
+  gpu-screen-recorder -w "$CAPTURE_TARGET" -k auto -s "$resolution" -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" \
+    </dev/null >&"$recording_log_fd" 2>&1 &
   local pid=$!
+  exec {recording_log_fd}>&-
 
   # Wait for recording to actually start (file appears after portal selection)
   while kill -0 $pid 2>/dev/null && [[ ! -f $filename ]]; do
@@ -211,5 +235,8 @@ else
     start_webcam_overlay || true
   fi
 
-  start_screenrecording || cleanup_webcam
+  if ! start_screenrecording; then
+    cleanup_webcam
+    exit 1
+  fi
 fi
