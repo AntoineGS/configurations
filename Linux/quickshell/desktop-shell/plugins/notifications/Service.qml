@@ -79,13 +79,22 @@ Item {
 
   property var liveRefs: ({})
   property var liveGenerations: ({})
+  property real latestLiveGeneration: -1
   property var livePersistenceSources: ({})
   property var actionClosingGenerations: ({})
+  property var failedHistoryActions: ({})
   property var pendingRefreshes: ({})
   property var pendingSilencedRefreshes: ({})
   property var silencedDirty: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
+  property alias historyModel: historyModel
+  ListModel { id: historyModel }
+  property bool historyOpen: false
+  property int historyRequestGeneration: 0
+  property int runningHistoryViewGeneration: -1
+  property string historyReadRaw: ""
+  property var historyLiveSnapshot: []
 
   property int persistenceRetryLimit: 2
   property string persistenceError: ""
@@ -137,9 +146,14 @@ Item {
   }
 
   function snapshotOf(notification, timestamp) {
-    var startedAt = timestamp === undefined ? Date.now() : Number(timestamp)
+    var requestedAt = timestamp === undefined ? Date.now() : Number(timestamp)
+    var startedAt = NotificationLogic.nextMonotonicTimestamp(service.latestLiveGeneration, requestedAt)
+    service.latestLiveGeneration = startedAt
     var snapshot = NotificationLogic.snapshotOf(notification, startedAt)
-    var deadline = deadlineFor(snapshot.urgency, snapshot.expireTimeout, startedAt)
+    var deadline = NotificationLogic.deadlineForReceipt(
+      snapshot.urgency, snapshot.expireTimeout, startedAt, requestedAt,
+      NotificationUrgency.Critical, NotificationUrgency.Low,
+      lowPopupDuration, normalPopupDuration, maxPopupDuration)
     snapshot.deadline = deadline === null ? 0 : deadline
     snapshot.transient = isEphemeral(notification)
     return snapshot
@@ -205,8 +219,11 @@ Item {
 
   function releaseLiveNotification(notification, originalId, dismiss) {
     if (liveRefs[originalId] === notification) {
+      var generation = liveGenerations[originalId]
+      service.markHistoryUnavailable(originalId, liveGenerations[originalId])
       delete liveRefs[originalId]
       delete liveGenerations[originalId]
+      service.clearFailedHistoryAction(originalId, generation)
       delete livePersistenceSources[originalId]
       delete pendingRefreshes[String(originalId)]
       delete pendingSilencedRefreshes[String(originalId)]
@@ -229,6 +246,7 @@ Item {
     var snapshot = snapshotOf(notification)
     var previous = liveRefs[snapshot.originalId]
     if (previous && previous !== notification) {
+      service.markHistoryUnavailable(snapshot.originalId, liveGenerations[snapshot.originalId])
       delete pendingSilencedRefreshes[String(snapshot.originalId)]
       delete silencedDirty[snapshot.originalId]
       try { previous.tracked = false } catch (error) {}
@@ -369,8 +387,11 @@ Item {
 
   function releaseSilenced(notification, originalId) {
     if (liveRefs[originalId] === notification) {
+      var generation = liveGenerations[originalId]
+      service.markHistoryUnavailable(originalId, liveGenerations[originalId])
       delete liveRefs[originalId]
       delete liveGenerations[originalId]
+      service.clearFailedHistoryAction(originalId, generation)
       delete livePersistenceSources[originalId]
       delete pendingRefreshes[String(originalId)]
       delete pendingSilencedRefreshes[String(originalId)]
@@ -397,6 +418,7 @@ Item {
     delete service.pendingSilencedRefreshes[String(originalId)]
     delete service.silencedDirty[originalId]
     var generation = Number(service.liveGenerations[originalId])
+    service.markHistoryUnavailable(originalId, generation)
     if (Number(service.actionClosingGenerations[originalId]) === generation) return
     var source = service.livePersistenceSources[originalId] || "popup"
     var found = false
@@ -415,6 +437,7 @@ Item {
     }
     delete service.liveRefs[originalId]
     delete service.liveGenerations[originalId]
+    service.clearFailedHistoryAction(originalId, generation)
     delete service.livePersistenceSources[originalId]
     try { notification.tracked = false } catch (error) {}
   }
@@ -483,6 +506,7 @@ Item {
     var roles = NotificationLogic.popupRoles()
     var row = popupModel.get(rowIndex)
     if (!row) return
+    service.markHistoryUnavailable(originalId, row.timestamp)
     var oldFileName = NotificationLogic.popupFileName(row)
     var newFileName = NotificationLogic.popupFileName(updated)
     if (oldFileName !== newFileName || (!row.transient && updated.transient)) deletePopupFileFor(row)
@@ -526,6 +550,7 @@ Item {
     if (index < 0 || index >= popupModel.count) return
     var entry = popupModel.get(index)
     var originalId = entry ? entry.originalId : -1
+    if (entry) service.markHistoryUnavailable(originalId, entry.timestamp)
     var internal = Number(originalId) < 0
     var restored = isRestoredRow(entry)
     var source = restoredSource(entry) || livePersistenceSources[originalId] || ""
@@ -544,6 +569,7 @@ Item {
       delete liveRefs[originalId]
       delete liveGenerations[originalId]
       delete livePersistenceSources[originalId]
+      service.clearFailedHistoryAction(originalId, entry.timestamp)
       try {
         if (ref.tracked) {
           if (reason === "expire" && typeof ref.expire === "function") ref.expire()
@@ -570,7 +596,7 @@ Item {
     return null
   }
 
-  function invokePopupAction(index, identifier, forceDismiss) {
+  function invokePopupAction(index, identifier, forceDismiss, historyEntry) {
     if (index < 0 || index >= popupModel.count) return false
     var entry = popupModel.get(index)
     var ref = entry && !isRestoredRow(entry) ? liveRefs[entry.originalId] : null
@@ -583,6 +609,7 @@ Item {
       action.invoke()
     } catch (error) {
       if (shouldDismiss) delete actionClosingGenerations[entry.originalId]
+      if (historyEntry) service.rememberFailedHistoryAction(historyEntry)
       console.warn("notifications: action failed", error)
       return false
     }
@@ -598,8 +625,8 @@ Item {
     if (!invokePopupAction(index, "default", true)) dismissPopup(index)
   }
 
-  function invokePopupDefault(index) {
-    return invokePopupAction(index, "default")
+  function invokePopupDefault(index, historyEntry) {
+    return invokePopupAction(index, "default", false, historyEntry)
   }
 
   function showDndConfirmation() {
@@ -739,8 +766,12 @@ Item {
     }, front === true)
   }
 
-  function enqueueHistoryRead() {
-    enqueuePersistenceJob({ read: true, key: "history-read" }, false)
+  function enqueueHistoryRead(requestGeneration) {
+    enqueuePersistenceJob({
+      read: true,
+      key: "history-read",
+      requestGeneration: requestGeneration,
+    }, false)
   }
 
   function runNextPopupFileJob() {
@@ -751,6 +782,7 @@ Item {
     popupFileQueue = popupFileQueue.slice(1)
     if (job.read) {
       service.runningHistoryReadGeneration = job.generation
+      service.runningHistoryViewGeneration = Number(job.requestGeneration)
       startHistoryRead()
       return
     }
@@ -923,44 +955,43 @@ Item {
   Process {
     id: readHistoryProc
     running: false
-    onExited: {
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: service.historyReadRaw = text
+    }
+    onExited: function(exitCode) {
+      var viewGeneration = service.runningHistoryViewGeneration
       var completed = {
-        key: "history-read", generation: service.runningHistoryReadGeneration
+        key: "history-read",
+        generation: service.runningHistoryReadGeneration,
       }
       service.runningHistoryReadGeneration = null
+      service.runningHistoryViewGeneration = -1
+      if (Number(exitCode) === 0) {
+        service.loadHistoryModel(service.historyReadRaw, viewGeneration)
+      } else {
+        service.persistenceError = "notification history read failed (exit " + String(exitCode) + ")"
+        service.loadHistoryModel("", viewGeneration)
+      }
+      service.historyReadRaw = ""
       service.runNextPopupFileJob()
       service.releasePersistenceGeneration(completed)
     }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: service.replayHistory(text)
-    }
-  }
-
-  property var replayCarryOver: []
-  property bool historyReadQueued: false
-
-  function showRecentHistory() {
-    if (readHistoryProc.running || service.historyReadQueued) return "ok"
-    service.replayCarryOver = liveRowsForReplay()
-    service.historyReadQueued = true
-    enqueueHistoryRead()
-    return "ok"
   }
 
   function startHistoryRead() {
-    service.historyReadQueued = false
-    readHistoryProc.command = ["bash", "-c", "awk 1 \"$1\"/*.json 2>/dev/null || true", "--", historyDir]
+    readHistoryProc.command = ["bash", "-c",
+      "shopt -s nullglob\nfiles=(\"$1\"/*.json)\n((${#files[@]} == 0)) || awk 1 \"${files[@]}\"",
+      "--", historyDir]
     readHistoryProc.running = true
   }
 
-  function liveRowsForReplay() {
+  function liveRowsForHistory() {
     var rows = []
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
-      if (!row || Number(row.originalId) < 0) continue
-      if (row.transient === true) continue
-      rows.push(NotificationLogic.persistablePopup({
+      if (!row || Number(row.originalId) < 0 || row.transient === true) continue
+      rows.push({
         id: row.id,
         originalId: row.originalId,
         app: row.app,
@@ -969,26 +1000,124 @@ Item {
         body: row.body,
         image: row.image,
         urgency: row.urgency,
-        timestamp: row.timestamp
-      }, imagesDir).entry)
+        timestamp: row.timestamp,
+        actionAvailable: NotificationLogic.historyActionAvailable(
+          row, liveRefs[row.originalId], liveGenerations[row.originalId])
+      })
     }
     return rows
   }
 
-  function replayHistory(raw) {
-    var rows = NotificationLogic.historyRows(
-      raw, service.replayCarryOver, NotificationUrgency.Normal, service.historyLimit)
-    service.replayCarryOver = []
-    service.updateHistoryCount()
-    if (rows.length === 0) return
-
-    clearPopups()
-    for (var i = 0; i < rows.length; i++) {
-      rows[i].deadline = 0
-      rows[i].transient = false
-      service.restoredPopups[NotificationLogic.popupFileName(rows[i])] = "history"
-      popupModel.append(rows[i])
+  function revalidatedHistoryRows() {
+    var rows = []
+    for (var i = 0; i < service.historyLiveSnapshot.length; i++) {
+      var captured = service.historyLiveSnapshot[i]
+      if (!captured) continue
+      rows.push({
+        id: captured.id,
+        originalId: captured.originalId,
+        app: captured.app,
+        appIcon: captured.appIcon,
+        summary: captured.summary,
+        body: captured.body,
+        image: captured.image,
+        urgency: captured.urgency,
+        timestamp: captured.timestamp,
+        actionAvailable: NotificationLogic.historyActionAvailable(
+          captured, liveRefs[captured.originalId], liveGenerations[captured.originalId])
+      })
     }
+    return rows
+  }
+
+  function loadHistoryModel(raw, requestGeneration) {
+    var result = NotificationLogic.historyReadTransition(
+      raw, service.revalidatedHistoryRows(), NotificationUrgency.Normal, service.historyLimit,
+      service.historyOpen, requestGeneration, service.historyRequestGeneration)
+    if (!result.accepted) return
+    historyModel.clear()
+    for (var i = 0; i < result.rows.length; i++) historyModel.append(result.rows[i])
+    service.updateHistoryCount()
+  }
+
+  function openHistory() {
+    service.historyRequestGeneration++
+    service.historyOpen = true
+    service.historyLiveSnapshot = service.liveRowsForHistory()
+    historyModel.clear()
+    service.enqueueHistoryRead(service.historyRequestGeneration)
+    return "ok"
+  }
+
+  function closeHistory() {
+    service.historyRequestGeneration++
+    service.historyOpen = false
+    return "ok"
+  }
+
+  function toggleHistory() {
+    return service.historyOpen ? service.closeHistory() : service.openHistory()
+  }
+
+  function popupIndexForIdentity(originalId, timestamp) {
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (row && row.originalId === originalId && Number(row.timestamp) === Number(timestamp)) return i
+    }
+    return -1
+  }
+
+  function invokeHistoryDefault(index) {
+    if (index < 0 || index >= historyModel.count) return false
+    var entry = historyModel.get(index)
+    var actionState = NotificationLogic.historyActionTransition(
+      entry, service.failedHistoryActions, "check")
+    if (!actionState.allowed) {
+      historyModel.setProperty(index, "actionAvailable", false)
+      return false
+    }
+    var ref = entry ? liveRefs[entry.originalId] : null
+    var generation = entry ? liveGenerations[entry.originalId] : null
+    if (!NotificationLogic.historyActionAvailable(entry, ref, generation)) {
+      historyModel.setProperty(index, "actionAvailable", false)
+      return false
+    }
+
+    var popupIndex = popupIndexForIdentity(entry.originalId, entry.timestamp)
+    if (popupIndex < 0 || !service.invokePopupDefault(popupIndex, entry)) {
+      historyModel.setProperty(index, "actionAvailable", false)
+      return false
+    }
+    service.closeHistory()
+    return true
+  }
+
+  function markHistoryUnavailable(originalId, timestamp) {
+    service.clearFailedHistoryAction(originalId, timestamp)
+    for (var i = 0; i < historyModel.count; i++) {
+      var row = historyModel.get(i)
+      if (row && row.originalId === originalId && Number(row.timestamp) === Number(timestamp)) {
+        historyModel.setProperty(i, "actionAvailable", false)
+        return
+      }
+    }
+  }
+
+  function clearFailedHistoryAction(originalId, timestamp) {
+    var result = NotificationLogic.historyActionTransition({
+      originalId: originalId,
+      timestamp: timestamp,
+    }, service.failedHistoryActions, "ended")
+    service.failedHistoryActions = result.failedIdentities
+  }
+
+  function rememberFailedHistoryAction(entry) {
+    var result = NotificationLogic.historyActionTransition(
+      entry, service.failedHistoryActions, "failed")
+    var failed = result.failedIdentities
+    var keys = Object.keys(failed)
+    if (keys.length > service.maxActivePopups) delete failed[keys[0]]
+    service.failedHistoryActions = failed
   }
 
   Process {
@@ -1612,6 +1741,8 @@ Item {
       admissionDropped: service.admissionDropped,
       admissionWindowCount: service.admissionTimestamps.length,
       popupCount: popupModel.count,
+      historyOpen: service.historyOpen,
+      historyModelCount: historyModel.count,
       historyCount: service.historyCount,
       routeValid: service.routeValid,
       routeVisible: service.routeVisible,
@@ -1678,6 +1809,7 @@ Item {
     function restoreLast(): string { return service.restoreLast() }
     function invokeLast(): string { return service.invokeLast() }
     function invokeAction(identifier: string): string { return service.invokeAction(identifier) }
+    function toggleHistory(): string { return service.toggleHistory() }
     function toggleDnd(): string { return service.toggleDnd() }
     function setDnd(value: string): string { return service.setDnd(value) }
   }
@@ -1849,6 +1981,15 @@ Item {
         }
       }
     }
+  }
+
+  NotificationHistory {
+    opened: service.historyOpen
+    model: service.historyModel
+    fontFamily: service.shell && service.shell.bar
+      ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
+    onCloseRequested: service.closeHistory()
+    onActivationRequested: function(index) { service.invokeHistoryDefault(index) }
   }
 
   Component.onCompleted: {
