@@ -419,6 +419,10 @@ Item {
     root.cursorActive = true
     if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
     root.rebuildDisplay(false, false)
+    Qt.callLater(function() {
+      if (root.cursorActive && displayModel.count > 0)
+        resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+    })
   }
 
   function scheduleCalculator(query) {
@@ -466,7 +470,7 @@ Item {
     } else if (row.kind === "application") {
       root.opened = false
       root.filterText = ""
-      if (root.appLibrary) root.appLibrary.launch(row.desktopId, row.label)
+      if (root.appLibrary) root.appLibrary.launch(row.desktopId)
     } else if (row.kind === "calculator") {
       root.opened = false
       root.filterText = ""
@@ -1081,11 +1085,11 @@ Item {
 
                 width: resultList.width
                 height: root.rowHeight
-                y: resultList.currentItem ? resultList.currentItem.y : 0
+                y: root.selectedIndex * (root.rowHeight + resultList.spacing)
                 hasCursor: true
                 foreground: root.foreground
                 accent: root.accent
-                opacity: root.cursorActive && resultList.currentIndex >= 0 ? 1 : 0
+                opacity: root.cursorActive && root.selectedIndex < displayModel.count ? 1 : 0
 
                 Behavior on y {
                   enabled: Motion.enabled && resultList.transitionsEnabled
