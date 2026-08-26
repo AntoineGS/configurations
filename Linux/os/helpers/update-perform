@@ -23,5 +23,8 @@ update-system-pkgs
 # migrate
 update-aur-pkgs
 update-orphan-pkgs
+if command -v ya &>/dev/null; then
+  ya pkg upgrade
+fi
 
 update-analyze-logs
