@@ -421,14 +421,26 @@ function dmenuRows(options, query) {
   return rows
 }
 
-function launcherCardTop(panelHeight, cardHeight, margin) {
+function launcherTopInset(barHeight, connectorHeight) {
+  return Math.max(0, Number(barHeight) || 0) + Math.max(0, Number(connectorHeight) || 0)
+}
+
+function launcherCardAvailableHeight(panelHeight, margin, barHeight, connectorHeight) {
   var height = Math.max(0, Number(panelHeight) || 0)
   if (height === 0) return 0
-  var inset = Math.max(0, Number(margin) || 0)
+  var inset = launcherTopInset(barHeight, connectorHeight)
+  var outer = Math.max(0, Number(margin) || 0)
+  return Math.max(1, height - inset - outer)
+}
+
+function launcherCardTop(panelHeight, cardHeight, margin, barHeight, connectorHeight) {
+  var height = Math.max(0, Number(panelHeight) || 0)
+  if (height === 0) return 0
+  var outer = Math.max(0, Number(margin) || 0)
   var extent = Math.max(0, Number(cardHeight) || 0)
-  var preferred = Math.round(height / 3)
-  var maxTop = Math.max(inset, height - extent - inset)
-  return Math.max(inset, Math.min(preferred, maxTop))
+  var preferred = launcherTopInset(barHeight, connectorHeight)
+  var maxTop = Math.max(outer, height - extent - outer)
+  return Math.max(outer, Math.min(preferred, maxTop))
 }
 
 function rowsHaveIcons(rows) {
@@ -568,6 +580,7 @@ if (typeof module !== "undefined") {
     calculatorRow: calculatorRow,
     composeSearchResults: composeSearchResults,
     dmenuRows: dmenuRows,
+    launcherCardAvailableHeight: launcherCardAvailableHeight,
     launcherCardTop: launcherCardTop,
     rowsHaveIcons: rowsHaveIcons,
     rowsHaveChevrons: rowsHaveChevrons,
