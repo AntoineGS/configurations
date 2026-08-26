@@ -45,6 +45,11 @@ hl.bind(
 	hl.dsp.exec_cmd("desktop-shell call desktop.notifications restoreLast"),
 	{ description = "Restore last notification" }
 )
+hl.bind(
+	"SUPER + CTRL + N",
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications toggleHistory"),
+	{ description = "Notification history" }
+)
 
 -- Workspaces
 hl.bind("SUPER + COMMA", hl.dsp.exec_cmd("hyprland-workspace-rename"), { description = "Rename workspace" })

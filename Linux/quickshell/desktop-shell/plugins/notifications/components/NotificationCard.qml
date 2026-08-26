@@ -28,6 +28,9 @@ ElevatedSurface {
   property double timestamp: 0
   property var actions: []
   property string fontFamily: Style.font.family
+  property bool historyMode: false
+  property bool keyboardSelected: false
+  property bool actionAvailable: true
 
   readonly property bool hovered: hoverTracker.hovered
   readonly property string smallIconSource: image.length > 0
@@ -66,16 +69,19 @@ ElevatedSurface {
   implicitHeight: mainColumn.implicitHeight
   radius: 0
   color: surfaceColor
-  borderSpec: Border.none()
+  borderSpec: root.keyboardSelected
+    ? Border.flat(root.inkColor, Math.max(2, Style.space(2)))
+    : Border.none()
   clip: true
 
   HoverHandler { id: hoverTracker }
 
   MouseArea {
     anchors.fill: parent
-    cursorShape: Qt.PointingHandCursor
-    acceptedButtons: Qt.LeftButton | Qt.RightButton
+    cursorShape: root.historyMode && !root.actionAvailable ? Qt.ArrowCursor : Qt.PointingHandCursor
+    acceptedButtons: root.historyMode ? Qt.LeftButton : Qt.LeftButton | Qt.RightButton
     onClicked: function(mouse) {
+      mouse.accepted = true
       if (mouse.button === Qt.RightButton) root.closeRequested()
       else root.cardClicked()
     }
@@ -184,7 +190,7 @@ ElevatedSurface {
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
-      visible: !!root.actions && root.actions.length > 0
+      visible: !root.historyMode && !!root.actions && root.actions.length > 0
       height: Math.max(1, Style.space(1))
       color: root.inkColor
     }
@@ -196,7 +202,7 @@ ElevatedSurface {
       Layout.topMargin: Style.space(8)
       Layout.bottomMargin: Style.space(10)
       implicitHeight: actionFlow.implicitHeight
-      visible: !!root.actions && root.actions.length > 0
+      visible: !root.historyMode && !!root.actions && root.actions.length > 0
 
       Flow {
         id: actionFlow
@@ -227,6 +233,23 @@ ElevatedSurface {
         }
       }
     }
+
+    Text {
+      Layout.fillWidth: true
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.topMargin: Style.space(6)
+      Layout.bottomMargin: Style.space(10)
+      visible: root.historyMode && !root.actionAvailable
+      text: "ACTION UNAVAILABLE"
+      color: root.inkColor
+      opacity: 0.62
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+      font.letterSpacing: Style.spaceReal(0.6)
+      horizontalAlignment: Text.AlignRight
+    }
   }
 
   Item {
@@ -236,7 +259,7 @@ ElevatedSurface {
     anchors.rightMargin: Style.space(3)
     width: Style.space(18)
     height: Style.space(18)
-    visible: opacity > 0
+    visible: !root.historyMode && opacity > 0
     opacity: root.hovered ? 1 : 0
 
     Behavior on opacity { NumberAnimation { duration: 100 } }

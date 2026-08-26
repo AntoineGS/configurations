@@ -120,6 +120,57 @@ assert.equal(logic.actionMetadata({ actions: defaultAfterLimit }).length, 8)
 assert.equal(logic.actionMetadata({ actions: defaultAfterLimit })[7].identifier, "action-7",
   "the bounded action set does not inspect a late default action")
 
+const liveDefaultRef = {
+  actions: [
+    { identifier: "default", text: "Open" },
+    { identifier: "archive", text: "Archive" },
+  ],
+}
+const historyIdentity = { originalId: 42, timestamp: 1786930001000 }
+assert.equal(logic.nextMonotonicTimestamp(-1, 1786930001000), 1786930001000)
+assert.equal(logic.nextMonotonicTimestamp(1786930001000, 1786930001000), 1786930001001)
+assert.equal(logic.nextMonotonicTimestamp(1786930001001, 1786930000500), 1786930001002)
+assert.equal(logic.historyActionAvailable(historyIdentity, liveDefaultRef, 1786930001000), true)
+assert.equal(logic.historyActionAvailable(historyIdentity, liveDefaultRef, 1786930002000), false,
+  "a reused notification id cannot activate through an older history row")
+assert.equal(logic.historyActionAvailable(historyIdentity, { actions: [] }, 1786930001000), false)
+assert.equal(logic.historyActionAvailable(historyIdentity, null, 1786930001000), false)
+
+const lateDefaultRef = {
+  actions: Array.from({ length: 8 }, (_, index) => ({
+    identifier: "action-" + index,
+    text: "Action " + index,
+  })).concat([{ identifier: "default", text: "Open" }]),
+}
+assert.equal(logic.historyActionAvailable(historyIdentity, lateDefaultRef, 1786930001000), false,
+  "history activation obeys the same bounded action set as popup activation")
+assert.equal(logic.historyActionRetryAllowed(historyIdentity, {}), true)
+assert.equal(logic.historyActionRetryAllowed(historyIdentity, {
+  [logic.historyActionIdentity(historyIdentity)]: true,
+}), false, "a failed history identity cannot be retried")
+assert.equal(logic.historyReadAccepted(true, 4, 4), true)
+assert.equal(logic.historyReadAccepted(true, 3, 4), false, "stale history reads are discarded")
+assert.equal(logic.historyReadAccepted(false, 4, 4), false, "closed history rejects late reads")
+const capturedRead = logic.historyReadTransition(
+  "", [{ ...historyIdentity, app: "captured", actionAvailable: false }], 1, 10, true, 4, 4)
+assert.equal(capturedRead.accepted, true)
+assert.equal(capturedRead.rows[0].app, "captured")
+assert.equal(capturedRead.rows[0].actionAvailable, false,
+  "accepted current reads apply captured unavailable rows")
+assert.equal(logic.historyReadTransition("", [], 1, 10, true, 3, 4).accepted, false,
+  "stale reads produce no application")
+assert.equal(logic.historyReadTransition("", [], 1, 10, false, 4, 4).accepted, false,
+  "closed reads produce no application")
+
+let failedActionState = logic.historyActionTransition(historyIdentity, {}, "check")
+assert.equal(failedActionState.allowed, true)
+failedActionState = logic.historyActionTransition(historyIdentity, failedActionState.failedIdentities, "failed")
+assert.equal(failedActionState.allowed, false, "failed action identity is rejected immediately")
+failedActionState = logic.historyActionTransition(historyIdentity, failedActionState.failedIdentities, "check")
+assert.equal(failedActionState.allowed, false, "failed action identity remains rejected")
+failedActionState = logic.historyActionTransition(historyIdentity, failedActionState.failedIdentities, "ended")
+assert.equal(failedActionState.allowed, true, "ended generation clears failed action identity")
+
 assert.equal(logic.durationFor(1, 0, 2, 0, 5000, 8000, 30000), 0,
   "explicit zero means never expire")
 assert.equal(logic.durationFor(1, -1, 2, 0, 5000, 8000, 30000), 8000,
@@ -138,6 +189,8 @@ assert.equal(logic.deadlineFor(1, 0, 1000, 2, 0, 5000, 8000, 30000), null,
   "explicit zero has no deadline")
 assert.equal(logic.deadlineFor(2, 3000, 1000, 2, 0, 5000, 8000, 30000), null,
   "critical notifications have no deadline")
+assert.equal(logic.deadlineForReceipt(1, 12000, 1000, 900, 2, 0, 5000, 8000, 30000), 12900,
+  "deadline uses receipt wall-clock time rather than monotonic identity")
 assert.equal(logic.remainingLifetime({ deadline: 4000 }, 2500, 8000), 1500,
   "delegate lifetime uses the remaining absolute deadline")
 assert.equal(logic.remainingLifetime({ deadline: 4000 }, 4500, 8000), 0,
@@ -388,6 +441,39 @@ const popupLines = [
 assert.deepEqual(logic.parsePopupFiles(popupLines, 1).map(entry => entry.id), [9, 8])
 assert.deepEqual(logic.historyRows(popupLines, [snapshot], 1, 3).map(entry => entry.id), [9, 42, 8])
 assert.deepEqual(logic.historyRows(popupLines, [snapshot], 1, 1).map(entry => entry.id), [9])
+const liveHistorySnapshot = { ...snapshot, actionAvailable: true }
+const mergedHistory = logic.historyRows(popupLines, [liveHistorySnapshot], 1, 3)
+assert.deepEqual(mergedHistory.map(entry => ({ id: entry.id, actionAvailable: entry.actionAvailable })), [
+  { id: 9, actionAvailable: false },
+  { id: 42, actionAvailable: true },
+  { id: 8, actionAvailable: false },
+])
+
+const duplicateLiveHistory = {
+  id: 9,
+  originalId: 9,
+  app: "newer-live",
+  timestamp: 1786930003000,
+  actionAvailable: true,
+}
+const deduplicatedHistory = logic.historyRows(popupLines, [duplicateLiveHistory], 1, 10)
+assert.deepEqual(deduplicatedHistory.map(entry => entry.id), [9, 8])
+assert.equal(deduplicatedHistory[0].app, "newer-live")
+assert.equal(deduplicatedHistory[0].actionAvailable, true)
+const capturedUnavailable = logic.historyRows("", [{
+  id: 77,
+  originalId: 77,
+  app: "captured",
+  timestamp: 1786930007000,
+  actionAvailable: false,
+}], 1, 10)
+assert.equal(capturedUnavailable[0].app, "captured")
+assert.equal(capturedUnavailable[0].actionAvailable, false, "unavailable rows remain readable")
+assert.deepEqual(
+  logic.historyRows("", Array.from({ length: 12 }, (_, id) => ({ id, timestamp: id })))
+    .map(entry => entry.id),
+  [11, 10, 9, 8, 7, 6, 5, 4, 3, 2],
+  "history defaults to ten newest rows")
 assert.deepEqual(logic.latestHistoryRow(popupLines, 1), {
   id: 9,
   originalId: 9,

@@ -145,6 +145,14 @@ function deadlineFor(urgency, expireTimeout, startedAt, criticalUrgency, lowUrge
   return isFinite(start) ? start + duration : null
 }
 
+function deadlineForReceipt(urgency, expireTimeout, identityTimestamp, receiptTimestamp,
+                            criticalUrgency, lowUrgency, lowDefault, normalDefault, maxDuration) {
+  var receipt = Number(receiptTimestamp)
+  var start = isFinite(receipt) ? receipt : identityTimestamp
+  return deadlineFor(urgency, expireTimeout, start, criticalUrgency, lowUrgency,
+    lowDefault, normalDefault, maxDuration)
+}
+
 function remainingLifetime(entry, now, fallbackDuration) {
   var current = Number(now)
   if (!isFinite(current)) return 0
@@ -156,6 +164,14 @@ function remainingLifetime(entry, now, fallbackDuration) {
   var timestamp = Number((entry || {}).timestamp)
   if (!isFinite(duration) || duration <= 0 || !isFinite(timestamp)) return 0
   return Math.max(0, timestamp + duration - current)
+}
+
+function nextMonotonicTimestamp(previous, candidate) {
+  var prior = Number(previous)
+  if (!isFinite(prior)) prior = -1
+  var requested = Number(candidate)
+  if (!isFinite(requested)) requested = prior + 1
+  return Math.max(requested, prior + 1)
 }
 
 function persistenceQueueUpdate(queue, job, maxLength, front, protectedKeys) {
@@ -457,6 +473,12 @@ function historyEntry(value, normalUrgency) {
   }
 }
 
+function historyDisplayEntry(value, normalUrgency) {
+  var entry = historyEntry(value, normalUrgency)
+  entry.actionAvailable = !!value && value.actionAvailable === true
+  return entry
+}
+
 function parseSettings(raw) {
   var text = String(raw || "").trim()
   if (!text) return { error: false, dnd: null, legacy: false }
@@ -591,7 +613,7 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
       var key = popupFileName(entry)
       if (seen[key]) continue
       seen[key] = true
-      out.push(historyEntry(entry, normalUrgency))
+      out.push(historyDisplayEntry(entry, normalUrgency))
     }
   }
 
@@ -599,6 +621,53 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
   collect(parsePopupFiles(raw, normalUrgency))
   out.sort(function(a, b) { return (b.timestamp || 0) - (a.timestamp || 0) })
   return out.slice(0, max)
+}
+
+function historyActionAvailable(entry, liveRef, liveGeneration) {
+  if (!entry || !liveRef || Number(entry.timestamp) !== Number(liveGeneration)) return false
+  var actions = liveRef.actions
+  if (!isActionList(actions)) return false
+  var limit = Math.min(actions.length, NOTIFICATION_LIMITS.maxActions)
+  for (var i = 0; i < limit; i++) {
+    if (actions[i] && String(actions[i].identifier || "") === "default") return true
+  }
+  return false
+}
+
+function historyActionIdentity(entry) {
+  var value = entry || {}
+  return String(value.timestamp || 0) + "-" + String(value.originalId || value.id || 0)
+}
+
+function historyActionRetryAllowed(entry, failedIdentities) {
+  var failed = failedIdentities && typeof failedIdentities === "object" ? failedIdentities : {}
+  return failed[historyActionIdentity(entry)] !== true
+}
+
+function historyReadAccepted(open, requestGeneration, currentGeneration) {
+  return open === true && Number(requestGeneration) === Number(currentGeneration)
+}
+
+function historyReadTransition(raw, liveRows, normalUrgency, limit, open, requestGeneration, currentGeneration) {
+  if (!historyReadAccepted(open, requestGeneration, currentGeneration))
+    return { accepted: false, rows: null }
+  return {
+    accepted: true,
+    rows: historyRows(raw, liveRows, normalUrgency, limit),
+  }
+}
+
+function historyActionTransition(entry, failedIdentities, transition) {
+  var next = {}
+  var source = failedIdentities && typeof failedIdentities === "object" ? failedIdentities : {}
+  for (var key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] === true) next[key] = true
+  }
+
+  var identity = historyActionIdentity(entry)
+  if (transition === "failed") next[identity] = true
+  else if (transition === "ended") delete next[identity]
+  return { identity: identity, allowed: next[identity] !== true, failedIdentities: next }
 }
 
 function latestHistoryRow(raw, normalUrgency) {
@@ -625,7 +694,9 @@ if (typeof module !== "undefined") {
     requestedDuration: requestedDuration,
     durationFor: durationFor,
     deadlineFor: deadlineFor,
+    deadlineForReceipt: deadlineForReceipt,
     remainingLifetime: remainingLifetime,
+    nextMonotonicTimestamp: nextMonotonicTimestamp,
     persistenceQueueUpdate: persistenceQueueUpdate,
     refreshScheduleUpdate: refreshScheduleUpdate,
     admissionUpdate: admissionUpdate,
@@ -636,6 +707,12 @@ if (typeof module !== "undefined") {
     replacementSnapshot: replacementSnapshot,
     historyEntry: historyEntry,
     parseSettings: parseSettings,
+    historyActionAvailable: historyActionAvailable,
+    historyActionIdentity: historyActionIdentity,
+    historyActionRetryAllowed: historyActionRetryAllowed,
+    historyReadAccepted: historyReadAccepted,
+    historyReadTransition: historyReadTransition,
+    historyActionTransition: historyActionTransition,
     historyRows: historyRows,
     popupEntry: popupEntry,
     popupFileName: popupFileName,
