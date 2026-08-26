@@ -5,10 +5,10 @@ hash = "f9b76184511c983db7c6f719eea1e14d"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:git"
-rev = "442d908"
-hash = "6849444b7c2df08eace83f3f86fb55a3"
+rev = "c591a36"
+hash = "5bb0bfab901d3601c370eafdd66edd31"
 
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-mocha"
-rev = "2d73b79"
-hash = "d4c41d713b325710a9dd5ae86c3f8a5f"
+rev = "20b47bf"
+hash = "ce320f877fe709b189433941aba747c4"
