@@ -39,12 +39,13 @@ Item {
   property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
-  property int cardWidth: Math.min(Style.space(400), panel.width - Style.gapsOut * 2)
+  property int cardWidth: Style.centeredMenuWidth(
+    Style.space(400), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(500), panel.height - Style.gapsOut * 2)
 
   property int cellWidth: Math.max(Style.space(44), Style.font.display + Style.spacing.md)
   property int cellHeight: Math.max(Style.space(44), Style.font.display + Style.spacing.md)
-  property int columns: Math.floor((cardWidth - contentMargin * 2) / cellWidth)
+  property int columns: Math.max(1, Math.floor((cardWidth - contentMargin * 2) / cellWidth))
 
   function open(payloadJson) {
     root.opened = true

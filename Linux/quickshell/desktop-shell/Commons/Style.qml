@@ -252,12 +252,22 @@ QtObject {
     readonly property int searchableDropdownWidth: root.spacingToken("searchable-dropdown-width", 260)
     readonly property int numberFieldWidth: root.spacingToken("number-field-width", 120)
     readonly property int searchablePopupMinHeight: root.spacingToken("searchable-popup-min-height", 220)
+    readonly property int centeredMenuMinWidth: root.space(250)
     readonly property int rowGap: root.spacingToken("row-gap", 8)
     readonly property int rowPaddingX: root.spacingToken("row-padding-x", 12)
     readonly property int labelGap: root.spacingToken("label-gap", 4)
     readonly property int panelGap: root.spacingToken("panel-gap", 14)
     readonly property int panelPadding: root.spacingToken("panel-padding", 18)
     readonly property int popupPadding: root.spacingToken("popup-padding", 14)
+  }
+
+  function centeredMenuWidth(desiredWidth, availableWidth) {
+    var desired = Number(desiredWidth)
+    if (!isFinite(desired) || desired < 0) desired = 0
+    var available = Number(availableWidth)
+    var width = Math.max(spacing.centeredMenuMinWidth, desired)
+    if (isFinite(available)) width = Math.min(width, Math.max(0, available))
+    return Math.max(1, Math.round(width))
   }
 
   // ---------------------------------------------------------- typography
