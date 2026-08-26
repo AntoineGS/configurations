@@ -94,12 +94,7 @@ Item {
     : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
   readonly property real outputWidth: panel.screen && panel.screen.width > 0
     ? panel.screen.width : Math.max(0, panel.width)
-  readonly property real boundedCardWidth: MenuModel.adaptiveMenuWidth(
-    root.measuredRouteContentWidth,
-    root.contentMargin * 2,
-    root.outputWidth,
-    Style.gapsOut
-  )
+  readonly property real boundedCardWidth: root.cardWidthForOutput(root.outputWidth)
   readonly property int listHeight: Math.min(
     Math.max(rowHeight, displayModel.count * rowHeight + Math.max(0, displayModel.count - 1) * rowSpacing),
     Style.space(440)
@@ -359,14 +354,20 @@ Item {
     if (!root.routeWidthReady) return
     root.preparingCardWidth = true
     root.animatedCardWidth = targetWidth === undefined ? root.boundedCardWidth : targetWidth
-    root.animatedCardWidth = Qt.binding(function() {
-      return MenuModel.adaptiveMenuWidth(
-        root.measuredRouteContentWidth,
-        root.contentMargin * 2,
-        root.outputWidth,
-        Style.gapsOut)
-    })
+    root.animatedCardWidth = Qt.binding(function() { return root.boundedCardWidth })
     root.preparingCardWidth = false
+  }
+
+  function cardWidthForOutput(outputWidth) {
+    var adaptive = MenuModel.adaptiveMenuWidth(
+      root.measuredRouteContentWidth,
+      root.contentMargin * 2,
+      outputWidth,
+      Style.gapsOut)
+    var available = outputWidth > 0
+      ? Math.min(outputWidth * 0.75, Math.max(0, outputWidth - Style.gapsOut * 2))
+      : undefined
+    return Style.centeredMenuWidth(adaptive, available)
   }
 
   function rebuildDisplay(captureWidth, snapWidth, cacheBrowseWidth) {
@@ -710,11 +711,7 @@ Item {
 
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay(false, false)
 
-  onOutputWidthChanged: root.settleCardWidth(MenuModel.adaptiveMenuWidth(
-    root.measuredRouteContentWidth,
-    root.contentMargin * 2,
-    root.outputWidth,
-    Style.gapsOut))
+  onOutputWidthChanged: root.settleCardWidth(root.cardWidthForOutput(root.outputWidth))
 
   onOpenedChanged: {
     if (root.opened) {

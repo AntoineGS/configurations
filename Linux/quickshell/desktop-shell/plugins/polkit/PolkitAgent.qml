@@ -69,20 +69,21 @@ Item {
   )
   readonly property bool fingerprintMode: (root.fingerprintConfigured || root.fingerprintPrompt)
     && root.dialogVisible && !root.responseRequired && !root.submitted && !root.errorFlash
-  readonly property int cardHeight: panel.height > 0
-    ? Math.min(
-        root.fieldHeight + Style.spacing.popupPadding * 2
-          + Border.top(root.borderSpec) + Border.bottom(root.borderSpec),
-        panel.height - Style.gapsOut * 2
-      )
-    : root.fieldHeight + Style.spacing.popupPadding * 2
-      + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
-  readonly property int cardWidth: root.fingerprintMode
-    ? root.cardHeight
-    : Math.min(
-        Style.space(312),
-        Math.max(Style.space(260), panel.width - Style.gapsOut * 2)
-      )
+  readonly property int baseCardHeight: root.fieldHeight + Style.spacing.popupPadding * 2
+    + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
+  readonly property int fingerprintExtent: Math.max(
+    Style.spacing.centeredMenuMinWidth, root.baseCardHeight)
+  readonly property int cardHeight: root.fingerprintMode
+    ? (panel.width > 0 && panel.height > 0
+      ? Math.min(
+          root.fingerprintExtent,
+          Math.max(1, Math.min(panel.width, panel.height) - Style.gapsOut * 2))
+      : root.fingerprintExtent)
+    : (panel.height > 0
+      ? Math.min(root.baseCardHeight, Math.max(1, panel.height - Style.gapsOut * 2))
+      : root.baseCardHeight)
+  readonly property int cardWidth: root.fingerprintMode ? root.cardHeight
+    : Style.centeredMenuWidth(Style.space(312), panel.width - Style.gapsOut * 2)
 
   function authorizationLabel(message) {
     return PolkitModel.authorizationLabel(message)
@@ -576,7 +577,8 @@ Item {
 
     PanelSurface {
       id: contextCard
-      width: Math.min(Style.space(520), Math.max(Style.space(260), panel.width - Style.gapsOut * 2))
+      width: Style.centeredMenuWidth(
+        Style.space(520), panel.width - Style.gapsOut * 2)
       height: contentTopInset + contentBottomInset + contextColumn.implicitHeight
       anchors.horizontalCenter: card.horizontalCenter
       anchors.bottom: card.top
