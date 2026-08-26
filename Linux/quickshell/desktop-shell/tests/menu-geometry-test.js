@@ -9,6 +9,7 @@ assert.equal(model.launcherCardTop(0, 399, 5), 0)
 
 assert.equal(model.rowsHaveIcons([]), false)
 assert.equal(model.rowsHaveIcons([{ icon: "", appIcon: "" }]), false)
+assert.equal(model.rowsHaveIcons([{ kind: "application", icon: "", appIcon: "" }]), true)
 assert.equal(model.rowsHaveIcons([{ icon: "network", appIcon: "" }]), true)
 assert.equal(model.rowsHaveIcons([{ icon: "", appIcon: "org.example.App" }]), true)
 

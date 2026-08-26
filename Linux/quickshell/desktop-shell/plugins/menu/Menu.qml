@@ -61,6 +61,7 @@ Item {
   property bool listTransitionsEnabled: motionState === "open"
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
+  readonly property string applicationsMenuId: "applications"
   readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
   readonly property bool rowDetailsVisible: root.motionState !== "closed"
     && (root.filterText.trim() !== "" || root.dmenuActive || root.closingDetailsVisible)
@@ -213,6 +214,7 @@ Item {
   }
 
   function isVisible(entry) {
+    if (entry && entry.id === root.applicationsMenuId) return true
     return MenuModel.isVisible(root.items, root.itemOrder, root.whenResults, entry)
   }
 
@@ -326,6 +328,17 @@ Item {
     return rows
   }
 
+  function applicationRows(query) {
+    var rows = []
+    if (!root.appLibrary) return rows
+    var applications = root.appLibrary.sortedEntries(String(query || ""))
+    for (var i = 0; i < applications.length; i++) {
+      var application = applications[i]
+      rows.push(MenuModel.applicationRow(application.entry, root.appLibrary, application.score))
+    }
+    return rows
+  }
+
   function cacheBrowseRouteWidth(rows) {
     root.browseRouteContentWidth = root.measureRouteContent(rows)
   }
@@ -377,6 +390,16 @@ Item {
       return
     }
 
+    if (active === root.applicationsMenuId) {
+      var applicationRouteRows = root.applicationRows(query)
+      root.applyDisplayRows(applicationRouteRows)
+      if (captureWidth === true)
+        root.captureRouteWidth(applicationRouteRows, snapWidth === true, cacheBrowseWidth === true)
+      root.settleCursor()
+      Qt.callLater(root.syncResultSelection)
+      return
+    }
+
     var commandRows = []
     if (query) {
       for (var i = 0; i < root.itemOrder.length; i++) {
@@ -395,13 +418,7 @@ Item {
     }
 
     var appRows = []
-    if (query && active === "root" && root.appLibrary) {
-      var applications = root.appLibrary.sortedEntries(query)
-      for (var appIndex = 0; appIndex < applications.length; appIndex++) {
-        var application = applications[appIndex]
-        appRows.push(MenuModel.applicationRow(application.entry, root.appLibrary, application.score))
-      }
-    }
+    if (query && active === "root") appRows = root.applicationRows(query)
 
     var calculatorResult = null
     if (query && active === "root" && root.calculatorResult && root.calculatorResultQuery === query)
@@ -442,7 +459,8 @@ Item {
     root.selectedIndex = 0
     root.cursorActive = true
     if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
-    if (root.dmenuActive || wasSearching === isSearching) {
+    var stableRouteFilter = root.dmenuActive || root.activeMenu === root.applicationsMenuId
+    if (stableRouteFilter || wasSearching === isSearching) {
       root.rebuildDisplay(false, false)
     } else if (isSearching) {
       root.rebuildDisplay(true, false, false)
@@ -715,7 +733,13 @@ Item {
   Connections {
     target: root.appLibrary
     function onAppsChanged() {
-      if (root.opened && root.activeMenu === "root" && root.filterText.trim()) root.rebuildDisplay(false, false)
+      if (!root.opened) return
+      if (root.activeMenu === root.applicationsMenuId) {
+        var unfiltered = root.filterText.trim() === ""
+        root.rebuildDisplay(unfiltered, false, unfiltered)
+      } else if (root.activeMenu === "root" && root.filterText.trim()) {
+        root.rebuildDisplay(false, false)
+      }
     }
   }
 

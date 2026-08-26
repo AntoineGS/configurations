@@ -435,7 +435,9 @@ function rowsHaveIcons(rows) {
   var values = Array.isArray(rows) ? rows : []
   for (var i = 0; i < values.length; i++) {
     var row = values[i] || {}
-    if (String(row.icon || "") !== "" || String(row.appIcon || "") !== "") return true
+    if (String(row.kind || "") === "application"
+        || String(row.icon || "") !== ""
+        || String(row.appIcon || "") !== "") return true
   }
   return false
 }
