@@ -32,8 +32,10 @@ Item {
   property var dmenuOptions: []
   property string requestDir: ""
   property string pendingAction: ""
+  property bool closingDetailsVisible: false
   property real animatedListHeight: listHeight
   property real measuredRouteContentWidth: 0
+  property real browseRouteContentWidth: 0
   property real animatedCardWidth: boundedCardWidth
   property bool hasVisibleIcons: false
   property bool hasVisibleChevrons: false
@@ -60,6 +62,8 @@ Item {
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
   readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
+  readonly property bool rowDetailsVisible: root.motionState !== "closed"
+    && (root.filterText.trim() !== "" || root.dmenuActive || root.closingDetailsVisible)
   readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
   readonly property bool surfaceVisible: menuReady
     && (opened || motionState !== "closed" || surfaceOpacity > 0)
@@ -179,12 +183,18 @@ Item {
   }
 
   function rebuildItems() {
+    var previousActiveMenu = root.activeMenu
     var merged = MenuModel.mergeMenuSources(root.menuItems, [])
     root.items = merged.items
     root.itemOrder = merged.itemOrder
     root.menuReady = true
     if (!root.item(root.activeMenu)) root.activeMenu = "root"
-    if (root.opened) root.rebuildDisplay(false, false)
+    var activeMenuChanged = previousActiveMenu !== root.activeMenu
+    if (root.opened && activeMenuChanged && root.filterText.trim() !== "")
+      root.cacheBrowseRouteWidth(root.browseRows(root.activeMenu))
+    if (root.opened && activeMenuChanged && root.filterText.trim() === "")
+      root.rebuildDisplay(true, false, true)
+    else if (root.opened) root.rebuildDisplay(false, false)
   }
 
   function applyMenuSource(raw) {
@@ -306,9 +316,24 @@ Item {
     return Math.max(rowWidth, fieldWidth)
   }
 
-  function captureRouteWidth(rows, snap) {
+  function browseRows(route) {
+    var rows = []
+    for (var i = 0; i < root.itemOrder.length; i++) {
+      var child = root.item(root.itemOrder[i])
+      if (!child || child.parent !== route || !root.isVisible(child)) continue
+      rows.push(root.displayRow(child, child.description, child.order, ""))
+    }
+    return rows
+  }
+
+  function cacheBrowseRouteWidth(rows) {
+    root.browseRouteContentWidth = root.measureRouteContent(rows)
+  }
+
+  function captureRouteWidth(rows, snap, cacheBrowseWidth) {
     root.preparingCardWidth = snap === true
     root.measuredRouteContentWidth = root.measureRouteContent(rows)
+    if (cacheBrowseWidth === true) root.browseRouteContentWidth = root.measuredRouteContentWidth
     if (snap === true) {
       root.animatedCardWidth = root.boundedCardWidth
       root.animatedCardWidth = Qt.binding(function() { return root.boundedCardWidth })
@@ -331,7 +356,7 @@ Item {
     root.preparingCardWidth = false
   }
 
-  function rebuildDisplay(captureWidth, snapWidth) {
+  function rebuildDisplay(captureWidth, snapWidth, cacheBrowseWidth) {
     if (!root.menuReady) {
       root.applyDisplayRows([])
       return
@@ -344,7 +369,7 @@ Item {
     if (root.dmenuActive) {
       var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
       root.applyDisplayRows(dmenuRows)
-      if (captureWidth === true) root.captureRouteWidth(dmenuRows, snapWidth === true)
+      if (captureWidth === true) root.captureRouteWidth(dmenuRows, snapWidth === true, false)
       root.settleCursor()
       if (root.menuMode === "input") root.cursorActive = false
       root.syncResultSelection()
@@ -366,11 +391,7 @@ Item {
         return left.path.localeCompare(right.path)
       })
     } else {
-      for (var j = 0; j < root.itemOrder.length; j++) {
-        var child = root.item(root.itemOrder[j])
-        if (!child || child.parent !== active || !root.isVisible(child)) continue
-        commandRows.push(root.displayRow(child, child.description, child.order, ""))
-      }
+      commandRows = root.browseRows(active)
     }
 
     var appRows = []
@@ -388,7 +409,8 @@ Item {
 
     var rows = MenuModel.composeSearchResults(commandRows, appRows, calculatorResult)
     root.applyDisplayRows(rows)
-    if (captureWidth === true) root.captureRouteWidth(rows, snapWidth === true)
+    if (captureWidth === true)
+      root.captureRouteWidth(rows, snapWidth === true, cacheBrowseWidth === true)
     root.settleCursor()
     Qt.callLater(root.syncResultSelection)
   }
@@ -414,11 +436,20 @@ Item {
   }
 
   function setFilter(nextFilter) {
+    var wasSearching = root.filterText.trim() !== ""
     root.filterText = String(nextFilter || "")
+    var isSearching = root.filterText.trim() !== ""
     root.selectedIndex = 0
     root.cursorActive = true
     if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
-    root.rebuildDisplay(false, false)
+    if (root.dmenuActive || wasSearching === isSearching) {
+      root.rebuildDisplay(false, false)
+    } else if (isSearching) {
+      root.rebuildDisplay(true, false, false)
+    } else {
+      root.rebuildDisplay(false, false)
+      root.measuredRouteContentWidth = root.browseRouteContentWidth
+    }
     Qt.callLater(function() {
       if (root.cursorActive && displayModel.count > 0)
         resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -444,7 +475,7 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
-    root.rebuildDisplay(true, false)
+    root.rebuildDisplay(true, false, true)
   }
 
   function goBack() {
@@ -508,7 +539,7 @@ Item {
     root.selectedIndex = 0
     root.cursorActive = true
     if (!firstMaterialization) root.opened = true
-    root.rebuildDisplay(true, firstMaterialization)
+    root.rebuildDisplay(true, firstMaterialization, true)
     if (firstMaterialization) {
       root.prepareCardHeight()
       root.opened = true
@@ -597,7 +628,7 @@ Item {
       if (generation !== root.readinessGeneration || !root.pendingCardFinalization
           || !root.menuReady || !root.opened) return
       root.pendingCardFinalization = false
-      root.rebuildDisplay(true, true)
+      root.rebuildDisplay(true, true, true)
       root.prepareCardHeight()
       root.beginOpenMotion()
       searchField.forceActiveFocus()
@@ -621,11 +652,13 @@ Item {
     root.searchOpacity = 0
     root.resultsOpacity = 0
     root.scrimOpacity = 0
+    root.closingDetailsVisible = false
     root.motionState = "closed"
   }
 
   function beginOpenMotion() {
     closeMotion.stop()
+    root.closingDetailsVisible = false
     if (root.motionState === "closed") {
       root.materialXScale = root.seedXScale
       root.materialYScale = root.seedYScale
@@ -646,6 +679,7 @@ Item {
   function beginCloseMotion() {
     openMotion.stop()
     if (root.motionState === "closed") return
+    root.closingDetailsVisible = root.filterText.trim() !== "" || root.dmenuActive
     root.closeTargetXScale = root.materialXScale * 0.98
     root.closeTargetYScale = root.materialYScale * 0.94
     root.motionState = "closing"
@@ -1184,7 +1218,7 @@ Item {
 
                       Text {
                         width: parent.width
-                        visible: row.detail !== "" && (root.filterText !== "" || root.dmenuActive)
+                        visible: row.detail !== "" && root.rowDetailsVisible
                         text: row.detail
                         color: root.secondaryForeground
                         opacity: 0.5
