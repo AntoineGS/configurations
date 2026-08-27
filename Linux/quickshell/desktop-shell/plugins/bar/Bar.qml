@@ -428,12 +428,14 @@ Item {
 
       property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
       property int hoverSafeInset: 0
+      property int shadowPadding: 24
+      property int shadowBottomPadding: shadowPadding + 4
 
       visible: root.tooltipShown && root.tooltipTarget !== null
         && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, barWindow)
       color: "transparent"
       implicitWidth: Math.ceil(tooltipBubble.implicitWidth) + elevationInset * 2
-      implicitHeight: Math.ceil(tooltipBubble.implicitHeight) + hoverSafeInset + elevationInset
+      implicitHeight: Math.ceil(tooltipBubble.implicitHeight) + shadowBottomPadding
       mask: Region { item: tooltipBubble }
 
       anchor {
@@ -455,44 +457,49 @@ Item {
         }
       }
 
-      ElevatedSurface {
-        id: tooltipBubble
-        x: tooltipWindow.elevationInset
-        y: tooltipWindow.hoverSafeInset
-        implicitWidth: tooltipLabel.implicitWidth + 20
-        implicitHeight: tooltipLabel.implicitHeight + 14
-        color: Color.barPanels.background
-        borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, 1)
-        radius: Style.popupOuterRadius
-        topLeftRadius: 0
-        topRightRadius: 0
-        bottomLeftRadius: Style.popupOuterRadius
-        bottomRightRadius: Style.popupOuterRadius
-        revealed: tooltipWindow.visible
-        concealedXScale: 1
-        concealedYScale: 0
-        scaleOriginX: width / 2
-        scaleOriginY: 0
+      Item {
+        id: tooltipFrame
+        width: tooltipWindow.implicitWidth
+        height: tooltipWindow.implicitHeight
+        clip: true
 
-        Text {
-          id: tooltipLabel
-          anchors.centerIn: parent
-          text: BarModel.tooltipDisplayText(root.tooltipText)
-          color: Color.tooltip.text
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
+        ElevatedSurface {
+          id: tooltipBubble
+          x: tooltipWindow.elevationInset
+          implicitWidth: tooltipLabel.implicitWidth + 20
+          implicitHeight: tooltipLabel.implicitHeight + 14
+          color: Color.barPanels.background
+          borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, 1)
+          radius: Style.popupOuterRadius
+          topLeftRadius: 0
+          topRightRadius: 0
+          bottomLeftRadius: Style.popupOuterRadius
+          bottomRightRadius: Style.popupOuterRadius
+          revealed: tooltipWindow.visible
+          concealedXScale: 1
+          concealedYScale: 0
+          scaleOriginX: width / 2
+          scaleOriginY: 0
+
+          Text {
+            id: tooltipLabel
+            anchors.centerIn: parent
+            text: BarModel.tooltipDisplayText(root.tooltipText)
+            color: Color.tooltip.text
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+          }
         }
-      }
 
-      BarAttachedShoulders {
-        z: 1
-        x: tooltipBubble.x - radius
-        y: tooltipBubble.y
-        bodyWidth: tooltipBubble.width
-        surfaceColor: tooltipBubble.color
-        revealProgress: tooltipBubble.revealProgress
+        BarAttachedShoulders {
+          z: 1
+          x: tooltipBubble.x - radius
+          bodyWidth: tooltipBubble.width
+          surfaceColor: tooltipBubble.color
+          revealProgress: tooltipBubble.revealProgress
+        }
       }
     }
   }

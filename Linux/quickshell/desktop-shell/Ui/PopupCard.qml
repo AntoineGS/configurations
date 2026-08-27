@@ -14,6 +14,8 @@ PopupWindow {
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
   property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
+  property int shadowPadding: 24
+  property int shadowBottomPadding: shadowPadding + 4
   property color borderColor: Color.barPanels.border
   property var borderSpec: Border.localOrSurfaceSpec("bar-panels", "border", borderColor,
     Color.barPanels.border, Math.max(1, Style.space(2)))
@@ -83,7 +85,7 @@ PopupWindow {
   visible: open || card.opacity > 0
   color: "transparent"
   implicitWidth: contentWidth + elevationInset * 2
-  implicitHeight: contentHeight + elevationInset * 2
+  implicitHeight: contentHeight + elevationInset + shadowBottomPadding
   mask: Region {
     Region { item: card }
     Region { item: shoulders }
@@ -171,47 +173,53 @@ PopupWindow {
     }
   }
 
-  ElevatedSurface {
-    id: card
-    x: root.elevationInset
+  Item {
+    id: cardFrame
+    x: root.elevationInset - root.shadowPadding
     y: root.elevationInset
-    width: root.contentWidth
-    height: root.contentHeight
-    color: Color.barPanels.background
-    borderSpec: root.borderSpec
-    padding: root.padding
-    radius: Style.popupOuterRadius
-    topLeftRadius: 0
-    topRightRadius: 0
-    bottomLeftRadius: Style.popupOuterRadius
-    bottomRightRadius: Style.popupOuterRadius
-    revealed: root.open
-    concealedXScale: 1
-    concealedYScale: 0
-    scaleOriginX: width / 2
-    scaleOriginY: 0
+    width: root.contentWidth + root.shadowPadding * 2
+    height: root.contentHeight + root.shadowBottomPadding
+    clip: true
 
-    Item {
-      id: contentHolder
-      anchors.fill: parent
-      anchors.topMargin: card.contentTopInset
-      anchors.rightMargin: card.contentRightInset
-      anchors.bottomMargin: card.contentBottomInset
-      anchors.leftMargin: card.contentLeftInset
+    ElevatedSurface {
+      id: card
+      x: root.shadowPadding
+      width: root.contentWidth
+      height: root.contentHeight
+      color: Color.barPanels.background
+      borderSpec: root.borderSpec
+      padding: root.padding
+      radius: Style.popupOuterRadius
+      topLeftRadius: 0
+      topRightRadius: 0
+      bottomLeftRadius: Style.popupOuterRadius
+      bottomRightRadius: Style.popupOuterRadius
+      revealed: root.open
+      concealedXScale: 1
+      concealedYScale: 0
+      scaleOriginX: width / 2
+      scaleOriginY: 0
+
+      Item {
+        id: contentHolder
+        anchors.fill: parent
+        anchors.topMargin: card.contentTopInset
+        anchors.rightMargin: card.contentRightInset
+        anchors.bottomMargin: card.contentBottomInset
+        anchors.leftMargin: card.contentLeftInset
+      }
+
+      HoverHandler {
+        id: cardHover
+      }
     }
 
-    HoverHandler {
-      id: cardHover
+    BarAttachedShoulders {
+      id: shoulders
+      z: 1
+      bodyWidth: card.width
+      surfaceColor: card.color
+      revealProgress: card.revealProgress
     }
-  }
-
-  BarAttachedShoulders {
-    id: shoulders
-    z: 1
-    x: card.x - radius
-    y: card.y
-    bodyWidth: card.width
-    surfaceColor: card.color
-    revealProgress: card.revealProgress
   }
 }
