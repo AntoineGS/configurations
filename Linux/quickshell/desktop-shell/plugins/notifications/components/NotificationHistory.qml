@@ -150,7 +150,6 @@ TopBarOverlay {
               timestamp: cardSlot.timestamp
               actions: []
               fontFamily: root.fontFamily
-              inkColor: Color.barPanels.text
               historyMode: true
               keyboardSelected: cardSlot.focused
               actionAvailable: cardSlot.actionAvailable
