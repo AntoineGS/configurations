@@ -24,7 +24,7 @@ BorderSurface {
   property color fill: Style.hoverFillFor(foreground, accent)
   property color currentFill: Style.selectedFillFor(foreground, accent)
 
-  radius: Style.cornerRadius
+  radius: Style.popupInnerRadius
 
   color: hasCursor ? fill : (current ? currentFill : "transparent")
   borderSpec: root.hasCursor

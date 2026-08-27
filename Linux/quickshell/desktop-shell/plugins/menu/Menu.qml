@@ -998,7 +998,12 @@ Item {
         x: root.shadowPadding
         width: root.animatedCardWidth
         height: root.cardHeight
+        radius: Style.popupOuterRadius
         padding: root.contentMargin
+        topLeftRadius: root.topBarHeight > 0 ? 0 : Style.popupOuterRadius
+        topRightRadius: root.topBarHeight > 0 ? 0 : Style.popupOuterRadius
+        bottomLeftRadius: Style.popupOuterRadius
+        bottomRightRadius: Style.popupOuterRadius
         revealed: true
         motionEnabled: false
 
@@ -1245,6 +1250,16 @@ Item {
           }
         }
       }
+    }
+
+    BarAttachedShoulders {
+      z: 1
+      visible: root.topBarHeight > 0
+      x: Math.round(panel.width / 2 - root.animatedCardWidth / 2 - radius)
+      y: root.cardTop
+      bodyWidth: root.animatedCardWidth
+      surfaceColor: Color.barPanels.background
+      revealProgress: root.materialYScale
     }
   }
 }

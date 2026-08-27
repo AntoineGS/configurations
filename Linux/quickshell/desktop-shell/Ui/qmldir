@@ -1,6 +1,7 @@
 module qs.Ui
 
 AnimatedListView 1.0 AnimatedListView.qml
+BarAttachedShoulders 1.0 BarAttachedShoulders.qml
 BarIndicator 1.0 BarIndicator.qml
 BarIconButton 1.0 BarIconButton.qml
 BarMetricButton 1.0 BarMetricButton.qml

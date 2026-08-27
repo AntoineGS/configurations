@@ -71,7 +71,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         color: "transparent"
         borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
-        radius: Style.cornerRadius
+        radius: Style.popupInnerRadius
 
         Text {
           id: detailText

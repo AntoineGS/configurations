@@ -294,7 +294,7 @@ Panel {
                 anchors.rightMargin: Style.space(12)
                 anchors.verticalCenter: parent.verticalCenter
                 height: Style.space(6)
-                radius: Style.cornerRadius > 0 ? height / 2 : 0
+                radius: Style.popupInnerRadius > 0 ? height / 2 : 0
                 color: Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.12)
 
                 Rectangle {
@@ -344,7 +344,7 @@ Panel {
                 Rectangle {
                   width: root.weekColumnWidth
                   height: Style.space(16)
-                  radius: Style.cornerRadius
+                  radius: Style.popupInnerRadius
                   color: weekStartMouse.containsMouse
                     ? Style.hoverFillFor(root.contentForeground, Color.accent)
                     : "transparent"
@@ -431,7 +431,7 @@ Panel {
 
                       width: root.cellWidth
                       height: root.cellHeight
-                      radius: Style.cornerRadius
+                      radius: Style.popupInnerRadius
                       // Today is outlined, not filled: a lit-up block shouts
                       // over a grid this quiet.
                       color: "transparent"

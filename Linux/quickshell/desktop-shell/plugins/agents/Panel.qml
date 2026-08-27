@@ -499,7 +499,7 @@ Panel {
             implicitHeight: statusText.implicitHeight + Style.spacing.xl * 2
             color: root.alpha(root.urgent, 0.10)
             borderSpec: Border.flat(root.alpha(root.urgent, 0.35), 1)
-            radius: Style.cornerRadius
+            radius: Style.popupInnerRadius
 
             Text {
               id: statusText
@@ -809,7 +809,7 @@ Panel {
 
     Rectangle {
       anchors.fill: parent
-      radius: Style.cornerRadius
+      radius: Style.popupInnerRadius
       color: root.alpha(root.foreground, 0.05)
     }
 
@@ -818,7 +818,7 @@ Panel {
       anchors.top: parent.top
       anchors.bottom: parent.bottom
       width: parent.width * root.clamp(modelRow.share, 0, 1)
-      radius: Style.cornerRadius
+      radius: Style.popupInnerRadius
       color: root.alpha(root.foreground, 0.14)
 
       Behavior on width {

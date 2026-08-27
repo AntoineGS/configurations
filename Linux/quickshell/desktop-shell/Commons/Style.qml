@@ -30,6 +30,8 @@ QtObject {
 
   property int cornerRadius: 0
   property int gapsOut: 5
+  readonly property int popupOuterRadius: 24
+  readonly property int popupInnerRadius: 12
 
   // ---------------------------------------------------------- state tokens
   //

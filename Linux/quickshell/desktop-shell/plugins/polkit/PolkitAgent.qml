@@ -556,6 +556,7 @@ Item {
           TextField {
             id: passwordInput
             anchors.fill: parent
+            cornerRadius: Style.cornerRadius
             foreground: root.errorFlash ? Color.polkit.textError : root.foreground
             accent: root.errorFlash ? Color.polkit.textError : root.accent
             placeholderText: root.errorFlash ? "Wrong" : (root.submitted ? "Checking..." : "Enter password")

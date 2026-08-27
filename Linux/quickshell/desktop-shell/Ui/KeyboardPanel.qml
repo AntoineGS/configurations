@@ -44,11 +44,11 @@ PanelWindow {
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
-  property int elevationInset: Style.space(24)
+  property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
   property alias borderSpec: card.borderSpec
   property bool centerOnBar: false
   property bool open: false
-  property int gap: Style.gapsOut  // distance between bar edge and panel
+  property int gap: 0
   property bool popoutSwitching: false
   property bool popoutSwitchClosing: false
   property bool focusPrimed: false
@@ -396,9 +396,16 @@ PanelWindow {
     width: root.contentWidth
     height: root.contentHeight
     padding: root.padding
+    radius: Style.popupOuterRadius
+    topLeftRadius: 0
+    topRightRadius: 0
+    bottomLeftRadius: Style.popupOuterRadius
+    bottomRightRadius: Style.popupOuterRadius
     revealed: root.open || root.popoutSwitching
-    entranceX: root.entranceX
-    entranceY: root.entranceY
+    concealedXScale: 1
+    concealedYScale: 0
+    scaleOriginX: width / 2
+    scaleOriginY: 0
     motionEnabled: !root.popoutSwitching && !root.popoutSwitchClosing
 
     // Swallow clicks on the card so they don't bubble to the dismissal
@@ -422,5 +429,14 @@ PanelWindow {
         NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
       }
     }
+  }
+
+  BarAttachedShoulders {
+    z: 1
+    x: card.x - radius
+    y: card.y
+    bodyWidth: card.width
+    surfaceColor: card.color
+    revealProgress: card.revealProgress
   }
 }

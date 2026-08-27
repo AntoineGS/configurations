@@ -49,7 +49,7 @@ BorderSurface {
 
   implicitWidth: size
   implicitHeight: size
-  radius: Style.cornerRadius
+  radius: Style.popupInnerRadius
 
   readonly property bool _showFocusRing: focusable && activeFocus
   readonly property bool _hot: (mouse.containsMouse || root.hasCursor) && root.enabled

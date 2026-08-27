@@ -67,7 +67,7 @@ Item {
       id: trigger
       width: parent.width
       height: root.rowHeight
-      radius: Style.cornerRadius
+      radius: Style.popupInnerRadius
 
       readonly property bool focused: trigger.activeFocus
       readonly property bool hot: triggerHover.hovered || root.hasCursor
@@ -149,7 +149,7 @@ Item {
         background: BorderSurface {
           color: root.background
           borderSpec: root.popupBorderSpec
-          radius: Style.cornerRadius
+          radius: Style.popupInnerRadius
         }
 
         onOpened: {

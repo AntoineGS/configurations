@@ -18,12 +18,12 @@ import qs.Commons
 ToolTip {
   id: root
 
-  property color panelForeground: Color.tooltip.text
-  property color panelBackground: Color.tooltip.background
-  property color panelBorder: Color.tooltip.border
+  property color panelForeground: Color.barPanels.text
+  property color panelBackground: Color.barPanels.background
+  property color panelBorder: Color.barPanels.border
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.bodySmall
-  property int elevationInset: Style.space(24)
+  property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
 
   readonly property var panelBorderSpec: Border.localOrSurfaceSpec("tooltip", "border", panelBorder, Color.tooltip.border, Style.normalBorderWidth)
 
@@ -40,9 +40,12 @@ ToolTip {
     height: root.height - root.elevationInset * 2
     color: root.panelBackground
     borderSpec: root.panelBorderSpec
-    radius: Style.cornerRadius
+    radius: Style.popupOuterRadius
     revealed: root.visible
-    entranceY: -Style.space(6)
+    concealedXScale: 1
+    concealedYScale: 0
+    scaleOriginX: width / 2
+    scaleOriginY: 0
   }
 
   contentItem: Text {
