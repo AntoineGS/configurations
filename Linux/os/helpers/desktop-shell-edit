@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s <menu|action|application> <id>\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# == 2 )) || usage
+
+kind=$1
+id=$2
+shell_root=${DESKTOP_SHELL_ROOT:-"$HOME/.config/quickshell/desktop-shell"}
+target=
+desktop_id=
+
+valid_id() {
+  [[ $1 =~ ^[a-z0-9]+([.-][a-z0-9-]+)*$ ]]
+}
+
+resolve_command() {
+  command -v "$1" 2>/dev/null || return 1
+}
+
+resolve_desktop_entry() {
+  local desktop_id=$1
+  local data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+  local data_dirs=${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
+  local base applications_dir candidate relative candidate_id
+  local -a roots=("$data_home")
+
+  IFS=: read -r -a system_roots <<<"$data_dirs"
+  roots+=("${system_roots[@]}")
+
+  for base in "${roots[@]}"; do
+    [[ -n $base ]] || continue
+    applications_dir=$base/applications
+    candidate=$applications_dir/$desktop_id.desktop
+    if [[ -f $candidate ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    [[ -d $applications_dir ]] || continue
+    while IFS= read -r -d '' candidate; do
+      relative=${candidate#"$applications_dir/"}
+      candidate_id=${relative%.desktop}
+      candidate_id=${candidate_id//\//-}
+      if [[ $candidate_id == "$desktop_id" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    done < <(find -L "$applications_dir" -type f -name '*.desktop' -print0 2>/dev/null)
+  done
+
+  return 1
+}
+
+resolve_plugin_entry() {
+  local plugin_id=$1
+  local plugins_dir=${DESKTOP_SHELL_PLUGINS_DIR:-"$HOME/.config/omarchy/plugins"}
+  local plugin_dir=$plugins_dir/$plugin_id
+  local manifest=$plugin_dir/manifest.json
+  local entry
+
+  [[ -f $manifest ]] || return 1
+  entry=$(jq -r '
+    .entryPoints.menu
+      // .entryPoints.overlay
+      // .entryPoints.panel
+      // .entryPoints.service
+      // .entryPoints.barWidget
+      // .entryPoints.bar
+      // empty
+  ' "$manifest")
+  [[ $entry =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && $entry != *..* ]] || return 1
+  [[ -f $plugin_dir/$entry ]] || return 1
+  printf '%s\n' "$plugin_dir/$entry"
+}
+
+resolve_action() {
+  local action_id=$1
+  local command_name=
+
+  case $action_id in
+    setup.audio)         target=$shell_root/plugins/panels/audio/Panel.qml ;;
+    setup.wifi)          target=$shell_root/plugins/panels/network/Panel.qml ;;
+    setup.bluetooth)     target=$shell_root/plugins/panels/bluetooth/Panel.qml ;;
+    setup.power-profile) target=$shell_root/plugins/panels/power/Panel.qml ;;
+    setup.monitors)      target=$shell_root/plugins/panels/monitor/Panel.qml ;;
+    setup.shell-config)  target=$shell_root/config/shell.json ;;
+    install.plugin-marketplace)
+      target=$(resolve_plugin_entry io.yasino55.omarchy-plugin-marketplace) || target=
+      ;;
+
+    trigger.screenshot)       command_name=cmd-screenshot ;;
+    trigger.screenrecord)     command_name=cmd-screenrecord ;;
+    trigger.share-clipboard|trigger.share-file|trigger.share-folder)
+      command_name=cmd-share
+      ;;
+    trigger.toggle.top-bar)          command_name=toggle-desktop-shell-bar ;;
+    trigger.toggle.window-gaps)      command_name=hyprland-window-gaps-toggle ;;
+    trigger.toggle.window-ratio)     command_name=hyprland-window-single-square-aspect-toggle ;;
+    trigger.toggle.workspace-layout) command_name=hyprland-workspace-layout-toggle ;;
+    trigger.toggle.nightlight)       command_name=toggle-nightlight ;;
+    trigger.toggle.idle-lock)        command_name=toggle-idle ;;
+    trigger.turn-off-screens)        command_name=turn-off-screens ;;
+    trigger.start-all-terminals)     command_name=start-all-terminals ;;
+    setup.dns)                       command_name=setup-dns ;;
+    setup.security)                  command_name=setup-fingerprint ;;
+    setup.keybindings)               command_name=menu-keybindings ;;
+    setup.cycle-display-scaling)     command_name=hyprland-monitor-scaling-cycle ;;
+    setup.audio-tui)                 command_name=launch-audio ;;
+    setup.wifi-tui)                  command_name=launch-wifi ;;
+    setup.bluetooth-tui)             command_name=launch-bluetooth ;;
+    install.package)                 command_name=pkg-install ;;
+    install.aur)                     command_name=pkg-aur-install ;;
+    remove.package)                  command_name=pkg-remove ;;
+    update.system)                   command_name=update ;;
+    update.audio)                    command_name=restart-pipewire ;;
+    update.wifi)                     command_name=restart-wifi ;;
+    update.bluetooth)                command_name=restart-bluetooth ;;
+    update.shell-reload)             command_name=desktop-shell ;;
+    system.lock)                     command_name=lock-screen ;;
+    system.suspend-in|system.close-rustdesk-in)
+      command_name=desktop-shell-prompt-action
+      ;;
+    system.logout)                   command_name=system-logout ;;
+    system.reboot)                   command_name=system-reboot ;;
+    system.shutdown)                 command_name=system-shutdown ;;
+  esac
+
+  if [[ -n $command_name ]]; then
+    target=$(resolve_command "$command_name") || target=
+  fi
+  if [[ -z $target ]]; then
+    target=$(resolve_command desktop-shell-action) || return 1
+  fi
+}
+
+case $kind in
+  menu)
+    valid_id "$id" || usage
+    target=$shell_root/config/menu.jsonc
+    ;;
+  action)
+    valid_id "$id" || usage
+    resolve_action "$id"
+    ;;
+  application)
+    desktop_id=${id%.desktop}
+    [[ $desktop_id =~ ^[A-Za-z0-9][^/[:cntrl:]]*$ ]] || usage
+    target=$(resolve_desktop_entry "$desktop_id")
+    ;;
+  *) usage ;;
+esac
+
+[[ -f $target || -x $target ]] || exit 1
+exec launch-editor "$target"

@@ -514,6 +514,29 @@ Item {
     }
   }
 
+  function editIndex(index) {
+    if (!root.rowSelectable(index)) return false
+    var row = displayModel.get(index)
+    var kind = ""
+    var id = ""
+    if (row.kind === "menu" || row.kind === "link") {
+      kind = "menu"
+      id = row.itemId
+    } else if (row.kind === "action") {
+      kind = "action"
+      id = row.action
+    } else if (row.kind === "application") {
+      kind = "application"
+      id = row.desktopId
+    } else {
+      return false
+    }
+
+    root.close()
+    Quickshell.execDetached(["desktop-shell-edit", kind, id])
+    return true
+  }
+
   function applySelected(action) {
     if (!MenuModel.isOpaqueActionId(action) || actionProcess.running || root.pendingAction) return
     root.pendingAction = String(action)
@@ -820,7 +843,10 @@ Item {
 
       Keys.onPressed: function(event) {
         var control = event.modifiers & Qt.ControlModifier
-        if (control && event.key === Qt.Key_H) {
+        if (control && event.key === Qt.Key_E
+            && root.cursorActive && root.editIndex(root.selectedIndex)) {
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_H) {
           root.goBack()
           event.accepted = true
         } else if (control && event.key === Qt.Key_J) {
