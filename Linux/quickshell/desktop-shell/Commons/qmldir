@@ -5,3 +5,4 @@ singleton Motion 1.0 Motion.qml
 singleton PopupMotion 1.0 PopupMotion.qml
 singleton Style 1.0 Style.qml
 singleton Util 1.0 Util.qml
+singleton TopBarOverlayCoordinator 1.0 TopBarOverlayCoordinator.qml

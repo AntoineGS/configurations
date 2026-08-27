@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "MenuModel.js" as MenuModel
@@ -33,6 +32,7 @@ Item {
   property string requestDir: ""
   property string pendingAction: ""
   property bool closingDetailsVisible: false
+  property bool overlayContentReady: false
   property real animatedListHeight: listHeight
   property real measuredRouteContentWidth: 0
   property real browseRouteContentWidth: 0
@@ -43,33 +43,20 @@ Item {
   property real iconColumnGap: hasVisibleIcons ? Style.space(8) : 0
   property real chevronColumnWidth: hasVisibleChevrons ? Style.space(14) : 0
   property real chevronColumnGap: hasVisibleChevrons ? Style.space(8) : 0
-  property string motionState: "closed"
-  property real materialYScale: 0
-  property real surfaceOpacity: 0
-  property real searchOpacity: 0
-  property real resultsOpacity: 0
-  property real scrimOpacity: 0
   property bool preparingCardHeight: false
   property bool routeWidthReady: false
   property bool preparingCardWidth: false
   property bool pendingCardFinalization: false
   property int readinessGeneration: 0
-  property bool listTransitionsEnabled: motionState === "open"
 
   readonly property var appLibrary: root.shell ? root.shell.appLibrary : null
   readonly property string applicationsMenuId: "applications"
   readonly property bool dmenuActive: root.menuMode === "input" || root.menuMode === "select"
-  readonly property bool rowDetailsVisible: root.motionState !== "closed"
+  readonly property bool rowDetailsVisible: panel.motionState !== "closed"
     && (root.filterText.trim() !== "" || root.dmenuActive || root.closingDetailsVisible)
+  readonly property bool listTransitionsEnabled: panel.motionState === "open"
   readonly property bool requestActive: root.dmenuActive && root.requestDir !== ""
-  readonly property bool surfaceVisible: menuReady
-    && (opened || motionState !== "closed" || surfaceOpacity > 0)
-  readonly property real topBarHeight: root.shell && root.shell.barVisible === false ? 0
-    : root.shell && root.shell.bar && Number(root.shell.bar.barSize) > 0
-      ? Number(root.shell.bar.barSize) : Style.space(28)
   readonly property real topSpacing: 12
-  readonly property real shadowPadding: 24
-  readonly property real shadowBottomPadding: root.shadowPadding + 4
 
   readonly property var routeWidgets: ({
     "setup.power-profile": "desktop.power",
@@ -82,7 +69,6 @@ Item {
   readonly property color foreground: Color.barPanels.text
   readonly property color secondaryForeground: Color.barPanels.secondaryText
   readonly property color accent: Color.accent
-  readonly property color scrim: Color.modal.scrim
   readonly property string fontFamily: Style.font.family
   readonly property int contentMargin: Style.spacing.popupPadding
   readonly property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.rowPaddingX * 2)
@@ -100,15 +86,8 @@ Item {
   readonly property real desiredCardHeight: root.topSpacing + root.contentMargin * 2 + Style.space(54)
     + root.animatedListHeight
     + (root.healthSummary ? Style.space(24) : 0)
-  readonly property real availableCardHeight: MenuModel.launcherCardAvailableHeight(
-    panel.height, Style.gapsOut, root.topBarHeight, 0)
-  readonly property real cardHeight: panel.height > 0
-    ? Math.min(root.desiredCardHeight, root.availableCardHeight)
-    : root.desiredCardHeight
-  readonly property real cardTop: MenuModel.launcherCardTop(
-    panel.height, root.cardHeight, Style.gapsOut, root.topBarHeight, 0)
   readonly property real listViewportHeight: Math.min(root.animatedListHeight, Math.max(0,
-    root.cardHeight - root.topSpacing - root.contentMargin * 2 - Style.space(54)
+    panel.cardHeight - root.topSpacing - root.contentMargin * 2 - Style.space(54)
       - (root.healthSummary ? Style.space(24) : 0)))
 
   function prepareCardHeight() {
@@ -551,7 +530,7 @@ Item {
   }
 
   function openExistingMenu(initialMenu) {
-    var firstMaterialization = !root.surfaceVisible
+    var firstMaterialization = !panel.visible
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = "menu"
     root.dmenuPrompt = ""
@@ -562,18 +541,17 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.cursorActive = true
+    root.closingDetailsVisible = false
+    if (firstMaterialization) root.overlayContentReady = false
     if (!firstMaterialization) root.opened = true
     root.rebuildDisplay(true, firstMaterialization, true)
-    if (firstMaterialization) {
-      root.prepareCardHeight()
-      root.opened = true
-    }
+    if (firstMaterialization) root.opened = true
     if (root.appLibrary) root.appLibrary.refreshIcons()
-    Qt.callLater(function() { searchField.forceActiveFocus() })
+    if (!firstMaterialization) Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
   function openDmenu(payload) {
-    var firstMaterialization = !root.surfaceVisible
+    var firstMaterialization = !panel.visible
     if (root.requestActive) root.finishRequest(null)
     root.menuMode = payload.mode === "input" ? "input" : "select"
     root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
@@ -585,13 +563,12 @@ Item {
     root.filterText = root.menuMode === "input" ? String(payload.initial || "") : ""
     root.selectedIndex = 0
     root.cursorActive = root.menuMode === "select"
+    root.closingDetailsVisible = false
+    if (firstMaterialization) root.overlayContentReady = false
     if (!firstMaterialization) root.opened = true
     root.rebuildDisplay(true, firstMaterialization)
-    if (firstMaterialization) {
-      root.prepareCardHeight()
-      root.opened = true
-    }
-    Qt.callLater(function() { searchField.forceActiveFocus() })
+    if (firstMaterialization) root.opened = true
+    if (!firstMaterialization) Qt.callLater(function() { searchField.forceActiveFocus() })
     return "ok"
   }
 
@@ -631,6 +608,8 @@ Item {
   function close() {
     if (root.requestActive) root.finishRequest(null)
     root.invalidateReadinessFinalization()
+    root.closingDetailsVisible = root.closingDetailsVisible
+      || root.filterText.trim() !== "" || root.dmenuActive
     root.opened = false
     root.filterText = ""
     root.calculatorFocused = false
@@ -654,57 +633,9 @@ Item {
       root.pendingCardFinalization = false
       root.rebuildDisplay(true, true, true)
       root.prepareCardHeight()
-      root.beginOpenMotion()
+      root.overlayContentReady = true
       searchField.forceActiveFocus()
     })
-  }
-
-  function settleOpenMotion() {
-    root.materialYScale = 1
-    root.surfaceOpacity = 1
-    root.searchOpacity = 1
-    root.resultsOpacity = 1
-    root.scrimOpacity = 1
-    root.motionState = "open"
-  }
-
-  function settleClosedMotion() {
-    root.surfaceOpacity = 0
-    root.searchOpacity = 0
-    root.resultsOpacity = 0
-    root.scrimOpacity = 0
-    root.closingDetailsVisible = false
-    root.motionState = "closed"
-  }
-
-  function beginOpenMotion() {
-    closeMotion.stop()
-    root.closingDetailsVisible = false
-    if (root.motionState === "closed") {
-      root.materialYScale = 0
-      root.surfaceOpacity = 1
-      root.searchOpacity = 0
-      root.resultsOpacity = 0
-      root.scrimOpacity = 0
-    }
-    root.motionState = "opening"
-    if (!Motion.enabled) {
-      root.settleOpenMotion()
-      return
-    }
-    openMotion.restart()
-  }
-
-  function beginCloseMotion() {
-    openMotion.stop()
-    if (root.motionState === "closed") return
-    root.closingDetailsVisible = root.filterText.trim() !== "" || root.dmenuActive
-    root.motionState = "closing"
-    if (!Motion.enabled) {
-      root.settleClosedMotion()
-      return
-    }
-    closeMotion.restart()
   }
 
   onWhenResultsChanged: if (root.opened) root.rebuildDisplay(false, false)
@@ -713,16 +644,22 @@ Item {
 
   onOpenedChanged: {
     if (root.opened) {
-      if (root.menuReady) root.beginOpenMotion()
+      if (root.menuReady && !root.overlayContentReady) root.scheduleReadinessFinalization()
     } else {
       root.invalidateReadinessFinalization()
-      root.beginCloseMotion()
     }
   }
 
   onMenuReadyChanged: {
     if (!root.menuReady || !root.opened) return
     root.scheduleReadinessFinalization()
+  }
+
+  Connections {
+    target: panel
+    function onMotionStateChanged() {
+      if (panel.motionState === "closed") root.closingDetailsVisible = false
+    }
   }
 
   Connections {
@@ -743,8 +680,6 @@ Item {
 
     function onEnabledChanged() {
       if (Motion.enabled) return
-      openMotion.stop()
-      closeMotion.stop()
       root.settleCardWidth()
       root.iconColumnWidth = root.hasVisibleIcons ? Style.space(28) : 0
       root.iconColumnWidth = Qt.binding(function() {
@@ -762,12 +697,6 @@ Item {
       root.chevronColumnGap = Qt.binding(function() {
         return root.hasVisibleChevrons ? Style.space(8) : 0
       })
-      if (root.opened && (!root.menuReady || root.pendingCardFinalization)) {
-        root.motionState = "closed"
-      } else if (root.opened) {
-        root.settleOpenMotion()
-      }
-      else root.settleClosedMotion()
     }
   }
 
@@ -802,82 +731,6 @@ Item {
       var action = root.pendingAction
       root.pendingAction = ""
       root.runAction(action)
-    }
-  }
-
-  ParallelAnimation {
-    id: openMotion
-
-    onFinished: root.settleOpenMotion()
-
-    NumberAnimation {
-      target: root
-      property: "materialYScale"
-      to: 1
-      duration: PopupMotion.surfaceOpenDuration
-      easing.type: PopupMotion.surfaceOpenEasing
-    }
-    SequentialAnimation {
-      PauseAnimation { duration: PopupMotion.menuSearchOpenDelay }
-      NumberAnimation {
-        target: root
-        property: "searchOpacity"
-        to: 1
-        duration: PopupMotion.menuSearchOpenDuration
-        easing.type: PopupMotion.menuContentOpenEasing
-      }
-    }
-    SequentialAnimation {
-      PauseAnimation { duration: PopupMotion.menuResultsOpenDelay }
-      NumberAnimation {
-        target: root
-        property: "resultsOpacity"
-        to: 1
-        duration: PopupMotion.menuResultsOpenDuration
-        easing.type: PopupMotion.menuContentOpenEasing
-      }
-    }
-    NumberAnimation {
-      target: root
-      property: "scrimOpacity"
-      to: 1
-      duration: PopupMotion.surfaceOpenDuration
-      easing.type: PopupMotion.menuScrimEasing
-    }
-  }
-
-  ParallelAnimation {
-    id: closeMotion
-
-    onFinished: root.settleClosedMotion()
-
-    NumberAnimation {
-      target: root
-      property: "searchOpacity"
-      to: 0
-      duration: PopupMotion.menuSearchCloseDuration
-      easing.type: PopupMotion.menuContentCloseEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "resultsOpacity"
-      to: 0
-      duration: PopupMotion.menuResultsCloseDuration
-      easing.type: PopupMotion.menuContentCloseEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "materialYScale"
-      to: 0
-      duration: PopupMotion.surfaceCloseDuration
-      easing.type: PopupMotion.surfaceCloseEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "scrimOpacity"
-      to: 0
-      duration: PopupMotion.surfaceCloseDuration
-      easing.type: PopupMotion.menuScrimEasing
     }
   }
 
@@ -938,154 +791,84 @@ Item {
     onFileChanged: reload()
   }
 
-  PanelWindow {
+  TopBarOverlay {
     id: panel
-    visible: root.surfaceVisible
-    color: "transparent"
-    mask: Region { item: root.opened ? scrimSurface : null }
-    exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.namespace: "desktop-menu"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened
-      ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    overlayId: "desktop.menu"
+    layerNamespace: "desktop-menu"
+    shell: root.shell
+    opened: root.opened
+    contentReady: root.menuReady && root.overlayContentReady
+    requestedCardWidth: root.animatedCardWidth
+    requestedCardHeight: root.desiredCardHeight
+    headerHeight: Style.space(34)
+    contentSpacing: Style.space(10)
+    contentPadding: root.contentMargin
+    topSpacing: root.topSpacing
+    onDismissRequested: root.close()
 
-    anchors {
-      top: true
-      bottom: true
-      left: true
-      right: true
-    }
+    headerData: TextField {
+      id: searchField
+      width: parent.width
+      height: Style.space(34)
+      text: root.filterText
+      placeholderText: root.searchPlaceholder
+      foreground: root.foreground
+      accent: root.accent
+      font.family: root.fontFamily
+      Keys.priority: Keys.BeforeItem
+      onTextEdited: if (text !== root.filterText) root.setFilter(text)
 
-    Rectangle {
-      id: scrimSurface
-
-      anchors {
-        top: parent.top
-        topMargin: root.topBarHeight
-        bottom: parent.bottom
-        left: parent.left
-        right: parent.right
-      }
-      color: root.scrim
-      opacity: root.scrimOpacity
-
-      MouseArea {
-        anchors.fill: parent
-        enabled: root.opened
-        onClicked: root.close()
-      }
-    }
-
-    Item {
-      id: cardFrame
-
-      width: root.animatedCardWidth + root.shadowPadding * 2
-      height: root.cardHeight + root.shadowBottomPadding
-      anchors.horizontalCenter: parent.horizontalCenter
-      y: root.cardTop
-      opacity: root.surfaceOpacity
-      clip: true
-
-      transform: Scale {
-        origin.x: cardFrame.width / 2
-        origin.y: 0
-        yScale: root.materialYScale
-      }
-
-      PanelSurface {
-        id: card
-
-        x: root.shadowPadding
-        width: root.animatedCardWidth
-        height: root.cardHeight
-        radius: Style.popupOuterRadius
-        padding: root.contentMargin
-        topLeftRadius: root.topBarHeight > 0 ? 0 : Style.popupOuterRadius
-        topRightRadius: root.topBarHeight > 0 ? 0 : Style.popupOuterRadius
-        bottomLeftRadius: Style.popupOuterRadius
-        bottomRightRadius: Style.popupOuterRadius
-        revealed: true
-        motionEnabled: false
-
-        MouseArea {
-          anchors.fill: parent
-          onClicked: {}
+      Keys.onPressed: function(event) {
+        var control = event.modifiers & Qt.ControlModifier
+        if (control && event.key === Qt.Key_H) {
+          root.goBack()
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_J) {
+          root.select(1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_K) {
+          root.select(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_L) {
+          if (root.cursorActive) root.activateIndex(root.selectedIndex)
+          else root.settleCursor()
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_U) {
+          root.selectHalfPage(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_D) {
+          root.selectHalfPage(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          if (root.filterText) root.setFilter("")
+          else if (!root.goBack()) root.close()
+          event.accepted = true
+        } else if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Left) && !root.filterText) {
+          root.goBack()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Up) {
+          root.select(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Down) {
+          root.select(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
+          if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
+          else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+          else root.settleCursor()
+          event.accepted = true
         }
+      }
+    }
 
-        Item {
-          id: content
-          anchors {
-            fill: parent
-            leftMargin: card.padding
-            rightMargin: card.padding
-            topMargin: card.padding + root.topSpacing
-            bottomMargin: card.padding
-          }
+    Column {
+      width: parent.width
+      height: implicitHeight
+      spacing: Style.space(10)
 
-        Column {
-          anchors.fill: parent
-          spacing: Style.space(10)
-
-          TextField {
-            id: searchField
-            width: parent.width
-            height: Style.space(34)
-            text: root.filterText
-            placeholderText: root.searchPlaceholder
-            foreground: root.foreground
-            accent: root.accent
-            opacity: root.searchOpacity
-            font.family: root.fontFamily
-            Keys.priority: Keys.BeforeItem
-            onTextEdited: if (text !== root.filterText) root.setFilter(text)
-
-            Keys.onPressed: function(event) {
-              var control = event.modifiers & Qt.ControlModifier
-              if (control && event.key === Qt.Key_H) {
-                root.goBack()
-                event.accepted = true
-              } else if (control && event.key === Qt.Key_J) {
-                root.select(1)
-                event.accepted = true
-              } else if (control && event.key === Qt.Key_K) {
-                root.select(-1)
-                event.accepted = true
-              } else if (control && event.key === Qt.Key_L) {
-                if (root.cursorActive) root.activateIndex(root.selectedIndex)
-                else root.settleCursor()
-                event.accepted = true
-              } else if (control && event.key === Qt.Key_U) {
-                root.selectHalfPage(-1)
-                event.accepted = true
-              } else if (control && event.key === Qt.Key_D) {
-                root.selectHalfPage(1)
-                event.accepted = true
-              } else if (event.key === Qt.Key_Escape) {
-                if (root.filterText) root.setFilter("")
-                else if (!root.goBack()) root.close()
-                event.accepted = true
-              } else if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Left) && !root.filterText) {
-                root.goBack()
-                event.accepted = true
-              } else if (event.key === Qt.Key_Up) {
-                root.select(-1)
-                event.accepted = true
-              } else if (event.key === Qt.Key_Down) {
-                root.select(1)
-                event.accepted = true
-              } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Right) {
-                if (root.dmenuActive && root.menuMode === "input") root.finishRequest(root.filterText)
-                else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-                else root.settleCursor()
-                event.accepted = true
-              }
-            }
-          }
-
-          Item {
-            width: parent.width
-            height: root.listViewportHeight
-            opacity: root.resultsOpacity
+      Item {
+        width: parent.width
+        height: root.listViewportHeight
 
             AnimatedListView {
               id: resultList
@@ -1238,26 +1021,16 @@ Item {
             }
           }
 
-          Text {
-            width: parent.width
-            visible: root.healthSummary !== ""
-            text: root.healthSummary
-            color: root.secondaryForeground
-            opacity: 0.75 * root.resultsOpacity
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            elide: Text.ElideRight
-          }
-        }
+      Text {
+        width: parent.width
+        visible: root.healthSummary !== ""
+        text: root.healthSummary
+        color: root.secondaryForeground
+        opacity: 0.75
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
       }
     }
-
-    BarAttachedShoulders {
-      z: 1
-      visible: root.topBarHeight > 0
-      bodyWidth: root.animatedCardWidth
-      surfaceColor: Color.barPanels.background
-    }
   }
-}
 }

@@ -6,8 +6,8 @@ BarWidget {
   id: root
   moduleName: "desktop.menu"
 
-  function openRoot() {
-    Quickshell.execDetached(["desktop-shell", "summon", "desktop.menu", "{\"menu\":\"root\"}"])
+  function toggleRoot() {
+    Quickshell.execDetached(["desktop-shell", "toggle", "desktop.menu", "{\"menu\":\"root\"}"])
   }
 
   function openTerminal() {
@@ -26,7 +26,7 @@ BarWidget {
 
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) root.openTerminal()
-      else if (buttonCode === Qt.LeftButton) root.openRoot()
+      else if (buttonCode === Qt.LeftButton) root.toggleRoot()
     }
   }
 }

@@ -1984,6 +1984,7 @@ Item {
   }
 
   NotificationHistory {
+    shell: service.shell
     opened: service.historyOpen
     model: service.historyModel
     fontFamily: service.shell && service.shell.bar
