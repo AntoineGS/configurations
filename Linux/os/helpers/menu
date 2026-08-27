@@ -19,4 +19,4 @@ if (($# == 1)); then
   fi
 fi
 
-exec desktop-shell summon desktop.menu "$payload"
+exec desktop-shell toggle desktop.menu "$payload"
