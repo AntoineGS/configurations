@@ -104,6 +104,11 @@ jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == fa
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimTopBarOverlayForTest desktop.emojis) == desktop.emojis ]]
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.menu) == stale:desktop.emojis ]]
 [[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.emojis) == released:none ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimPersistentTopBarOverlayForTest desktop.polkit) == claimed:desktop.polkit ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimTopBarOverlayForTest desktop.menu) == desktop.polkit ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.polkit) == released:none ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimTopBarOverlayForTest desktop.menu) == desktop.menu ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.menu) == released:none ]]
 
 enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"headless":true}')
 [[ -n $enable_result ]]

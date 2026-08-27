@@ -1505,6 +1505,12 @@ ShellRoot {
       return TopBarOverlayCoordinator.activeId || "none"
     }
 
+    function claimPersistentTopBarOverlayForTest(id: string): string {
+      var claimed = TopBarOverlayCoordinator.claim(id, true)
+      return (claimed ? "claimed:" : "blocked:")
+        + (TopBarOverlayCoordinator.activeId || "none")
+    }
+
     function releaseTopBarOverlayForTest(id: string): string {
       var released = TopBarOverlayCoordinator.release(id)
       return (released ? "released:" : "stale:")
