@@ -66,6 +66,7 @@ hl.bind(
 
 -- Captures
 hl.bind("PRINT", hl.dsp.exec_cmd("cmd-screenshot"), { description = "Screenshot" })
+hl.bind("SUPER + CTRL + S", hl.dsp.exec_cmd("cmd-screenshot"), { description = "Screenshot" })
 hl.bind("ALT + PRINT", hl.dsp.exec_cmd("menu trigger.screenrecord"), { description = "Screenrecording" })
 hl.bind("SUPER + PRINT", hl.dsp.exec_cmd("pkill hyprpicker || hyprpicker -a"), { description = "Color picker" })
 
