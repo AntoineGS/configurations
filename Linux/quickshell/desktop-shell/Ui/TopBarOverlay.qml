@@ -17,6 +17,9 @@ PanelWindow {
   property real contentSpacing: Style.space(10)
   property real contentPadding: Style.spacing.popupPadding
   property real topSpacing: Style.space(12)
+  property bool persistent: false
+  property real surfaceHorizontalOffset: 0
+  property alias surfaceBorderSpec: card.borderSpec
   property alias headerData: headerSlot.data
   default property alias bodyData: bodySlot.data
   property alias foregroundData: foregroundSlot.data
@@ -114,7 +117,7 @@ PanelWindow {
 
   onOpenedChanged: {
     if (root.opened) {
-      if (!TopBarOverlayCoordinator.claim(root.overlayId)) {
+      if (!TopBarOverlayCoordinator.claim(root.overlayId, root.persistent)) {
         root.dismissRequested()
         return
       }
@@ -131,7 +134,7 @@ PanelWindow {
 
   Component.onCompleted: {
     if (!root.opened) return
-    if (!TopBarOverlayCoordinator.claim(root.overlayId)) root.dismissRequested()
+    if (!TopBarOverlayCoordinator.claim(root.overlayId, root.persistent)) root.dismissRequested()
     else if (root.geometryReady) root.beginOpenMotion()
   }
 
@@ -254,6 +257,7 @@ PanelWindow {
     width: root.cardWidth + root._shadowPadding * 2
     height: root.cardHeight + root._shadowBottomPadding
     anchors.horizontalCenter: parent.horizontalCenter
+    anchors.horizontalCenterOffset: root.surfaceHorizontalOffset
     y: root.cardTop
     opacity: root._surfaceOpacity
     clip: true

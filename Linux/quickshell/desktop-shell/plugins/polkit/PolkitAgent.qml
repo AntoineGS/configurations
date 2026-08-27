@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Polkit
-import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "PolkitModel.js" as PolkitModel
@@ -11,6 +10,7 @@ import "PolkitModel.js" as PolkitModel
 Item {
   id: root
 
+  property var shell: null
   property bool registrationEnabled: Quickshell.env("DESKTOP_SHELL_POLKIT_REGISTER") === "1"
   readonly property bool testSurfaceSuppressed: Quickshell.env("DESKTOP_SHELL_TEST_NO_SURFACES") === "1"
   property string objectPath: "/org/desktop_shell/PolkitAgent"
@@ -31,7 +31,6 @@ Item {
   property var borderSpec: root.errorFlash
     ? Border.surfaceSpec("polkit", "border-error", root.borderError, Math.max(1, Style.space(2)), "border-alpha")
     : Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, Math.max(1, Style.space(2)))
-  property color scrim: Color.polkit.scrim
   property int fieldHeight: Math.max(Style.space(42), Style.spacing.controlHeight)
 
   property var screenList: Quickshell.screens
@@ -69,21 +68,20 @@ Item {
   )
   readonly property bool fingerprintMode: (root.fingerprintConfigured || root.fingerprintPrompt)
     && root.dialogVisible && !root.responseRequired && !root.submitted && !root.errorFlash
-  readonly property int baseCardHeight: root.fieldHeight + Style.spacing.popupPadding * 2
+  readonly property bool contextVisible: root.currentMessage !== "" || root.currentActionId !== ""
+  readonly property int authBodyHeight: root.fingerprintMode ? Style.space(112) : root.fieldHeight
+  readonly property int authFixedHeight: panel.topSpacing + panel.contentPadding * 2
     + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
-  readonly property int fingerprintExtent: Math.max(
-    Style.spacing.centeredMenuMinWidth, root.baseCardHeight)
-  readonly property int cardHeight: root.fingerprintMode
-    ? (panel.width > 0 && panel.height > 0
-      ? Math.min(
-          root.fingerprintExtent,
-          Math.max(1, Math.min(panel.width, panel.height) - Style.gapsOut * 2))
-      : root.fingerprintExtent)
-    : (panel.height > 0
-      ? Math.min(root.baseCardHeight, Math.max(1, panel.height - Style.gapsOut * 2))
-      : root.baseCardHeight)
-  readonly property int cardWidth: root.fingerprintMode ? root.cardHeight
-    : Style.centeredMenuWidth(Style.space(312), panel.width - Style.gapsOut * 2)
+    + (root.contextVisible ? Style.space(10) : 0) + root.authBodyHeight
+  readonly property int authHeaderHeight: root.contextVisible
+    ? Math.max(0, Math.min(contextColumn.implicitHeight,
+      panel.availableCardHeight - root.authFixedHeight)) : 0
+  readonly property int authContentSpacing: root.authHeaderHeight > 0 ? Style.space(10) : 0
+  readonly property int authCardWidth: Style.centeredMenuWidth(
+    Style.space(520), panel.width - Style.gapsOut * 2)
+  readonly property int authCardHeight: panel.topSpacing + panel.contentPadding * 2
+    + Border.top(root.borderSpec) + Border.bottom(root.borderSpec)
+    + root.authHeaderHeight + root.authContentSpacing + root.authBodyHeight
 
   function authorizationLabel(message) {
     return PolkitModel.authorizationLabel(message)
@@ -465,40 +463,66 @@ Item {
     root.refreshPamProbe()
   }
 
-  PanelWindow {
+  TopBarOverlay {
     id: panel
-    visible: !root.testSurfaceSuppressed && root.activeScreen !== null
-      && (root.dialogVisible || card.opacity > 0)
+    overlayId: "desktop.polkit"
+    layerNamespace: "desktop-shell-polkit"
+    shell: root.shell
     screen: root.activeScreen
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    WlrLayershell.namespace: "desktop-shell-polkit"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.dialogVisible
-      ? WlrKeyboardFocus.Exclusive
-      : WlrKeyboardFocus.None
-    exclusionMode: ExclusionMode.Ignore
+    opened: !root.testSurfaceSuppressed && root.activeScreen !== null && root.dialogVisible
+    contentReady: root.activeScreen !== null
+    persistent: true
+    requestedCardWidth: root.authCardWidth
+    requestedCardHeight: root.authCardHeight
+    headerHeight: root.authHeaderHeight
+    contentSpacing: root.authContentSpacing
+    surfaceBorderSpec: root.borderSpec
+    surfaceHorizontalOffset: root.shakeOffset
+    onDismissRequested: root.refocus()
 
-    Rectangle {
-      anchors.fill: parent
-      color: root.scrim
+    headerData: Flickable {
+      id: contextViewport
+      width: parent.width
+      height: root.authHeaderHeight
+      contentWidth: width
+      contentHeight: contextColumn.implicitHeight
+      clip: true
+      boundsBehavior: Flickable.StopAtBounds
+      interactive: contentHeight > height
+
+      Column {
+        id: contextColumn
+        width: contextViewport.width
+        spacing: Style.space(2)
+
+        Text {
+          width: parent.width
+          visible: root.currentMessage !== ""
+          text: "Request message: " + root.authorizationLabel(root.currentMessage)
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+          wrapMode: Text.WrapAnywhere
+        }
+
+        Text {
+          width: parent.width
+          visible: root.currentActionId !== ""
+          text: "Trusted action ID: " + root.currentActionId
+          color: root.accent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+          wrapMode: Text.WrapAnywhere
+        }
+      }
     }
 
-    MouseArea {
-      anchors.fill: parent
-      onClicked: root.refocus()
-    }
-
-    PanelSurface {
-      id: card
-      width: root.cardWidth
-      height: root.cardHeight
-      anchors.centerIn: parent
-      anchors.horizontalCenterOffset: root.shakeOffset
-      borderSpec: root.borderSpec
-      revealed: root.dialogVisible
-
-      MouseArea { anchors.fill: parent; onClicked: root.refocus() }
+    Item {
+      id: authBody
+      width: parent.width
+      height: root.authBodyHeight
 
       Item {
         id: keyCatcher
@@ -529,13 +553,8 @@ Item {
       }
 
       Row {
-        id: cardRow
         visible: !root.fingerprintMode
         anchors.fill: parent
-        anchors.topMargin: card.contentTopInset
-        anchors.rightMargin: card.contentRightInset
-        anchors.bottomMargin: card.contentBottomInset
-        anchors.leftMargin: card.contentLeftInset
         spacing: Style.space(14)
 
         Text {
@@ -571,50 +590,6 @@ Item {
               }
             }
           }
-
-        }
-      }
-    }
-
-    PanelSurface {
-      id: contextCard
-      width: Style.centeredMenuWidth(
-        Style.space(520), panel.width - Style.gapsOut * 2)
-      height: contentTopInset + contentBottomInset + contextColumn.implicitHeight
-      anchors.horizontalCenter: card.horizontalCenter
-      anchors.bottom: card.top
-      anchors.bottomMargin: Style.space(10)
-      revealed: root.dialogVisible
-      visible: root.dialogVisible && (root.currentMessage !== "" || root.currentActionId !== "")
-
-      Column {
-        id: contextColumn
-        anchors.fill: parent
-        anchors.leftMargin: contextCard.contentLeftInset
-        anchors.rightMargin: contextCard.contentRightInset
-        anchors.topMargin: contextCard.contentTopInset
-        anchors.bottomMargin: contextCard.contentBottomInset
-        spacing: Style.space(2)
-
-        Text {
-          width: parent.width
-          text: "Request message: " + root.authorizationLabel(root.currentMessage)
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-          wrapMode: Text.WrapAnywhere
-        }
-
-        Text {
-          id: actionIdText
-          width: parent.width
-          text: "Trusted action ID: " + root.currentActionId
-          color: root.accent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-          wrapMode: Text.WrapAnywhere
         }
       }
     }
