@@ -87,8 +87,8 @@ PopupWindow {
   implicitWidth: contentWidth + elevationInset * 2
   implicitHeight: contentHeight + elevationInset + shadowBottomPadding
   mask: Region {
-    Region { item: card }
-    Region { item: shoulders }
+    Region { item: root.open ? card : null }
+    Region { item: root.open ? shoulders : null }
   }
 
   onOpenChanged: {

@@ -130,10 +130,7 @@ PanelWindow {
     var actual = (root.barPos === "top" || root.barPos === "bottom") ? root.barH : root.barW
     return Math.max(bar.barSize, actual) + root.gap
   }
-  mask: Region {
-    width: root.screenW
-    height: root.screenH
-  }
+  mask: Region { item: root.open ? dismissArea : null }
 
   // Track every layout change between the bar's contentItem and the
   // anchor item. `transform` updates whenever any item in that chain
