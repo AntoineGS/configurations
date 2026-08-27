@@ -33,7 +33,8 @@ PanelWindow {
   readonly property int queuedCount: popupModel ? Math.max(0, popupModel.count - 1) : 0
   readonly property real shoulderRadius: Style.popupOuterRadius
   readonly property real bodyWidth: Math.min(Style.space(380),
-    Math.max(1, width - Style.gapsOut * 2 - shoulderRadius * 2))
+    Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
+      - shoulderRadius * (barAttached ? 2 : 0)))
   readonly property real collarExtent: Style.space(60)
   readonly property bool barAttached: root.barPosition === "top"
     && root.shell && root.shell.barVisible !== false
@@ -130,11 +131,14 @@ PanelWindow {
 
   function beginCloseMotion() {
     openMotion.stop()
-    if (root._motionState === "closed") return
     root._transitionIdentity = root._lastActiveIdentity || root.activeIdentity
     root._transitionGeneration = root.transitionGeneration
     root._transitionKind = "close"
     root._completionEmitted = false
+    if (root._motionState === "closed") {
+      root.settleClosedMotion()
+      return
+    }
     root._motionState = "closing"
     if (!Motion.enabled) {
       root.settleClosedMotion()
@@ -328,8 +332,8 @@ PanelWindow {
     id: cardFrame
     x: root.width - Style.gapsOut - width
     y: root.barAttached ? root.barSize : Style.gapsOut
-    width: root.bodyWidth + root.shoulderRadius * 2
-    height: card.height + root.shoulderRadius
+    width: root.bodyWidth + (root.barAttached ? root.shoulderRadius * 2 : 0)
+    height: card.height + (root.barAttached ? root.shoulderRadius : 0)
     z: 1
 
     transform: Scale {
@@ -341,7 +345,7 @@ PanelWindow {
 
     NotificationCard {
       id: card
-      x: root.shoulderRadius
+      x: root.barAttached ? root.shoulderRadius : 0
       width: root.bodyWidth
       visible: (root.cardsVisible || root.motionState !== "closed") && root.activeRow !== null
       app: root.activeRow ? String(root.activeRow.app || "") : ""
@@ -410,7 +414,7 @@ PanelWindow {
       anchors.centerIn: parent
       text: root.cueGlyph
       color: Color.notifications.text
-      font.family: root.fontFamily
+      font.family: Style.font.family
       font.pixelSize: Style.font.display
     }
   }

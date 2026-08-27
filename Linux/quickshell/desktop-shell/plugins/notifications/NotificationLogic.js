@@ -171,6 +171,32 @@ function popupIdentity(entry) {
   return String(Number(row.timestamp) || 0) + ":" + String(Number(row.originalId) || 0)
 }
 
+function popupQueuePriority(entry, criticalUrgency) {
+  var row = entry || {}
+  if (typeof row.queuePriority === "boolean") return row.queuePriority
+  return Number(row.urgency) === Number(criticalUrgency)
+}
+
+function popupActiveCritical(entry, criticalUrgency) {
+  return Number((entry || {}).urgency) === Number(criticalUrgency)
+}
+
+function popupQueueOrder(entry) {
+  var value = Number((entry || {}).queueOrder)
+  if (isFinite(value) && value >= 0) return value
+  return Number((entry || {}).timestamp) || 0
+}
+
+function popupQueueOrderSeed(rows) {
+  var values = Array.isArray(rows) ? rows : []
+  var maximum = -1
+  for (var i = 0; i < values.length; i++) {
+    var order = Number(values[i] && values[i].queueOrder)
+    if (isFinite(order) && order >= 0) maximum = Math.max(maximum, order)
+  }
+  return maximum
+}
+
 function popupArrivalPlan(rows, urgency, criticalUrgency, hovered) {
   var values = Array.isArray(rows) ? rows : []
   var incomingCritical = Number(urgency) === Number(criticalUrgency)
@@ -179,11 +205,10 @@ function popupArrivalPlan(rows, urgency, criticalUrgency, hovered) {
   }
 
   var hasActive = values.length > 0
-  var activeCritical = hasActive
-    && Number(values[0].urgency) === Number(criticalUrgency)
+  var activeCritical = hasActive && popupActiveCritical(values[0], criticalUrgency)
   var index = hasActive ? 1 : 0
   while (index < values.length
-      && Number(values[index].urgency) === Number(criticalUrgency)) index++
+      && popupQueuePriority(values[index], criticalUrgency)) index++
 
   return {
     insertIndex: index,
@@ -195,10 +220,11 @@ function popupArrivalPlan(rows, urgency, criticalUrgency, hovered) {
 function sortPopupQueue(rows, criticalUrgency) {
   var values = Array.isArray(rows) ? rows.slice() : []
   return values.sort(function(left, right) {
-    var leftCritical = Number(left && left.urgency) === Number(criticalUrgency)
-    var rightCritical = Number(right && right.urgency) === Number(criticalUrgency)
+    var leftCritical = popupQueuePriority(left, criticalUrgency)
+    var rightCritical = popupQueuePriority(right, criticalUrgency)
     if (leftCritical !== rightCritical) return leftCritical ? -1 : 1
-    return (Number(left && left.timestamp) || 0) - (Number(right && right.timestamp) || 0)
+    var orderDifference = popupQueueOrder(left) - popupQueueOrder(right)
+    return orderDifference || (Number(left && left.timestamp) || 0) - (Number(right && right.timestamp) || 0)
   })
 }
 
@@ -222,6 +248,32 @@ function restoredRemainingLifetime(entry, duration, now) {
 
   var fallback = Number(duration)
   return isFinite(fallback) && fallback > 0 ? fallback : 0
+}
+
+function migratePopupQueue(rows) {
+  var values = Array.isArray(rows) ? rows.slice() : []
+  var ordered = values.map(function(row, index) {
+    return { row: row, index: index }
+  }).sort(function(left, right) {
+    var timestampDifference = (Number(left.row && left.row.timestamp) || 0)
+      - (Number(right.row && right.row.timestamp) || 0)
+    return timestampDifference || left.index - right.index
+  })
+  var maximum = popupQueueOrderSeed(values)
+  for (var i = 0; i < ordered.length; i++) {
+    var row = ordered[i].row
+    var current = Number(row && row.queueOrder)
+    if (isFinite(current) && current >= 0) continue
+    var candidate = Number(row && row.timestamp)
+    maximum = nextMonotonicTimestamp(maximum, candidate)
+    if (row) row.queueOrder = maximum
+  }
+  return values
+}
+
+function shouldPersistPopup(entry) {
+  var row = entry || {}
+  return Number(row.originalId) >= 0 && row.transient !== true
 }
 
 function nextMonotonicTimestamp(previous, candidate) {
@@ -466,7 +518,7 @@ function snapshotOf(notification, timestamp) {
   return result
 }
 
-var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime", "transient", "actions"]
+var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime", "queuePriority", "queueOrder", "transient", "actions"]
 
 function popupRoles() {
   return POPUP_ROLES
@@ -558,6 +610,10 @@ function popupEntry(value, normalUrgency) {
   var source = value || {}
   var hasExpireTimeout = Object.prototype.hasOwnProperty.call(source, "expireTimeout")
   entry.expireTimeout = normalizedExpireTimeout(hasExpireTimeout ? source.expireTimeout : -1)
+  if (typeof source.queuePriority === "boolean") entry.queuePriority = source.queuePriority
+  if (typeof source.queueOrder === "number"
+      && isFinite(source.queueOrder) && source.queueOrder >= 0)
+    entry.queueOrder = source.queueOrder
 
   var remaining = Number(source.remainingLifetime)
   if (isFinite(remaining) && remaining >= 0) entry.remainingLifetime = remaining
@@ -670,7 +726,7 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
   function collect(rows) {
     for (var i = 0; i < rows.length; i++) {
       var entry = rows[i]
-      if (!entry) continue
+      if (!entry || Number(entry.originalId) < 0) continue
       // Live and archived snapshots can overlap while a persistence job is queued.
       var key = popupFileName(entry)
       if (seen[key]) continue
@@ -734,7 +790,10 @@ function historyActionTransition(entry, failedIdentities, transition) {
 
 function latestHistoryRow(raw, normalUrgency) {
   var entries = parsePopupFiles(raw, normalUrgency)
-  return entries.length > 0 ? historyEntry(entries[0], normalUrgency) : null
+  for (var i = 0; i < entries.length; i++) {
+    if (Number(entries[i].originalId) >= 0) return historyEntry(entries[i], normalUrgency)
+  }
+  return null
 }
 
 if (typeof module !== "undefined") {
@@ -759,10 +818,16 @@ if (typeof module !== "undefined") {
     deadlineForReceipt: deadlineForReceipt,
     remainingLifetime: remainingLifetime,
     popupIdentity: popupIdentity,
+    popupQueuePriority: popupQueuePriority,
+    popupActiveCritical: popupActiveCritical,
+    popupQueueOrder: popupQueueOrder,
+    popupQueueOrderSeed: popupQueueOrderSeed,
     popupArrivalPlan: popupArrivalPlan,
     sortPopupQueue: sortPopupQueue,
     consumeRemainingLifetime: consumeRemainingLifetime,
     restoredRemainingLifetime: restoredRemainingLifetime,
+    migratePopupQueue: migratePopupQueue,
+    shouldPersistPopup: shouldPersistPopup,
     nextMonotonicTimestamp: nextMonotonicTimestamp,
     persistenceQueueUpdate: persistenceQueueUpdate,
     refreshScheduleUpdate: refreshScheduleUpdate,

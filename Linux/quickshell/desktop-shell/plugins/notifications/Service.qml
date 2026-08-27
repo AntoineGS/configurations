@@ -80,6 +80,7 @@ Item {
   property var liveRefs: ({})
   property var liveGenerations: ({})
   property real latestLiveGeneration: -1
+  property real latestPopupQueueOrder: -1
   property var livePersistenceSources: ({})
   property var actionClosingGenerations: ({})
   property var failedHistoryActions: ({})
@@ -88,6 +89,26 @@ Item {
   property var silencedDirty: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
+  property bool popupSurfaceOpened: false
+  property string popupMotionState: "closed"
+  property int popupTransitionGeneration: 0
+  property string pendingRemovalIdentity: ""
+  property string pendingRemovalReason: ""
+  property string pendingPreemptionIdentity: ""
+  property bool activePopupHovered: false
+  property string popupTransitionOutput: ""
+  property string popupTransitionIdentity: ""
+  property string popupTransitionKind: ""
+  property string popupRenderedOutput: ""
+  property string popupRenderedIdentity: ""
+  property string tickingIdentity: ""
+  property real activeDuration: 0
+  property real activeRemainingLifetime: 0
+  property real activeTickStartedAt: 0
+  property real activeTickStartRemaining: 0
+  readonly property real remainingFraction: activeDuration > 0
+    ? Math.max(0, Math.min(1, activeRemainingLifetime / activeDuration)) : 1
+  readonly property bool countdownVisible: activeDuration > 0
   property alias historyModel: historyModel
   ListModel { id: historyModel }
   property bool historyOpen: false
@@ -139,22 +160,14 @@ Item {
     return NotificationLogic.isEphemeral(notification)
   }
 
-  function deadlineFor(urgency, expireTimeout, startedAt) {
-    return NotificationLogic.deadlineFor(
-      urgency, expireTimeout, startedAt, NotificationUrgency.Critical, NotificationUrgency.Low,
-      lowPopupDuration, normalPopupDuration, maxPopupDuration)
-  }
-
   function snapshotOf(notification, timestamp) {
     var requestedAt = timestamp === undefined ? Date.now() : Number(timestamp)
     var startedAt = NotificationLogic.nextMonotonicTimestamp(service.latestLiveGeneration, requestedAt)
     service.latestLiveGeneration = startedAt
     var snapshot = NotificationLogic.snapshotOf(notification, startedAt)
-    var deadline = NotificationLogic.deadlineForReceipt(
-      snapshot.urgency, snapshot.expireTimeout, startedAt, requestedAt,
-      NotificationUrgency.Critical, NotificationUrgency.Low,
-      lowPopupDuration, normalPopupDuration, maxPopupDuration)
-    snapshot.deadline = deadline === null ? 0 : deadline
+    snapshot.remainingLifetime = durationFor(snapshot.urgency, snapshot.expireTimeout)
+    snapshot.queuePriority = NotificationLogic.popupQueuePriority(snapshot, NotificationUrgency.Critical)
+    ensurePopupQueueOrder(snapshot)
     snapshot.transient = isEphemeral(notification)
     return snapshot
   }
@@ -207,6 +220,209 @@ Item {
       if (row && row.originalId === originalId) return i
     }
     return -1
+  }
+
+  function popupRows() {
+    var rows = []
+    for (var i = 0; i < popupModel.count; i++) rows.push(popupModel.get(i))
+    return rows
+  }
+
+  function ensurePopupQueueOrder(row) {
+    var current = Number(row.queueOrder)
+    if (isFinite(current) && current >= 0) {
+      service.latestPopupQueueOrder = Math.max(service.latestPopupQueueOrder, current)
+      row.queueOrder = current
+      return current
+    }
+    var candidate = Number(row.timestamp)
+    if (!isFinite(candidate) || candidate < 0) candidate = Date.now()
+    var next = candidate > service.latestPopupQueueOrder
+      ? candidate : NotificationLogic.nextMonotonicTimestamp(service.latestPopupQueueOrder, candidate)
+    service.latestPopupQueueOrder = next
+    row.queueOrder = next
+    return next
+  }
+
+  function popupIndexForIdentity(identity) {
+    var wanted = String(identity || "")
+    if (!wanted) return -1
+    for (var i = 0; i < popupModel.count; i++) {
+      if (NotificationLogic.popupIdentity(popupModel.get(i)) === wanted) return i
+    }
+    return -1
+  }
+
+  function enqueuePopup(snapshot) {
+    if (typeof snapshot.queuePriority !== "boolean")
+      snapshot.queuePriority = NotificationLogic.popupQueuePriority(snapshot, NotificationUrgency.Critical)
+    ensurePopupQueueOrder(snapshot)
+    var wasEmpty = popupModel.count === 0
+    var plan = NotificationLogic.popupArrivalPlan(
+      popupRows(), snapshot.urgency, NotificationUrgency.Critical, activePopupHovered)
+    popupModel.insert(plan.insertIndex, snapshot)
+    if (wasEmpty) requestPopupOpen()
+    else if (plan.preempt || plan.deferred) {
+      if (pendingPreemptionIdentity === "")
+        pendingPreemptionIdentity = NotificationLogic.popupIdentity(snapshot)
+      if (plan.preempt) requestPopupClose("preempt")
+    }
+    if (popupMotionState === "closed" && routeVisible) requestPopupOpen()
+  }
+
+  function startActiveLifetime() {
+    if (popupModel.count === 0 || popupMotionState !== "open"
+        || activePopupHovered || !routeVisible) return
+    var row = popupModel.get(0)
+    activeDuration = durationFor(row.urgency, row.expireTimeout)
+    activeRemainingLifetime = Number(row.remainingLifetime) || 0
+    if (activeDuration <= 0) return
+    tickingIdentity = NotificationLogic.popupIdentity(row)
+    activeTickStartedAt = Date.now()
+    activeTickStartRemaining = activeRemainingLifetime
+  }
+
+  function prepareActiveLifetimeDisplay() {
+    if (popupModel.count === 0) {
+      activeDuration = 0
+      activeRemainingLifetime = 0
+      return
+    }
+    var row = popupModel.get(0)
+    activeDuration = durationFor(row.urgency, row.expireTimeout)
+    activeRemainingLifetime = Number(row.remainingLifetime) || 0
+  }
+
+  function updateActiveLifetime(now, requestExpiry) {
+    if (tickingIdentity === "") return
+    activeRemainingLifetime = NotificationLogic.consumeRemainingLifetime(
+      activeTickStartRemaining, Number(now) - activeTickStartedAt)
+    if (requestExpiry === true && activeRemainingLifetime <= 0)
+      requestPopupRemoval(tickingIdentity, "expire")
+  }
+
+  function pauseActiveLifetime() {
+    if (tickingIdentity === "") return
+    updateActiveLifetime(Date.now(), false)
+    var index = popupIndexForIdentity(tickingIdentity)
+    if (index >= 0) popupModel.setProperty(index, "remainingLifetime", activeRemainingLifetime)
+    checkpointPopupIdentity(tickingIdentity)
+    tickingIdentity = ""
+  }
+
+  function checkpointPopupIdentity(identity) {
+    var index = popupIndexForIdentity(identity)
+    if (index < 0) return
+    popupModel.setProperty(index, "remainingLifetime", activeRemainingLifetime)
+    var row = popupModel.get(index)
+    if (row && NotificationLogic.shouldPersistPopup(row)) persistPopupFile(row)
+  }
+
+  function setActivePopupHovered(hovered) {
+    activePopupHovered = hovered === true
+    if (activePopupHovered) pauseActiveLifetime()
+    else if (pendingPreemptionIdentity !== "") requestPopupClose("preempt")
+    else startActiveLifetime()
+  }
+
+  function requestPopupOpen() {
+    if (testSurfaceSuppressed) {
+      popupSurfaceOpened = false
+      popupMotionState = "closed"
+      return
+    }
+    if (popupModel.count === 0 || !routeVisible || popupMotionState !== "closed") return
+    promoteCriticalRun()
+    if (pendingPreemptionIdentity !== ""
+        && pendingPreemptionIdentity === NotificationLogic.popupIdentity(popupModel.get(0)))
+      pendingPreemptionIdentity = ""
+    popupTransitionGeneration++
+    popupTransitionKind = "open"
+    popupTransitionOutput = String(route.output || "")
+    popupTransitionIdentity = NotificationLogic.popupIdentity(popupModel.get(0))
+    popupRenderedOutput = ""
+    popupRenderedIdentity = ""
+    prepareActiveLifetimeDisplay()
+    popupMotionState = "opening"
+    popupSurfaceOpened = true
+  }
+
+  function requestPopupClose(reason) {
+    if (popupMotionState === "closed" || popupMotionState === "closing") return
+    pauseActiveLifetime()
+    popupTransitionGeneration++
+    popupTransitionOutput = popupRenderedOutput || popupTransitionOutput
+    popupTransitionIdentity = popupRenderedIdentity || popupTransitionIdentity
+    popupMotionState = "closing"
+    popupTransitionKind = "close"
+    popupSurfaceOpened = false
+  }
+
+  function handlePopupOpenFinished(identity, generation, outputName) {
+    if (popupTransitionKind !== "open"
+        || Number(generation) !== popupTransitionGeneration
+        || String(identity) !== popupTransitionIdentity
+        || String(outputName) !== popupTransitionOutput) return
+    popupRenderedOutput = String(outputName)
+    popupRenderedIdentity = NotificationLogic.popupIdentity(popupModel.get(0) || {})
+    popupMotionState = "open"
+    prepareActiveLifetimeDisplay()
+    startActiveLifetime()
+  }
+
+  function handlePopupCloseFinished(identity, generation, outputName) {
+    if (popupTransitionKind !== "close"
+        || Number(generation) !== popupTransitionGeneration
+        || String(identity) !== popupTransitionIdentity
+        || String(outputName) !== popupTransitionOutput) return
+    pauseActiveLifetime()
+    popupMotionState = "closed"
+    if (pendingRemovalIdentity !== "") {
+      var removeIndex = popupIndexForIdentity(pendingRemovalIdentity)
+      if (removeIndex >= 0) finalizePopupRemoval(removeIndex, pendingRemovalReason)
+      pendingRemovalIdentity = ""
+      pendingRemovalReason = ""
+      if (pendingPreemptionIdentity !== ""
+          && popupIndexForIdentity(pendingPreemptionIdentity) === 0)
+        pendingPreemptionIdentity = ""
+    } else if (pendingPreemptionIdentity !== "") {
+      var criticalIndex = popupIndexForIdentity(pendingPreemptionIdentity)
+      if (criticalIndex > 0) popupModel.move(criticalIndex, 0, 1)
+      pendingPreemptionIdentity = ""
+    }
+    popupRenderedOutput = ""
+    popupRenderedIdentity = ""
+    if (popupModel.count > 0 && service.routeVisible) requestPopupOpen()
+  }
+
+  function promoteCriticalRun() {
+    var target = 0
+    for (var i = 0; i < popupModel.count; i++) {
+      if (!NotificationLogic.popupQueuePriority(popupModel.get(i), NotificationUrgency.Critical)) continue
+      if (i !== target) popupModel.move(i, target, 1)
+      target++
+    }
+  }
+
+  Timer {
+    interval: 50
+    repeat: true
+    running: service.tickingIdentity !== ""
+    onTriggered: service.updateActiveLifetime(Date.now(), true)
+  }
+
+  Timer {
+    interval: 5000
+    repeat: true
+    running: service.tickingIdentity !== ""
+    onTriggered: {
+      service.updateActiveLifetime(Date.now(), true)
+      if (service.tickingIdentity !== "") {
+        service.checkpointPopupIdentity(service.tickingIdentity)
+        service.activeTickStartRemaining = service.activeRemainingLifetime
+        service.activeTickStartedAt = Date.now()
+      }
+    }
   }
 
   function reservePopupSlot(originalId) {
@@ -276,18 +492,28 @@ Item {
       return
     }
 
-    if (!snapshot.transient) service.persistPopupFile(snapshot)
+    if (NotificationLogic.shouldPersistPopup(snapshot)) service.persistPopupFile(snapshot)
     watchForUpdates(notification, snapshot)
     Qt.callLater(function() {
       delete service.pendingPopups[String(snapshot.originalId)]
       if (service.liveRefs[snapshot.originalId] !== notification) return
-      removePopupsByOriginalId(snapshot.originalId, NotificationLogic.popupFileName(snapshot))
+      var existingIndex = service.popupIndexForOriginalId(snapshot.originalId)
+      if (existingIndex >= 0) {
+        var existing = popupModel.get(existingIndex)
+        if (existing && service.isRestoredRow(existing))
+          delete service.restoredPopups[NotificationLogic.popupFileName(existing)]
+        if (existing) {
+          service.deletePopupFileFor(existing)
+          service.replacePopupRow(existingIndex, snapshot)
+        }
+        return
+      }
       if (popupModel.count >= service.maxActivePopups) {
         service.persistenceError = "notification active popup limit reached"
         service.releaseLiveNotification(notification, snapshot.originalId, true)
         return
       }
-      popupModel.insert(0, snapshot)
+      service.enqueuePopup(snapshot)
     })
   }
 
@@ -350,7 +576,8 @@ Item {
       try {
         latest = NotificationLogic.replacementSnapshot(
           request.notification, request.originalId, request.persisted.timestamp)
-        latest.deadline = request.persisted.deadline === undefined ? 0 : request.persisted.deadline
+        latest.remainingLifetime = 0
+        delete latest.deadline
       } catch (error) {
         service.releaseSilenced(request.notification, request.originalId)
         return
@@ -425,7 +652,7 @@ Item {
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
       if (row && row.originalId === originalId && Number(row.timestamp) === generation && !isRestoredRow(row)) {
-        service.removePopup(i, "closed")
+        service.requestPopupRemoval(NotificationLogic.popupIdentity(row), "closed")
         found = true
         break
       }
@@ -503,19 +730,9 @@ Item {
       return
     }
 
-    var roles = NotificationLogic.popupRoles()
     var row = popupModel.get(rowIndex)
     if (!row) return
-    service.markHistoryUnavailable(originalId, row.timestamp)
-    var oldFileName = NotificationLogic.popupFileName(row)
-    var newFileName = NotificationLogic.popupFileName(updated)
-    if (oldFileName !== newFileName || (!row.transient && updated.transient)) deletePopupFileFor(row)
-    service.liveGenerations[originalId] = updated.timestamp
-    service.livePersistenceSources[originalId] = updated.transient ? "none" : "popup"
-    popupModel.setProperty(rowIndex, "timestamp", updated.timestamp)
-    for (var r = 0; r < roles.length; r++) popupModel.setProperty(rowIndex, roles[r], updated[roles[r]])
-    if (!updated.transient) service.persistPopupFile(updated)
-    return
+    service.replacePopupRow(rowIndex, updated)
   }
 
   property var restoredPopups: ({})
@@ -528,25 +745,48 @@ Item {
     return row ? restoredPopups[NotificationLogic.popupFileName(row)] : ""
   }
 
-  function removePopupsByOriginalId(originalId, keepFileName) {
-    for (var i = popupModel.count - 1; i >= 0; i--) {
-      var row = popupModel.get(i)
-      if (!row || row.originalId !== originalId) continue
-      if (isRestoredRow(row)) continue
-      if (NotificationLogic.popupFileName(row) !== keepFileName) deletePopupFileFor(row)
-      popupModel.remove(i)
+  function replacePopupRow(rowIndex, updated) {
+    var row = popupModel.get(rowIndex)
+    if (!row || !updated) return
+    var oldIdentity = NotificationLogic.popupIdentity(row)
+    var newIdentity = NotificationLogic.popupIdentity(updated)
+    if (pendingRemovalIdentity === oldIdentity) {
+      pendingRemovalIdentity = ""
+      pendingRemovalReason = ""
+    }
+    if (pendingPreemptionIdentity === oldIdentity) pendingPreemptionIdentity = newIdentity
+    var active = rowIndex === 0
+    if (active) pauseActiveLifetime()
+    service.markHistoryUnavailable(row.originalId, row.timestamp)
+    service.deletePopupFileFor(row)
+    updated.remainingLifetime = durationFor(updated.urgency, updated.expireTimeout)
+    updated.queuePriority = typeof row.queuePriority === "boolean"
+      ? row.queuePriority : NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
+    updated.queueOrder = ensurePopupQueueOrder(row)
+    var roles = NotificationLogic.popupRoles()
+    popupModel.setProperty(rowIndex, "timestamp", updated.timestamp)
+    for (var r = 0; r < roles.length; r++) popupModel.setProperty(rowIndex, roles[r], updated[roles[r]])
+    service.liveGenerations[updated.originalId] = updated.timestamp
+    service.livePersistenceSources[updated.originalId] = updated.transient ? "none" : "popup"
+    if (NotificationLogic.shouldPersistPopup(updated)) service.persistPopupFile(updated)
+    if (active) {
+      if (popupMotionState === "open") popupRenderedIdentity = newIdentity
+      prepareActiveLifetimeDisplay()
+      if (popupMotionState === "open" && !activePopupHovered) startActiveLifetime()
     }
   }
 
   function dismissPopup(index) {
-    removePopup(index, "dismiss")
+    if (index < 0 || index >= popupModel.count) return
+    requestPopupRemoval(NotificationLogic.popupIdentity(popupModel.get(index)), "dismiss")
   }
 
   function expirePopup(index) {
-    removePopup(index, "expire")
+    if (index < 0 || index >= popupModel.count) return
+    requestPopupRemoval(NotificationLogic.popupIdentity(popupModel.get(index)), "expire")
   }
 
-  function removePopup(index, reason) {
+  function finalizePopupRemoval(index, reason) {
     if (index < 0 || index >= popupModel.count) return
     var entry = popupModel.get(index)
     var originalId = entry ? entry.originalId : -1
@@ -564,6 +804,9 @@ Item {
     }
     if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
     popupModel.remove(index)
+    if (pendingPreemptionIdentity !== ""
+        && popupIndexForIdentity(pendingPreemptionIdentity) < 0)
+      pendingPreemptionIdentity = ""
 
     if (ref && reason !== "closed") {
       delete liveRefs[originalId]
@@ -581,8 +824,25 @@ Item {
     }
   }
 
+  function requestPopupRemoval(identity, reason) {
+    var index = popupIndexForIdentity(identity)
+    if (index < 0) return
+    if (index !== 0 || popupMotionState === "closed") {
+      finalizePopupRemoval(index, reason)
+      return
+    }
+    if (pendingRemovalIdentity === identity && popupMotionState === "closing") return
+    pendingRemovalIdentity = identity
+    pendingRemovalReason = reason
+    requestPopupClose("remove")
+  }
+
   function clearPopups() {
-    while (popupModel.count > 0) dismissPopup(0)
+    for (var i = popupModel.count - 1; i >= 1; i--)
+      finalizePopupRemoval(i, "dismiss")
+    if (popupModel.count === 0) return
+    if (popupMotionState === "closed") finalizePopupRemoval(0, "dismiss")
+    else requestPopupRemoval(NotificationLogic.popupIdentity(popupModel.get(0)), "dismiss")
   }
 
   function liveAction(ref, identifier) {
@@ -603,6 +863,7 @@ Item {
     var action = liveAction(ref, String(identifier || ""))
     if (!action) return false
 
+    var identity = NotificationLogic.popupIdentity(entry)
     var shouldDismiss = forceDismiss === true || ref.resident !== true
     if (shouldDismiss) actionClosingGenerations[entry.originalId] = entry.timestamp
     try {
@@ -615,14 +876,25 @@ Item {
     }
 
     if (shouldDismiss) {
-      dismissPopup(index)
+      requestPopupRemoval(identity, "dismiss")
       delete actionClosingGenerations[entry.originalId]
     }
     return true
   }
 
   function clickPopup(index) {
-    if (!invokePopupAction(index, "default", true)) dismissPopup(index)
+    if (index < 0 || index >= popupModel.count) return
+    clickPopupIdentity(NotificationLogic.popupIdentity(popupModel.get(index)))
+  }
+
+  function invokePopupActionIdentity(identity, identifier, forceDismiss, historyEntry) {
+    var index = popupIndexForIdentity(identity)
+    if (index < 0) return false
+    return invokePopupAction(index, identifier, forceDismiss, historyEntry)
+  }
+
+  function clickPopupIdentity(identity) {
+    if (!invokePopupActionIdentity(identity, "default", true)) requestPopupRemoval(identity, "dismiss")
   }
 
   function invokePopupDefault(index, historyEntry) {
@@ -632,14 +904,31 @@ Item {
   function showDndConfirmation() {
     for (var i = popupModel.count - 1; i >= 0; i--) {
       var old = popupModel.get(i)
-      if (old && Number(old.originalId) < 0) popupModel.remove(i)
+      if (old && Number(old.originalId) < 0) {
+        if (i !== 0) finalizePopupRemoval(i, "dismiss")
+      }
+    }
+    if (popupModel.count > 0 && Number(popupModel.get(0).originalId) < 0) {
+      var confirmation = popupModel.get(0)
+      var identity = NotificationLogic.popupIdentity(confirmation)
+      if (pendingRemovalIdentity === identity) {
+        pendingRemovalIdentity = ""
+        pendingRemovalReason = ""
+      }
+      tickingIdentity = ""
+      popupModel.setProperty(0, "summary",
+        service.doNotDisturb ? "Do not disturb enabled" : "Do not disturb disabled")
+      popupModel.setProperty(0, "remainingLifetime", durationFor(NotificationUrgency.Low, 2500))
+      prepareActiveLifetimeDisplay()
+      if (popupMotionState === "open" && !activePopupHovered) startActiveLifetime()
+      return
     }
     if (popupModel.count >= maxActivePopups) {
       service.persistenceError = "notification active popup limit reached"
       return
     }
     var id = -Date.now()
-    popupModel.insert(0, {
+    enqueuePopup({
       id: id,
       originalId: id,
       app: "desktop-shell",
@@ -649,7 +938,7 @@ Item {
       image: "",
       urgency: NotificationUrgency.Low,
       expireTimeout: 2500,
-      deadline: 0,
+      remainingLifetime: durationFor(NotificationUrgency.Low, 2500),
       transient: false,
       actions: [],
       timestamp: Date.now()
@@ -837,6 +1126,7 @@ Item {
     "done\n"
 
   function persistPopupFile(snapshot) {
+    if (!NotificationLogic.shouldPersistPopup(snapshot)) return
     var persistable = NotificationLogic.persistablePopup(snapshot, imagesDir)
     var command = ["bash", "-c",
       "umask 077\n" +
@@ -1138,10 +1428,14 @@ Item {
       var current = popupModel.get(i)
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
-    row.deadline = 0
+    row.remainingLifetime = 0
+    row.queuePriority = NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
+    ensurePopupQueueOrder(row)
+    delete row.deadline
     row.transient = false
     service.restoredPopups[fileName] = "history"
     popupModel.append(row)
+    if (service.routeVisible && service.popupMotionState === "closed") service.requestPopupOpen()
   }
 
   Process {
@@ -1155,31 +1449,41 @@ Item {
 
   function restorePopups(raw) {
     var entries = NotificationLogic.parsePopupFiles(raw, NotificationUrgency.Normal, service.maxActivePopups)
+    service.latestPopupQueueOrder = Math.max(
+      service.latestPopupQueueOrder, NotificationLogic.popupQueueOrderSeed(entries))
     var now = Date.now()
     var live = []
+    var migrationEntries = []
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i]
+      if (Number(entry.originalId) < 0) {
+        deletePopupFileFor(entry)
+        continue
+      }
       entry.transient = entry.transient === true
       if (entry.transient) {
         deletePopupFileFor(entry)
         continue
       }
       var duration = durationFor(entry.urgency, entry.expireTimeout)
-      var deadline = Number(entry.deadline)
-      var needsDeadlineWrite = false
-      if (duration > 0 && (!isFinite(deadline) || deadline <= 0)) {
-        entry.deadline = Number(entry.timestamp) + duration
-        deadline = entry.deadline
-        needsDeadlineWrite = true
-      }
-      if (NotificationLogic.popupExpired(entry, duration, now)) {
+      var needsMigration = entry.queuePriority === undefined
+        || entry.queueOrder === undefined
+        || (entry.remainingLifetime === undefined && entry.deadline !== undefined)
+      if (entry.queuePriority === undefined)
+        entry.queuePriority = NotificationLogic.popupQueuePriority(entry, NotificationUrgency.Critical)
+      entry.remainingLifetime = NotificationLogic.restoredRemainingLifetime(entry, duration, now)
+      delete entry.deadline
+      if (duration > 0 && entry.remainingLifetime <= 0) {
         archivePopupFileFor(entry)
         continue
       }
-      if (duration <= 0) entry.deadline = 0
-      else if (needsDeadlineWrite) persistPopupFile(entry)
+      if (needsMigration) migrationEntries.push(entry)
       live.push(entry)
     }
+    live = NotificationLogic.migratePopupQueue(live)
+    for (var migrated = 0; migrated < migrationEntries.length; migrated++)
+      persistPopupFile(migrationEntries[migrated])
+    live = NotificationLogic.sortPopupQueue(live, NotificationUrgency.Critical)
     if (live.length === 0) return
 
     Qt.callLater(function() {
@@ -1194,11 +1498,12 @@ Item {
           }
         }
         if (duplicate) continue
-        if (restored.deadline === undefined) restored.deadline = 0
+        if (restored.remainingLifetime === undefined) restored.remainingLifetime = 0
         if (restored.transient === undefined) restored.transient = false
         service.restoredPopups[NotificationLogic.popupFileName(restored)] = "popup"
         popupModel.append(restored)
       }
+      service.requestPopupOpen()
     })
   }
 
@@ -1597,16 +1902,56 @@ Item {
   }
 
   function cardsVisibleOn(screen) {
-    return service.routeVisible
+    return !service.testSurfaceSuppressed && service.routeVisible
       && service.route.output !== null
       && String(service.route.output) === screenName(screen)
       && popupModel.count > 0
   }
 
   function cueVisibleOn(screen) {
-    return service.routeVisible && service.route.cueOutput !== null
+    return !service.testSurfaceSuppressed && service.routeVisible && service.route.cueOutput !== null
       && String(service.route.cueOutput) === screenName(screen)
       && popupModel.count > 0
+  }
+
+  onRouteVisibleChanged: {
+    if (!service.routeVisible) {
+      pauseActiveLifetime()
+      if (popupMotionState !== "closed") requestPopupClose("route-hidden")
+    } else if (popupModel.count > 0 && popupMotionState === "closed") {
+      requestPopupOpen()
+    }
+  }
+
+  onRouteChanged: {
+    var nextOutput = String(service.route.output || "")
+    if (popupTransitionOutput !== "" && popupTransitionOutput !== nextOutput
+        && popupMotionState !== "closed") {
+      popupSurfaceOpened = false
+      requestPopupClose("route-output")
+      var outputPresent = false
+      for (var i = 0; i < Quickshell.screens.length; i++) {
+        if (screenName(Quickshell.screens[i]) === popupTransitionOutput) {
+          outputPresent = true
+          break
+        }
+      }
+      if (!outputPresent) {
+        pauseActiveLifetime()
+        popupMotionState = "closed"
+        popupRenderedOutput = ""
+        popupRenderedIdentity = ""
+        if (pendingRemovalIdentity !== "") {
+          var removeIndex = popupIndexForIdentity(pendingRemovalIdentity)
+          if (removeIndex >= 0) finalizePopupRemoval(removeIndex, pendingRemovalReason)
+          pendingRemovalIdentity = ""
+          pendingRemovalReason = ""
+        }
+        if (popupModel.count > 0 && service.routeVisible) requestPopupOpen()
+      }
+    } else if (popupModel.count > 0 && service.routeVisible && popupMotionState === "closed") {
+      requestPopupOpen()
+    }
   }
 
   Process {
@@ -1776,7 +2121,8 @@ Item {
   }
 
   function dismissLast() {
-    if (popupModel.count > 0) service.dismissPopup(0)
+    if (popupModel.count > 0) service.requestPopupRemoval(
+      NotificationLogic.popupIdentity(popupModel.get(0)), "dismiss")
     return "ok"
   }
 
@@ -1790,12 +2136,14 @@ Item {
   }
 
   function invokeLast() {
-    if (popupModel.count > 0) service.invokePopupDefault(0)
+    if (popupModel.count > 0) service.invokePopupActionIdentity(
+      NotificationLogic.popupIdentity(popupModel.get(0)), "default", false)
     return "ok"
   }
 
   function invokeAction(identifier) {
-    if (popupModel.count > 0) service.invokePopupAction(0, identifier)
+    if (popupModel.count > 0) service.invokePopupActionIdentity(
+      NotificationLogic.popupIdentity(popupModel.get(0)), identifier)
     return "ok"
   }
 
@@ -1840,145 +2188,35 @@ Item {
   Variants {
     model: Quickshell.screens
 
-    PanelWindow {
+    NotificationPopupRail {
       id: popupWindow
       required property var modelData
-      screen: modelData
-      visible: !service.testSurfaceSuppressed && (service.cardsVisibleOn(modelData)
-        || service.cueVisibleOn(modelData))
-
-      WlrLayershell.namespace: "desktop-shell-notifications"
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-      exclusionMode: ExclusionMode.Ignore
-      color: "transparent"
-
-      readonly property var popupPlacement: NotificationLogic.popupPlacement(
-        service.barPosition, service.barClearance, Style.gapsOut)
-      readonly property int placementInset: Style.space(24)
-
-      anchors { top: true; bottom: true; left: true; right: true }
-
-      mask: Region { item: popupColumn }
-
-      ColumnLayout {
-        id: popupColumn
-        visible: service.cardsVisibleOn(popupWindow.modelData)
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.topMargin: popupWindow.popupPlacement.margins.top + popupWindow.placementInset
-        anchors.rightMargin: popupWindow.popupPlacement.margins.right + popupWindow.placementInset
-        spacing: Style.space(8)
-
-        Repeater {
-          model: popupModel
-
-          delegate: Item {
-            id: cardSlot
-            required property int index
-            required property string app
-            required property string appIcon
-            required property string summary
-            required property string body
-            required property string image
-            required property int urgency
-            required property double expireTimeout
-            required property double timestamp
-            required property var deadline
-            required property var actions
-
-            Layout.preferredWidth: card.implicitWidth
-            Layout.alignment: Qt.AlignRight
-            implicitHeight: card.implicitHeight
-
-            readonly property real lifetime: service.durationFor(cardSlot.urgency, cardSlot.expireTimeout)
-            readonly property real deadlineLifetime:
-              NotificationLogic.remainingLifetime(cardSlot, Date.now(), cardSlot.lifetime)
-            property real remainingLifetime: cardSlot.deadlineLifetime
-            readonly property bool ticking: cardSlot.lifetime > 0 && !card.hovered
-
-            function resetLifetime() {
-              cardSlot.remainingLifetime = NotificationLogic.remainingLifetime(
-                cardSlot, Date.now(), cardSlot.lifetime)
-            }
-
-            onSummaryChanged: cardSlot.resetLifetime()
-            onBodyChanged: cardSlot.resetLifetime()
-            onImageChanged: cardSlot.resetLifetime()
-            onUrgencyChanged: cardSlot.resetLifetime()
-            onExpireTimeoutChanged: cardSlot.resetLifetime()
-            onDeadlineChanged: cardSlot.resetLifetime()
-            onActionsChanged: cardSlot.resetLifetime()
-
-            Timer {
-              interval: 50
-              repeat: true
-              running: cardSlot.ticking
-              onTriggered: {
-                var remaining = NotificationLogic.remainingLifetime(
-                  cardSlot, Date.now(), cardSlot.lifetime)
-                cardSlot.remainingLifetime = remaining
-                if (remaining <= 0) {
-                  service.expirePopup(cardSlot.index)
-                }
-              }
-            }
-
-            NotificationCard {
-              id: card
-              anchors.right: parent.right
-              app: cardSlot.app
-              appIcon: cardSlot.appIcon
-              summary: cardSlot.summary
-              body: cardSlot.body
-              image: cardSlot.image
-              urgency: cardSlot.urgency
-              timestamp: cardSlot.timestamp
-              actions: cardSlot.actions
-              fontFamily: service.shell && service.shell.bar
-                ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
-
-              onCloseRequested: service.dismissPopup(cardSlot.index)
-              onActionClicked: function(identifier) {
-                service.invokePopupAction(cardSlot.index, identifier)
-              }
-              onCardClicked: service.clickPopup(cardSlot.index)
-            }
-          }
-        }
+      output: modelData
+      popupModel: service.popupModel
+      shell: service.shell
+      cardsVisible: service.cardsVisibleOn(modelData)
+      cueVisible: service.cueVisibleOn(modelData)
+      opened: service.popupSurfaceOpened && service.cardsVisibleOn(modelData)
+      transitionGeneration: service.popupTransitionGeneration
+      remainingFraction: service.remainingFraction
+      countdownVisible: service.countdownVisible
+      criticalPending: service.pendingPreemptionIdentity !== "" && service.activePopupHovered
+      fontFamily: service.shell && service.shell.bar
+        ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
+      barPosition: service.barPosition
+      barSize: service.liveBarSize
+      cueGlyph: NotificationLogic.cueGlyph(service.route.direction)
+      onDismissRequested: function(identity) { service.requestPopupRemoval(identity, "dismiss") }
+      onCardClicked: function(identity) { service.clickPopupIdentity(identity) }
+      onActionClicked: function(identity, identifier) {
+        service.invokePopupActionIdentity(identity, identifier)
       }
-
-      ElevatedSurface {
-        id: cueSurface
-        visible: service.cueVisibleOn(popupWindow.modelData)
-        revealed: visible
-        entranceX: Style.space(12)
-        concealedScale: 1.0
-        motionDuration: 160
-        shadowBlurMax: 48
-        shadowBlurAmount: 1.0
-        shadowOpacityAmount: 0.78
-        shadowOffsetY: 14
-        shadowScaleAmount: 1.03
-        effectPaddingRect: Qt.rect(-8, -8, 16, 30)
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.topMargin: popupWindow.popupPlacement.margins.top + popupWindow.placementInset
-        anchors.rightMargin: popupWindow.popupPlacement.margins.right + popupWindow.placementInset
-        implicitWidth: Style.space(250)
-        implicitHeight: Style.space(48)
-        radius: 0
-        color: Color.notifications.background
-        borderSpec: Border.none()
-
-        Text {
-          id: cueLabel
-          anchors.centerIn: parent
-          text: NotificationLogic.cueGlyph(service.route.direction)
-          color: Color.notifications.text
-          font.family: Style.font.family
-          font.pixelSize: Style.font.display
-        }
+      onActiveHoverChanged: function(hovered) { service.setActivePopupHovered(hovered) }
+      onOpenFinished: function(identity, generation, outputName) {
+        service.handlePopupOpenFinished(identity, generation, outputName)
+      }
+      onCloseFinished: function(identity, generation, outputName) {
+        service.handlePopupCloseFinished(identity, generation, outputName)
       }
     }
   }

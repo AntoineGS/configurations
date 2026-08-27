@@ -130,6 +130,14 @@ const historyIdentity = { originalId: 42, timestamp: 1786930001000 }
 assert.equal(logic.nextMonotonicTimestamp(-1, 1786930001000), 1786930001000)
 assert.equal(logic.nextMonotonicTimestamp(1786930001000, 1786930001000), 1786930001001)
 assert.equal(logic.nextMonotonicTimestamp(1786930001001, 1786930000500), 1786930001002)
+assert.equal(logic.popupQueueOrderSeed([
+  { queueOrder: 12000 },
+  { queueOrder: 4500 },
+  { queueOrder: "invalid" },
+]), 12000, "restored queue orders seed from the maximum valid value")
+assert.equal(logic.nextMonotonicTimestamp(
+  logic.popupQueueOrderSeed([{ queueOrder: 12000 }, { queueOrder: 4500 }]), 1000), 12001,
+"new arrivals remain after restored rows when the wall clock rolls back")
 assert.equal(logic.historyActionAvailable(historyIdentity, liveDefaultRef, 1786930001000), true)
 assert.equal(logic.historyActionAvailable(historyIdentity, liveDefaultRef, 1786930002000), false,
   "a reused notification id cannot activate through an older history row")
@@ -222,10 +230,67 @@ assert.deepEqual(logic.popupArrivalPlan([criticalA, normalA], 2, 2, false), {
 assert.deepEqual(logic.popupArrivalPlan([normalA, criticalA, normalB], 2, 2, true), {
   insertIndex: 2, preempt: false, deferred: true,
 })
+assert.deepEqual(logic.popupArrivalPlan([
+  { ...normalA, queuePriority: true },
+  { ...normalB, queuePriority: false },
+], 2, 2, false), {
+  insertIndex: 1, preempt: true, deferred: false,
+}, "active preemption follows current urgency, not durable queue priority")
+assert.deepEqual(logic.popupArrivalPlan([
+  { ...criticalA, urgency: 1, queuePriority: true },
+  { ...normalB, queuePriority: false },
+], 2, 2, false), {
+  insertIndex: 1, preempt: true, deferred: false,
+}, "a critical replacement with normal urgency can be preempted")
 assert.deepEqual(
   logic.sortPopupQueue([normalB, criticalB, normalA, criticalA], 2)
     .map(logic.popupIdentity),
   ["3000:3", "4000:4", "1000:1", "2000:2"],
+)
+const legacyQueue = logic.migratePopupQueue([
+  { originalId: 2, timestamp: 2000 },
+  { originalId: 1, timestamp: 1000 },
+])
+assert.deepEqual(legacyQueue.sort((a, b) => a.queueOrder - b.queueOrder).map(entry => entry.originalId), [1, 2],
+  "all-legacy popup rows receive FIFO queue order")
+const mixedQueue = logic.migratePopupQueue([
+  { originalId: 4, timestamp: 4000, queueOrder: 20 },
+  { originalId: 2, timestamp: 2000 },
+  { originalId: 1, timestamp: 1000, queueOrder: 10 },
+  { originalId: 3, timestamp: 3000 },
+])
+assert.equal(mixedQueue.find(entry => entry.originalId === 1).queueOrder, 10,
+  "valid durable order remains unchanged during migration")
+assert.deepEqual(mixedQueue.sort((a, b) => a.queueOrder - b.queueOrder).map(entry => entry.originalId), [1, 4, 2, 3],
+  "missing mixed orders allocate oldest-to-newest after valid durable orders")
+assert.equal(logic.shouldPersistPopup({ originalId: -1, transient: false }), false)
+assert.equal(logic.shouldPersistPopup({ originalId: 1, transient: true }), false)
+assert.equal(logic.shouldPersistPopup({ originalId: 1, transient: false }), true)
+assert.deepEqual(logic.historyRows(
+  '{"id":-1,"originalId":-1,"timestamp":3000}\n{"id":1,"originalId":1,"timestamp":2000}',
+  [], 1, 10).map(entry => entry.originalId), [1],
+  "internal confirmation rows cannot enter notification history")
+assert.equal(logic.popupQueuePriority({ urgency: 2, queuePriority: false }, 2), false,
+  "replacement display urgency cannot change queue priority")
+assert.equal(logic.popupQueuePriority({ urgency: 1, queuePriority: true }, 2), true,
+  "original critical priority survives display urgency replacement")
+assert.equal(logic.popupQueuePriority({ urgency: 2 }, 2), true,
+  "legacy rows derive queue priority from urgency")
+assert.deepEqual(
+  logic.sortPopupQueue([
+    { ...normalA, urgency: 2, queuePriority: false },
+    { ...normalB, urgency: 1, queuePriority: true },
+  ], 2).map(logic.popupIdentity),
+  ["2000:2", "1000:1"],
+  "queue sorting uses durable priority rather than mutable urgency",
+)
+assert.deepEqual(
+  logic.sortPopupQueue([
+    { ...normalA, timestamp: 9000, queuePriority: true, queueOrder: 1 },
+    { ...normalB, timestamp: 2000, queuePriority: true, queueOrder: 2 },
+  ], 2).map(logic.popupIdentity),
+  ["9000:1", "2000:2"],
+  "retained queue order survives a newer replacement timestamp",
 )
 
 assert.equal(logic.consumeRemainingLifetime(10000, 5000), 5000)
@@ -415,8 +480,9 @@ assert.deepEqual(replacement, {
 }, "replacement keeps the original popup identity while updating display data")
 assert.deepEqual(logic.popupRoles(), [
   "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime",
-  "transient", "actions",
+  "queuePriority", "queueOrder", "transient", "actions",
 ])
+assert.ok(logic.popupRoles().includes("queueOrder"))
 assert.equal(logic.popupRowChanged(snapshot, snapshot), false)
 assert.equal(logic.popupRowChanged(snapshot, replacement), true)
 
@@ -443,6 +509,14 @@ assert.deepEqual(persisted, {
 const persistedRemaining = logic.popupEntry({ ...snapshot, remainingLifetime: 2500 }, 1)
 assert.equal(persistedRemaining.remainingLifetime, 2500)
 assert.equal(JSON.parse(logic.serializePopup(persistedRemaining, 1)).remainingLifetime, 2500)
+assert.equal(logic.popupEntry({ ...snapshot, queuePriority: true }, 1).queuePriority, true)
+assert.equal(JSON.parse(logic.serializePopup({ ...snapshot, queuePriority: false }, 1)).queuePriority, false)
+assert.equal(logic.popupEntry({ ...snapshot, queueOrder: 7 }, 1).queueOrder, 7)
+assert.equal(JSON.parse(logic.serializePopup({ ...snapshot, queueOrder: 7 }, 1)).queueOrder, 7)
+for (const invalidQueueOrder of ["7", null, -1, Infinity, NaN]) {
+  assert.equal(logic.popupEntry({ ...snapshot, queueOrder: invalidQueueOrder }, 1).queueOrder,
+    undefined, `invalid persisted queue order is migrated: ${String(invalidQueueOrder)}`)
+}
 assert.deepEqual(logic.historyEntry({ id: 7, app: "unknown", timestamp: 10 }, 1), {
   id: 7,
   originalId: 7,
@@ -686,4 +760,4 @@ for (const raw of [
   assert.notEqual(result.error, "")
 }
 
-console.log("notification-logic-test: route privacy, persistence, history, images, expiry, and placement verified")
+console.log("notification-logic-test: route privacy, queue ordering, visible lifetime, persistence, history, images, and placement verified")
