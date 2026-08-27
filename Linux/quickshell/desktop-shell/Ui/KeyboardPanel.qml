@@ -132,6 +132,16 @@ PanelWindow {
   }
   mask: Region { item: root.open ? dismissArea : null }
 
+  Rectangle {
+    anchors.fill: parent
+    anchors.topMargin: root.barPos === "top" ? root._barStripSize : 0
+    anchors.rightMargin: root.barPos === "right" ? root._barStripSize : 0
+    anchors.bottomMargin: root.barPos === "bottom" ? root._barStripSize : 0
+    anchors.leftMargin: root.barPos === "left" ? root._barStripSize : 0
+    color: Color.modal.scrim
+    opacity: card.revealProgress
+  }
+
   // Track every layout change between the bar's contentItem and the
   // anchor item. `transform` updates whenever any item in that chain
   // moves/resizes, which is what makes the position binding below
@@ -353,7 +363,7 @@ PanelWindow {
   // Keyboard focus is None: these must catch the pointer without taking focus
   // from the panel when the cursor merely crosses onto their output.
   Variants {
-    model: root.open ? Quickshell.screens : []
+    model: root.visible ? Quickshell.screens : []
 
     delegate: Component {
       PanelWindow {
@@ -362,8 +372,9 @@ PanelWindow {
         screen: modelData
         // Compare by output name: the anchor screen must be known before any
         // twin maps, or a twin would cover the panel's own output.
-        visible: root.open && !!root.screen && modelData.name !== root.screen.name
+        visible: root.visible && !!root.screen && modelData.name !== root.screen.name
         color: "transparent"
+        mask: Region { item: root.open ? twinDismissArea : null }
         exclusionMode: ExclusionMode.Ignore
 
         WlrLayershell.namespace: "desktop-shell-keyboard-panel-dismiss"
@@ -377,8 +388,21 @@ PanelWindow {
           right: true
         }
 
-        MouseArea {
+        Rectangle {
           anchors.fill: parent
+          anchors.topMargin: root.barPos === "top" ? root._barStripSize : 0
+          anchors.rightMargin: root.barPos === "right" ? root._barStripSize : 0
+          anchors.bottomMargin: root.barPos === "bottom" ? root._barStripSize : 0
+          anchors.leftMargin: root.barPos === "left" ? root._barStripSize : 0
+          color: Color.modal.scrim
+          opacity: card.revealProgress
+        }
+
+        MouseArea {
+          id: twinDismissArea
+
+          anchors.fill: parent
+          enabled: root.open
           acceptedButtons: Qt.AllButtons
           onPressed: root.close()
         }
