@@ -515,6 +515,27 @@ applications:
         run:
           linux: sudo ~/.local/bin/install-rustdesk-drm-preview --apply
         name: package
+  - name: rustdesk-server-keepalive
+    description: Suppress RustDesk's timed Linux server recycling
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: marker
+        backup: ./Linux/rustdesk
+        files:
+          - rustdesk-cm-marker
+      - targets:
+          linux: ~/.config/systemd/user
+        name: service
+        backup: ./Linux/rustdesk
+        files:
+          - rustdesk-cm-marker.service
+      - check:
+          linux: ~/.local/bin/rustdesk-cm-marker --check
+        run:
+          linux: ~/.local/bin/rustdesk-cm-marker --apply
+        name: enable-service
   - name: rustdesk-wayland
     description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
     when: '{{ eq .Hostname "antoinews-linux" }}'

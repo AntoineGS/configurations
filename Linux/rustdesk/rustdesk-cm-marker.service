@@ -1,0 +1,13 @@
+[Unit]
+Description=Suppress RustDesk timed server recycling
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/rustdesk-cm-marker --run
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
