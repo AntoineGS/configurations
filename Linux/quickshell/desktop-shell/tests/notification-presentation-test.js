@@ -84,6 +84,8 @@ state = step(state, { type: "HOVER_CHANGED", hovered: false }, s => {
   assert.deepEqual(ids(s.pending), ["1000:1", "2000:2"])
   assert.equal(s.visual.outgoing.identity, "1000:1")
   assert.equal(s.visual.incoming.identity, "3000:3")
+  assert.deepEqual(ids(s.visual.outgoingDeck.snapshots), ["2000:2"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["1000:1", "2000:2"])
   assert.equal(s.countdown.visible, false)
 })
 const switchToken = state.visual.token
@@ -162,13 +164,13 @@ routed = step(routed, { type: "ROUTE_CHANGED", visible: true, output: "DP-2" }, 
 
 let timers = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 timers = step(timers, { type: "ARRIVE", snapshot: snapshot("11000:11", 1, 1000, 1000) })
-timers = step(timers, { type: "TICK", now: 10 }, s => assert.equal(s.countdown.remaining, 0))
+timers = step(timers, { type: "TICK", identity: "11000:11", now: 10 }, s => assert.equal(s.countdown.remaining, 0))
 timers = step(timers, { type: "TRANSITION_FINISHED", token: 1, kind: "open", output: "DP-1" })
-timers = step(timers, { type: "TICK", now: 1 })
-timers = step(timers, { type: "TICK", now: 101 }, s => assert.equal(s.countdown.remaining, 900))
-const expiry = apply(timers, { type: "TICK", now: 1101 })
+timers = step(timers, { type: "TICK", identity: "11000:11", now: 1 })
+timers = step(timers, { type: "TICK", identity: "11000:11", now: 101 }, s => assert.equal(s.countdown.remaining, 900))
+const expiry = apply(timers, { type: "TICK", identity: "11000:11", now: 1101 })
 assert.ok(expiry.effects.some(effect => effect.type === "senderExpire" && effect.identity === "11000:11"))
-assert.equal(expiry.state.phase, "closed")
+assert.equal(expiry.state.phase, "closing")
 
 let all = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 all = step(all, { type: "ARRIVE", snapshot: snapshot("12000:12", 1, 1000, 1000) })
@@ -184,4 +186,112 @@ for (const event of [null, {}, { type: "UNKNOWN" }, { type: "ARRIVE" }, { type: 
 
 function assertInvariantsOnly(value) { assert.equal(Presentation.assertInvariants(value), true) }
 assert.equal(Presentation.presentationFrame(all).phase, all.phase)
+function finishOpen(value) {
+  return step(value, { type: "TRANSITION_FINISHED", token: value.visual.token, kind: "open", output: value.visual.output })
+}
+function openState(row) {
+  let value = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+  value = step(value, { type: "ARRIVE", snapshot: row })
+  return finishOpen(value)
+}
+
+// Round 1 review races: every event continues through apply(), including malformed input.
+let watchdog = openState(snapshot("13000:13", 1, 1000, 1000))
+let watchdogResult = apply(watchdog, { type: "ARRIVE", snapshot: snapshot("14000:14", 2, 0, 0) })
+assert.ok(watchdogResult.effects.some(effect => effect.type === "startWatchdog" && effect.timeout === 830 && effect.kind === "switch"))
+watchdog = watchdogResult.state
+const switchToken2 = watchdog.visual.token
+watchdogResult = apply(watchdog, { type: "TRANSITION_TIMED_OUT", token: switchToken2, kind: "switch", output: "DP-1" })
+assert.ok(watchdogResult.effects.some(effect => effect.type === "cancelWatchdog" && effect.token === switchToken2))
+watchdog = watchdogResult.state
+const closeResult = apply(openState(snapshot("14500:145", 1, 1000, 1000)), { type: "DISMISS", identity: "14500:145" })
+assert.ok(closeResult.effects.some(effect => effect.type === "startWatchdog" && effect.timeout === 470 && effect.kind === "close"))
+
+let closing = openState(snapshot("15000:15", 1, 1000, 1000))
+let closingResult = apply(closing, { type: "DISMISS", identity: "15000:15" })
+assert.equal(closingResult.state.phase, "closing")
+const frozenClose = JSON.parse(JSON.stringify(closingResult.state.visual))
+closingResult = apply(closingResult.state, { type: "ARRIVE", snapshot: snapshot("16000:16", 1, 1000, 1000) })
+assert.deepEqual(closingResult.state.visual, frozenClose)
+assert.deepEqual(ids(closingResult.state.pending), ["16000:16"])
+const closeToken2 = closingResult.state.visual.token
+closingResult = apply(closingResult.state, { type: "TRANSITION_FINISHED", token: closeToken2, kind: "close", output: "DP-1" })
+assert.equal(closingResult.state.phase, "opening")
+assert.equal(closingResult.state.active.identity, "16000:16")
+assert.ok(closingResult.effects.some(effect => effect.type === "startWatchdog" && effect.timeout === 510))
+const closeSettled = apply(closingResult.state, { type: "TRANSITION_FINISHED", token: closingResult.state.visual.token, kind: "open", output: "DP-1" })
+assert.deepEqual(closeSettled.effects, [{ type: "cancelWatchdog", token: closingResult.state.visual.token, kind: "open", output: "DP-1" }])
+
+let hiddenTransition = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+hiddenTransition = step(hiddenTransition, { type: "ARRIVE", snapshot: snapshot("15500:155", 1, 1000, 1000) })
+const hiddenResult = apply(hiddenTransition, { type: "ROUTE_CHANGED", visible: false, output: null })
+assert.deepEqual(hiddenResult.effects, [{ type: "cancelWatchdog", token: 1, kind: "open", output: "DP-1" }])
+const staleResult = apply(hiddenResult.state, { type: "TRANSITION_FINISHED", token: 1, kind: "open", output: "DP-1" })
+assert.deepEqual(staleResult.effects, [])
+
+let timerState = openState(snapshot("17000:17", 1, 1000, 1000))
+timerState = step(timerState, { type: "TICK", identity: "wrong", now: 100 }, s => assert.equal(s.countdown.remaining, 1000))
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 100 })
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 200 }, s => assert.equal(s.countdown.remaining, 900))
+timerState = step(timerState, { type: "HOVER_CHANGED", hovered: true })
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 300 }, s => assert.equal(s.countdown.remaining, 900))
+timerState = step(timerState, { type: "HOVER_CHANGED", hovered: false })
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 400 }, s => assert.equal(s.countdown.remaining, 800))
+const expiryResult = apply(timerState, { type: "TICK", identity: "17000:17", now: 1200 })
+assert.equal(expiryResult.state.phase, "closing")
+assert.equal(expiryResult.state.visual.outgoing.identity, "17000:17")
+assert.ok(expiryResult.effects.some(effect => effect.type === "senderExpire"))
+
+let generation = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+generation = step(generation, { type: "ARRIVE", snapshot: snapshot("18000:18", 1, 1000, 1000) })
+const newGeneration = snapshot("19000:18", 1, 2000, 2000)
+generation = step(generation, { type: "REPLACE", identity: "18000:18", snapshot: newGeneration }, s => {
+  assert.equal(s.active.identity, "19000:18")
+  assert.equal(s.visual.incoming.identity, "18000:18")
+  assert.equal(s.retired["18000:18"], true)
+})
+generation = finishOpen(generation)
+assert.equal(generation.visual.incoming.identity, "19000:18")
+generation = step(generation, { type: "SENDER_CLOSED", identity: "18000:18" }, s => assert.equal(s.active.identity, "19000:18"))
+const activeClose = apply(generation, { type: "SENDER_CLOSED", identity: "19000:18" })
+assert.equal(activeClose.state.phase, "closing")
+
+let priority = openState(snapshot("20000:20", 2, 0, 0))
+priority = step(priority, { type: "ARRIVE", snapshot: snapshot("21000:21", 2, 0, 0) }, s => {
+  assert.equal(s.phase, "open")
+  assert.deepEqual(ids(s.pending), ["21000:21"])
+})
+priority = step(priority, { type: "ARRIVE", snapshot: snapshot("22000:22", 1, 1000, 1000) })
+priority = step(priority, { type: "HOVER_CHANGED", hovered: true })
+priority = step(priority, { type: "ARRIVE", snapshot: snapshot("23000:23", 2, 0, 0) })
+priority = step(priority, { type: "HOVER_CHANGED", hovered: false }, s => assert.deepEqual(ids(s.pending), ["21000:21", "23000:23", "22000:22"]))
+
+let allEffects = openState(snapshot("24000:24", 1, 1000, 1000))
+allEffects = step(allEffects, { type: "ARRIVE", snapshot: snapshot("25000:25", 1, 1000, 1000) })
+const allResult = apply(allEffects, { type: "DISMISS_ALL" })
+assert.equal(allResult.effects.filter(effect => effect.type === "archive").length, 2)
+assert.ok(allResult.effects.filter(effect => effect.type === "archive" || effect.type === "senderDismiss").every(effect => effect.snapshot && effect.identity))
+
+let pendingReplacement = openState(snapshot("26000:26", 2, 0, 0))
+pendingReplacement = step(pendingReplacement, { type: "ARRIVE", snapshot: snapshot("27000:27", 1, 1000, 1000) })
+pendingReplacement = step(pendingReplacement, { type: "ARRIVE", snapshot: snapshot("28000:28", 2, 0, 0) })
+pendingReplacement = step(pendingReplacement, { type: "REPLACE", identity: "27000:27", snapshot: snapshot("29000:27", 2, 0, 0) }, s => {
+  assert.deepEqual(ids(s.pending), ["28000:28", "29000:27"])
+  assert.equal(s.pending[1].queueOrder, 27000)
+  assert.equal(s.pending[1].queuePriority, false)
+})
+
+let malformed = openState(snapshot("30000:30", 1, 1000, 1000))
+for (const badEvent of [null, {}, { type: "ARRIVE" }, { type: "ARRIVE", snapshot: {} },
+  { type: "REPLACE", identity: "30000:30" }, { type: "ROUTE_CHANGED", visible: "true", output: "DP-1" },
+  { type: "TRANSITION_FINISHED", token: "1", kind: "open", output: "DP-1" },
+  { type: "TICK", identity: "30000:30", now: "bad" }]) {
+  const before = JSON.parse(JSON.stringify(malformed))
+  const badResult = apply(malformed, badEvent)
+  assert.deepEqual(badResult.state, before)
+  assert.deepEqual(badResult.effects, [])
+}
+const source = require("node:fs").readFileSync(require.resolve("../plugins/notifications/NotificationPresentation.js"), "utf8")
+assert.equal(source.includes("findIndex"), false)
+assert.equal(source.includes("Number.isFinite"), false)
 console.log("notification-presentation-test: immutable snapshot reducer, transitions, routing, timers, dismissal, replacement, and invariants verified")
