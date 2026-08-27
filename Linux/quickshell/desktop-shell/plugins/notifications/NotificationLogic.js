@@ -166,6 +166,64 @@ function remainingLifetime(entry, now, fallbackDuration) {
   return Math.max(0, timestamp + duration - current)
 }
 
+function popupIdentity(entry) {
+  var row = entry || {}
+  return String(Number(row.timestamp) || 0) + ":" + String(Number(row.originalId) || 0)
+}
+
+function popupArrivalPlan(rows, urgency, criticalUrgency, hovered) {
+  var values = Array.isArray(rows) ? rows : []
+  var incomingCritical = Number(urgency) === Number(criticalUrgency)
+  if (!incomingCritical) {
+    return { insertIndex: values.length, preempt: false, deferred: false }
+  }
+
+  var hasActive = values.length > 0
+  var activeCritical = hasActive
+    && Number(values[0].urgency) === Number(criticalUrgency)
+  var index = hasActive ? 1 : 0
+  while (index < values.length
+      && Number(values[index].urgency) === Number(criticalUrgency)) index++
+
+  return {
+    insertIndex: index,
+    preempt: hasActive && !activeCritical && hovered !== true,
+    deferred: hasActive && !activeCritical && hovered === true,
+  }
+}
+
+function sortPopupQueue(rows, criticalUrgency) {
+  var values = Array.isArray(rows) ? rows.slice() : []
+  return values.sort(function(left, right) {
+    var leftCritical = Number(left && left.urgency) === Number(criticalUrgency)
+    var rightCritical = Number(right && right.urgency) === Number(criticalUrgency)
+    if (leftCritical !== rightCritical) return leftCritical ? -1 : 1
+    return (Number(left && left.timestamp) || 0) - (Number(right && right.timestamp) || 0)
+  })
+}
+
+function consumeRemainingLifetime(remaining, elapsed) {
+  var value = Number(remaining)
+  var used = Number(elapsed)
+  if (!isFinite(value) || value <= 0) return 0
+  if (!isFinite(used) || used <= 0) return value
+  return Math.max(0, value - used)
+}
+
+function restoredRemainingLifetime(entry, duration, now) {
+  var row = entry || {}
+  var stored = Number(row.remainingLifetime)
+  if (isFinite(stored) && stored >= 0) return stored
+
+  var deadline = Number(row.deadline)
+  var current = Number(now)
+  if (isFinite(deadline) && deadline > 0 && isFinite(current))
+    return Math.max(0, deadline - current)
+
+  var fallback = Number(duration)
+  return isFinite(fallback) && fallback > 0 ? fallback : 0
+}
+
 function nextMonotonicTimestamp(previous, candidate) {
   var prior = Number(previous)
   if (!isFinite(prior)) prior = -1
@@ -408,7 +466,7 @@ function snapshotOf(notification, timestamp) {
   return result
 }
 
-var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "deadline", "transient", "actions"]
+var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime", "transient", "actions"]
 
 function popupRoles() {
   return POPUP_ROLES
@@ -501,8 +559,12 @@ function popupEntry(value, normalUrgency) {
   var hasExpireTimeout = Object.prototype.hasOwnProperty.call(source, "expireTimeout")
   entry.expireTimeout = normalizedExpireTimeout(hasExpireTimeout ? source.expireTimeout : -1)
 
-  var deadline = Number((value || {}).deadline || 0)
-  if (isFinite(deadline) && deadline > 0) entry.deadline = deadline
+  var remaining = Number(source.remainingLifetime)
+  if (isFinite(remaining) && remaining >= 0) entry.remainingLifetime = remaining
+
+  var deadline = Number(source.deadline)
+  if (entry.remainingLifetime === undefined && isFinite(deadline) && deadline > 0)
+    entry.deadline = deadline
   return entry
 }
 
@@ -696,6 +758,11 @@ if (typeof module !== "undefined") {
     deadlineFor: deadlineFor,
     deadlineForReceipt: deadlineForReceipt,
     remainingLifetime: remainingLifetime,
+    popupIdentity: popupIdentity,
+    popupArrivalPlan: popupArrivalPlan,
+    sortPopupQueue: sortPopupQueue,
+    consumeRemainingLifetime: consumeRemainingLifetime,
+    restoredRemainingLifetime: restoredRemainingLifetime,
     nextMonotonicTimestamp: nextMonotonicTimestamp,
     persistenceQueueUpdate: persistenceQueueUpdate,
     refreshScheduleUpdate: refreshScheduleUpdate,
