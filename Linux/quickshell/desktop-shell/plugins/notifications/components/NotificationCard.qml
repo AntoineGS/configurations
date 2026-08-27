@@ -31,8 +31,17 @@ ElevatedSurface {
   property bool historyMode: false
   property bool keyboardSelected: false
   property bool actionAvailable: true
+  property bool attachedMode: false
+  property color gradientStartColor: root.surfaceColor
+  property real gradientExtent: Style.space(60)
+  property real metadataOpacity: 1
+  property real contentOpacity: 1
+  property real remainingFraction: 1
+  property bool showCountdown: false
 
   readonly property bool hovered: hoverTracker.hovered
+  readonly property real gradientStop: Math.min(1,
+    root.gradientExtent / Math.max(1, root.height))
   readonly property string smallIconSource: image.length > 0
     ? NotificationLogic.normalizeImageSource(image) : iconSource(appIcon)
   readonly property bool hasSmallIcon: smallIconSource.length > 0
@@ -67,7 +76,18 @@ ElevatedSurface {
 
   implicitWidth: Style.space(380)
   implicitHeight: mainColumn.implicitHeight
-  radius: root.historyMode ? Style.popupInnerRadius : 0
+  radius: root.attachedMode ? Style.popupOuterRadius
+    : (root.historyMode ? Style.popupInnerRadius : 0)
+  topLeftRadius: root.attachedMode ? 0 : radius
+  topRightRadius: root.attachedMode ? 0 : radius
+  bottomLeftRadius: radius
+  bottomRightRadius: radius
+  gradient: Gradient {
+    orientation: Gradient.Vertical
+    GradientStop { position: 0; color: root.gradientStartColor }
+    GradientStop { position: root.gradientStop; color: root.surfaceColor }
+    GradientStop { position: 1; color: root.surfaceColor }
+  }
   color: surfaceColor
   borderSpec: root.keyboardSelected
     ? Border.flat(root.inkColor, Math.max(2, Style.space(2)))
@@ -95,6 +115,7 @@ ElevatedSurface {
     spacing: 0
 
     RowLayout {
+      opacity: root.metadataOpacity
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(34)
@@ -146,9 +167,11 @@ ElevatedSurface {
       Layout.rightMargin: Style.space(12)
       height: Style.space(2)
       color: root.inkColor
+      opacity: root.contentOpacity
     }
 
     Text {
+      opacity: root.contentOpacity
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
@@ -166,6 +189,7 @@ ElevatedSurface {
     }
 
     Text {
+      opacity: root.contentOpacity
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
@@ -193,9 +217,11 @@ ElevatedSurface {
       visible: !root.historyMode && !!root.actions && root.actions.length > 0
       height: Math.max(1, Style.space(1))
       color: root.inkColor
+      opacity: root.contentOpacity
     }
 
     Item {
+      opacity: root.contentOpacity
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
@@ -243,12 +269,30 @@ ElevatedSurface {
       visible: root.historyMode && !root.actionAvailable
       text: "ACTION UNAVAILABLE"
       color: root.inkColor
-      opacity: 0.62
+      opacity: 0.62 * root.contentOpacity
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
       font.letterSpacing: Style.spaceReal(0.6)
       horizontalAlignment: Text.AlignRight
+    }
+  }
+
+  Rectangle {
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.bottom: parent.bottom
+    anchors.leftMargin: Style.space(12)
+    anchors.rightMargin: Style.space(12)
+    anchors.bottomMargin: Style.space(5)
+    height: Math.max(1, Style.space(2))
+    visible: root.showCountdown
+    color: Util.alpha(root.inkColor, 0.2)
+
+    Rectangle {
+      width: parent.width * Math.max(0, Math.min(1, root.remainingFraction))
+      height: parent.height
+      color: Color.notifications.countdown
     }
   }
 
