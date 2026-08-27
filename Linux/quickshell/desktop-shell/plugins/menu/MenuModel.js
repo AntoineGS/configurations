@@ -421,6 +421,40 @@ function dmenuRows(options, query) {
   return rows
 }
 
+function contextRows(options, query) {
+  var values = Array.isArray(options) ? options : []
+  var needle = String(query || "").trim().toLowerCase()
+  var rows = []
+  for (var i = 0; i < values.length; i++) {
+    var option = values[i]
+    if (!isPlainObject(option)) continue
+    var key = String(option.key || "")
+    var label = String(option.label || "")
+    if (!/^[a-z0-9]+(?:[.-][a-z0-9][a-z0-9-]*)*$/.test(key) || !label) continue
+    if (needle && label.toLowerCase().indexOf(needle) < 0) continue
+    rows.push({
+      itemId: "edit-context:" + key,
+      disabled: false,
+      kind: "edit-context",
+      icon: "",
+      iconFont: "",
+      appIcon: "",
+      label: label,
+      target: "",
+      detail: "",
+      path: "",
+      childCount: 0,
+      desktopId: "",
+      action: "",
+      selection: key,
+      requestSerial: 0,
+      score: i,
+      section: "edit-context"
+    })
+  }
+  return rows
+}
+
 function rowsHaveIcons(rows) {
   var values = Array.isArray(rows) ? rows : []
   for (var i = 0; i < values.length; i++) {
@@ -558,6 +592,7 @@ if (typeof module !== "undefined") {
     calculatorRow: calculatorRow,
     composeSearchResults: composeSearchResults,
     dmenuRows: dmenuRows,
+    contextRows: contextRows,
     rowsHaveIcons: rowsHaveIcons,
     rowsHaveChevrons: rowsHaveChevrons,
     adaptiveMenuWidth: adaptiveMenuWidth,

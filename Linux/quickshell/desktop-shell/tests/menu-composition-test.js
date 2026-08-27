@@ -20,3 +20,19 @@ assert.deepEqual(model.dmenuRows(["One", "Two\tSecond option"], "two").map(row =
   detail: row.detail,
   selection: row.selection,
 })), [{ label: "Two", detail: "Second option", selection: "Two\tSecond option" }])
+
+const contextOptions = [
+  { key: "source", label: "Edit script" },
+  { key: "source-location", label: "Browse script location" },
+]
+const contextRows = model.contextRows(contextOptions, "browse")
+assert.deepEqual(contextRows.map(row => ({
+  kind: row.kind,
+  label: row.label,
+  selection: row.selection,
+})), [{
+  kind: "edit-context",
+  label: "Browse script location",
+  selection: "source-location",
+}])
+assert.deepEqual(model.contextRows([{ key: "../../bad", label: "Unsafe" }, null], ""), [])

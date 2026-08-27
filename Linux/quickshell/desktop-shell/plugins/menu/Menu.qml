@@ -31,6 +31,17 @@ Item {
   property var dmenuOptions: []
   property string requestDir: ""
   property string pendingAction: ""
+  property bool editContextActive: false
+  property var editContextOptions: []
+  property string editContextKind: ""
+  property string editContextId: ""
+  property string editContextLabel: ""
+  property string editContextSavedFilter: ""
+  property int editContextSavedIndex: 0
+  property bool editContextSavedCursorActive: false
+  property real editContextSavedContentY: 0
+  property int editContextSerial: 0
+  property var pendingEditContextRequest: null
   property bool closingDetailsVisible: false
   property bool overlayContentReady: false
   property real animatedListHeight: listHeight
@@ -73,7 +84,8 @@ Item {
   readonly property int contentMargin: Style.spacing.popupPadding
   readonly property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.rowPaddingX * 2)
   readonly property int rowSpacing: Style.space(2)
-  readonly property string searchPlaceholder: root.dmenuActive ? root.dmenuPrompt
+  readonly property string searchPlaceholder: root.editContextActive ? "Related to " + root.editContextLabel + "…"
+    : root.dmenuActive ? root.dmenuPrompt
     : root.calculatorFocused ? "Calculate…"
     : ((root.item(root.activeMenu) ? root.item(root.activeMenu).label : "Control") + "…")
   readonly property real outputWidth: panel.screen && panel.screen.width > 0
@@ -364,6 +376,15 @@ Item {
     root.activeMenu = active
     var query = root.filterText.trim()
 
+    if (root.editContextActive) {
+      var contextRows = MenuModel.contextRows(root.editContextOptions, query)
+      root.applyDisplayRows(contextRows)
+      if (captureWidth === true) root.captureRouteWidth(contextRows, snapWidth === true, false)
+      root.settleCursor()
+      Qt.callLater(root.syncResultSelection)
+      return
+    }
+
     if (root.dmenuActive) {
       var dmenuRows = root.menuMode === "select" ? MenuModel.dmenuRows(root.dmenuOptions, query) : []
       root.applyDisplayRows(dmenuRows)
@@ -422,6 +443,7 @@ Item {
   }
 
   function select(delta) {
+    root.invalidateEditContextRequest()
     if (displayModel.count === 0) return
     var from = root.cursorActive ? root.selectedIndex + delta : (delta < 0 ? displayModel.count - 1 : 0)
     var target = root.nextSelectable(from, delta)
@@ -438,13 +460,14 @@ Item {
   }
 
   function setFilter(nextFilter) {
+    root.invalidateEditContextRequest()
     var wasSearching = root.filterText.trim() !== ""
     root.filterText = String(nextFilter || "")
     var isSearching = root.filterText.trim() !== ""
     root.selectedIndex = 0
     root.cursorActive = true
-    if (!root.dmenuActive) root.scheduleCalculator(root.filterText)
-    var stableRouteFilter = root.dmenuActive || root.activeMenu === root.applicationsMenuId
+    if (!root.dmenuActive && !root.editContextActive) root.scheduleCalculator(root.filterText)
+    var stableRouteFilter = root.editContextActive || root.dmenuActive || root.activeMenu === root.applicationsMenuId
     if (stableRouteFilter || wasSearching === isSearching) {
       root.rebuildDisplay(false, false)
     } else if (isSearching) {
@@ -471,6 +494,7 @@ Item {
   }
 
   function setActiveMenu(id, pushHistory) {
+    root.invalidateEditContextRequest()
     var target = String(id || "")
     if (!root.item(target) || root.item(target).kind === "action") target = "root"
     if (pushHistory && target !== root.activeMenu) root.navStack = root.navStack.concat([root.activeMenu])
@@ -482,6 +506,7 @@ Item {
   }
 
   function goBack() {
+    if (root.editContextActive) return root.closeEditContext()
     if (root.activeMenu === "root") return false
     if (root.navStack.length > 0) {
       var previous = root.navStack[root.navStack.length - 1]
@@ -499,6 +524,8 @@ Item {
     var row = displayModel.get(index)
     if (row.kind === "menu" || row.kind === "link") {
       root.setActiveMenu(row.target || row.itemId, true)
+    } else if (row.kind === "edit-context") {
+      root.openEditContextChoice(row.selection)
     } else if (row.kind === "dmenu") {
       root.finishRequest(row.selection)
     } else if (row.kind === "application") {
@@ -514,26 +541,120 @@ Item {
     }
   }
 
-  function editIndex(index) {
+  function editSourceForRow(row) {
+    if (!row) return null
+    if (row.kind === "menu" || row.kind === "link")
+      return ({ kind: "menu", id: row.itemId, label: row.label })
+    if (row.kind === "action")
+      return ({ kind: "action", id: row.action, label: row.label })
+    if (row.kind === "application")
+      return ({ kind: "application", id: row.desktopId, label: row.label })
+    return null
+  }
+
+  function requestEditContext(index) {
     if (!root.rowSelectable(index)) return false
     var row = displayModel.get(index)
-    var kind = ""
-    var id = ""
-    if (row.kind === "menu" || row.kind === "link") {
-      kind = "menu"
-      id = row.itemId
-    } else if (row.kind === "action") {
-      kind = "action"
-      id = row.action
-    } else if (row.kind === "application") {
-      kind = "application"
-      id = row.desktopId
-    } else {
-      return false
-    }
+    var source = root.editSourceForRow(row)
+    if (!source) return false
 
+    var request = {
+      kind: source.kind,
+      id: source.id,
+      label: source.label,
+      itemId: row.itemId,
+      savedFilter: root.filterText,
+      savedIndex: root.selectedIndex,
+      savedCursorActive: root.cursorActive,
+      savedContentY: resultList.contentY
+    }
+    if (editContextProcess.running) {
+      root.editContextSerial += 1
+      root.pendingEditContextRequest = request
+      editContextProcess.signal(15)
+      editContextRetry.restart()
+      return true
+    }
+    return root.startEditContextRequest(request)
+  }
+
+  function startEditContextRequest(request) {
+    if (!request || !root.opened) return false
+    root.pendingEditContextRequest = null
+    root.editContextSerial += 1
+    editContextProcess.requestSerial = root.editContextSerial
+    editContextProcess.sourceKind = request.kind
+    editContextProcess.sourceId = request.id
+    editContextProcess.sourceLabel = request.label
+    editContextProcess.sourceItemId = request.itemId
+    editContextProcess.savedFilter = request.savedFilter
+    editContextProcess.savedIndex = request.savedIndex
+    editContextProcess.savedCursorActive = request.savedCursorActive
+    editContextProcess.savedContentY = request.savedContentY
+    editContextProcess.command = ["desktop-shell-edit", "list", request.kind, request.id]
+    editContextProcess.running = true
+    return true
+  }
+
+  function openEditContext(kind, id, label, options, savedFilter, savedIndex, savedCursorActive, savedContentY) {
+    root.editContextSavedFilter = savedFilter
+    root.editContextSavedIndex = savedIndex
+    root.editContextSavedCursorActive = savedCursorActive
+    root.editContextSavedContentY = savedContentY
+    root.editContextKind = String(kind || "")
+    root.editContextId = String(id || "")
+    root.editContextLabel = String(label || "")
+    root.editContextOptions = Array.isArray(options) ? options : []
+    root.editContextActive = true
+    root.filterText = ""
+    root.selectedIndex = 0
+    root.cursorActive = true
+    root.rebuildDisplay(true, false, false)
+  }
+
+  function clearEditContext() {
+    root.invalidateEditContextRequest()
+    root.editContextActive = false
+    root.editContextOptions = []
+    root.editContextKind = ""
+    root.editContextId = ""
+    root.editContextLabel = ""
+  }
+
+  function invalidateEditContextRequest() {
+    var hadPendingRequest = root.pendingEditContextRequest !== null
+    root.pendingEditContextRequest = null
+    editContextRetry.stop()
+    if (editContextProcess.running || hadPendingRequest) {
+      root.editContextSerial += 1
+      if (editContextProcess.running) editContextProcess.signal(15)
+    }
+  }
+
+  function closeEditContext() {
+    if (!root.editContextActive) return false
+    var savedFilter = root.editContextSavedFilter
+    var savedIndex = root.editContextSavedIndex
+    var savedCursorActive = root.editContextSavedCursorActive
+    var savedContentY = root.editContextSavedContentY
+    root.clearEditContext()
+    root.filterText = savedFilter
+    root.selectedIndex = savedIndex
+    root.cursorActive = savedCursorActive
+    root.rebuildDisplay(true, false, false)
+    Qt.callLater(function() {
+      resultList.contentY = savedContentY
+      root.syncResultSelection()
+    })
+    return true
+  }
+
+  function openEditContextChoice(key) {
+    if (!root.editContextActive) return false
+    var kind = root.editContextKind
+    var id = root.editContextId
     root.close()
-    Quickshell.execDetached(["desktop-shell-edit", kind, id])
+    Quickshell.execDetached(["desktop-shell-edit", "open", kind, id, String(key || "")])
     return true
   }
 
@@ -555,6 +676,7 @@ Item {
   function openExistingMenu(initialMenu) {
     var firstMaterialization = !panel.visible
     if (root.requestActive) root.finishRequest(null)
+    root.clearEditContext()
     root.menuMode = "menu"
     root.dmenuPrompt = ""
     root.dmenuOptions = []
@@ -576,6 +698,7 @@ Item {
   function openDmenu(payload) {
     var firstMaterialization = !panel.visible
     if (root.requestActive) root.finishRequest(null)
+    root.clearEditContext()
     root.menuMode = payload.mode === "input" ? "input" : "select"
     root.dmenuPrompt = String(payload.prompt || (root.menuMode === "input" ? "Input" : "Select"))
     root.dmenuOptions = Array.isArray(payload.options) ? payload.options : []
@@ -635,6 +758,7 @@ Item {
       || root.filterText.trim() !== "" || root.dmenuActive
     root.opened = false
     root.filterText = ""
+    root.clearEditContext()
     root.calculatorFocused = false
     root.menuMode = "menu"
     root.requestDir = ""
@@ -747,6 +871,57 @@ Item {
     stderr: StdioCollector { waitForEnd: true }
   }
 
+  Process {
+    id: editContextProcess
+    property int requestSerial: 0
+    property string sourceKind: ""
+    property string sourceId: ""
+    property string sourceLabel: ""
+    property string sourceItemId: ""
+    property string savedFilter: ""
+    property int savedIndex: 0
+    property bool savedCursorActive: false
+    property real savedContentY: 0
+    property var pendingOptions: []
+    command: []
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (editContextProcess.pendingOptions.length >= 100 || String(line || "").length > 4096) return
+        try {
+          var option = JSON.parse(line)
+          editContextProcess.pendingOptions = editContextProcess.pendingOptions.concat([option])
+        } catch (error) {
+          console.warn("desktop menu edit context output is invalid")
+        }
+      }
+    }
+    stderr: StdioCollector { waitForEnd: true }
+    onStarted: pendingOptions = []
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0 || requestSerial !== root.editContextSerial
+          || !root.opened || root.dmenuActive || pendingOptions.length === 0) return
+      if (!root.cursorActive || root.selectedIndex >= displayModel.count
+          || displayModel.get(root.selectedIndex).itemId !== sourceItemId) return
+      root.openEditContext(sourceKind, sourceId, sourceLabel, pendingOptions,
+        savedFilter, savedIndex, savedCursorActive, savedContentY)
+    }
+  }
+
+  Timer {
+    id: editContextRetry
+    interval: 20
+    onTriggered: {
+      if (root.pendingEditContextRequest === null) return
+      if (editContextProcess.running) {
+        restart()
+        return
+      }
+      var request = root.pendingEditContextRequest
+      root.pendingEditContextRequest = null
+      root.startEditContextRequest(request)
+    }
+  }
+
   Timer {
     id: actionDelay
     interval: 100
@@ -844,7 +1019,7 @@ Item {
       Keys.onPressed: function(event) {
         var control = event.modifiers & Qt.ControlModifier
         if (control && event.key === Qt.Key_E
-            && root.cursorActive && root.editIndex(root.selectedIndex)) {
+            && root.cursorActive && root.requestEditContext(root.selectedIndex)) {
           event.accepted = true
         } else if (control && event.key === Qt.Key_H) {
           root.goBack()
@@ -866,7 +1041,8 @@ Item {
           root.selectHalfPage(1)
           event.accepted = true
         } else if (event.key === Qt.Key_Escape) {
-          if (root.filterText) root.setFilter("")
+          if (root.editContextActive) root.closeEditContext()
+          else if (root.filterText) root.setFilter("")
           else if (!root.goBack()) root.close()
           event.accepted = true
         } else if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Left) && !root.filterText) {
