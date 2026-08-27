@@ -814,26 +814,26 @@ Item {
       target: root
       property: "materialYScale"
       to: 1
-      duration: Motion.spatialDuration
-      easing.type: Motion.spatialEasing
+      duration: Motion.popupOpenDuration
+      easing.type: Motion.popupOpenEasing
     }
     SequentialAnimation {
-      PauseAnimation { duration: 60 }
+      PauseAnimation { duration: 90 }
       NumberAnimation {
         target: root
         property: "searchOpacity"
         to: 1
-        duration: 100
+        duration: Motion.normalDuration
         easing.type: Motion.effectEasing
       }
     }
     SequentialAnimation {
-      PauseAnimation { duration: 100 }
+      PauseAnimation { duration: 140 }
       NumberAnimation {
         target: root
         property: "resultsOpacity"
         to: 1
-        duration: Motion.normalDuration
+        duration: 180
         easing.type: Motion.effectEasing
       }
     }
@@ -841,7 +841,7 @@ Item {
       target: root
       property: "scrimOpacity"
       to: 1
-      duration: Motion.spatialDuration
+      duration: Motion.popupOpenDuration
       easing.type: Motion.effectEasing
     }
   }
@@ -855,29 +855,29 @@ Item {
       target: root
       property: "searchOpacity"
       to: 0
-      duration: 120
+      duration: 180
       easing.type: Motion.exitEasing
     }
     NumberAnimation {
       target: root
       property: "resultsOpacity"
       to: 0
-      duration: 90
+      duration: Motion.fastDuration
       easing.type: Motion.exitEasing
     }
     NumberAnimation {
       target: root
       property: "materialYScale"
       to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
+      duration: Motion.popupCloseDuration
+      easing.type: Motion.popupCloseEasing
     }
     NumberAnimation {
       target: root
       property: "scrimOpacity"
       to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
+      duration: Motion.popupCloseDuration
+      easing.type: Motion.effectEasing
     }
   }
 
