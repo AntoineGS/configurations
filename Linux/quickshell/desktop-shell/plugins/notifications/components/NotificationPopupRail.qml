@@ -73,8 +73,7 @@ PanelWindow {
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
   mask: Region {
-    Region { item: root.cardsVisible && root.activeRow ? card : null }
-    Region { item: root.cardsVisible && root.barAttached ? shoulders : null }
+    item: cardInputRegion.visible ? cardInputRegion : null
   }
 
   function urgencyColor(row) {
@@ -326,6 +325,15 @@ PanelWindow {
     font.pixelSize: Style.font.caption
     font.bold: true
     z: 2
+  }
+
+  Item {
+    id: cardInputRegion
+    x: cardFrame.x
+    y: cardFrame.y
+    width: cardFrame.width
+    height: cardFrame.height * root.materialYScale
+    visible: root.cardsVisible && root.activeRow !== null && height > 0
   }
 
   Item {
