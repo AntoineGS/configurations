@@ -10,7 +10,8 @@ BarWidget {
   id: root
   moduleName: "desktop.tray"
 
-  property bool expanded: false
+  property var activeMenuAnchor: null
+  readonly property bool expanded: drawerHover.hovered || activeMenuAnchor !== null
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var drawerItems: bucket()
@@ -46,18 +47,13 @@ BarWidget {
     return name.slice(-9) === "-symbolic"
   }
 
-  function openTrayMenu(item, anchorItem, mouse) {
-    if (!item || !anchorItem || !anchorItem.QsWindow) return
-    var point = anchorItem.QsWindow.contentItem.mapFromItem(anchorItem, mouse.x, mouse.y)
-    item.display(anchorItem.QsWindow.window, point.x, point.y)
-  }
-
   visible: drawerCount > 0
   clip: false
   implicitWidth: drawerCount > 0 ? drawerContent.implicitWidth : 0
   implicitHeight: drawerCount > 0 ? root.barSize : 0
 
   Behavior on revealProgress {
+    enabled: root.activeMenuAnchor === null
     NumberAnimation { duration: root.animationDuration; easing.type: Easing.OutCubic }
   }
 
@@ -81,7 +77,7 @@ BarWidget {
     }
 
     HoverHandler {
-      onHoveredChanged: root.expanded = hovered
+      id: drawerHover
     }
 
     BarIconButton {
@@ -167,8 +163,32 @@ BarWidget {
     implicitWidth: visible ? root.trayItemExtent : 0
     implicitHeight: visible ? root.trayItemExtent : 0
 
-    function displayMenu(mouse) {
-      root.openTrayMenu(trayItemRoot.modelData, trayItemRoot, mouse)
+    function displayMenu() {
+      if (!trayMenu.menu) return
+      root.activeMenuAnchor = trayMenu
+      menuOpenTimer.restart()
+    }
+
+    Timer {
+      id: menuOpenTimer
+      interval: 0
+      onTriggered: {
+        trayMenu.open()
+        if (!trayMenu.visible && root.activeMenuAnchor === trayMenu) root.activeMenuAnchor = null
+      }
+    }
+
+    QsMenuAnchor {
+      id: trayMenu
+      menu: trayItemRoot.modelData.menu
+      anchor.item: trayItemRoot
+      anchor.edges: Edges.Bottom | Edges.Left
+      anchor.gravity: Edges.Bottom | Edges.Right
+
+      onVisibleChanged: {
+        if (visible) root.activeMenuAnchor = trayMenu
+        else if (root.activeMenuAnchor === trayMenu) root.activeMenuAnchor = null
+      }
     }
 
     TrayIcon {
@@ -193,7 +213,7 @@ BarWidget {
       onExited: if (root.bar) root.bar.hideTooltip(trayItemRoot)
       onPressed: function(mouse) {
         if (mouse.button === Qt.RightButton) {
-          trayItemRoot.displayMenu(mouse)
+          trayItemRoot.displayMenu()
           mouse.accepted = true
         }
       }
@@ -203,7 +223,7 @@ BarWidget {
         } else if (mouse.button === Qt.MiddleButton) {
           trayItemRoot.modelData.secondaryActivate()
         } else if (trayItemRoot.modelData.onlyMenu || trayItemRoot.modelData.menu) {
-          trayItemRoot.displayMenu(mouse)
+          trayItemRoot.displayMenu()
         } else {
           trayItemRoot.modelData.activate()
         }
