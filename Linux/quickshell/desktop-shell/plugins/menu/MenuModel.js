@@ -488,7 +488,7 @@ function adaptiveMenuWidth(contentWidth, cardInsets, outputWidth, margin) {
   if (output === 0) return desired
   var gap = finiteNonNegative(margin)
   var available = Math.max(0, output - gap * 2)
-  return Math.min(desired, output * 0.75, available)
+  return Math.min(desired, available)
 }
 
 function planRowReconciliation(currentRows, nextRows) {

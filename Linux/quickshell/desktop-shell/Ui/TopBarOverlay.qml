@@ -35,6 +35,7 @@ PanelWindow {
     && root.cardWidth > 0 && root.cardHeight > 0
   readonly property real cardTop: Math.max(Style.gapsOut, Math.min(root.topBarHeight,
     Math.max(Style.gapsOut, root.height - root.cardHeight - Style.gapsOut)))
+  readonly property real contentHorizontalInset: card.contentLeftInset + card.contentRightInset
   readonly property real bodyWidth: bodySlot.width
   readonly property real bodyHeight: bodySlot.height
   readonly property bool _ownsInput: root.overlayId !== "" && root.opened && root.geometryReady
