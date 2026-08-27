@@ -426,8 +426,8 @@ Item {
     PopupWindow {
       id: tooltipWindow
 
-      property int elevationInset: Style.space(24)
-      property int hoverSafeInset: Style.space(6)
+      property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
+      property int hoverSafeInset: 0
 
       visible: root.tooltipShown && root.tooltipTarget !== null
         && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, barWindow)
@@ -449,7 +449,7 @@ Item {
           var target = root.tooltipTarget
           if (!root.targetBelongsToWindow(target, barWindow)) return
           var point = barWindow.contentItem.mapFromItem(target, target.width / 2 - tooltipWindow.implicitWidth / 2,
-            target.height + 6 - tooltipWindow.hoverSafeInset)
+            target.height - tooltipWindow.hoverSafeInset)
           tooltipAnchor.rect.x = Math.round(point.x)
           tooltipAnchor.rect.y = Math.round(point.y)
         }
@@ -461,14 +461,18 @@ Item {
         y: tooltipWindow.hoverSafeInset
         implicitWidth: tooltipLabel.implicitWidth + 20
         implicitHeight: tooltipLabel.implicitHeight + 14
-        color: Color.tooltip.background
-        borderSpec: Border.surfaceSpec("tooltip", "border", Color.tooltip.border, 1)
-        radius: Style.cornerRadius
+        color: Color.barPanels.background
+        borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, 1)
+        radius: Style.popupOuterRadius
+        topLeftRadius: 0
+        topRightRadius: 0
+        bottomLeftRadius: Style.popupOuterRadius
+        bottomRightRadius: Style.popupOuterRadius
         revealed: tooltipWindow.visible
-        entranceX: root.position === "left" ? -Style.space(6)
-          : root.position === "right" ? Style.space(6) : 0
-        entranceY: root.position === "top" ? -Style.space(6)
-          : root.position === "bottom" ? Style.space(6) : 0
+        concealedXScale: 1
+        concealedYScale: 0
+        scaleOriginX: width / 2
+        scaleOriginY: 0
 
         Text {
           id: tooltipLabel
@@ -480,6 +484,15 @@ Item {
           horizontalAlignment: Text.AlignHCenter
           verticalAlignment: Text.AlignVCenter
         }
+      }
+
+      BarAttachedShoulders {
+        z: 1
+        x: tooltipBubble.x - radius
+        y: tooltipBubble.y
+        bodyWidth: tooltipBubble.width
+        surfaceColor: tooltipBubble.color
+        revealProgress: tooltipBubble.revealProgress
       }
     }
   }

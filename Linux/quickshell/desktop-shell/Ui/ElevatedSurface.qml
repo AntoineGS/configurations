@@ -11,6 +11,10 @@ BorderSurface {
   property real revealProgress: 0
   property bool motionEnabled: true
   property real concealedScale: 0.97
+  property real concealedXScale: concealedScale
+  property real concealedYScale: concealedScale
+  property real scaleOriginX: width / 2
+  property real scaleOriginY: height / 2
   property int motionDuration: Motion.fastDuration
   property int shadowBlurMax: 24
   property real shadowBlurAmount: 0.7
@@ -22,13 +26,19 @@ BorderSurface {
   property bool _completed: false
 
   opacity: revealProgress
-  scale: concealedScale + revealProgress * (1 - concealedScale)
-  transformOrigin: Item.Center
 
-  transform: Translate {
-    x: (1 - root.revealProgress) * root.entranceX
-    y: (1 - root.revealProgress) * root.entranceY
-  }
+  transform: [
+    Scale {
+      origin.x: root.scaleOriginX
+      origin.y: root.scaleOriginY
+      xScale: root.concealedXScale + root.revealProgress * (1 - root.concealedXScale)
+      yScale: root.concealedYScale + root.revealProgress * (1 - root.concealedYScale)
+    },
+    Translate {
+      x: (1 - root.revealProgress) * root.entranceX
+      y: (1 - root.revealProgress) * root.entranceY
+    }
+  ]
 
   layer.enabled: true
   layer.effect: MultiEffect {

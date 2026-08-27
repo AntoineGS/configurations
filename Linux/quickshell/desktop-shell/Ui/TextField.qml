@@ -24,6 +24,7 @@ TextField {
   property bool password: false
   property real horizontalPadding: Style.spacing.controlPaddingX
   property real verticalPadding: Style.spacing.inputPaddingY
+  property real cornerRadius: Style.popupInnerRadius
 
   // Panel-cursor flag. When true (and the field isn't already focused),
   // the background paints the shared hover/cursor state.
@@ -52,6 +53,6 @@ TextField {
   background: BorderSurface {
     color: Style.controlFill(root._focused, root._hot, root.foreground, root.accent)
     borderSpec: root._borderSpec
-    radius: Style.cornerRadius
+    radius: root.cornerRadius
   }
 }

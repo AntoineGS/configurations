@@ -22,7 +22,7 @@ import qs.Commons
 // `interactive` — a switch whose surrounding row owns the click owns the
 // cursor too.
 //
-// `rounded` auto-detects from Style.cornerRadius so the switch follows the
+// `rounded` follows the popup control radius used by panel controls.
 // theme: pill shape when Hyprland corners are rounded, square on sharp.
 Item {
   id: root
@@ -39,7 +39,7 @@ Item {
 
   property bool cursorRing: interactive
   property int cursorPad: Style.space(6)
-  property bool rounded: Style.cornerRadius > 0
+  property bool rounded: Style.popupInnerRadius > 0
   property color foreground: Color.foreground
   property color accent: Color.accent
 
@@ -69,7 +69,7 @@ Item {
     anchors.fill: parent
     visible: root.cursorRing && root.hot
     color: "transparent"
-    radius: Style.cornerRadius
+    radius: Style.popupInnerRadius
     borderSpec: Border.controlSpec("hover-cursor", root.foreground, root.accent)
   }
 

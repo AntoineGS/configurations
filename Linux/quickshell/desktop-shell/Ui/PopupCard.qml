@@ -9,13 +9,14 @@ PopupWindow {
   required property Item anchorItem
   required property QtObject bar
   property var owner: null
-  property int margin: Style.gapsOut
+  property int margin: 0
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
-  property int elevationInset: Style.space(24)
-  property color borderColor: Color.popups.border
-  property var borderSpec: Border.localOrSurfaceSpec("popups", "border", borderColor, Color.popups.border, Math.max(1, Style.space(2)))
+  property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
+  property color borderColor: Color.barPanels.border
+  property var borderSpec: Border.localOrSurfaceSpec("bar-panels", "border", borderColor,
+    Color.barPanels.border, Math.max(1, Style.space(2)))
   property bool open: false
   property bool centerOnBar: false
   // "click" — uses HyprlandFocusGrab so clicking outside dismisses the popup.
@@ -25,7 +26,7 @@ PopupWindow {
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
   readonly property var popupScreen: anchorWindow ? anchorWindow.screen : null
-  readonly property bool containsMouse: cardHover.hovered
+  readonly property bool containsMouse: cardHover.hovered || shoulders.hovered
   readonly property real screenW: popupScreen ? popupScreen.width : 0
   readonly property real screenH: popupScreen ? popupScreen.height : 0
   readonly property real barW: anchorWindow ? anchorWindow.width : 0
@@ -83,7 +84,10 @@ PopupWindow {
   color: "transparent"
   implicitWidth: contentWidth + elevationInset * 2
   implicitHeight: contentHeight + elevationInset * 2
-  mask: Region { item: card }
+  mask: Region {
+    Region { item: card }
+    Region { item: shoulders }
+  }
 
   onOpenChanged: {
     if (!bar) return
@@ -173,13 +177,19 @@ PopupWindow {
     y: root.elevationInset
     width: root.contentWidth
     height: root.contentHeight
-    color: Color.popups.background
+    color: Color.barPanels.background
     borderSpec: root.borderSpec
     padding: root.padding
-    radius: Style.cornerRadius
+    radius: Style.popupOuterRadius
+    topLeftRadius: 0
+    topRightRadius: 0
+    bottomLeftRadius: Style.popupOuterRadius
+    bottomRightRadius: Style.popupOuterRadius
     revealed: root.open
-    entranceX: root.entranceX
-    entranceY: root.entranceY
+    concealedXScale: 1
+    concealedYScale: 0
+    scaleOriginX: width / 2
+    scaleOriginY: 0
 
     Item {
       id: contentHolder
@@ -193,5 +203,15 @@ PopupWindow {
     HoverHandler {
       id: cardHover
     }
+  }
+
+  BarAttachedShoulders {
+    id: shoulders
+    z: 1
+    x: card.x - radius
+    y: card.y
+    bodyWidth: card.width
+    surfaceColor: card.color
+    revealProgress: card.revealProgress
   }
 }

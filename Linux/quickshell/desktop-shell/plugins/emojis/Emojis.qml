@@ -279,6 +279,7 @@ Item {
       height: root.cardHeight
       anchors.centerIn: parent
       padding: root.contentMargin
+      radius: Style.popupOuterRadius
       revealed: root.opened
       entranceY: -Style.space(6)
 

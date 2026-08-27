@@ -75,7 +75,7 @@ BorderSurface {
     row.implicitWidth + horizontalPadding * 2 + _reservedBorderLeft + _reservedBorderRight
   implicitWidth: maximumWidth > 0 ? Math.min(naturalImplicitWidth, maximumWidth) : naturalImplicitWidth
   implicitHeight: row.implicitHeight + verticalPadding * 2 + _reservedBorderTop + _reservedBorderBottom
-  radius: Style.cornerRadius
+  radius: Style.popupInnerRadius
   clip: maximumWidth > 0
 
   readonly property bool hot: mouseArea.containsMouse || hasCursor

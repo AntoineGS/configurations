@@ -287,7 +287,7 @@ Panel {
               visible: root.vmState.showMemoryUsage
               width: visible ? (metricCards.width - metricCards.spacing) / 2 : 0
               implicitHeight: Style.space(72)
-              radius: Style.cornerRadius
+              radius: Style.popupInnerRadius
               color: Style.normalFillFor(root.foreground, Color.accent)
               borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
 
@@ -326,7 +326,7 @@ Panel {
               width: root.vmState.showMemoryUsage
                 ? (metricCards.width - metricCards.spacing) / 2 : metricCards.width
               implicitHeight: Style.space(72)
-              radius: Style.cornerRadius
+              radius: Style.popupInnerRadius
               color: Style.normalFillFor(root.foreground, Color.accent)
               borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
 
