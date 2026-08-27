@@ -45,6 +45,8 @@ PanelWindow {
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
   property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
+  property int shadowPadding: 24
+  property int shadowBottomPadding: shadowPadding + 4
   property alias borderSpec: card.borderSpec
   property bool centerOnBar: false
   property bool open: false
@@ -389,54 +391,60 @@ PanelWindow {
 
   // --- card ----------------------------------------------------------------
 
-  PanelSurface {
-    id: card
-    x: root.cardOrigin.x
+  Item {
+    id: cardFrame
+    x: root.cardOrigin.x - root.shadowPadding
     y: root.cardOrigin.y
-    width: root.contentWidth
-    height: root.contentHeight
-    padding: root.padding
-    radius: Style.popupOuterRadius
-    topLeftRadius: 0
-    topRightRadius: 0
-    bottomLeftRadius: Style.popupOuterRadius
-    bottomRightRadius: Style.popupOuterRadius
-    revealed: root.open || root.popoutSwitching
-    concealedXScale: 1
-    concealedYScale: 0
-    scaleOriginX: width / 2
-    scaleOriginY: 0
-    motionEnabled: !root.popoutSwitching && !root.popoutSwitchClosing
+    width: root.contentWidth + root.shadowPadding * 2
+    height: root.contentHeight + root.shadowBottomPadding
+    clip: true
 
-    // Swallow clicks on the card so they don't bubble to the dismissal
-    // MouseArea behind us.
-    MouseArea {
-      anchors.fill: parent
-      acceptedButtons: Qt.AllButtons
-    }
+    PanelSurface {
+      id: card
+      x: root.shadowPadding
+      width: root.contentWidth
+      height: root.contentHeight
+      padding: root.padding
+      radius: Style.popupOuterRadius
+      topLeftRadius: 0
+      topRightRadius: 0
+      bottomLeftRadius: Style.popupOuterRadius
+      bottomRightRadius: Style.popupOuterRadius
+      revealed: root.open || root.popoutSwitching
+      concealedXScale: 1
+      concealedYScale: 0
+      scaleOriginX: width / 2
+      scaleOriginY: 0
+      motionEnabled: !root.popoutSwitching && !root.popoutSwitchClosing
 
-    Item {
-      id: contentHolder
-      anchors.fill: parent
-      anchors.topMargin: card.contentTopInset
-      anchors.rightMargin: card.contentRightInset
-      anchors.bottomMargin: card.contentBottomInset
-      anchors.leftMargin: card.contentLeftInset
-      opacity: root.popoutSwitching ? (root.open ? 1.0 : 0) : 1.0
+      // Swallow clicks on the card so they don't bubble to the dismissal
+      // MouseArea behind us.
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+      }
 
-      Behavior on opacity {
-        enabled: root.popoutSwitching
-        NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+      Item {
+        id: contentHolder
+        anchors.fill: parent
+        anchors.topMargin: card.contentTopInset
+        anchors.rightMargin: card.contentRightInset
+        anchors.bottomMargin: card.contentBottomInset
+        anchors.leftMargin: card.contentLeftInset
+        opacity: root.popoutSwitching ? (root.open ? 1.0 : 0) : 1.0
+
+        Behavior on opacity {
+          enabled: root.popoutSwitching
+          NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+        }
       }
     }
-  }
 
-  BarAttachedShoulders {
-    z: 1
-    x: card.x - radius
-    y: card.y
-    bodyWidth: card.width
-    surfaceColor: card.color
-    revealProgress: card.revealProgress
+    BarAttachedShoulders {
+      z: 1
+      bodyWidth: card.width
+      surfaceColor: card.color
+      revealProgress: card.revealProgress
+    }
   }
 }

@@ -1255,11 +1255,8 @@ Item {
     BarAttachedShoulders {
       z: 1
       visible: root.topBarHeight > 0
-      x: Math.round(panel.width / 2 - root.animatedCardWidth / 2 - radius)
-      y: root.cardTop
       bodyWidth: root.animatedCardWidth
       surfaceColor: Color.barPanels.background
-      revealProgress: root.materialYScale
     }
   }
 }
