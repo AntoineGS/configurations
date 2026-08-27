@@ -32,6 +32,7 @@ ElevatedSurface {
   property bool keyboardSelected: false
   property bool actionAvailable: true
   property bool attachedMode: false
+  property real attachedContentTopInset: 0
   property color gradientStartColor: root.surfaceColor
   property real gradientExtent: Style.space(60)
   property real metadataOpacity: 1
@@ -50,6 +51,8 @@ ElevatedSurface {
   readonly property color surfaceColor: urgency === 0
     ? Color.notifications.low : urgency === 2
       ? Color.notifications.critical : Color.notifications.background
+  readonly property real contentTopInset: root.attachedMode
+    ? Math.max(0, root.attachedContentTopInset) : 0
   readonly property color inkColor: Color.notifications.text
   readonly property string sourceLabel: String(app || "SYSTEM").toUpperCase()
   readonly property string timeLabel: formatTime(timestamp)
@@ -75,7 +78,7 @@ ElevatedSurface {
   }
 
   implicitWidth: Style.space(380)
-  implicitHeight: mainColumn.implicitHeight
+  implicitHeight: root.contentTopInset + mainColumn.implicitHeight
   radius: root.attachedMode ? Style.popupOuterRadius
     : (root.historyMode ? Style.popupInnerRadius : Style.popupOuterRadius)
   topLeftRadius: root.attachedMode ? 0 : radius
@@ -110,6 +113,7 @@ ElevatedSurface {
   ColumnLayout {
     id: mainColumn
     anchors.top: parent.top
+    anchors.topMargin: root.contentTopInset
     anchors.left: parent.left
     anchors.right: parent.right
     spacing: 0
@@ -143,7 +147,7 @@ ElevatedSurface {
       Text {
         Layout.fillWidth: true
         text: root.sourceLabel
-        color: root.attachedMode ? Color.barPanels.text : root.inkColor
+        color: root.inkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -153,7 +157,7 @@ ElevatedSurface {
 
       Text {
         text: root.timeLabel
-        color: root.attachedMode ? Color.barPanels.text : root.inkColor
+        color: root.inkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
