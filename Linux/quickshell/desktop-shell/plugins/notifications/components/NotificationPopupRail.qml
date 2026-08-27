@@ -35,7 +35,8 @@ PanelWindow {
   readonly property real bodyWidth: Math.min(Style.space(380),
     Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
       - shoulderRadius * (barAttached ? 2 : 0)))
-  readonly property real collarExtent: Style.space(60)
+  readonly property real collarExtent: Style.space(36)
+  readonly property real attachedContentTopInset: Style.space(32)
   readonly property bool barAttached: root.barPosition === "top"
     && root.shell && root.shell.barVisible !== false
   readonly property string motionState: root._motionState
@@ -366,6 +367,7 @@ PanelWindow {
       actions: root.activeRow ? (root.activeRow.actions || []) : []
       fontFamily: root.fontFamily
       attachedMode: root.barAttached
+      attachedContentTopInset: root.attachedContentTopInset
       gradientStartColor: Color.barPanels.background
       gradientExtent: root.collarExtent
       metadataOpacity: root.metadataOpacity
