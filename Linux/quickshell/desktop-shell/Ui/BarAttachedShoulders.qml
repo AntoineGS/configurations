@@ -8,6 +8,9 @@ Item {
   property real bodyWidth: 0
   property real radius: Style.popupOuterRadius
   property color surfaceColor: Color.barPanels.background
+  property color gradientStartColor: root.surfaceColor
+  property color gradientEndColor: root.surfaceColor
+  property real gradientExtent: root.radius
   property real revealProgress: 1
   readonly property bool hovered: leftPointerArea.containsMouse || rightPointerArea.containsMouse
 
@@ -28,7 +31,14 @@ Item {
     preferredRendererType: Shape.CurveRenderer
 
     ShapePath {
-      fillColor: root.surfaceColor
+      fillGradient: LinearGradient {
+        x1: 0
+        y1: 0
+        x2: 0
+        y2: Math.max(1, root.gradientExtent)
+        GradientStop { position: 0; color: root.gradientStartColor }
+        GradientStop { position: 1; color: root.gradientEndColor }
+      }
       strokeWidth: 0
 
       PathSvg {
@@ -45,7 +55,14 @@ Item {
     preferredRendererType: Shape.CurveRenderer
 
     ShapePath {
-      fillColor: root.surfaceColor
+      fillGradient: LinearGradient {
+        x1: 0
+        y1: 0
+        x2: 0
+        y2: Math.max(1, root.gradientExtent)
+        GradientStop { position: 0; color: root.gradientStartColor }
+        GradientStop { position: 1; color: root.gradientEndColor }
+      }
       strokeWidth: 0
 
       PathSvg {
