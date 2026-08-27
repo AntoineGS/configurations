@@ -1,0 +1,8 @@
+[Unit]
+Description=Mount the md-ftp FTP share from the user keyring
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/office-shares/mount-md-ftp
+TimeoutStartSec=45

@@ -1369,9 +1369,12 @@ applications:
         sudo: true
   - package:
       managers:
-        pacman: cifs-utils
+        pacman:
+          name: cifs-utils
+          deps:
+            - gvfs
     name: office-shares
-    description: Kerberos-authenticated office SMB mounts with stable home-directory links
+    description: Kerberos SMB and keyring-authenticated FTP mounts with stable home-directory links
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
       - targets:
@@ -1401,6 +1404,7 @@ applications:
         files:
           - mount-office-shares
           - check-office-shares-auth
+          - mount-md-ftp
       - targets:
           linux: ~/.config/systemd/user
         name: user-units
@@ -1410,11 +1414,18 @@ applications:
           - office-shares-mount.timer
           - office-shares-auth-check.service
           - office-shares-auth-check.timer
+          - md-ftp-mount.service
+          - md-ftp-mount.timer
       - check:
           linux: systemctl --user is-enabled --quiet office-shares-mount.timer && systemctl --user is-active --quiet office-shares-mount.timer && systemctl --user is-enabled --quiet office-shares-auth-check.timer && systemctl --user is-active --quiet office-shares-auth-check.timer && test "$(systemctl --user show office-shares-mount.timer --property=NeedDaemonReload --value)" = no && test "$(systemctl --user show office-shares-auth-check.timer --property=NeedDaemonReload --value)" = no
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer office-shares-auth-check.timer
         name: enable-timer
+      - check:
+          linux: systemctl --user is-enabled --quiet md-ftp-mount.timer && systemctl --user is-active --quiet md-ftp-mount.timer && test "$(systemctl --user show md-ftp-mount.timer --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now md-ftp-mount.timer
+        name: enable-md-ftp-timer
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:

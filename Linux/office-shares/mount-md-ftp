@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Mount the md-ftp FTP share using credentials from the user's keyring.
+# Minimum Bash version: 4.4
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly server='md-ftp.multidev.com'
+readonly ftp_user='a.simard'
+readonly uri="ftp://${ftp_user}@${server}"
+
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+gvfs_root="${MD_FTP_GVFS_ROOT:-$runtime_dir/gvfs}"
+mount_target=''
+shares_dir="${MD_FTP_SHARES_DIR:-$HOME/Shares}"
+share_path="$shares_dir/md-ftp"
+
+log() {
+  printf 'mount-md-ftp: %s\n' "$*" >&2
+}
+
+require_commands() {
+  local command_name
+
+  for command_name in "$@"; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      log "required command is unavailable: $command_name"
+      return 1
+    }
+  done
+}
+
+prepare_share_path() {
+  local current_target
+
+  if [[ -L "$shares_dir" ]]; then
+    log "refusing symlinked Shares root: $shares_dir"
+    return 1
+  fi
+  if [[ -e "$shares_dir" && ! -d "$shares_dir" ]]; then
+    log "refusing non-directory Shares root: $shares_dir"
+    return 1
+  fi
+  mkdir -p -- "$shares_dir"
+
+  if [[ -L "$share_path" ]]; then
+    current_target="$(readlink -- "$share_path")"
+    if [[ "$current_target" != "$mount_target" ]]; then
+      log "refusing unrelated symlink: $share_path"
+      return 1
+    fi
+  elif [[ -e "$share_path" ]]; then
+    log "refusing existing non-symlink path: $share_path"
+    return 1
+  else
+    ln -s -- "$mount_target" "$share_path"
+  fi
+}
+
+lookup_credentials() {
+  secret-tool lookup \
+    user "$ftp_user" \
+    server "$server" \
+    protocol ftp
+}
+
+has_credentials() {
+  lookup_credentials >/dev/null
+}
+
+store_credentials() {
+  secret-tool store \
+    --label="${ftp_user}@${server}" \
+    user "$ftp_user" \
+    server "$server" \
+    protocol ftp
+}
+
+resolve_mount_target() {
+  local canonical_root canonical_target line
+  local candidate=''
+
+  while IFS= read -r line; do
+    if [[ "$line" == 'local path: '* ]]; then
+      candidate="${line#local path: }"
+      break
+    fi
+  done < <(LC_ALL=C timeout 5s gio info --attributes=standard::name "$uri" </dev/null 2>/dev/null)
+
+  [[ -n "$candidate" ]] || return 1
+  canonical_root="$(realpath -e -- "$gvfs_root")" || return 1
+  canonical_target="$(realpath -e -- "$candidate")" || return 1
+  if [[ "$canonical_target" != "$canonical_root/"* || ! -d "$canonical_target" ]]; then
+    log "GIO returned a local path outside the GVFS root: $candidate"
+    return 1
+  fi
+  mount_target="$canonical_target"
+}
+
+mount_share() {
+  if resolve_mount_target; then
+    prepare_share_path
+    return
+  fi
+
+  if ! has_credentials; then
+    log "no keyring credential; run '$0 --authenticate' in a terminal"
+    return 1
+  fi
+
+  if ! lookup_credentials | timeout 30s gio mount "$uri"; then
+    log "failed to mount $uri"
+    return 1
+  fi
+  resolve_mount_target || {
+    log 'mount completed without exposing a local GVFS path'
+    return 1
+  }
+  prepare_share_path
+}
+
+main() {
+  require_commands gio realpath secret-tool timeout || return 1
+
+  if [[ $# -eq 0 ]]; then
+    mount_share
+  elif [[ $# -eq 1 && "$1" == --authenticate ]]; then
+    store_credentials && mount_share
+  else
+    printf 'Usage: %s [--authenticate]\n' "${0##*/}" >&2
+    return 2
+  fi
+}
+
+main "$@"
