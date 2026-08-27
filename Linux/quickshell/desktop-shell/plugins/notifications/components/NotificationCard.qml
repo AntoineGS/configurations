@@ -303,7 +303,7 @@ ElevatedSurface {
   Item {
     anchors.top: parent.top
     anchors.right: parent.right
-    anchors.topMargin: Style.space(3)
+    anchors.topMargin: Style.space(3) + root.contentTopInset
     anchors.rightMargin: Style.space(3)
     width: Style.space(18)
     height: Style.space(18)
