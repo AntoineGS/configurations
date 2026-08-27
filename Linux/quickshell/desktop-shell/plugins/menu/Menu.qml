@@ -357,11 +357,11 @@ Item {
   function cardWidthForOutput(outputWidth) {
     var adaptive = MenuModel.adaptiveMenuWidth(
       root.measuredRouteContentWidth,
-      root.contentMargin * 2,
+      panel.contentHorizontalInset,
       outputWidth,
       Style.gapsOut)
     var available = outputWidth > 0
-      ? Math.min(outputWidth * 0.75, Math.max(0, outputWidth - Style.gapsOut * 2))
+      ? Math.max(0, outputWidth - Style.gapsOut * 2)
       : undefined
     return Style.centeredMenuWidth(adaptive, available)
   }
