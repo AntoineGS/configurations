@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
@@ -13,6 +12,10 @@ TopBarOverlay {
   readonly property int modelCount: root.model ? root.model.count : 0
   readonly property real focusedCardWidth: Math.min(Style.space(380),
     Math.max(Style.space(220), root.bodyWidth * 0.56))
+  readonly property int currentPosition: root.modelCount > 0
+    ? Math.min(root.selectedIndex + 1, root.modelCount) : 0
+  readonly property real cardSpacing: Style.space(12)
+  readonly property real cardStride: root.focusedCardWidth + root.cardSpacing
   signal closeRequested()
   signal activationRequested(int index)
 
@@ -29,20 +32,11 @@ TopBarOverlay {
     return Math.max(0, Math.min(root.modelCount - 1, Number(index) || 0))
   }
 
-  function positionSelected() {
-    if (!root.opened || root.modelCount <= 0) return
-    Qt.callLater(function() {
-      if (!root.opened || root.modelCount <= 0) return
-      historyList.positionViewAtIndex(root.selectedIndex, ListView.Center)
-    })
-  }
-
   function select(delta) {
     if (root.modelCount <= 0) return
     var next = root.clampIndex(root.selectedIndex + delta)
     if (next === root.selectedIndex) return
     root.selectedIndex = next
-    root.positionSelected()
   }
 
   function activateSelected() {
@@ -52,7 +46,6 @@ TopBarOverlay {
   onOpenedChanged: {
     if (!root.opened) return
     root.selectedIndex = 0
-    root.positionSelected()
     Qt.callLater(function() {
       if (root.opened) keyCatcher.forceActiveFocus()
     })
@@ -61,14 +54,13 @@ TopBarOverlay {
   onModelCountChanged: {
     var next = root.clampIndex(root.selectedIndex)
     if (next !== root.selectedIndex) root.selectedIndex = next
-    if (root.modelCount > 0) root.positionSelected()
   }
 
   headerData: Text {
     width: parent.width
     height: Style.space(24)
-    text: "NOTIFICATIONS  " + root.modelCount
-    color: Color.notifications.text
+    text: "NOTIFICATIONS  " + root.currentPosition + "/" + root.modelCount
+    color: Color.barPanels.text
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
     font.bold: true
@@ -89,13 +81,10 @@ TopBarOverlay {
       Keys.priority: Keys.BeforeItem
 
       Keys.onPressed: function(event) {
-        var control = event.modifiers & Qt.ControlModifier
-        if (event.key === Qt.Key_Left || event.key === Qt.Key_Up
-            || (control && event.key === Qt.Key_K)) {
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
           root.select(-1)
           event.accepted = true
-        } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Down
-            || (control && event.key === Qt.Key_J)) {
+        } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
           root.select(1)
           event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -108,33 +97,30 @@ TopBarOverlay {
       }
     }
 
-    ColumnLayout {
+    Item {
+      id: carouselViewport
       anchors.fill: parent
-      spacing: Style.space(8)
+      clip: true
 
-      Item {
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        Layout.minimumHeight: 0
-        clip: true
+      Row {
+        id: historyTrack
+        height: parent.height
+        spacing: root.cardSpacing
+        x: root.modelCount > 0
+          ? (carouselViewport.width - root.focusedCardWidth) / 2
+            - root.selectedIndex * root.cardStride
+          : 0
 
-        ListView {
-          id: historyList
-          anchors.fill: parent
-          orientation: ListView.Horizontal
+        Behavior on x {
+          enabled: Motion.enabled
+          NumberAnimation {
+            duration: Motion.spatialDuration
+            easing.type: Motion.spatialEasing
+          }
+        }
+
+        Repeater {
           model: root.model
-          spacing: Style.space(12)
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
-          interactive: false
-          currentIndex: root.selectedIndex
-          highlightFollowsCurrentItem: true
-          highlightMoveDuration: Motion.enabled ? Motion.spatialDuration : 0
-          preferredHighlightBegin: (width - root.focusedCardWidth) / 2
-          preferredHighlightEnd: preferredHighlightBegin + root.focusedCardWidth
-          highlightRangeMode: ListView.StrictlyEnforceRange
-          header: Item { width: Math.max(0, (historyList.width - root.focusedCardWidth) / 2) }
-          footer: Item { width: Math.max(0, (historyList.width - root.focusedCardWidth) / 2) }
 
           delegate: Item {
             id: cardSlot
@@ -149,7 +135,7 @@ TopBarOverlay {
             required property bool actionAvailable
 
             width: root.focusedCardWidth
-            height: historyList.height
+            height: historyTrack.height
             readonly property bool focused: index === root.selectedIndex
 
             NotificationCard {
@@ -164,54 +150,55 @@ TopBarOverlay {
               timestamp: cardSlot.timestamp
               actions: []
               fontFamily: root.fontFamily
+              inkColor: Color.barPanels.text
               historyMode: true
               keyboardSelected: cardSlot.focused
               actionAvailable: cardSlot.actionAvailable
               opacity: cardSlot.focused ? 1 : 0.52
               scale: cardSlot.focused ? 1 : 0.9
-              Behavior on opacity { NumberAnimation { duration: Motion.fastDuration } }
-              Behavior on scale { NumberAnimation { duration: Motion.spatialDuration; easing.type: Motion.spatialEasing } }
+
+              Behavior on opacity {
+                enabled: Motion.enabled
+                NumberAnimation {
+                  duration: Motion.fastDuration
+                  easing.type: Motion.effectEasing
+                }
+              }
+
+              Behavior on scale {
+                enabled: Motion.enabled
+                NumberAnimation {
+                  duration: Motion.spatialDuration
+                  easing.type: Motion.spatialEasing
+                }
+              }
+
               onCardClicked: {
                 if (root.selectedIndex === index) root.activationRequested(index)
-                else {
-                  root.selectedIndex = index
-                  root.positionSelected()
-                }
+                else root.selectedIndex = index
               }
             }
           }
         }
+      }
 
-        WheelHandler {
-          onWheel: function(event) {
-            var delta = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y
-            if (delta === 0) return
-            root.select(delta > 0 ? -1 : 1)
-            event.accepted = true
-          }
-        }
-
-        Text {
-          anchors.centerIn: parent
-          visible: root.modelCount === 0
-          text: "No notification history"
-          color: Color.notifications.text
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          font.bold: true
+      WheelHandler {
+        onWheel: function(event) {
+          var delta = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y
+          if (delta === 0) return
+          root.select(delta > 0 ? -1 : 1)
+          event.accepted = true
         }
       }
 
       Text {
-        Layout.fillWidth: true
-        Layout.preferredHeight: implicitHeight
-        text: "LEFT/RIGHT or CTRL+J/K  •  ENTER TO OPEN  •  ESC TO CLOSE"
-        color: Color.notifications.text
-        opacity: 0.72
+        anchors.centerIn: parent
+        visible: root.modelCount === 0
+        text: "No notification history"
+        color: Color.barPanels.text
         font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
       }
     }
   }
