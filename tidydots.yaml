@@ -107,6 +107,32 @@ applications:
           linux: ~/.config/opencode/setup-context-tokenizers.sh --apply
           windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Apply
         name: context-analysis tokenizers
+  - name: interbase-mcp
+    description: Keep the local InterBase MCP endpoints available
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - targets:
+          linux: ~/.local/libexec/interbase-mcp
+        name: supervisor
+        backup: ./Linux/interbase-mcp
+        files:
+          - interbase-mcp-supervisor
+      - targets:
+          linux: ~/.config/systemd/user
+        name: user-service
+        backup: ./Linux/interbase-mcp/systemd
+        files:
+          - interbase-mcp.service
+      - check:
+          linux: 'target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes'
+        run:
+          linux: 'target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"'
+        name: enable-user-lingering
+      - check:
+          linux: systemctl --user is-enabled --quiet interbase-mcp.service && systemctl --user is-active --quiet interbase-mcp.service && test "$(systemctl --user show interbase-mcp.service --property=NeedDaemonReload --value)" = no && started=$(date --date="$(systemctl --user show interbase-mcp.service --property=ExecMainStartTimestamp --value)" +%s) && test "$started" -ge "$(stat -Lc %Y "$HOME/.local/libexec/interbase-mcp/interbase-mcp-supervisor")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/systemd/user/interbase-mcp.service")"
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable interbase-mcp.service && systemctl --user restart interbase-mcp.service
+        name: enable-service
   - package:
       managers:
         apt: neovim

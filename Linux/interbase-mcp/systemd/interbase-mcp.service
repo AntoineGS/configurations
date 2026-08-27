@@ -1,0 +1,15 @@
+[Unit]
+Description=InterBase MCP servers
+ConditionFileIsExecutable=%h/.local/libexec/interbase-mcp/interbase-mcp-supervisor
+
+[Service]
+Type=simple
+UMask=0077
+ExecStart=%h/.local/libexec/interbase-mcp/interbase-mcp-supervisor
+KillMode=mixed
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
