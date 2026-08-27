@@ -333,7 +333,7 @@ PanelWindow {
     y: cardFrame.y
     width: cardFrame.width
     height: cardFrame.height * root.materialYScale
-    visible: root.cardsVisible && root.activeRow !== null && height > 0
+    visible: (root.cardsVisible || root.motionState !== "closed") && root.activeRow !== null && height > 0
   }
 
   Item {
