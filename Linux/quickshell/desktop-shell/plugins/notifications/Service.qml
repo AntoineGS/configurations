@@ -1349,7 +1349,7 @@ Item {
     return service.historyOpen ? service.closeHistory() : service.openHistory()
   }
 
-  function popupIndexForIdentity(originalId, timestamp) {
+  function popupIndexForHistoryIdentity(originalId, timestamp) {
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
       if (row && row.originalId === originalId && Number(row.timestamp) === Number(timestamp)) return i
@@ -1373,7 +1373,7 @@ Item {
       return false
     }
 
-    var popupIndex = popupIndexForIdentity(entry.originalId, entry.timestamp)
+    var popupIndex = popupIndexForHistoryIdentity(entry.originalId, entry.timestamp)
     if (popupIndex < 0 || !service.invokePopupDefault(popupIndex, entry)) {
       historyModel.setProperty(index, "actionAvailable", false)
       return false
