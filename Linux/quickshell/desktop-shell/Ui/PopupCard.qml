@@ -87,8 +87,8 @@ PopupWindow {
   implicitWidth: contentWidth + elevationInset * 2
   implicitHeight: contentHeight + elevationInset + shadowBottomPadding
   mask: Region {
-    Region { item: card }
-    Region { item: shoulders }
+    Region { item: root.open ? card : null }
+    Region { item: root.open ? shoulders : null }
   }
 
   onOpenChanged: {
@@ -195,6 +195,10 @@ PopupWindow {
       bottomLeftRadius: Style.popupOuterRadius
       bottomRightRadius: Style.popupOuterRadius
       revealed: root.open
+      revealDuration: PopupMotion.surfaceOpenDuration
+      concealDuration: PopupMotion.surfaceCloseDuration
+      revealEasing: PopupMotion.surfaceOpenEasing
+      concealEasing: PopupMotion.surfaceCloseEasing
       concealedXScale: 1
       concealedYScale: 0
       scaleOriginX: width / 2

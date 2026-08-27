@@ -814,35 +814,35 @@ Item {
       target: root
       property: "materialYScale"
       to: 1
-      duration: Motion.spatialDuration
-      easing.type: Motion.spatialEasing
+      duration: PopupMotion.surfaceOpenDuration
+      easing.type: PopupMotion.surfaceOpenEasing
     }
     SequentialAnimation {
-      PauseAnimation { duration: 60 }
+      PauseAnimation { duration: PopupMotion.menuSearchOpenDelay }
       NumberAnimation {
         target: root
         property: "searchOpacity"
         to: 1
-        duration: 100
-        easing.type: Motion.effectEasing
+        duration: PopupMotion.menuSearchOpenDuration
+        easing.type: PopupMotion.menuContentOpenEasing
       }
     }
     SequentialAnimation {
-      PauseAnimation { duration: 100 }
+      PauseAnimation { duration: PopupMotion.menuResultsOpenDelay }
       NumberAnimation {
         target: root
         property: "resultsOpacity"
         to: 1
-        duration: Motion.normalDuration
-        easing.type: Motion.effectEasing
+        duration: PopupMotion.menuResultsOpenDuration
+        easing.type: PopupMotion.menuContentOpenEasing
       }
     }
     NumberAnimation {
       target: root
       property: "scrimOpacity"
       to: 1
-      duration: Motion.spatialDuration
-      easing.type: Motion.effectEasing
+      duration: PopupMotion.surfaceOpenDuration
+      easing.type: PopupMotion.menuScrimEasing
     }
   }
 
@@ -855,29 +855,29 @@ Item {
       target: root
       property: "searchOpacity"
       to: 0
-      duration: 120
-      easing.type: Motion.exitEasing
+      duration: PopupMotion.menuSearchCloseDuration
+      easing.type: PopupMotion.menuContentCloseEasing
     }
     NumberAnimation {
       target: root
       property: "resultsOpacity"
       to: 0
-      duration: 90
-      easing.type: Motion.exitEasing
+      duration: PopupMotion.menuResultsCloseDuration
+      easing.type: PopupMotion.menuContentCloseEasing
     }
     NumberAnimation {
       target: root
       property: "materialYScale"
       to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
+      duration: PopupMotion.surfaceCloseDuration
+      easing.type: PopupMotion.surfaceCloseEasing
     }
     NumberAnimation {
       target: root
       property: "scrimOpacity"
       to: 0
-      duration: Motion.fastDuration
-      easing.type: Motion.exitEasing
+      duration: PopupMotion.surfaceCloseDuration
+      easing.type: PopupMotion.menuScrimEasing
     }
   }
 
