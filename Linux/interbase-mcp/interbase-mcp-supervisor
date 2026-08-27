@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+manager=${INTERBASE_MCP_MANAGER:-$HOME/gits/multidev/.opencode/interbase-mcp/manage.sh}
+retry_seconds=${INTERBASE_MCP_RETRY_SECONDS:-60}
+readonly manager retry_seconds
+sleep_pid=''
+
+if [[ ! -x $manager ]]; then
+  printf '[interbase-mcp] ERROR: manager is missing or not executable: %s\n' "$manager" >&2
+  exit 1
+fi
+if [[ ! $retry_seconds =~ ^([0-9]*[1-9][0-9]*)(\.[0-9]+)?$|^0\.[0-9]*[1-9][0-9]*$ ]]; then
+  printf '[interbase-mcp] ERROR: retry interval must be a positive number: %s\n' "$retry_seconds" >&2
+  exit 1
+fi
+
+shutdown() {
+  local stop_status=0
+
+  trap - INT TERM
+  if [[ -n $sleep_pid ]] && kill -0 "$sleep_pid" 2>/dev/null; then
+    kill -TERM "$sleep_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+  fi
+  "$manager" stop || stop_status=$?
+  exit "$stop_status"
+}
+trap shutdown INT TERM
+
+while true; do
+  start_status=0
+  status_status=0
+  "$manager" start || start_status=$?
+  "$manager" status || status_status=$?
+
+  if ((start_status != 0 || status_status != 0)); then
+    printf '[interbase-mcp] WARNING: one or more instances failed; continuing in degraded state\n' >&2
+  fi
+
+  sleep "$retry_seconds" &
+  sleep_pid=$!
+  wait "$sleep_pid" || true
+  sleep_pid=''
+done
