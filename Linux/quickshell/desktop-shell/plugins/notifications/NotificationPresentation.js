@@ -87,6 +87,7 @@ function removeActive(state, effects, senderType) {
   if (next) startSwitch(state, displayed, effects, beforePending, state.pending); else startClose(state, displayed, effects, beforePending, state.pending)
 }
 function settle(state, event, effects) {
+  var next, previous
   if (!matching(state, event)) return
   cancel(state, effects)
   if (state.phase === "closing") {
@@ -102,7 +103,8 @@ function settle(state, event, effects) {
   if (state.active) startCountdown(state)
   // An arrival during a transition is reconsidered at the atomic boundary.
   if (state.phase === "open" && !state.hovered && state.pending.length && critical(state.pending[0]) && !critical(state.active)) {
-    state.active = state.pending.shift(); startSwitch(state, state.visual.incoming, effects)
+    next = state.pending.slice(); previous = state.active; state.active = state.pending.shift(); insertPending(state, previous)
+    startSwitch(state, state.visual.incoming, effects, next, state.pending)
   }
 }
 function validRoute(event) { return typeof event.visible === "boolean" && (event.visible ? typeof event.output === "string" && event.output !== "" : event.output === null) }
@@ -128,13 +130,15 @@ function reduce(input, event) {
       if (identityOf(state.active) === oldIdentity) {
         state.retired[oldIdentity] = true
         next = copy(row)
-        state.active = copy(row)
         if (state.phase === "open") {
-          state.visual.incoming = copy(next)
           state.countdown.identity = identityOf(next)
           state.countdown.fraction = state.countdown.duration ? state.countdown.remaining / state.countdown.duration : 1
+          next.remainingLifetime = state.countdown.remaining
+        }
+        state.active = copy(next)
+        if (state.phase === "open") {
+          state.visual.incoming = copy(next)
           state.countdown.visible = state.countdown.visible && !critical(next)
-          state.active.remainingLifetime = state.countdown.remaining
         }
         persist(next, effects)
       }
@@ -166,6 +170,7 @@ function reduce(input, event) {
       break
     case "HOVER_CHANGED":
       if (typeof event.hovered !== "boolean") break
+      if (state.hovered === event.hovered) break
       state.hovered = event.hovered
       state.countdown.lastNow = 0
       if (!state.hovered && state.phase === "open" && state.pending.length && critical(state.pending[0]) && !critical(state.active)) {
@@ -211,12 +216,12 @@ function assertInvariants(state) {
     seen[identityOf(state.pending[i])] = true
   }
   if (state.active && state.retired[identityOf(state.active)]) throw new Error("retired active")
-  if (transient && (!finite(state.visual.token) || state.visual.token <= 0 || ["open", "switch", "close"].indexOf(state.visual.kind) < 0 || typeof state.visual.output !== "string" || state.visual.output !== state.route.output)) throw new Error("invalid transition token")
-  if (!transient && state.phase !== "hidden" && state.visual.kind !== "") throw new Error("stable transition metadata")
+  if (transient && (!finite(state.visual.token) || state.visual.token <= 0 || state.visual.kind !== ({ opening: "open", switching: "switch", closing: "close" })[state.phase] || typeof state.visual.output !== "string" || state.visual.output !== state.route.output)) throw new Error("invalid transition token")
+  if (!transient && state.phase !== "hidden" && (state.visual.token !== 0 || state.visual.kind !== "" || state.visual.output !== "")) throw new Error("stable transition metadata")
   if (state.phase === "opening" && (!state.visual.incoming || state.visual.outgoing)) throw new Error("invalid opening cards")
   if (state.phase === "switching" && (!state.visual.incoming || !state.visual.outgoing)) throw new Error("invalid switching cards")
   if (state.phase === "closing" && (!state.visual.outgoing || state.visual.incoming)) throw new Error("invalid closing cards")
-  if (state.phase === "open" && (!state.active || !state.visual.incoming || identityOf(state.active) !== identityOf(state.visual.incoming) || state.countdown.identity !== identityOf(state.active) || (state.countdown.visible && state.countdown.identity !== identityOf(state.active)))) throw new Error("open identity mismatch")
+  if (state.phase === "open" && (state.visual.outgoing || !state.active || !state.visual.incoming || identityOf(state.active) !== identityOf(state.visual.incoming) || state.countdown.identity !== identityOf(state.active) || (state.countdown.visible && state.countdown.identity !== identityOf(state.active)))) throw new Error("open identity mismatch")
   if (!state.visual.outgoing && !state.visual.incoming && (state.visual.outgoingDeck.snapshots.length || state.visual.incomingDeck.snapshots.length)) throw new Error("orphan deck")
   if (state.countdown.visible && state.phase !== "open") throw new Error("countdown outside open")
   return true

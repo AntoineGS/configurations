@@ -239,6 +239,12 @@ timerState = step(timerState, { type: "HOVER_CHANGED", hovered: false })
 timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 400 }, s => assert.equal(s.countdown.remaining, 900))
 timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 500 }, s => assert.equal(s.countdown.remaining, 800))
 assert.equal(timerState.active.remainingLifetime, 800)
+const repeatedHover = JSON.parse(JSON.stringify(timerState))
+repeatedHover.hovered = true
+repeatedHover.countdown.lastNow = 77
+const repeatedHoverResult = apply(repeatedHover, { type: "HOVER_CHANGED", hovered: true })
+assert.deepEqual(repeatedHoverResult.state, repeatedHover)
+assert.deepEqual(repeatedHoverResult.effects, [])
 const expiryResult = apply(timerState, { type: "TICK", identity: "17000:17", now: 1300 })
 assert.equal(expiryResult.state.phase, "closing")
 assert.equal(expiryResult.state.visual.outgoing.identity, "17000:17")
@@ -268,6 +274,20 @@ priority = step(priority, { type: "HOVER_CHANGED", hovered: true })
 priority = step(priority, { type: "ARRIVE", snapshot: snapshot("23000:23", 2, 0, 0) })
 priority = step(priority, { type: "HOVER_CHANGED", hovered: false }, s => assert.deepEqual(ids(s.pending), ["21000:21", "23000:23", "22000:22"]))
 
+let openingBoundary = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+openingBoundary = step(openingBoundary, { type: "ARRIVE", snapshot: snapshot("23100:231", 1, 1000, 1000) })
+openingBoundary = step(openingBoundary, { type: "ARRIVE", snapshot: snapshot("23200:232", 2, 0, 0) }, s => {
+  assert.equal(s.phase, "opening")
+  assert.deepEqual(ids(s.pending), ["23200:232"])
+})
+openingBoundary = step(openingBoundary, { type: "TRANSITION_FINISHED", token: openingBoundary.visual.token, kind: "open", output: "DP-1" }, s => {
+  assert.equal(s.phase, "switching")
+  assert.equal(s.active.identity, "23200:232")
+  assert.deepEqual(ids(s.pending), ["23100:231"])
+  assert.deepEqual(ids(s.visual.outgoingDeck.snapshots), ["23200:232"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["23100:231"])
+})
+
 let boundaryCritical = openState(snapshot("23500:235", 1, 1000, 1000))
 boundaryCritical = step(boundaryCritical, { type: "ARRIVE", snapshot: snapshot("23600:236", 2, 0, 0) })
 boundaryCritical = step(boundaryCritical, { type: "ARRIVE", snapshot: snapshot("23700:237", 2, 0, 0) }, s => {
@@ -294,8 +314,9 @@ tiedReplacement = step(tiedReplacement, { type: "REPLACE", identity: "23900:239"
 
 let allEffects = openState(snapshot("24000:24", 1, 1000, 1000))
 allEffects = step(allEffects, { type: "ARRIVE", snapshot: snapshot("25000:25", 1, 1000, 1000) })
+allEffects = step(allEffects, { type: "ARRIVE", snapshot: snapshot("25000:26", 1, 1000, 1000) })
 const allResult = apply(allEffects, { type: "DISMISS_ALL" })
-assert.equal(allResult.effects.filter(effect => effect.type === "archive").length, 2)
+assert.equal(allResult.effects.filter(effect => effect.type === "archive").length, 3)
 assert.ok(allResult.effects.filter(effect => effect.type === "archive" || effect.type === "senderDismiss").every(effect => effect.snapshot && effect.identity))
 
 let pendingReplacement = openState(snapshot("26000:26", 2, 0, 0))
@@ -308,19 +329,20 @@ pendingReplacement = step(pendingReplacement, { type: "REPLACE", identity: "2700
 })
 
 const allSenderDismiss = allResult.effects.filter(effect => effect.type === "senderDismiss")
-assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "25000:25"])
+assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "25000:25", "25000:26"])
 
 let stableReplacement = openState(snapshot("29500:295", 1, 1000, 1000))
 stableReplacement = step(stableReplacement, { type: "TICK", identity: "29500:295", now: 100 })
 stableReplacement = step(stableReplacement, { type: "TICK", identity: "29500:295", now: 200 })
 const stableNext = snapshot("29600:295", 2, 7000, 7000)
-stableReplacement = step(stableReplacement, { type: "REPLACE", identity: "29500:295", snapshot: stableNext }, s => {
+stableReplacement = step(stableReplacement, { type: "REPLACE", identity: "29500:295", snapshot: stableNext }, (s, effects) => {
   assert.equal(s.active.identity, "29600:295")
   assert.equal(s.visual.incoming.identity, "29600:295")
   assert.equal(s.countdown.identity, "29600:295")
   assert.equal(s.countdown.duration, 1000)
   assert.equal(s.countdown.remaining, 900)
   assert.equal(s.active.remainingLifetime, 900)
+  assert.equal(effects.find(effect => effect.type === "persist").snapshot.remainingLifetime, 900)
 })
 
 let frozenReplacement = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
@@ -353,6 +375,30 @@ const retiredBefore = JSON.parse(JSON.stringify(retiredTarget))
 const retiredReplacement = apply(retiredTarget, { type: "REPLACE", identity: "30100:301", snapshot: snapshot("30200:302", 1, 1000, 1000) })
 assert.deepEqual(retiredReplacement.state, retiredBefore)
 assert.deepEqual(retiredReplacement.effects, [])
+
+const invalidOpening = step(Presentation.createInitialState({ routeVisible: true, output: "DP-1" }), { type: "ARRIVE", snapshot: snapshot("30300:303", 1, 1000, 1000) })
+const invalidOpeningKind = JSON.parse(JSON.stringify(invalidOpening)); invalidOpeningKind.visual.kind = "switch"
+assert.throws(() => Presentation.assertInvariants(invalidOpeningKind), /invalid transition token/)
+const invalidOpeningOutput = JSON.parse(JSON.stringify(invalidOpening)); invalidOpeningOutput.visual.output = "DP-2"
+assert.throws(() => Presentation.assertInvariants(invalidOpeningOutput), /invalid transition token/)
+const invalidClosed = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+invalidClosed.visual.token = 2
+assert.throws(() => Presentation.assertInvariants(invalidClosed), /stable transition metadata/)
+const invalidOpen = openState(snapshot("30400:304", 1, 1000, 1000))
+invalidOpen.visual.token = 2
+invalidOpen.visual.output = "DP-1"
+assert.throws(() => Presentation.assertInvariants(invalidOpen), /stable transition metadata/)
+const invalidOpenCard = openState(snapshot("30500:305", 1, 1000, 1000))
+invalidOpenCard.visual.outgoing = snapshot("30600:306", 1, 1000, 1000)
+assert.throws(() => Presentation.assertInvariants(invalidOpenCard), /open identity mismatch/)
+const invalidSwitch = openState(snapshot("30700:307", 1, 1000, 1000))
+const invalidSwitchResult = apply(invalidSwitch, { type: "ARRIVE", snapshot: snapshot("30800:308", 2, 0, 0) })
+invalidSwitchResult.state.visual.kind = "close"
+assert.throws(() => Presentation.assertInvariants(invalidSwitchResult.state), /invalid transition token/)
+const invalidClosing = openState(snapshot("30900:309", 1, 1000, 1000))
+const invalidClosingResult = apply(invalidClosing, { type: "DISMISS", identity: "30900:309" })
+invalidClosingResult.state.visual.incoming = snapshot("31000:310", 1, 1000, 1000)
+assert.throws(() => Presentation.assertInvariants(invalidClosingResult.state), /invalid closing cards/)
 const source = require("node:fs").readFileSync(require.resolve("../plugins/notifications/NotificationPresentation.js"), "utf8")
 assert.equal(source.includes("findIndex"), false)
 assert.equal(source.includes("Number.isFinite"), false)
