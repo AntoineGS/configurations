@@ -7,11 +7,11 @@ installer=$test_dir/../install-outlook-preview
 readonly installer
 expected_package_name=outlook-for-linux
 readonly expected_package_name
-expected_version=1.4.0_test.2-1
+expected_version=1.4.0_test.3-1
 readonly expected_version
-expected_url=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-2/outlook-for-linux-1.4.0-test.2-x86_64.pkg.tar.zst
+expected_url=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-3/outlook-for-linux-1.4.0-test.3-x86_64.pkg.tar.zst
 readonly expected_url
-expected_sha256=3d581ab56ce45cae67b04cd176b4983e66dc3ca245841b7434bcbff5afaebf5d
+expected_sha256=19ffcb721b286a29dfc667382725fa9b958c9aa25191f4e168b1c6b9289d45ae
 readonly expected_sha256
 tmpdir=$(mktemp -d)
 readonly tmpdir

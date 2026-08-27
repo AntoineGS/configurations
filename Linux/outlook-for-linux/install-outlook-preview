@@ -2,9 +2,9 @@
 set -Eeuo pipefail
 
 readonly PACKAGE_NAME=outlook-for-linux
-readonly PACKAGE_VERSION=1.4.0_test.2-1
-readonly PACKAGE_URL=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-2/outlook-for-linux-1.4.0-test.2-x86_64.pkg.tar.zst
-readonly PACKAGE_SHA256=3d581ab56ce45cae67b04cd176b4983e66dc3ca245841b7434bcbff5afaebf5d
+readonly PACKAGE_VERSION=1.4.0_test.3-1
+readonly PACKAGE_URL=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-3/outlook-for-linux-1.4.0-test.3-x86_64.pkg.tar.zst
+readonly PACKAGE_SHA256=19ffcb721b286a29dfc667382725fa9b958c9aa25191f4e168b1c6b9289d45ae
 
 tmp_package=
 
