@@ -77,7 +77,7 @@ ElevatedSurface {
   implicitWidth: Style.space(380)
   implicitHeight: mainColumn.implicitHeight
   radius: root.attachedMode ? Style.popupOuterRadius
-    : (root.historyMode ? Style.popupInnerRadius : 0)
+    : (root.historyMode ? Style.popupInnerRadius : Style.popupOuterRadius)
   topLeftRadius: root.attachedMode ? 0 : radius
   topRightRadius: root.attachedMode ? 0 : radius
   bottomLeftRadius: radius
@@ -143,7 +143,7 @@ ElevatedSurface {
       Text {
         Layout.fillWidth: true
         text: root.sourceLabel
-        color: root.inkColor
+        color: root.attachedMode ? Color.barPanels.text : root.inkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -153,7 +153,7 @@ ElevatedSurface {
 
       Text {
         text: root.timeLabel
-        color: root.inkColor
+        color: root.attachedMode ? Color.barPanels.text : root.inkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
