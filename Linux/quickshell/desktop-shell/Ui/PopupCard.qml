@@ -195,6 +195,10 @@ PopupWindow {
       bottomLeftRadius: Style.popupOuterRadius
       bottomRightRadius: Style.popupOuterRadius
       revealed: root.open
+      revealDuration: Motion.popupOpenDuration
+      concealDuration: Motion.popupCloseDuration
+      revealEasing: Motion.popupOpenEasing
+      concealEasing: Motion.popupCloseEasing
       concealedXScale: 1
       concealedYScale: 0
       scaleOriginX: width / 2

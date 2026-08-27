@@ -16,6 +16,10 @@ BorderSurface {
   property real scaleOriginX: width / 2
   property real scaleOriginY: height / 2
   property int motionDuration: Motion.fastDuration
+  property int revealDuration: motionDuration
+  property int concealDuration: motionDuration
+  property int revealEasing: Motion.spatialEasing
+  property int concealEasing: Motion.spatialEasing
   property int shadowBlurMax: 24
   property real shadowBlurAmount: 0.7
   property real shadowOpacityAmount: 0.38
@@ -64,8 +68,8 @@ BorderSurface {
   Behavior on revealProgress {
     enabled: root._completed && root.motionEnabled && Motion.enabled
     NumberAnimation {
-      duration: root.motionDuration
-      easing.type: Motion.spatialEasing
+      duration: root.revealed ? root.revealDuration : root.concealDuration
+      easing.type: root.revealed ? root.revealEasing : root.concealEasing
     }
   }
 
