@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly RUSTDESK_UNIT=rustdesk.service
+readonly MARKER_UNIT=rustdesk-cm-marker.service
+readonly SYSTEMCTL=/usr/bin/systemctl
+readonly DD=/usr/bin/dd
+readonly GREP=/usr/bin/grep
+readonly PKEXEC=/usr/bin/pkexec
+readonly READLINK=/usr/bin/readlink
+readonly SLEEP=/usr/bin/sleep
+readonly STAT=/usr/bin/stat
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+systemctl_cmd() {
+  "$SYSTEMCTL" "$@"
+}
+
+pkexec_cmd() {
+  "$PKEXEC" "$@"
+}
+
+sleep_cmd() {
+  "$SLEEP" "$@"
+}
+
+trusted_root_path() {
+  local path=$1
+
+  while true; do
+    [[ $("$STAT" -Lc '%u' "$path") == 0 && ! -w $path ]] || return 1
+    [[ $path == / ]] && return 0
+    path=${path%/*}
+    [[ -n $path ]] || path=/
+  done
+}
+
+rustdesk_executable() {
+  local exec_start executable
+  local -r path_pattern='^\{ path=(.*)[[:space:]];[[:space:]]argv\[\]='
+
+  exec_start=$(systemctl_cmd show "$RUSTDESK_UNIT" --property=ExecStart --value) ||
+    die "Unable to read $RUSTDESK_UNIT ExecStart"
+  [[ $exec_start =~ $path_pattern ]] ||
+    die "Unable to parse $RUSTDESK_UNIT ExecStart: $exec_start"
+  executable=$("$READLINK" -f -- "${BASH_REMATCH[1]}") ||
+    die "Unable to resolve RustDesk service executable: ${BASH_REMATCH[1]}"
+  [[ $executable == /* && -f $executable && -x $executable ]] ||
+    die "RustDesk service executable is not executable: ${BASH_REMATCH[1]}"
+  trusted_root_path "$executable" || die "RustDesk service executable is not trusted: $executable"
+
+  printf '%s\n' "$executable"
+}
+
+marker_running() {
+  local argv0 main_pid
+  local -r expected="$1 --cm"
+
+  main_pid=$(systemctl_cmd --user show "$MARKER_UNIT" --property=MainPID --value) || return 1
+  [[ $main_pid =~ ^[1-9][0-9]*$ ]] || return 1
+  IFS= read -r -d '' argv0 < "/proc/$main_pid/cmdline" 2>/dev/null && [[ $argv0 == "$expected" ]]
+}
+
+host_service_ready() {
+  systemctl_cmd is-enabled --quiet "$RUSTDESK_UNIT" &&
+    systemctl_cmd is-active --quiet "$RUSTDESK_UNIT"
+}
+
+check_setup() {
+  host_service_ready &&
+    systemctl_cmd --user is-enabled --quiet "$MARKER_UNIT" &&
+    systemctl_cmd --user is-active --quiet "$MARKER_UNIT" &&
+    [[ $(systemctl_cmd --user show "$MARKER_UNIT" --property=NeedDaemonReload --value) == no ]] &&
+    marker_running "$(rustdesk_executable)"
+}
+
+wait_for_setup() {
+  local current
+  local -ir deadline=$(($(now_microseconds) + 5000000))
+
+  current=$(now_microseconds)
+  while ((current < deadline)); do
+    check_setup && return 0
+    sleep_cmd 0.1
+    current=$(now_microseconds)
+  done
+  check_setup
+}
+
+now_microseconds() {
+  local fraction now seconds
+
+  now=$EPOCHREALTIME
+  seconds=${now%.*}
+  fraction=${now#*.}
+  printf '%d\n' "$((10#$seconds * 1000000 + 10#$fraction))"
+}
+
+clear_stop_service() {
+  local attempt config_fd config_file match offset
+  local -r executable=$1
+  local -r config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/rustdesk"
+
+  pkexec_cmd "$executable" --option stop-service ''
+
+  config_file="$config_dir/RustDesk2.toml"
+  [[ -f $config_file ]] || return 0
+  "$GREP" -Fxq "stop-service = 'Y'" "$config_file" || return 0
+
+  for ((attempt = 0; attempt < 5; attempt++)); do
+    exec {config_fd}<> "$config_file"
+    match=$("$GREP" -bo -m1 "^stop-service = 'Y'$" <&"$config_fd") || {
+      exec {config_fd}>&-
+      "$GREP" -Fxq "stop-service = 'Y'" "$config_file" && continue
+      return 0
+    }
+    offset=${match%%:*}
+    printf 'N' | "$DD" of="/proc/self/fd/$config_fd" bs=1 seek="$((offset + 16))" count=1 \
+      conv=notrunc status=none
+    exec {config_fd}>&-
+    "$GREP" -Fxq "stop-service = 'Y'" "$config_file" || return 0
+  done
+  die 'Failed to clear stop-service from the user RustDesk config'
+}
+
+apply_setup() {
+  local executable
+
+  if ! host_service_ready; then
+    [[ -x $PKEXEC ]] || die "Required command not found: $PKEXEC"
+    executable=$(rustdesk_executable)
+    clear_stop_service "$executable"
+    pkexec_cmd "$SYSTEMCTL" enable --now "$RUSTDESK_UNIT"
+    host_service_ready || die "Failed to enable and start $RUSTDESK_UNIT"
+  fi
+
+  systemctl_cmd --user daemon-reload
+  systemctl_cmd --user enable "$MARKER_UNIT"
+  systemctl_cmd --user restart "$MARKER_UNIT"
+  wait_for_setup || die 'RustDesk marker setup verification failed'
+}
+
+run_marker() {
+  local executable
+
+  executable=$(rustdesk_executable)
+  [[ -x $SLEEP ]] || die "Required command not found: $SLEEP"
+
+  # RustDesk suppresses timed server recycling while this exact argv marker exists.
+  exec -a "$executable --cm" "$SLEEP" infinity
+}
+
+main() {
+  case ${1:-} in
+    --apply) apply_setup ;;
+    --check) check_setup ;;
+    --run) run_marker ;;
+    *) die 'Usage: rustdesk-cm-marker --apply|--check|--run' ;;
+  esac
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
