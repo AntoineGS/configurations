@@ -58,7 +58,7 @@ ShellRoot {
       transparent: false,
       centerAnchor: "desktop.clock",
       layout: {
-        left: [{ id: "desktop.menu" }, { id: "desktop.workspaces" }],
+        left: [{ id: "desktop.workspaces" }],
         center: [{ id: "desktop.clock", format: "dddd HH:mm" }],
         right: [{ id: "desktop.audio" }, { id: "desktop.vm" }]
       }

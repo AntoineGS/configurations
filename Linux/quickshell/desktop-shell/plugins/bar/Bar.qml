@@ -365,6 +365,10 @@ Item {
     if (process && !process.running) process.running = true
   }
 
+  function openRootMenu() {
+    Quickshell.execDetached(["desktop-shell", "summon", "desktop.menu", "{\"menu\":\"root\"}"])
+  }
+
   readonly property var centerAnchorEntry: {
     var entries = layoutEntries("center")
     var index = entryIndex(entries, centerAnchor)
@@ -403,6 +407,12 @@ Item {
     Item {
       id: barContent
       anchors.fill: parent  
+
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        onClicked: root.openRootMenu()
+      }
 
       HoverHandler {
         id: barHover
