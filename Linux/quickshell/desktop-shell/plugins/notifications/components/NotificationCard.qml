@@ -67,7 +67,7 @@ ElevatedSurface {
 
   implicitWidth: Style.space(380)
   implicitHeight: mainColumn.implicitHeight
-  radius: 0
+  radius: root.historyMode ? Style.popupInnerRadius : 0
   color: surfaceColor
   borderSpec: root.keyboardSelected
     ? Border.flat(root.inkColor, Math.max(2, Style.space(2)))

@@ -1495,6 +1495,22 @@ ShellRoot {
       return "pending"
     }
 
+    function resetTopBarOverlayCoordinatorForTest(): string {
+      TopBarOverlayCoordinator.reset()
+      return TopBarOverlayCoordinator.activeId || "none"
+    }
+
+    function claimTopBarOverlayForTest(id: string): string {
+      TopBarOverlayCoordinator.claim(id)
+      return TopBarOverlayCoordinator.activeId || "none"
+    }
+
+    function releaseTopBarOverlayForTest(id: string): string {
+      var released = TopBarOverlayCoordinator.release(id)
+      return (released ? "released:" : "stale:")
+        + (TopBarOverlayCoordinator.activeId || "none")
+    }
+
     function pluginWidgetReady(id: string): string {
       return shell.testPluginWidgetReady(id)
     }

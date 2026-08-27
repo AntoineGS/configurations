@@ -1,6 +1,5 @@
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -31,14 +30,10 @@ Item {
   property color foreground: Color.barPanels.text
   property color secondaryForeground: Color.barPanels.secondaryText
   property color accent: Color.accent
-  property color scrim: Color.modal.scrim
   property string fontFamily: Style.font.family
   property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
-  property int cardWidth: Style.centeredMenuWidth(
-    Style.space(875), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(600), panel.height - Style.gapsOut * 2)
   property int rowHeight: Math.max(Style.space(50), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
   property int historyLimit: 500
 
@@ -348,268 +343,244 @@ Item {
     onTriggered: root.watchRestartDelay = 1000
   }
 
-  PanelWindow {
+  TopBarOverlay {
     id: panel
-    visible: root.opened || card.opacity > 0
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    WlrLayershell.namespace: "desktop-clipboard"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-    exclusionMode: ExclusionMode.Ignore
-    mask: Region {}
+    overlayId: "desktop.clipboard"
+    layerNamespace: "desktop-clipboard"
+    shell: root.shell
+    opened: root.opened
+    requestedCardWidth: Style.space(875)
+    requestedCardHeight: Style.space(600)
+    headerHeight: root.headerHeight
+    contentSpacing: root.contentSpacing
+    contentPadding: root.contentMargin
+    onDismissRequested: root.close()
 
-    Rectangle {
-      anchors.fill: parent
-      color: root.scrim
+    headerData: TextField {
+      id: searchField
+      width: parent.width
+      height: root.headerHeight
+      text: root.filterText
+      placeholderText: "Search clipboard…"
+      foreground: root.foreground
+      accent: root.accent
+      font.family: root.fontFamily
+      Keys.priority: Keys.BeforeItem
+      onTextEdited: if (text !== root.filterText) root.setFilter(text)
+
+      Keys.onPressed: function(event) {
+        if (root.clearConfirmOpen) {
+          if (clearConfirm.handleKey(event)) event.accepted = true
+          return
+        }
+
+        var control = event.modifiers & Qt.ControlModifier
+        if (control && event.key === Qt.Key_J) {
+          root.select(1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_K) {
+          root.select(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_U) {
+          root.selectHalfPage(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_D) {
+          root.selectHalfPage(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          if (root.filterText) root.setFilter("")
+          else root.close()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Delete) {
+          if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
+          else root.removeDisplayIndex(root.selectedIndex)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Up) {
+          root.select(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Down) {
+          root.select(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_PageUp) {
+          root.select(-6)
+          event.accepted = true
+        } else if (event.key === Qt.Key_PageDown) {
+          root.select(6)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Home) {
+          root.selectAbsolute(0)
+          event.accepted = true
+        } else if (event.key === Qt.Key_End) {
+          root.selectAbsolute(displayModel.count - 1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
+          else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
+          else if (root.cursorActive) root.activateIndex(root.selectedIndex)
+          else if (displayModel.count > 0) root.cursorActive = true
+          event.accepted = true
+        }
+      }
     }
 
-    PanelSurface {
-      id: card
-      width: root.cardWidth
-      height: root.cardHeight
-      anchors.centerIn: parent
-      padding: root.contentMargin
-      radius: Style.popupOuterRadius
-      revealed: root.opened
-      entranceY: -Style.space(6)
+    Item {
+      anchors.fill: parent
 
-      ConfirmDialog {
-        id: clearConfirm
-
+      Row {
         anchors.fill: parent
-        opened: root.clearConfirmOpen
-        z: 10
-        message: "Delete entire clipboard history?"
-        confirmText: "Delete"
-        foreground: root.foreground
-        secondaryForeground: root.secondaryForeground
-        scrim: root.scrim
-        fontFamily: root.fontFamily
-        onCanceled: root.cancelClearHistory()
-        onConfirmed: root.confirmClearHistory()
-      }
+        spacing: 0
 
-      Column {
-        anchors.fill: parent
-        anchors.topMargin: card.contentTopInset
-        anchors.rightMargin: card.contentRightInset
-        anchors.bottomMargin: card.contentBottomInset
-        anchors.leftMargin: card.contentLeftInset
-        spacing: root.contentSpacing
+        Item {
+          width: parent.width / 2
+          height: parent.height
+          clip: true
 
-        TextField {
-          id: searchField
-          width: parent.width
-          height: root.headerHeight
-          text: root.filterText
-          placeholderText: "Search clipboard…"
-          foreground: root.foreground
-          accent: root.accent
-          font.family: root.fontFamily
-          Keys.priority: Keys.BeforeItem
-          onTextEdited: if (text !== root.filterText) root.setFilter(text)
+          ListView {
+            id: resultList
+            anchors.fill: parent
+            anchors.rightMargin: root.contentMargin
+            model: displayModel
+            clip: true
+            spacing: Style.space(4)
+            boundsBehavior: Flickable.StopAtBounds
 
-          Keys.onPressed: function(event) {
-            if (root.clearConfirmOpen) {
-              if (clearConfirm.handleKey(event)) event.accepted = true
-              return
-            }
+            delegate: CursorSurface {
+              id: row
+              required property int index
+              required property string entryType
+              required property string previewText
+              required property string fullText
+              required property string previewImage
 
-            var control = event.modifiers & Qt.ControlModifier
-            if (control && event.key === Qt.Key_J) {
-              root.select(1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_K) {
-              root.select(-1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_U) {
-              root.selectHalfPage(-1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_D) {
-              root.selectHalfPage(1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Escape) {
-              if (root.filterText) root.setFilter("")
-              else root.close()
-              event.accepted = true
-            } else if (event.key === Qt.Key_Delete) {
-              if (event.modifiers & Qt.ShiftModifier) root.requestClearHistory()
-              else root.removeDisplayIndex(root.selectedIndex)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Up) {
-              root.select(-1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Down) {
-              root.select(1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_PageUp) {
-              root.select(-6)
-              event.accepted = true
-            } else if (event.key === Qt.Key_PageDown) {
-              root.select(6)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Home) {
-              root.selectAbsolute(0)
-              event.accepted = true
-            } else if (event.key === Qt.Key_End) {
-              root.selectAbsolute(displayModel.count - 1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-              if (root.cursorActive && (event.modifiers & Qt.AltModifier)) root.openIndex(root.selectedIndex)
-              else if (root.cursorActive && (event.modifiers & Qt.ShiftModifier)) root.copyIndex(root.selectedIndex)
-              else if (root.cursorActive) root.activateIndex(root.selectedIndex)
-              else if (displayModel.count > 0) root.cursorActive = true
-              event.accepted = true
+              width: ListView.view.width
+              height: root.rowHeight
+              hasCursor: root.cursorActive && index === root.selectedIndex
+              foreground: root.foreground
+              accent: root.accent
+
+              Row {
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(12)
+                anchors.rightMargin: Style.space(12)
+                anchors.topMargin: Style.space(8)
+                anchors.bottomMargin: Style.space(8)
+                spacing: Style.space(10)
+
+                Image {
+                  visible: parent.parent.previewImage.length > 0
+                  width: visible ? parent.height : 0
+                  height: parent.height
+                  source: parent.parent.previewImage
+                  fillMode: Image.PreserveAspectFit
+                  asynchronous: true
+                  smooth: true
+                }
+
+                Text {
+                  width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
+                  height: parent.height
+                  text: parent.parent.previewText
+                  color: parent.parent.hasCursor ? root.foreground : root.secondaryForeground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.title
+                  opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0
+                  elide: Text.ElideRight
+                  wrapMode: Text.NoWrap
+                  verticalAlignment: Text.AlignVCenter
+                }
+              }
             }
           }
         }
 
         Item {
-          width: parent.width
-          height: parent.height - root.headerHeight - root.contentSpacing
+          width: parent.width / 2
+          height: parent.height
+          clip: true
 
-          Row {
-            anchors.fill: parent
-            spacing: 0
+          property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
 
-            Item {
-              width: parent.width / 2
-              height: parent.height
-              clip: true
-
-              ListView {
-                id: resultList
-                anchors.fill: parent
-                anchors.rightMargin: root.contentMargin
-                model: displayModel
-                clip: true
-                spacing: Style.space(4)
-                boundsBehavior: Flickable.StopAtBounds
-
-                delegate: CursorSurface {
-                  id: row
-                  required property int index
-                  required property string entryType
-                  required property string previewText
-                  required property string fullText
-                  required property string previewImage
-
-                  width: ListView.view.width
-                  height: root.rowHeight
-                  hasCursor: root.cursorActive && index === root.selectedIndex
-                  foreground: root.foreground
-                  accent: root.accent
-
-                  Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: Style.space(12)
-                    anchors.rightMargin: Style.space(12)
-                    anchors.topMargin: Style.space(8)
-                    anchors.bottomMargin: Style.space(8)
-                    spacing: Style.space(10)
-
-                    Image {
-                      visible: parent.parent.previewImage.length > 0
-                      width: visible ? parent.height : 0
-                      height: parent.height
-                      source: parent.parent.previewImage
-                      fillMode: Image.PreserveAspectFit
-                      asynchronous: true
-                      smooth: true
-                    }
-
-                    Text {
-                      width: parent.width - (parent.parent.previewImage.length > 0 ? parent.height + parent.spacing : 0)
-                      height: parent.height
-                      text: parent.parent.previewText
-                      color: parent.parent.hasCursor ? root.foreground : root.secondaryForeground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.title
-                      opacity: parent.parent.entryType === "image" || parent.parent.entryType === "file" ? 0.72 : 1.0
-                      elide: Text.ElideRight
-                      wrapMode: Text.NoWrap
-                      verticalAlignment: Text.AlignVCenter
-                    }
-                  }
-                }
-              }
-            }
-
-            Item {
-              width: parent.width / 2
-              height: parent.height
-              clip: true
-
-              property var activeRow: displayModel.count > 0 && root.selectedIndex >= 0 && root.selectedIndex < displayModel.count ? displayModel.get(root.selectedIndex) : null
-
-              Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: Style.normalBorderWidth
-                color: Util.alpha(root.foreground, 0.28)
-              }
-
-              Text {
-                visible: parent.activeRow && !parent.activeRow.previewImage
-                anchors.fill: parent
-                anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
-                text: parent.activeRow ? parent.activeRow.fullText : ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                wrapMode: Text.WrapAnywhere
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignTop
-              }
-
-              Image {
-                visible: parent.activeRow && parent.activeRow.previewImage
-                anchors.fill: parent
-                anchors.leftMargin: root.contentMargin
-                anchors.rightMargin: 0
-                anchors.topMargin: 0
-                anchors.bottomMargin: 0
-                source: parent.activeRow ? parent.activeRow.previewImage : ""
-                fillMode: Image.PreserveAspectFit
-                verticalAlignment: Image.AlignTop
-                asynchronous: true
-                smooth: true
-              }
-            }
+          Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Style.normalBorderWidth
+            color: Util.alpha(root.foreground, 0.28)
           }
 
-          Column {
-            anchors.centerIn: parent
-            spacing: Style.space(8)
-            visible: displayModel.count === 0
+          Text {
+            visible: parent.activeRow && !parent.activeRow.previewImage
+            anchors.fill: parent
+            anchors.leftMargin: root.contentMargin
+            anchors.rightMargin: 0
+            anchors.topMargin: 0
+            anchors.bottomMargin: 0
+            text: parent.activeRow ? parent.activeRow.fullText : ""
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            wrapMode: Text.WrapAnywhere
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignTop
+          }
 
-            Text {
-              text: "󰅌"
-              color: root.accent
-              opacity: 0.8
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.displayLarge
-              horizontalAlignment: Text.AlignHCenter
-              width: parent.width
-            }
-
-            Text {
-              text: root.history.length === 0 ? "Clipboard is empty" : "No matches for “" + root.filterText + "”"
-              color: root.foreground
-              opacity: 0.7
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              horizontalAlignment: Text.AlignHCenter
-              width: parent.width
-            }
+          Image {
+            visible: parent.activeRow && parent.activeRow.previewImage
+            anchors.fill: parent
+            anchors.leftMargin: root.contentMargin
+            anchors.rightMargin: 0
+            anchors.topMargin: 0
+            anchors.bottomMargin: 0
+            source: parent.activeRow ? parent.activeRow.previewImage : ""
+            fillMode: Image.PreserveAspectFit
+            verticalAlignment: Image.AlignTop
+            asynchronous: true
+            smooth: true
           }
         }
       }
+
+      Column {
+        anchors.centerIn: parent
+        spacing: Style.space(8)
+        visible: displayModel.count === 0
+
+        Text {
+          text: "󰅌"
+          color: root.accent
+          opacity: 0.8
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.displayLarge
+          horizontalAlignment: Text.AlignHCenter
+          width: parent.width
+        }
+
+        Text {
+          text: root.history.length === 0 ? "Clipboard is empty" : "No matches for “" + root.filterText + "”"
+          color: root.foreground
+          opacity: 0.7
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.title
+          horizontalAlignment: Text.AlignHCenter
+          width: parent.width
+        }
+      }
+    }
+
+    foregroundData: ConfirmDialog {
+      id: clearConfirm
+
+      anchors.fill: parent
+      opened: root.clearConfirmOpen
+      z: 10
+      message: "Delete entire clipboard history?"
+      confirmText: "Delete"
+      foreground: root.foreground
+      secondaryForeground: root.secondaryForeground
+      scrim: Color.modal.scrim
+      fontFamily: root.fontFamily
+      onCanceled: root.cancelClearHistory()
+      onConfirmed: root.confirmClearHistory()
     }
   }
 }

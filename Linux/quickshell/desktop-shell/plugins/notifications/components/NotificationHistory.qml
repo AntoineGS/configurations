@@ -1,214 +1,218 @@
 import QtQuick
 import QtQuick.Layouts
-import Quickshell
-import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 
-PanelWindow {
+TopBarOverlay {
   id: root
 
-  property bool opened: false
   property var model: null
   property string fontFamily: Style.font.family
   property int selectedIndex: 0
 
+  readonly property int modelCount: root.model ? root.model.count : 0
+  readonly property real focusedCardWidth: Math.min(Style.space(380),
+    Math.max(Style.space(220), root.bodyWidth * 0.56))
   signal closeRequested()
   signal activationRequested(int index)
 
-  visible: root.opened || historyColumn.opacity > 0
-  anchors { top: true; bottom: true; left: true; right: true }
-  color: "transparent"
-  mask: Region { item: root.opened ? inputRegion : null }
-  exclusionMode: ExclusionMode.Ignore
-  WlrLayershell.namespace: "desktop-notification-history"
-  WlrLayershell.layer: WlrLayer.Overlay
-  WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+  overlayId: "desktop.notification-history"
+  layerNamespace: "desktop-notification-history"
+  requestedCardWidth: Style.centeredMenuWidth(Style.space(760), width - Style.gapsOut * 2)
+  requestedCardHeight: Style.space(300)
+  headerHeight: Style.space(24)
+  contentSpacing: Style.space(10)
+  onDismissRequested: root.closeRequested()
 
-  function select(delta) {
-    var count = root.model ? root.model.count : 0
-    if (count <= 0) return
-    root.selectedIndex = (root.selectedIndex + delta + count) % count
+  function clampIndex(index) {
+    if (root.modelCount <= 0) return 0
+    return Math.max(0, Math.min(root.modelCount - 1, Number(index) || 0))
+  }
+
+  function positionSelected() {
+    if (!root.opened || root.modelCount <= 0) return
     Qt.callLater(function() {
-      historyList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+      if (!root.opened || root.modelCount <= 0) return
+      historyList.positionViewAtIndex(root.selectedIndex, ListView.Center)
     })
   }
 
+  function select(delta) {
+    if (root.modelCount <= 0) return
+    var next = root.clampIndex(root.selectedIndex + delta)
+    if (next === root.selectedIndex) return
+    root.selectedIndex = next
+    root.positionSelected()
+  }
+
   function activateSelected() {
-    if (root.model && root.model.count > 0) root.activationRequested(root.selectedIndex)
+    if (root.modelCount > 0) root.activationRequested(root.selectedIndex)
   }
 
   onOpenedChanged: {
-    if (!opened) {
-      keyCatcher.focus = false
-      return
-    }
-    selectedIndex = 0
-    keyCatcher.focus = true
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    if (!root.opened) return
+    root.selectedIndex = 0
+    root.positionSelected()
+    Qt.callLater(function() {
+      if (root.opened) keyCatcher.forceActiveFocus()
+    })
   }
 
-  readonly property real availableHeight: Math.max(0, root.height - Style.gapsOut * 2)
-  readonly property real cardWidth: Math.min(Style.space(380), Math.max(0, root.width - Style.gapsOut * 2))
-  readonly property bool showHeader: root.availableHeight >= historyHeader.implicitHeight + Style.space(8)
-  readonly property bool showFooter: root.availableHeight >= historyHeader.implicitHeight
-    + historyFooter.implicitHeight + Style.space(48)
-  readonly property real chromeHeight: (historyHeader.visible ? historyHeader.implicitHeight : 0)
-    + (historyFooter.visible ? historyFooter.implicitHeight : 0)
-    + (historyHeader.visible || historyFooter.visible ? Style.space(8) : 0)
-    + (historyHeader.visible && historyFooter.visible ? Style.space(8) : 0)
-  readonly property real emptyStateHeight: !root.model || root.model.count === 0
-    ? Math.min(Math.max(Style.space(48), emptyStateLabel.implicitHeight + Style.space(16)),
-      Math.max(0, root.availableHeight - root.chromeHeight)) : 0
-  readonly property real listViewportHeight: Math.max(
-    0, Math.min(Math.max(historyList.contentHeight, root.emptyStateHeight),
-      root.availableHeight - root.chromeHeight)
-  )
-
-  Item {
-    id: inputRegion
-    anchors.fill: parent
+  onModelCountChanged: {
+    var next = root.clampIndex(root.selectedIndex)
+    if (next !== root.selectedIndex) root.selectedIndex = next
+    if (root.modelCount > 0) root.positionSelected()
   }
 
-  Rectangle {
-    anchors.fill: parent
-    color: Color.modal.scrim
-    opacity: root.opened ? 1 : 0
-    enabled: root.opened
-    Behavior on opacity { NumberAnimation { duration: 140 } }
-
-    MouseArea {
-      anchors.fill: parent
-      onClicked: root.closeRequested()
-    }
+  headerData: Text {
+    width: parent.width
+    height: Style.space(24)
+    text: "NOTIFICATIONS  " + root.modelCount
+    color: Color.notifications.text
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+    font.bold: true
+    font.letterSpacing: Style.spaceReal(0.8)
+    horizontalAlignment: Text.AlignHCenter
+    verticalAlignment: Text.AlignVCenter
   }
 
   Item {
-    id: keyCatcher
+    id: body
     anchors.fill: parent
-    focus: false
-    enabled: root.opened
-    Keys.priority: Keys.BeforeItem
-
-    Keys.onPressed: function(event) {
-      var control = event.modifiers & Qt.ControlModifier
-      if (control && event.key === Qt.Key_J) {
-        root.select(1); event.accepted = true
-      } else if (control && event.key === Qt.Key_K) {
-        root.select(-1); event.accepted = true
-      } else if (event.key === Qt.Key_Down) {
-        root.select(1); event.accepted = true
-      } else if (event.key === Qt.Key_Up) {
-        root.select(-1); event.accepted = true
-      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-        root.activateSelected(); event.accepted = true
-      } else if (event.key === Qt.Key_Escape) {
-        root.closeRequested(); event.accepted = true
-      }
-    }
-  }
-
-  ColumnLayout {
-    id: historyColumn
-    width: root.cardWidth
-    height: Math.min(root.availableHeight, root.chromeHeight + root.listViewportHeight)
-    anchors.centerIn: parent
-    opacity: root.opened ? 1 : 0
-    enabled: root.opened
-    z: 1
-    spacing: Style.space(8)
-
-    Behavior on opacity { NumberAnimation { duration: 140 } }
-
-    Text {
-      id: historyHeader
-      Layout.fillWidth: true
-      visible: root.showHeader
-      text: "NOTIFICATIONS  " + String(root.model ? root.model.count : 0)
-      color: Color.notifications.text
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      font.bold: true
-      font.letterSpacing: Style.spaceReal(0.8)
-      horizontalAlignment: Text.AlignHCenter
-    }
 
     Item {
-      Layout.fillWidth: true
-      Layout.preferredHeight: root.listViewportHeight
-      Layout.minimumHeight: root.listViewportHeight
-      Layout.maximumHeight: root.listViewportHeight
-      clip: true
+      id: keyCatcher
+      anchors.fill: parent
+      focus: root.opened
+      enabled: root.opened
+      Keys.priority: Keys.BeforeItem
 
-      ListView {
-        id: historyList
-        anchors.fill: parent
-        model: root.model
+      Keys.onPressed: function(event) {
+        var control = event.modifiers & Qt.ControlModifier
+        if (event.key === Qt.Key_Left || event.key === Qt.Key_Up
+            || (control && event.key === Qt.Key_K)) {
+          root.select(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Down
+            || (control && event.key === Qt.Key_J)) {
+          root.select(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          root.activateSelected()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          root.closeRequested()
+          event.accepted = true
+        }
+      }
+    }
+
+    ColumnLayout {
+      anchors.fill: parent
+      spacing: Style.space(8)
+
+      Item {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.minimumHeight: 0
         clip: true
-        spacing: Style.space(8)
-        boundsBehavior: Flickable.StopAtBounds
 
-        delegate: Item {
-          id: cardSlot
-          required property int index
-          required property string app
-          required property string appIcon
-          required property string summary
-          required property string body
-          required property string image
-          required property int urgency
-          required property double timestamp
-          required property bool actionAvailable
+        ListView {
+          id: historyList
+          anchors.fill: parent
+          orientation: ListView.Horizontal
+          model: root.model
+          spacing: Style.space(12)
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          interactive: false
+          currentIndex: root.selectedIndex
+          highlightFollowsCurrentItem: true
+          highlightMoveDuration: Motion.enabled ? Motion.spatialDuration : 0
+          preferredHighlightBegin: (width - root.focusedCardWidth) / 2
+          preferredHighlightEnd: preferredHighlightBegin + root.focusedCardWidth
+          highlightRangeMode: ListView.StrictlyEnforceRange
+          header: Item { width: Math.max(0, (historyList.width - root.focusedCardWidth) / 2) }
+          footer: Item { width: Math.max(0, (historyList.width - root.focusedCardWidth) / 2) }
 
-          width: ListView.view.width
-          height: card.implicitHeight
+          delegate: Item {
+            id: cardSlot
+            required property int index
+            required property string app
+            required property string appIcon
+            required property string summary
+            required property string body
+            required property string image
+            required property int urgency
+            required property double timestamp
+            required property bool actionAvailable
 
-          NotificationCard {
-            id: card
-            anchors.fill: parent
-            app: cardSlot.app
-            appIcon: cardSlot.appIcon
-            summary: cardSlot.summary
-            body: cardSlot.body
-            image: cardSlot.image
-            urgency: cardSlot.urgency
-            timestamp: cardSlot.timestamp
-            actions: []
-            fontFamily: root.fontFamily
-            historyMode: true
-            keyboardSelected: index === root.selectedIndex
-            actionAvailable: cardSlot.actionAvailable
-            onCardClicked: {
-              root.selectedIndex = index
-              root.activationRequested(index)
+            width: root.focusedCardWidth
+            height: historyList.height
+            readonly property bool focused: index === root.selectedIndex
+
+            NotificationCard {
+              anchors.centerIn: parent
+              width: root.focusedCardWidth
+              app: cardSlot.app
+              appIcon: cardSlot.appIcon
+              summary: cardSlot.summary
+              body: cardSlot.body
+              image: cardSlot.image
+              urgency: cardSlot.urgency
+              timestamp: cardSlot.timestamp
+              actions: []
+              fontFamily: root.fontFamily
+              historyMode: true
+              keyboardSelected: cardSlot.focused
+              actionAvailable: cardSlot.actionAvailable
+              opacity: cardSlot.focused ? 1 : 0.52
+              scale: cardSlot.focused ? 1 : 0.9
+              Behavior on opacity { NumberAnimation { duration: Motion.fastDuration } }
+              Behavior on scale { NumberAnimation { duration: Motion.spatialDuration; easing.type: Motion.spatialEasing } }
+              onCardClicked: {
+                if (root.selectedIndex === index) root.activationRequested(index)
+                else {
+                  root.selectedIndex = index
+                  root.positionSelected()
+                }
+              }
             }
           }
+        }
+
+        WheelHandler {
+          onWheel: function(event) {
+            var delta = event.angleDelta.x !== 0 ? event.angleDelta.x : event.angleDelta.y
+            if (delta === 0) return
+            root.select(delta > 0 ? -1 : 1)
+            event.accepted = true
+          }
+        }
+
+        Text {
+          anchors.centerIn: parent
+          visible: root.modelCount === 0
+          text: "No notification history"
+          color: Color.notifications.text
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
         }
       }
 
       Text {
-        id: emptyStateLabel
-        anchors.centerIn: parent
-        visible: !root.model || root.model.count === 0
-        text: "No notification history"
+        Layout.fillWidth: true
+        Layout.preferredHeight: implicitHeight
+        text: "LEFT/RIGHT or CTRL+J/K  •  ENTER TO OPEN  •  ESC TO CLOSE"
         color: Color.notifications.text
+        opacity: 0.72
         font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        font.bold: true
+        font.pixelSize: Style.font.caption
+        horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
       }
-    }
-
-    Text {
-      id: historyFooter
-      Layout.fillWidth: true
-      visible: root.showFooter
-      text: "UP/DOWN or CTRL+J/K  •  ENTER TO OPEN  •  ESC TO CLOSE"
-      color: Color.notifications.text
-      opacity: 0.72
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      horizontalAlignment: Text.AlignHCenter
-      elide: Text.ElideRight
     }
   }
 }

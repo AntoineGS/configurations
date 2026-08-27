@@ -1,6 +1,5 @@
 import Quickshell
 import Quickshell.Io
-import Quickshell.Wayland
 import QtQuick
 import qs.Commons
 import qs.Ui
@@ -34,18 +33,14 @@ Item {
   property color foreground: Color.barPanels.text
   property color secondaryForeground: Color.barPanels.secondaryText
   property color accent: Color.accent
-  property color scrim: Color.modal.scrim
   property string fontFamily: Style.font.family
   property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   property int contentSpacing: Style.spacing.md
-  property int cardWidth: Style.centeredMenuWidth(
-    Style.space(400), panel.width - Style.gapsOut * 2)
-  property int cardHeight: Math.min(Style.space(500), panel.height - Style.gapsOut * 2)
 
   property int cellWidth: Math.max(Style.space(44), Style.font.display + Style.spacing.md)
   property int cellHeight: Math.max(Style.space(44), Style.font.display + Style.spacing.md)
-  property int columns: Math.max(1, Math.floor((cardWidth - contentMargin * 2) / cellWidth))
+  property int columns: Math.max(1, Math.floor((panel.bodyWidth) / cellWidth))
 
   function open(payloadJson) {
     root.opened = true
@@ -257,101 +252,87 @@ Item {
     path: root.pluginPath + "/emojis.json"
     onLoaded: root.loadEmojis(text())
   }
-  PanelWindow {
+  TopBarOverlay {
     id: panel
-    visible: root.opened || card.opacity > 0
-    anchors { top: true; bottom: true; left: true; right: true }
-    color: "transparent"
-    WlrLayershell.namespace: "desktop-emojis"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
-    exclusionMode: ExclusionMode.Ignore
-    mask: Region {}
+    overlayId: "desktop.emojis"
+    layerNamespace: "desktop-emojis"
+    shell: root.shell
+    opened: root.opened
+    requestedCardWidth: Style.space(400)
+    requestedCardHeight: Style.space(500)
+    headerHeight: root.headerHeight
+    contentSpacing: root.contentSpacing
+    contentPadding: root.contentMargin
+    onDismissRequested: root.dismiss()
 
-    Rectangle {
-      anchors.fill: parent
-      color: root.scrim
+    headerData: TextField {
+      id: searchField
+      width: parent.width
+      height: root.headerHeight
+      text: root.filterText
+      placeholderText: "Search emojis…"
+      foreground: root.foreground
+      accent: root.accent
+      font.family: root.fontFamily
+      Keys.priority: Keys.BeforeItem
+      onTextEdited: if (text !== root.filterText) root.setFilter(text)
+
+      Keys.onPressed: function(event) {
+        var control = event.modifiers & Qt.ControlModifier
+        if (control && event.key === Qt.Key_H) {
+          root.select(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_J) {
+          root.selectRow(1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_K) {
+          root.selectRow(-1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_L) {
+          root.select(1)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_U) {
+          root.selectPage(-1, true)
+          event.accepted = true
+        } else if (control && event.key === Qt.Key_D) {
+          root.selectPage(1, true)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          if (root.filterText) root.setFilter("")
+          else root.dismiss()
+          event.accepted = true
+        } else if (event.key === Qt.Key_Left) {
+          root.select(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Right) {
+          root.select(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Up) {
+          root.selectRow(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Down) {
+          root.selectRow(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_PageUp) {
+          root.selectPage(-1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_PageDown) {
+          root.selectPage(1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          if (root.cursorActive) root.activateIndex(root.selectedIndex)
+          else if (displayModel.count > 0) root.cursorActive = true
+          event.accepted = true
+        }
+      }
     }
 
-    PanelSurface {
-      id: card
-      width: root.cardWidth
-      height: root.cardHeight
-      anchors.centerIn: parent
-      padding: root.contentMargin
-      radius: Style.popupOuterRadius
-      revealed: root.opened
-      entranceY: -Style.space(6)
+    Item {
+      anchors.fill: parent
 
       Column {
         anchors.fill: parent
-        anchors.topMargin: card.contentTopInset
-        anchors.rightMargin: card.contentRightInset
-        anchors.bottomMargin: card.contentBottomInset
-        anchors.leftMargin: card.contentLeftInset
         spacing: root.contentSpacing
-
-        TextField {
-          id: searchField
-          width: parent.width
-          height: root.headerHeight
-          text: root.filterText
-          placeholderText: "Search emojis…"
-          foreground: root.foreground
-          accent: root.accent
-          font.family: root.fontFamily
-          Keys.priority: Keys.BeforeItem
-          onTextEdited: if (text !== root.filterText) root.setFilter(text)
-
-          Keys.onPressed: function(event) {
-            var control = event.modifiers & Qt.ControlModifier
-            if (control && event.key === Qt.Key_H) {
-              root.select(-1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_J) {
-              root.selectRow(1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_K) {
-              root.selectRow(-1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_L) {
-              root.select(1)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_U) {
-              root.selectPage(-1, true)
-              event.accepted = true
-            } else if (control && event.key === Qt.Key_D) {
-              root.selectPage(1, true)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Escape) {
-              if (root.filterText) root.setFilter("")
-              else root.dismiss()
-              event.accepted = true
-            } else if (event.key === Qt.Key_Left) {
-              root.select(-1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Right) {
-              root.select(1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Up) {
-              root.selectRow(-1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Down) {
-              root.selectRow(1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_PageUp) {
-              root.selectPage(-1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_PageDown) {
-              root.selectPage(1)
-              event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-              if (root.cursorActive) root.activateIndex(root.selectedIndex)
-              else if (displayModel.count > 0) root.cursorActive = true
-              event.accepted = true
-            }
-          }
-        }
 
         Item {
           id: recentSection
@@ -388,8 +369,8 @@ Item {
 
         Item {
           width: parent.width
-          height: parent.height - root.headerHeight - recentSection.height
-            - root.contentSpacing * (root.showRecents ? 2 : 1)
+          height: Math.max(0, panel.bodyHeight - recentSection.height
+            - root.contentSpacing * (root.showRecents ? 1 : 0))
 
           GridView {
             id: resultGrid

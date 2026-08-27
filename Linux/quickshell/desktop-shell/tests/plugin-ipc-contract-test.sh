@@ -99,6 +99,11 @@ done
 jq -e 'type == "array"' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "desktop.bar" and .firstParty == true and .canDisable == false)' <<<"$plugins" >/dev/null
 jq -e 'any(.[]; .id == "acme.widget" and .firstParty == false and .enabled == false)' <<<"$plugins" >/dev/null
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test resetTopBarOverlayCoordinatorForTest) == none ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimTopBarOverlayForTest desktop.menu) == desktop.menu ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test claimTopBarOverlayForTest desktop.emojis) == desktop.emojis ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.menu) == stale:desktop.emojis ]]
+[[ $(quickshell ipc --pid "$shell_pid" call -- desktop-shell-test releaseTopBarOverlayForTest desktop.emojis) == released:none ]]
 
 enable_result=$(quickshell ipc --pid "$shell_pid" call -- desktop-shell enablePlugin acme.widget '{"headless":true}')
 [[ -n $enable_result ]]
