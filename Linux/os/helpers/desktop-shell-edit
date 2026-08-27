@@ -2,17 +2,30 @@
 set -Eeuo pipefail
 
 usage() {
-  printf 'usage: %s <menu|action|application> <id>\n' "${0##*/}" >&2
+  printf 'usage: %s list <menu|action|application> <id>\n' "${0##*/}" >&2
+  printf '       %s open <menu|action|application> <id> <choice-key>\n' "${0##*/}" >&2
   exit 2
 }
 
-(( $# == 2 )) || usage
+(( $# == 3 || $# == 4 )) || usage
 
-kind=$1
-id=$2
+operation=$1
+kind=$2
+id=$3
+choice_key=${4:-}
 shell_root=${DESKTOP_SHELL_ROOT:-"$HOME/.config/quickshell/desktop-shell"}
-target=
+dispatcher=
 desktop_id=
+action_target=
+action_label=
+action_command=
+action_manifest=
+declare -a context_keys=()
+declare -a context_labels=()
+declare -a context_modes=()
+declare -a context_targets=()
+declare -a parsed_exec_tokens=()
+declare -A context_targets_seen=()
 
 valid_id() {
   [[ $1 =~ ^[a-z0-9]+([.-][a-z0-9-]+)*$ ]]
@@ -22,20 +35,24 @@ resolve_command() {
   command -v "$1" 2>/dev/null || return 1
 }
 
-resolve_desktop_entry() {
-  local desktop_id=$1
+desktop_roots() {
   local data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
   local data_dirs=${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
-  local base applications_dir candidate relative candidate_id
-  local -a roots=("$data_home")
+  local -a system_roots=()
 
+  printf '%s\0' "$data_home"
   IFS=: read -r -a system_roots <<<"$data_dirs"
-  roots+=("${system_roots[@]}")
+  printf '%s\0' "${system_roots[@]}"
+}
 
-  for base in "${roots[@]}"; do
+resolve_desktop_entry() {
+  local wanted_id=$1
+  local base applications_dir candidate relative candidate_id
+
+  while IFS= read -r -d '' base; do
     [[ -n $base ]] || continue
     applications_dir=$base/applications
-    candidate=$applications_dir/$desktop_id.desktop
+    candidate=$applications_dir/$wanted_id.desktop
     if [[ -f $candidate ]]; then
       printf '%s\n' "$candidate"
       return 0
@@ -45,14 +62,167 @@ resolve_desktop_entry() {
       relative=${candidate#"$applications_dir/"}
       candidate_id=${relative%.desktop}
       candidate_id=${candidate_id//\//-}
-      if [[ $candidate_id == "$desktop_id" ]]; then
+      if [[ $candidate_id == "$wanted_id" ]]; then
         printf '%s\n' "$candidate"
         return 0
       fi
     done < <(find -L "$applications_dir" -type f -name '*.desktop' -print0 2>/dev/null)
-  done
+  done < <(desktop_roots)
 
   return 1
+}
+
+desktop_entry_value() {
+  local path=$1
+  local key=$2
+  local line in_desktop_entry=false
+
+  while IFS= read -r line || [[ -n $line ]]; do
+    line=${line%$'\r'}
+    if [[ $line == \[*\] ]]; then
+      [[ $line == '[Desktop Entry]' ]] && in_desktop_entry=true || in_desktop_entry=false
+      continue
+    fi
+    if $in_desktop_entry && [[ $line == "$key="* ]]; then
+      printf '%s\n' "${line#*=}"
+      return 0
+    fi
+  done <"$path"
+
+  return 1
+}
+
+parse_desktop_exec() {
+  local path=$1
+  local exec_line character token=
+  local in_quotes=false
+  local escaped=false
+  local token_started=false
+  local index
+
+  exec_line=$(desktop_entry_value "$path" Exec) || return 1
+  parsed_exec_tokens=()
+  for ((index = 0; index < ${#exec_line}; index++)); do
+    character=${exec_line:index:1}
+    if $escaped; then
+      case $character in
+        s) token+=' ' ;;
+        n) token+=$'\n' ;;
+        t) token+=$'\t' ;;
+        r) token+=$'\r' ;;
+        \\) token+=$'\\' ;;
+        *)
+          [[ $character == '"' || $character == "'" || $character == '$' \
+            || $character == '`' || $character == ' ' ]] || return 1
+          token+=$character
+          ;;
+      esac
+      escaped=false
+      token_started=true
+    elif [[ $character == \\ ]]; then
+      escaped=true
+      token_started=true
+    elif [[ $character == '"' ]]; then
+      $in_quotes && in_quotes=false || in_quotes=true
+      token_started=true
+    elif ! $in_quotes && [[ $character == ' ' || $character == $'\t' ]]; then
+      if $token_started; then
+        parsed_exec_tokens+=("$token")
+        token=
+        token_started=false
+      fi
+    else
+      token+=$character
+      token_started=true
+    fi
+  done
+  ! $escaped && ! $in_quotes || return 1
+  $token_started && parsed_exec_tokens+=("$token")
+  (( ${#parsed_exec_tokens[@]} > 0 ))
+}
+
+desktop_exec_command_token() {
+  local path=$1
+  local command_name token
+  local index=0
+  local wrapper_index
+  local guard=0
+
+  parse_desktop_exec "$path" || return 1
+  while ((index < ${#parsed_exec_tokens[@]} && guard < 8)); do
+    ((guard += 1))
+    command_name=${parsed_exec_tokens[$index]##*/}
+    case $command_name in
+      env)
+        ((index += 1))
+        while ((index < ${#parsed_exec_tokens[@]})); do
+          token=${parsed_exec_tokens[$index]}
+          case $token in
+            --)
+              ((index += 1))
+              while ((index < ${#parsed_exec_tokens[@]})) \
+                && [[ ${parsed_exec_tokens[$index]} == *=* ]]; do
+                ((index += 1))
+              done
+              break
+              ;;
+            -u|--unset|-C|--chdir)
+              ((index + 1 < ${#parsed_exec_tokens[@]})) || return 1
+              ((index += 2))
+              ;;
+            -i|--ignore-environment|--unset=*|--chdir=*) ((index += 1)) ;;
+            -*) return 1 ;;
+            *=*) ((index += 1)) ;;
+            *) break ;;
+          esac
+        done
+        ;;
+      xdg-terminal-exec)
+        for ((wrapper_index = index + 1; wrapper_index + 1 < ${#parsed_exec_tokens[@]}; wrapper_index++)); do
+          [[ ${parsed_exec_tokens[$wrapper_index]} == -e \
+            || ${parsed_exec_tokens[$wrapper_index]} == -- ]] || continue
+          index=$((wrapper_index + 1))
+          break
+        done
+        ((index > wrapper_index - 1)) || return 1
+        ;;
+      uwsm-app)
+        for ((wrapper_index = index + 1; wrapper_index + 1 < ${#parsed_exec_tokens[@]}; wrapper_index++)); do
+          [[ ${parsed_exec_tokens[$wrapper_index]} == -- ]] || continue
+          index=$((wrapper_index + 1))
+          break
+        done
+        ((index > wrapper_index - 1)) || return 1
+        ;;
+      *)
+        printf '%s\n' "${parsed_exec_tokens[$index]}"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+desktop_exec_references() {
+  local path=$1
+  local command_name=$2
+  local executable
+
+  executable=$(desktop_exec_command_token "$path") || return 1
+  [[ ${executable##*/} == "$command_name" ]]
+}
+
+resolve_desktop_executable() {
+  local path=$1
+  local executable
+
+  executable=$(desktop_exec_command_token "$path") || return 1
+  if [[ $executable == */* ]]; then
+    [[ -x $executable ]] || return 1
+    printf '%s\n' "$executable"
+    return 0
+  fi
+  resolve_command "$executable"
 }
 
 resolve_plugin_entry() {
@@ -74,85 +244,215 @@ resolve_plugin_entry() {
   ' "$manifest")
   [[ $entry =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && $entry != *..* ]] || return 1
   [[ -f $plugin_dir/$entry ]] || return 1
-  printf '%s\n' "$plugin_dir/$entry"
+  action_manifest=$manifest
+  action_target=$plugin_dir/$entry
+}
+
+add_context() {
+  local key=$1
+  local label=$2
+  local mode=$3
+  local target=$4
+  local identity=$mode:$target
+
+  [[ -e $target ]] || return 0
+  [[ -z ${context_targets_seen[$identity]:-} ]] || return 0
+  context_targets_seen[$identity]=1
+  context_keys+=("$key")
+  context_labels+=("$label")
+  context_modes+=("$mode")
+  context_targets+=("$target")
 }
 
 resolve_action() {
   local action_id=$1
-  local command_name=
+
+  action_target=
+  action_label='Edit script'
+  action_command=
+  action_manifest=
 
   case $action_id in
-    setup.audio)         target=$shell_root/plugins/panels/audio/Panel.qml ;;
-    setup.wifi)          target=$shell_root/plugins/panels/network/Panel.qml ;;
-    setup.bluetooth)     target=$shell_root/plugins/panels/bluetooth/Panel.qml ;;
-    setup.power-profile) target=$shell_root/plugins/panels/power/Panel.qml ;;
-    setup.monitors)      target=$shell_root/plugins/panels/monitor/Panel.qml ;;
-    setup.shell-config)  target=$shell_root/config/shell.json ;;
+    setup.audio)
+      action_target=$shell_root/plugins/panels/audio/Panel.qml
+      action_manifest=$shell_root/plugins/panels/audio/manifest.json
+      action_label='Edit Quickshell entry'
+      ;;
+    setup.wifi)
+      action_target=$shell_root/plugins/panels/network/Panel.qml
+      action_manifest=$shell_root/plugins/panels/network/manifest.json
+      action_label='Edit Quickshell entry'
+      ;;
+    setup.bluetooth)
+      action_target=$shell_root/plugins/panels/bluetooth/Panel.qml
+      action_manifest=$shell_root/plugins/panels/bluetooth/manifest.json
+      action_label='Edit Quickshell entry'
+      ;;
+    setup.power-profile)
+      action_target=$shell_root/plugins/panels/power/Panel.qml
+      action_manifest=$shell_root/plugins/panels/power/manifest.json
+      action_label='Edit Quickshell entry'
+      ;;
+    setup.monitors)
+      action_target=$shell_root/plugins/panels/monitor/Panel.qml
+      action_manifest=$shell_root/plugins/panels/monitor/manifest.json
+      action_label='Edit Quickshell entry'
+      ;;
+    setup.shell-config)
+      action_target=$shell_root/config/shell.json
+      action_label='Edit shell config'
+      ;;
     install.plugin-marketplace)
-      target=$(resolve_plugin_entry io.yasino55.omarchy-plugin-marketplace) || target=
+      resolve_plugin_entry io.yasino55.omarchy-plugin-marketplace || action_target=
+      action_label='Edit Quickshell entry'
       ;;
 
-    trigger.screenshot)       command_name=cmd-screenshot ;;
-    trigger.screenrecord)     command_name=cmd-screenrecord ;;
-    trigger.share-clipboard|trigger.share-file|trigger.share-folder)
-      command_name=cmd-share
-      ;;
-    trigger.toggle.top-bar)          command_name=toggle-desktop-shell-bar ;;
-    trigger.toggle.window-gaps)      command_name=hyprland-window-gaps-toggle ;;
-    trigger.toggle.window-ratio)     command_name=hyprland-window-single-square-aspect-toggle ;;
-    trigger.toggle.workspace-layout) command_name=hyprland-workspace-layout-toggle ;;
-    trigger.toggle.nightlight)       command_name=toggle-nightlight ;;
-    trigger.toggle.idle-lock)        command_name=toggle-idle ;;
-    trigger.turn-off-screens)        command_name=turn-off-screens ;;
-    trigger.start-all-terminals)     command_name=start-all-terminals ;;
-    setup.dns)                       command_name=setup-dns ;;
-    setup.security)                  command_name=setup-fingerprint ;;
-    setup.keybindings)               command_name=menu-keybindings ;;
-    setup.cycle-display-scaling)     command_name=hyprland-monitor-scaling-cycle ;;
-    setup.audio-tui)                 command_name=launch-audio ;;
-    setup.wifi-tui)                  command_name=launch-wifi ;;
-    setup.bluetooth-tui)             command_name=launch-bluetooth ;;
-    install.package)                 command_name=pkg-install ;;
-    install.aur)                     command_name=pkg-aur-install ;;
-    remove.package)                  command_name=pkg-remove ;;
-    update.system)                   command_name=update ;;
-    update.audio)                    command_name=restart-pipewire ;;
-    update.wifi)                     command_name=restart-wifi ;;
-    update.bluetooth)                command_name=restart-bluetooth ;;
-    update.shell-reload)             command_name=desktop-shell ;;
-    system.lock)                     command_name=lock-screen ;;
-    system.suspend-in|system.close-rustdesk-in)
-      command_name=desktop-shell-prompt-action
-      ;;
-    system.logout)                   command_name=system-logout ;;
-    system.reboot)                   command_name=system-reboot ;;
-    system.shutdown)                 command_name=system-shutdown ;;
+    trigger.screenshot)       action_command=cmd-screenshot ;;
+    trigger.screenrecord)     action_command=cmd-screenrecord ;;
+    trigger.share-clipboard|trigger.share-file|trigger.share-folder) action_command=cmd-share ;;
+    trigger.toggle.top-bar)          action_command=toggle-desktop-shell-bar ;;
+    trigger.toggle.window-gaps)      action_command=hyprland-window-gaps-toggle ;;
+    trigger.toggle.window-ratio)     action_command=hyprland-window-single-square-aspect-toggle ;;
+    trigger.toggle.workspace-layout) action_command=hyprland-workspace-layout-toggle ;;
+    trigger.toggle.nightlight)       action_command=toggle-nightlight ;;
+    trigger.toggle.idle-lock)        action_command=toggle-idle ;;
+    trigger.turn-off-screens)        action_command=turn-off-screens ;;
+    trigger.start-all-terminals)     action_command=start-all-terminals ;;
+    setup.dns)                       action_command=setup-dns ;;
+    setup.security)                  action_command=setup-fingerprint ;;
+    setup.keybindings)               action_command=menu-keybindings ;;
+    setup.cycle-display-scaling)     action_command=hyprland-monitor-scaling-cycle ;;
+    setup.audio-tui)                 action_command=launch-audio ;;
+    setup.wifi-tui)                  action_command=launch-wifi ;;
+    setup.bluetooth-tui)             action_command=launch-bluetooth ;;
+    install.package)                 action_command=pkg-install ;;
+    install.aur)                     action_command=pkg-aur-install ;;
+    remove.package)                  action_command=pkg-remove ;;
+    update.system)                   action_command=update ;;
+    update.audio)                    action_command=restart-pipewire ;;
+    update.wifi)                     action_command=restart-wifi ;;
+    update.bluetooth)                action_command=restart-bluetooth ;;
+    update.shell-reload)             action_command=desktop-shell ;;
+    system.lock)                     action_command=lock-screen ;;
+    system.suspend-in|system.close-rustdesk-in) action_command=desktop-shell-prompt-action ;;
+    system.logout)                   action_command=system-logout ;;
+    system.reboot)                   action_command=system-reboot ;;
+    system.shutdown)                 action_command=system-shutdown ;;
   esac
 
-  if [[ -n $command_name ]]; then
-    target=$(resolve_command "$command_name") || target=
+  if [[ -n $action_command ]]; then
+    action_target=$(resolve_command "$action_command") || action_target=
   fi
-  if [[ -z $target ]]; then
-    target=$(resolve_command desktop-shell-action) || return 1
+  if [[ -z $action_target ]]; then
+    action_target=$dispatcher
+    action_label='Edit action dispatcher'
   fi
 }
 
-case $kind in
-  menu)
-    valid_id "$id" || usage
-    target=$shell_root/config/menu.jsonc
+add_associated_desktop_contexts() {
+  local command_name=$1
+  local base applications_dir candidate relative candidate_id name digest
+  declare -A seen_ids=()
+
+  while IFS= read -r -d '' base; do
+    [[ -n $base ]] || continue
+    applications_dir=$base/applications
+    [[ -d $applications_dir ]] || continue
+    while IFS= read -r -d '' candidate; do
+      relative=${candidate#"$applications_dir/"}
+      candidate_id=${relative%.desktop}
+      candidate_id=${candidate_id//\//-}
+      [[ -z ${seen_ids[$candidate_id]:-} ]] || continue
+      seen_ids[$candidate_id]=1
+      desktop_exec_references "$candidate" "$command_name" || continue
+      name=$(desktop_entry_value "$candidate" Name) || name=$candidate_id
+      digest=$(printf '%s' "$candidate_id" | sha256sum)
+      digest=${digest%% *}
+      add_context "desktop-entry-$digest" "Edit desktop entry: $name" editor "$candidate"
+      add_context "desktop-entry-location-$digest" "Browse desktop entry: $name" yazi "$candidate"
+    done < <(find -L "$applications_dir" -type f -name '*.desktop' -print0 2>/dev/null)
+  done < <(desktop_roots)
+}
+
+build_contexts() {
+  local executable
+
+  case $kind in
+    menu)
+      valid_id "$id" || usage
+      add_context menu-definition 'Edit menu definition' editor "$shell_root/config/menu.jsonc"
+      add_context menu-implementation 'Edit menu implementation' editor "$shell_root/plugins/menu/Menu.qml"
+      add_context menu-config-location 'Browse menu config location' yazi "$shell_root/config/menu.jsonc"
+      add_context menu-implementation-location 'Browse menu implementation location' yazi \
+        "$shell_root/plugins/menu/Menu.qml"
+      ;;
+    action)
+      valid_id "$id" || usage
+      dispatcher=$(resolve_command desktop-shell-action) || return 1
+      resolve_action "$id"
+      add_context source "$action_label" editor "$action_target"
+      if [[ $action_label == 'Edit script' ]]; then
+        add_context source-location 'Browse script location' yazi "$action_target"
+      elif [[ $action_label == 'Edit Quickshell entry' ]]; then
+        add_context source-location 'Browse Quickshell location' yazi "$action_target"
+      elif [[ $action_label == 'Edit shell config' ]]; then
+        add_context source-location 'Browse shell config location' yazi "$action_target"
+      fi
+      [[ -z $action_manifest ]] || add_context plugin-manifest 'Edit plugin manifest' editor "$action_manifest"
+      [[ $action_target == "$dispatcher" ]] \
+        || add_context dispatcher 'Edit action dispatcher' editor "$dispatcher"
+      add_context menu-definition 'Edit menu definition' editor "$shell_root/config/menu.jsonc"
+      [[ -z $action_command ]] || add_associated_desktop_contexts "$action_command"
+      ;;
+    application)
+      desktop_id=${id%.desktop}
+      [[ $desktop_id =~ ^[A-Za-z0-9][^/[:cntrl:]]*$ ]] || usage
+      action_target=$(resolve_desktop_entry "$desktop_id")
+      add_context desktop-entry 'Edit desktop entry' editor "$action_target"
+      add_context desktop-entry-location 'Browse desktop entry location' yazi "$action_target"
+      executable=$(resolve_desktop_executable "$action_target") || executable=
+      [[ -z $executable ]] || add_context executable-location 'Browse executable location' yazi "$executable"
+      ;;
+    *) usage ;;
+  esac
+
+  (( ${#context_keys[@]} > 0 ))
+}
+
+emit_contexts() {
+  local index
+  for ((index = 0; index < ${#context_keys[@]}; index++)); do
+    jq -cn \
+      --arg key "${context_keys[$index]}" \
+      --arg label "${context_labels[$index]}" \
+      '{key: $key, label: $label}'
+  done
+}
+
+open_context() {
+  local index
+  for ((index = 0; index < ${#context_keys[@]}; index++)); do
+    [[ ${context_keys[$index]} == "$choice_key" ]] || continue
+    case ${context_modes[$index]} in
+      editor) exec launch-editor "${context_targets[$index]}" ;;
+      yazi) exec launch-tui-large yazi "${context_targets[$index]}" ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+case $operation in
+  list)
+    (( $# == 3 )) || usage
+    build_contexts
+    emit_contexts
     ;;
-  action)
-    valid_id "$id" || usage
-    resolve_action "$id"
-    ;;
-  application)
-    desktop_id=${id%.desktop}
-    [[ $desktop_id =~ ^[A-Za-z0-9][^/[:cntrl:]]*$ ]] || usage
-    target=$(resolve_desktop_entry "$desktop_id")
+  open)
+    (( $# == 4 )) || usage
+    [[ $choice_key =~ ^[a-z0-9]+([.-][a-z0-9-]+)*$ ]] || usage
+    build_contexts
+    open_context
     ;;
   *) usage ;;
 esac
-
-[[ -f $target || -x $target ]] || exit 1
-exec launch-editor "$target"
