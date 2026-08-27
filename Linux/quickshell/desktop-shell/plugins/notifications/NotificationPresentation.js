@@ -34,7 +34,7 @@ function createInitialState(options) {
     hovered: false, deferredCritical: false, countdown: { identity: "", duration: 0, remaining: 0, fraction: 1, visible: false, lastNow: 0 }, retired: {}, nextToken: 1 }
 }
 function isTransition(phase) { return phase === "opening" || phase === "switching" || phase === "closing" }
-function validEventToken(event) { return finite(event.token) && event.token > 0 && typeof event.kind === "string" && typeof event.output === "string" }
+function validEventToken(event) { return finite(event.token) && event.token > 0 && typeof event.kind === "string" && event.kind !== "" && typeof event.output === "string" }
 function matching(state, event) { return validEventToken(event) && state.visual.token === event.token && state.visual.kind === event.kind && state.visual.output === event.output }
 function cancel(state, effects) {
   if (isTransition(state.phase) && state.visual.token > 0) effects.push({ type: "cancelWatchdog", token: state.visual.token, kind: state.visual.kind, output: state.visual.output })
@@ -75,15 +75,16 @@ function startCountdown(state) {
   state.countdown = { identity: identityOf(row), duration: duration, remaining: remaining, fraction: duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 1, visible: duration > 0 && !critical(row), lastNow: 0 }
 }
 function removeActive(state, effects, senderType) {
-  var old = state.active, next, beforePending = state.pending.slice()
+  var old = state.active, displayed = state.visual.incoming || old, next, beforePending = state.pending.slice()
   if (!old) return
   state.retired[identityOf(old)] = true
   effects.push({ type: senderType || "senderDismiss", identity: identityOf(old), snapshot: copy(old) })
   archive(old, effects)
   state.countdown.visible = false
+  if (state.phase === "opening") { state.active = null; startClose(state, displayed, effects, beforePending, state.pending); return }
   next = state.pending.length ? state.pending.shift() : null
   state.active = next
-  if (next) startSwitch(state, old, effects, beforePending, state.pending); else startClose(state, old, effects, beforePending, state.pending)
+  if (next) startSwitch(state, displayed, effects, beforePending, state.pending); else startClose(state, displayed, effects, beforePending, state.pending)
 }
 function settle(state, event, effects) {
   if (!matching(state, event)) return
@@ -96,7 +97,7 @@ function settle(state, event, effects) {
   }
   state.visual.outgoing = null
   state.visual.incoming = state.active ? copy(state.active) : null
-  state.visual.outgoingDeck = emptyDeck(); state.visual.incomingDeck = makeDeck(state.pending); state.visual.kind = ""
+  state.visual.outgoingDeck = emptyDeck(); state.visual.incomingDeck = makeDeck(state.pending); state.visual.kind = ""; state.visual.token = 0; state.visual.output = ""
   state.phase = state.active ? "open" : "closed"
   if (state.active) startCountdown(state)
   // An arrival during a transition is reconsidered at the atomic boundary.
@@ -104,9 +105,9 @@ function settle(state, event, effects) {
     state.active = state.pending.shift(); startSwitch(state, state.visual.incoming, effects)
   }
 }
-function validRoute(event) { return typeof event.visible === "boolean" && (event.output === null || typeof event.output === "string") }
+function validRoute(event) { return typeof event.visible === "boolean" && (event.visible ? typeof event.output === "string" && event.output !== "" : event.output === null) }
 function reduce(input, event) {
-  var state = copy(input || createInitialState()), effects = [], row, oldIdentity, i, next, previous
+  var state = copy(input || createInitialState()), effects = [], row, oldIdentity, i, next, previous, found
   if (!event || typeof event.type !== "string") return { state: state, effects: effects }
   switch (event.type) {
     case "ARRIVE":
@@ -122,19 +123,29 @@ function reduce(input, event) {
       break
     case "REPLACE":
       row = createSnapshot(event.snapshot); oldIdentity = event.identity
-      if (!row || typeof oldIdentity !== "string" || !oldIdentity || state.retired[oldIdentity]) break
+      if (!row || typeof oldIdentity !== "string" || !oldIdentity || state.retired[oldIdentity] || state.retired[identityOf(row)]) break
       if (identityOf(row) === oldIdentity) break
-      state.retired[oldIdentity] = true
       if (identityOf(state.active) === oldIdentity) {
+        state.retired[oldIdentity] = true
+        next = copy(row)
         state.active = copy(row)
-        if (state.phase === "open") state.visual.incoming = copy(row)
-        persist(row, effects)
+        if (state.phase === "open") {
+          state.visual.incoming = copy(next)
+          state.countdown.identity = identityOf(next)
+          state.countdown.fraction = state.countdown.duration ? state.countdown.remaining / state.countdown.duration : 1
+          state.countdown.visible = state.countdown.visible && !critical(next)
+          state.active.remainingLifetime = state.countdown.remaining
+        }
+        persist(next, effects)
       }
       else {
+        found = false
         for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === oldIdentity) {
+          found = true; state.retired[oldIdentity] = true
           next = copy(row); next.queuePriority = state.pending[i].queuePriority; next.queueOrder = state.pending[i].queueOrder
-          state.pending[i] = next; insertPending(state, state.pending.splice(i, 1)[0]); persist(row, effects); break
+          state.pending[i] = next; persist(next, effects); break
         }
+        if (!found) break
       }
       break
     case "DISMISS":
@@ -144,7 +155,11 @@ function reduce(input, event) {
       row = state.active ? copy(state.active) : null
       if (row) { state.retired[identityOf(row)] = true; effects.push({ type: "senderDismiss", identity: identityOf(row), snapshot: copy(row) }) }
       if (row) archive(row, effects)
-      state.pending.forEach(function (item) { state.retired[identityOf(item)] = true; archive(item, effects) })
+      state.pending.forEach(function (item) {
+        state.retired[identityOf(item)] = true
+        effects.push({ type: "senderDismiss", identity: identityOf(item), snapshot: copy(item) })
+        archive(item, effects)
+      })
       state.active = null; state.pending = []; state.countdown.visible = false
       if (state.visual.incoming || state.visual.outgoing) startClose(state, state.visual.incoming || state.visual.outgoing, effects)
       else state.phase = state.route.visible ? "closed" : "hidden"
@@ -152,6 +167,7 @@ function reduce(input, event) {
     case "HOVER_CHANGED":
       if (typeof event.hovered !== "boolean") break
       state.hovered = event.hovered
+      state.countdown.lastNow = 0
       if (!state.hovered && state.phase === "open" && state.pending.length && critical(state.pending[0]) && !critical(state.active)) {
         next = state.active
         state.active = state.pending.shift()
@@ -173,9 +189,10 @@ function reduce(input, event) {
     case "TICK":
       if (typeof event.identity !== "string" || !finite(event.now) || state.phase !== "open" || !state.active ||
         identityOf(state.active) !== event.identity || state.countdown.identity !== event.identity || !state.visual.incoming || identityOf(state.visual.incoming) !== event.identity || !state.countdown.visible) break
-      if (state.hovered) { state.countdown.lastNow = event.now; break }
+      if (state.hovered) { state.countdown.lastNow = event.now; state.active.remainingLifetime = state.countdown.remaining; break }
       if (state.countdown.lastNow !== 0) state.countdown.remaining = Math.max(0, state.countdown.remaining - Math.max(0, event.now - state.countdown.lastNow))
       state.countdown.lastNow = event.now
+      state.active.remainingLifetime = state.countdown.remaining
       state.countdown.fraction = state.countdown.duration ? state.countdown.remaining / state.countdown.duration : 1
       if (state.countdown.remaining === 0) removeActive(state, effects, "senderExpire")
       break
@@ -194,7 +211,7 @@ function assertInvariants(state) {
     seen[identityOf(state.pending[i])] = true
   }
   if (state.active && state.retired[identityOf(state.active)]) throw new Error("retired active")
-  if (transient && (!finite(state.visual.token) || state.visual.token <= 0 || !state.visual.kind || typeof state.visual.output !== "string")) throw new Error("invalid transition token")
+  if (transient && (!finite(state.visual.token) || state.visual.token <= 0 || ["open", "switch", "close"].indexOf(state.visual.kind) < 0 || typeof state.visual.output !== "string" || state.visual.output !== state.route.output)) throw new Error("invalid transition token")
   if (!transient && state.phase !== "hidden" && state.visual.kind !== "") throw new Error("stable transition metadata")
   if (state.phase === "opening" && (!state.visual.incoming || state.visual.outgoing)) throw new Error("invalid opening cards")
   if (state.phase === "switching" && (!state.visual.incoming || !state.visual.outgoing)) throw new Error("invalid switching cards")

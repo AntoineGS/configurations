@@ -71,7 +71,7 @@ state = step(state, { type: "TRANSITION_FINISHED", token: 1, kind: "open", outpu
 
 state = step(state, { type: "ARRIVE", snapshot: normalB }, s => {
   assert.deepEqual(ids(s.pending), ["2000:2"])
-  assert.equal(s.visual.token, 1)
+  assert.equal(s.visual.token, 0)
 })
 state = step(state, { type: "HOVER_CHANGED", hovered: true }, s => assert.equal(s.hovered, true))
 state = step(state, { type: "ARRIVE", snapshot: criticalC }, s => {
@@ -236,8 +236,10 @@ timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 200 }, 
 timerState = step(timerState, { type: "HOVER_CHANGED", hovered: true })
 timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 300 }, s => assert.equal(s.countdown.remaining, 900))
 timerState = step(timerState, { type: "HOVER_CHANGED", hovered: false })
-timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 400 }, s => assert.equal(s.countdown.remaining, 800))
-const expiryResult = apply(timerState, { type: "TICK", identity: "17000:17", now: 1200 })
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 400 }, s => assert.equal(s.countdown.remaining, 900))
+timerState = step(timerState, { type: "TICK", identity: "17000:17", now: 500 }, s => assert.equal(s.countdown.remaining, 800))
+assert.equal(timerState.active.remainingLifetime, 800)
+const expiryResult = apply(timerState, { type: "TICK", identity: "17000:17", now: 1300 })
 assert.equal(expiryResult.state.phase, "closing")
 assert.equal(expiryResult.state.visual.outgoing.identity, "17000:17")
 assert.ok(expiryResult.effects.some(effect => effect.type === "senderExpire"))
@@ -266,6 +268,30 @@ priority = step(priority, { type: "HOVER_CHANGED", hovered: true })
 priority = step(priority, { type: "ARRIVE", snapshot: snapshot("23000:23", 2, 0, 0) })
 priority = step(priority, { type: "HOVER_CHANGED", hovered: false }, s => assert.deepEqual(ids(s.pending), ["21000:21", "23000:23", "22000:22"]))
 
+let boundaryCritical = openState(snapshot("23500:235", 1, 1000, 1000))
+boundaryCritical = step(boundaryCritical, { type: "ARRIVE", snapshot: snapshot("23600:236", 2, 0, 0) })
+boundaryCritical = step(boundaryCritical, { type: "ARRIVE", snapshot: snapshot("23700:237", 2, 0, 0) }, s => {
+  assert.equal(s.phase, "switching")
+  assert.deepEqual(ids(s.pending), ["23700:237", "23500:235"])
+})
+boundaryCritical = step(boundaryCritical, { type: "TRANSITION_FINISHED", token: boundaryCritical.visual.token, kind: "switch", output: "DP-1" }, s => {
+  assert.equal(s.phase, "open")
+  assert.equal(s.active.identity, "23600:236")
+  assert.deepEqual(ids(s.pending), ["23700:237", "23500:235"])
+})
+
+let tiedReplacement = openState(snapshot("23800:238", 2, 0, 0))
+const tiedOne = snapshot("23900:239", 1, 1000, 1000); tiedOne.queueOrder = 0
+const tiedTwo = snapshot("24000:240", 1, 1000, 1000); tiedTwo.queueOrder = 0
+tiedReplacement = step(tiedReplacement, { type: "ARRIVE", snapshot: tiedOne })
+tiedReplacement = step(tiedReplacement, { type: "ARRIVE", snapshot: tiedTwo })
+const tiedNext = snapshot("24100:239", 2, 0, 0)
+tiedReplacement = step(tiedReplacement, { type: "REPLACE", identity: "23900:239", snapshot: tiedNext }, s => {
+  assert.deepEqual(ids(s.pending), ["24100:239", "24000:240"])
+  assert.equal(s.pending[0].queueOrder, 0)
+  assert.equal(s.pending[0].queuePriority, false)
+})
+
 let allEffects = openState(snapshot("24000:24", 1, 1000, 1000))
 allEffects = step(allEffects, { type: "ARRIVE", snapshot: snapshot("25000:25", 1, 1000, 1000) })
 const allResult = apply(allEffects, { type: "DISMISS_ALL" })
@@ -281,9 +307,39 @@ pendingReplacement = step(pendingReplacement, { type: "REPLACE", identity: "2700
   assert.equal(s.pending[1].queuePriority, false)
 })
 
+const allSenderDismiss = allResult.effects.filter(effect => effect.type === "senderDismiss")
+assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "25000:25"])
+
+let stableReplacement = openState(snapshot("29500:295", 1, 1000, 1000))
+stableReplacement = step(stableReplacement, { type: "TICK", identity: "29500:295", now: 100 })
+stableReplacement = step(stableReplacement, { type: "TICK", identity: "29500:295", now: 200 })
+const stableNext = snapshot("29600:295", 2, 7000, 7000)
+stableReplacement = step(stableReplacement, { type: "REPLACE", identity: "29500:295", snapshot: stableNext }, s => {
+  assert.equal(s.active.identity, "29600:295")
+  assert.equal(s.visual.incoming.identity, "29600:295")
+  assert.equal(s.countdown.identity, "29600:295")
+  assert.equal(s.countdown.duration, 1000)
+  assert.equal(s.countdown.remaining, 900)
+  assert.equal(s.active.remainingLifetime, 900)
+})
+
+let frozenReplacement = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+frozenReplacement = step(frozenReplacement, { type: "ARRIVE", snapshot: snapshot("29700:297", 1, 1000, 1000) })
+const frozenNext = snapshot("29800:297", 1, 1000, 1000)
+frozenReplacement = step(frozenReplacement, { type: "REPLACE", identity: "29700:297", snapshot: frozenNext })
+frozenReplacement = step(frozenReplacement, { type: "ARRIVE", snapshot: snapshot("29900:299", 1, 1000, 1000) })
+const frozenDismiss = apply(frozenReplacement, { type: "DISMISS", identity: "29800:297" })
+assert.equal(frozenDismiss.state.phase, "closing")
+assert.equal(frozenDismiss.state.active, null)
+assert.equal(frozenDismiss.state.visual.outgoing.identity, "29700:297")
+assert.deepEqual(ids(frozenDismiss.state.pending), ["29900:299"])
+
 let malformed = openState(snapshot("30000:30", 1, 1000, 1000))
 for (const badEvent of [null, {}, { type: "ARRIVE" }, { type: "ARRIVE", snapshot: {} },
   { type: "REPLACE", identity: "30000:30" }, { type: "ROUTE_CHANGED", visible: "true", output: "DP-1" },
+  { type: "REPLACE", identity: "unknown", snapshot: snapshot("30001:30", 1, 1000, 1000) },
+  { type: "TRANSITION_FINISHED", token: 0, kind: "", output: "" },
+  { type: "ROUTE_CHANGED", visible: true, output: null },
   { type: "TRANSITION_FINISHED", token: "1", kind: "open", output: "DP-1" },
   { type: "TICK", identity: "30000:30", now: "bad" }]) {
   const before = JSON.parse(JSON.stringify(malformed))
@@ -291,6 +347,12 @@ for (const badEvent of [null, {}, { type: "ARRIVE" }, { type: "ARRIVE", snapshot
   assert.deepEqual(badResult.state, before)
   assert.deepEqual(badResult.effects, [])
 }
+let retiredTarget = openState(snapshot("30100:301", 1, 1000, 1000))
+retiredTarget.retired["30200:302"] = true
+const retiredBefore = JSON.parse(JSON.stringify(retiredTarget))
+const retiredReplacement = apply(retiredTarget, { type: "REPLACE", identity: "30100:301", snapshot: snapshot("30200:302", 1, 1000, 1000) })
+assert.deepEqual(retiredReplacement.state, retiredBefore)
+assert.deepEqual(retiredReplacement.effects, [])
 const source = require("node:fs").readFileSync(require.resolve("../plugins/notifications/NotificationPresentation.js"), "utf8")
 assert.equal(source.includes("findIndex"), false)
 assert.equal(source.includes("Number.isFinite"), false)
