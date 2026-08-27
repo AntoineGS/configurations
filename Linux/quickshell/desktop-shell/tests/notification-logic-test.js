@@ -198,6 +198,45 @@ assert.equal(logic.remainingLifetime({ deadline: 4000 }, 4500, 8000), 0,
 assert.equal(logic.remainingLifetime({ timestamp: 1000 }, 2500, 8000), 6500,
   "legacy rows derive a fixed deadline from their original timestamp")
 
+const normalA = { originalId: 1, timestamp: 1000, urgency: 1 }
+const normalB = { originalId: 2, timestamp: 2000, urgency: 1 }
+const criticalA = { originalId: 3, timestamp: 3000, urgency: 2 }
+const criticalB = { originalId: 4, timestamp: 4000, urgency: 2 }
+
+assert.equal(logic.popupIdentity(normalA), "1000:1")
+assert.deepEqual(logic.popupArrivalPlan([], 1, 2, false), {
+  insertIndex: 0, preempt: false, deferred: false,
+})
+assert.deepEqual(logic.popupArrivalPlan([normalA, normalB], 1, 2, false), {
+  insertIndex: 2, preempt: false, deferred: false,
+})
+assert.deepEqual(logic.popupArrivalPlan([normalA, normalB], 2, 2, false), {
+  insertIndex: 1, preempt: true, deferred: false,
+})
+assert.deepEqual(logic.popupArrivalPlan([normalA, normalB], 2, 2, true), {
+  insertIndex: 1, preempt: false, deferred: true,
+})
+assert.deepEqual(logic.popupArrivalPlan([criticalA, normalA], 2, 2, false), {
+  insertIndex: 1, preempt: false, deferred: false,
+})
+assert.deepEqual(logic.popupArrivalPlan([normalA, criticalA, normalB], 2, 2, true), {
+  insertIndex: 2, preempt: false, deferred: true,
+})
+assert.deepEqual(
+  logic.sortPopupQueue([normalB, criticalB, normalA, criticalA], 2)
+    .map(logic.popupIdentity),
+  ["3000:3", "4000:4", "1000:1", "2000:2"],
+)
+
+assert.equal(logic.consumeRemainingLifetime(10000, 5000), 5000)
+assert.equal(logic.consumeRemainingLifetime(5000, 8000), 0)
+assert.equal(logic.consumeRemainingLifetime(0, 5000), 0,
+  "zero remains the non-expiring sentinel")
+assert.equal(logic.restoredRemainingLifetime({ remainingLifetime: 7000 }, 10000, 5000), 7000)
+assert.equal(logic.restoredRemainingLifetime({ deadline: 9000 }, 10000, 5000), 4000,
+  "legacy absolute deadlines migrate once")
+assert.equal(logic.restoredRemainingLifetime({}, 10000, 5000), 10000)
+
 const hintedImage = logic.snapshotOf({
   id: 43,
   appName: "build",
@@ -375,7 +414,7 @@ assert.deepEqual(replacement, {
   actions: [],
 }, "replacement keeps the original popup identity while updating display data")
 assert.deepEqual(logic.popupRoles(), [
-  "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "deadline",
+  "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime",
   "transient", "actions",
 ])
 assert.equal(logic.popupRowChanged(snapshot, snapshot), false)
@@ -401,6 +440,9 @@ assert.deepEqual(persisted, {
   actions: [],
   deadline: 1786930010000,
 })
+const persistedRemaining = logic.popupEntry({ ...snapshot, remainingLifetime: 2500 }, 1)
+assert.equal(persistedRemaining.remainingLifetime, 2500)
+assert.equal(JSON.parse(logic.serializePopup(persistedRemaining, 1)).remainingLifetime, 2500)
 assert.deepEqual(logic.historyEntry({ id: 7, app: "unknown", timestamp: 10 }, 1), {
   id: 7,
   originalId: 7,
