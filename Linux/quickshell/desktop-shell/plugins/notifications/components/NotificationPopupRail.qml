@@ -53,6 +53,11 @@ PanelWindow {
   property var _latchedOutgoing: null
   property var _latchedIncomingDeck: null
   property var _latchedOutgoingDeck: null
+  property var _paintedSnapshot: null
+  property var _paintedDeck: null
+  property real _animationStartProgress: 0
+  property real _animationStartMetadata: 0
+  property real _animationStartContent: 0
   property string _lastTransition: ""
   property real _deckSettleOffset: 0
 
@@ -85,20 +90,35 @@ PanelWindow {
     var frame = root.presentationFrame
     var v = frame.visual || {}
     var kind = String(v.kind || "")
+    var paintedSnapshot = root._paintedSnapshot
+    var paintedDeck = root._paintedDeck
+    var paintedProgress = root._progress
+    var paintedMetadata = root._metadataOpacity
+    var paintedContent = root._contentOpacity
     if (!kind || !v.token || root._lastTransition === root.frameKey(frame)) return
+    if (root._latchedKind) {
+      paintedSnapshot = root._incomingVisible ? root._latchedIncoming : root._latchedOutgoing
+      paintedDeck = root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck
+    }
     openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     root._lastTransition = root.frameKey(frame)
     root._latchedKind = kind
     root._latchedToken = Number(v.token)
     root._latchedOutput = String(v.output || "")
     root._latchedIncoming = v.incoming || null
-    root._latchedOutgoing = v.outgoing || null
+    root._latchedOutgoing = kind === "close" || kind === "switch"
+      ? (paintedSnapshot || v.outgoing || null) : (v.outgoing || null)
     root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
-    root._latchedOutgoingDeck = v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+    root._latchedOutgoingDeck = kind === "close" || kind === "switch"
+      ? (paintedDeck || v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false }))
+      : (v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false }))
     root._incomingVisible = kind === "open"
-    root._progress = kind === "close" || kind === "switch" ? 1 : 0
-    root._metadataOpacity = kind === "close" || kind === "switch" ? 1 : 0
-    root._contentOpacity = kind === "close" || kind === "switch" ? 1 : 0
+    root._progress = kind === "close" || kind === "switch" ? paintedProgress : 0
+    root._metadataOpacity = kind === "close" || kind === "switch" ? paintedMetadata : 0
+    root._contentOpacity = kind === "close" || kind === "switch" ? paintedContent : 0
+    root._animationStartProgress = root._progress
+    root._animationStartMetadata = root._metadataOpacity
+    root._animationStartContent = root._contentOpacity
     openMotion.token = root._latchedToken; openMotion.output = root._latchedOutput
     closeMotion.token = root._latchedToken; closeMotion.output = root._latchedOutput
     switchMotion.token = root._latchedToken; switchMotion.output = root._latchedOutput
@@ -154,6 +174,8 @@ PanelWindow {
     else if (frame.phase === "open") {
       root._latchedIncoming = frame.visual.incoming || frame.active
       root._latchedIncomingDeck = frame.visual.incomingDeck
+      root._paintedSnapshot = root._latchedIncoming
+      root._paintedDeck = root._latchedIncomingDeck
       root._incomingVisible = true
       root._progress = 1; root._metadataOpacity = 1; root._contentOpacity = 1
     }
@@ -177,18 +199,18 @@ PanelWindow {
     property int token: 0
     property string output: ""
     onFinished: root.completeAnimation(openMotion.token, "open", openMotion.output)
-    NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
+    NumberAnimation { target: root; property: "_progress"; from: root._animationStartProgress; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
     SequentialAnimation {
       PauseAnimation { duration: PopupMotion.overlayHeaderOpenDelay }
       NumberAnimation {
-        target: root; property: "_metadataOpacity"; to: 1
+        target: root; property: "_metadataOpacity"; from: root._animationStartMetadata; to: 1
         duration: PopupMotion.overlayHeaderOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
       }
     }
     SequentialAnimation {
       PauseAnimation { duration: PopupMotion.overlayBodyOpenDelay }
       NumberAnimation {
-        target: root; property: "_contentOpacity"; to: 1
+        target: root; property: "_contentOpacity"; from: root._animationStartContent; to: 1
         duration: PopupMotion.overlayBodyOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
       }
     }
@@ -198,20 +220,20 @@ PanelWindow {
     property int token: 0
     property string output: ""
     onFinished: root.completeAnimation(closeMotion.token, "close", closeMotion.output)
-    NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
-    NumberAnimation { target: root; property: "_metadataOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
-    NumberAnimation { target: root; property: "_contentOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+    NumberAnimation { target: root; property: "_progress"; from: root._animationStartProgress; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+    NumberAnimation { target: root; property: "_metadataOpacity"; from: root._animationStartMetadata; to: 0; duration: PopupMotion.overlayHeaderCloseDuration; easing.type: PopupMotion.overlayContentCloseEasing }
+    NumberAnimation { target: root; property: "_contentOpacity"; from: root._animationStartContent; to: 0; duration: PopupMotion.overlayBodyCloseDuration; easing.type: PopupMotion.overlayContentCloseEasing }
   }
   SequentialAnimation {
     id: switchMotion
     property int token: 0
     property string output: ""
     ParallelAnimation {
-      NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
-      NumberAnimation { target: root; property: "_metadataOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
-      NumberAnimation { target: root; property: "_contentOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+      NumberAnimation { target: root; property: "_progress"; from: root._animationStartProgress; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+      NumberAnimation { target: root; property: "_metadataOpacity"; from: root._animationStartMetadata; to: 0; duration: PopupMotion.overlayHeaderCloseDuration; easing.type: PopupMotion.overlayContentCloseEasing }
+      NumberAnimation { target: root; property: "_contentOpacity"; from: root._animationStartContent; to: 0; duration: PopupMotion.overlayBodyCloseDuration; easing.type: PopupMotion.overlayContentCloseEasing }
     }
-    ScriptAction { script: { root._incomingVisible = true; root._progress = 0 } }
+    ScriptAction { script: { root._incomingVisible = true; root._paintedSnapshot = root._latchedIncoming; root._paintedDeck = root._latchedIncomingDeck; root._progress = 0; root._metadataOpacity = 0; root._contentOpacity = 0; root._animationStartProgress = 0; root._animationStartMetadata = 0; root._animationStartContent = 0 } }
     ParallelAnimation {
       NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
       SequentialAnimation {
