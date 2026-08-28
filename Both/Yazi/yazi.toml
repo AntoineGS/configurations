@@ -4,7 +4,8 @@ linemode="size_and_mtime"
 
 [opener]
 edit = [
-  { run = 'nvim "$@"', block = true, for = "unix" },
+  { run = '"$HOME/.config/yazi/open-in-nvim" %s', block = true, for = "linux" },
+  { run = 'nvim %s', block = true, for = "macos" },
   { run = 'nvim %*',   block = true, for = "windows" },
 ]
 launch = [
