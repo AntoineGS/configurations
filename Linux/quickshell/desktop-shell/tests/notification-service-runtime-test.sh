@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
+shell_dir="$repo_root/Linux/quickshell/desktop-shell"
+SERVICE_QML="$shell_dir/plugins/notifications/Service.qml" python3 - <<'PY'
+import os
+import re
+
+source = open(os.environ["SERVICE_QML"], encoding="utf-8").read()
+restore = re.search(r"function restorePopups\(raw\) \{(.*?)\n  \}", source, re.S)
+if not restore or "NotificationLogic.restorePopupPlan" not in restore.group(1):
+    raise SystemExit("restorePopups must consume NotificationLogic.restorePopupPlan")
+if "restoration.expired" not in restore.group(1) or "restoration.migrated" not in restore.group(1):
+    raise SystemExit("restorePopups must use the restoration plan for archive and migration")
+PY
+
 if ! command -v quickshell >/dev/null 2>&1; then
   printf 'SKIP: quickshell unavailable\n'
   exit 0
 fi
 
-repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
-shell_dir="$repo_root/Linux/quickshell/desktop-shell"
 tmp_dir=$(mktemp -d)
 shell_pid=""
 trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$tmp_dir"' EXIT

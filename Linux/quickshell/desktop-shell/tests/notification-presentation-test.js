@@ -365,9 +365,10 @@ assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "
 
 let sourceAware = openState(snapshot("25000:250", 1, 1000, 1000))
 const sourceAwareDismiss = apply(sourceAware, { type: "SENDER_CLOSED", identity: "25000:250" })
-assert.ok(sourceAwareDismiss.effects.some(effect => effect.type === "cleanup" && effect.reason === "closed"))
-assert.equal(sourceAwareDismiss.effects.some(effect => effect.type === "archive"), false)
-assert.equal(sourceAwareDismiss.effects.some(effect => effect.type === "senderDismiss"), false)
+assert.deepEqual(sourceAwareDismiss.effects, [
+  { type: "cleanup", identity: "25000:250", snapshot: sourceAware.active, reason: "closed" },
+  { type: "startWatchdog", token: 2, kind: "close", output: "DP-1", timeout: 470 },
+], "active sender close has the exact cleanup/watchdog lifecycle and closed reason")
 const internal = openState(snapshot("-1:-1", 1, 1000, 1000))
 const internalDismiss = apply(internal, { type: "DISMISS", identity: "-1:-1" })
 assert.equal(internalDismiss.effects.some(effect => effect.type === "archive"), false)
