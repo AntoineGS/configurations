@@ -760,4 +760,19 @@ for (const raw of [
   assert.notEqual(result.error, "")
 }
 
+const timed = logic.withPopupTiming({ identity: "1:1", remainingLifetime: 7 }, 1500)
+assert.equal(timed.duration, 1500)
+assert.equal(timed.remainingLifetime, 1500)
+const bookkeeping = logic.replacementBookkeeping(
+  { 9: 100 }, { 9: "popup" }, 9, 101, "history")
+assert.equal(bookkeeping.generations[9], 101)
+assert.equal(bookkeeping.sources[9], "history")
+assert.equal(logic.canAdmitPopup(1, 2, 3), false)
+assert.equal(logic.canAdmitPopup(1, 1, 3), true)
+const transitionState = { phase: "switching", visual: { token: 4, kind: "switch", output: "DP-1" } }
+assert.deepEqual(logic.transitionCallbackEvent(transitionState, 4, "DP-1"), {
+  type: "TRANSITION_FINISHED", token: 4, kind: "switch", output: "DP-1",
+})
+assert.equal(logic.transitionCallbackEvent(transitionState, 4, "DP-2"), null)
+
 console.log("notification-logic-test: route privacy, queue ordering, visible lifetime, persistence, history, images, and placement verified")
