@@ -303,6 +303,22 @@ function restorePopupTiming(snapshot, duration, now) {
   return result
 }
 
+function restorePopupPlan(snapshot, duration, now, criticalUrgency) {
+  var source = snapshot || {}
+  var migrated = source.queuePriority === undefined
+    || source.queueOrder === undefined
+    || (source.remainingLifetime === undefined && source.deadline !== undefined)
+  var entry = restorePopupTiming(source, duration, now)
+  if (entry.queuePriority === undefined)
+    entry.queuePriority = popupQueuePriority(entry, criticalUrgency)
+  delete entry.deadline
+  return {
+    entry: entry,
+    expired: Number(entry.duration) > 0 && Number(entry.remainingLifetime) <= 0,
+    migrated: migrated,
+  }
+}
+
 function replacementBookkeeping(generations, sources, originalId, timestamp, source) {
   var nextGenerations = {}, nextSources = {}, key
   for (key in (generations || {})) if (Object.prototype.hasOwnProperty.call(generations, key)) nextGenerations[key] = generations[key]
@@ -870,6 +886,7 @@ if (typeof module !== "undefined") {
     nextMonotonicTimestamp: nextMonotonicTimestamp,
     withPopupTiming: withPopupTiming,
     restorePopupTiming: restorePopupTiming,
+    restorePopupPlan: restorePopupPlan,
     replacementBookkeeping: replacementBookkeeping,
     canAdmitPopup: canAdmitPopup,
     transitionCallbackEvent: transitionCallbackEvent,

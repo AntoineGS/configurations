@@ -217,6 +217,15 @@ assert.equal(logic.restorePopupTiming({ timestamp: 1000 }, 15000, 2000).remainin
   "missing persisted timing receives the full duration")
 assert.equal(logic.restorePopupTiming({ timestamp: 1000, remainingLifetime: 0 }, 15000, 2000).remainingLifetime, 0,
   "explicit non-expiring history remains non-expiring")
+assert.deepEqual(logic.restorePopupPlan({ timestamp: 1000, remainingLifetime: 700 }, 15000, 2000), {
+  entry: { timestamp: 1000, remainingLifetime: 700, duration: 15000, queuePriority: false }, expired: false, migrated: true,
+}, "service restoration plan retains persisted remaining lifetime")
+assert.equal(logic.restorePopupPlan({ timestamp: 1000, deadline: 1500 }, 15000, 2000).expired, true,
+  "service restoration plan marks expired legacy deadlines for archive")
+assert.equal(logic.restorePopupPlan({ timestamp: 1000 }, 15000, 2000).entry.remainingLifetime, 15000,
+  "service restoration plan assigns the full duration when timing is missing")
+assert.equal(logic.restorePopupPlan({ timestamp: 1000, remainingLifetime: 0 }, 0, 2000).entry.remainingLifetime, 0,
+  "service restoration plan keeps restore-last zero lifetime at zero")
 
 const normalA = { originalId: 1, timestamp: 1000, urgency: 1 }
 const normalB = { originalId: 2, timestamp: 2000, urgency: 1 }
