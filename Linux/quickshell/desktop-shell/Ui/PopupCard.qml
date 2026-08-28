@@ -16,6 +16,7 @@ PopupWindow {
   property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
   property int shadowPadding: 24
   property int shadowBottomPadding: shadowPadding + 4
+  property real surfaceOffsetY: 0
   property color borderColor: Color.barPanels.border
   property var borderSpec: Border.localOrSurfaceSpec("bar-panels", "border", borderColor,
     Color.barPanels.border, Math.max(1, Style.space(2)))
@@ -190,7 +191,7 @@ PopupWindow {
   Item {
     id: cardFrame
     x: root.elevationInset - root.shadowPadding
-    y: root.elevationInset
+    y: root.elevationInset + root.surfaceOffsetY
     width: root.contentWidth + root.shadowPadding * 2
     height: root.contentHeight + root.shadowBottomPadding
     clip: true
