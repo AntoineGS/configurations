@@ -259,6 +259,8 @@ PanelWindow {
     attached: root.barAttached
     margin: root.barAttached ? 0 : Style.gapsOut
     padding: 0
+    surfaceOffsetY: root.barAttached
+      ? -Math.min(root.barSize, Math.max(0, elevationInset - shadowPadding)) : 0
     contentWidth: root.bodyWidth
     contentHeight: popupContentLoader.item ? popupContentLoader.item.implicitHeight : 1
     borderSpec: Border.none()
