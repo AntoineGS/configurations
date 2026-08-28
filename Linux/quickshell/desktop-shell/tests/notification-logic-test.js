@@ -102,6 +102,9 @@ assert.equal(logic.cardsVisibleOn({ visible: true, output: "DVI-D-1" }, "DVI-D-1
 assert.equal(logic.cardsVisibleOn({ visible: true, output: "DVI-D-1" }, "HDMI-A-1"), false)
 assert.equal(logic.cardsVisibleOn({ visible: false, output: "DVI-D-1" }, "DVI-D-1"), false)
 assert.equal(logic.cardsVisibleOn(null, "DVI-D-1"), false)
+assert.deepEqual(logic.senderClosedEvent("100:1", 123), {
+  type: "SENDER_CLOSED", identity: "100:1", now: 123,
+})
 
 assert.equal(logic.actionCloseNeedsGuard("senderDismiss"), false)
 assert.equal(logic.actionCloseNeedsGuard("senderExpire"), false)
