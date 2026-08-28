@@ -37,4 +37,25 @@ if [[ $response != pong ]]; then
   exit 1
 fi
 
+status=$(quickshell ipc --pid "$shell_pid" call -- desktop.notifications status)
+DESKTOP_SHELL_STATUS="$status" python3 - <<'PY'
+import json
+import os
+
+status = json.loads(os.environ["DESKTOP_SHELL_STATUS"])
+expected = {
+    "phase": "closed",
+    "activeIdentity": "",
+    "visualOutgoingIdentity": "",
+    "visualIncomingIdentity": "",
+    "transitionToken": 0,
+    "transitionKind": "",
+    "countdownIdentity": "",
+    "pendingCount": 0,
+}
+for key, value in expected.items():
+    if status.get(key) != value:
+        raise SystemExit(f"suppressed presenter field {key}={status.get(key)!r}, expected {value!r}")
+PY
+
 printf 'PASS: notification service runtime loads\n'
