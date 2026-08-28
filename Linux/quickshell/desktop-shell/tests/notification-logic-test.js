@@ -129,6 +129,60 @@ assert.equal(timedOut.accepted, true, "completed action timeout clears the match
 let reused = logic.actionCloseTransition(timedOut.state, { type: "begin", originalId: 8, notification: {}, generation: 9 })
 assert.equal(reused.accepted, true, "timed-out action ID can be reused")
 
+function serviceActionSequence(originalId, notification, generation, complete) {
+  let state = logic.actionCloseInitialState()
+  state = logic.actionCloseTransition(state, {
+    type: "begin", originalId, notification, generation,
+  }).state
+  state = logic.actionCloseTransition(state, {
+    type: "close", originalId, notification, generation,
+  }).state
+  return logic.actionCloseTransition(state, {
+    type: "complete", originalId, notification, generation, success: complete,
+  })
+}
+
+const wrappedSuccess = serviceActionSequence(30, senderA, 3000, true)
+assert.equal(wrappedSuccess.accepted, true, "Service-shaped successful action completes independently")
+assert.equal(wrappedSuccess.state.guards["30"].inProgress, false)
+const wrappedFailure = serviceActionSequence(31, senderA, 3100, false)
+assert.equal(wrappedFailure.flush, true, "Service-shaped failed action accepts deferred sender close")
+assert.equal(wrappedFailure.state.guards["31"].inProgress, false)
+const wrappedTimeout = logic.actionCloseTransition(wrappedFailure.state, {
+  type: "timeout", originalId: 31, notification: senderA, generation: 3100,
+})
+assert.equal(wrappedTimeout.accepted, true, "matching in-progress-completed timeout is deterministic")
+assert.equal(wrappedTimeout.state.guards["31"], undefined)
+
+let inProgressTimeout = logic.actionCloseInitialState()
+inProgressTimeout = logic.actionCloseTransition(inProgressTimeout, {
+  type: "begin", originalId: 32, notification: senderB, generation: 3200,
+}).state
+const acceptedInProgressTimeout = logic.actionCloseTransition(inProgressTimeout, {
+  type: "timeout", originalId: 32, notification: senderB, generation: 3200,
+})
+assert.equal(acceptedInProgressTimeout.accepted, true, "matching in-progress timeout is accepted")
+assert.equal(acceptedInProgressTimeout.state.guards["32"], undefined)
+
+let staleGuardState = logic.actionCloseTransition(logic.actionCloseInitialState(), {
+  type: "begin", originalId: 33, notification: senderA, generation: 3300,
+}).state
+const staleObjectTimeout = logic.actionCloseTransition(staleGuardState, {
+  type: "timeout", originalId: 33, notification: {}, generation: 3300,
+})
+assert.equal(staleObjectTimeout.accepted, false)
+assert.equal(staleObjectTimeout.state.guards["33"].notification, senderA)
+const staleGenerationTimeout = logic.actionCloseTransition(staleGuardState, {
+  type: "timeout", originalId: 33, notification: senderA, generation: 3301,
+})
+assert.equal(staleGenerationTimeout.accepted, false)
+assert.equal(staleGenerationTimeout.state.guards["33"].generation, 3300)
+const missingOriginalId = logic.actionCloseTransition(logic.actionCloseInitialState(), {
+  type: "begin", notification: senderA, generation: 3400,
+})
+assert.equal(missingOriginalId.accepted, false, "action guards never use an undefined original-ID key")
+assert.deepEqual(missingOriginalId.state.guards, {})
+
 const actions = [
   { identifier: "default", text: "Open" },
   { identifier: "archive", text: "Archive" },
