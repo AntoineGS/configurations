@@ -102,6 +102,35 @@ assert.equal(logic.cueGlyph(null), "•")
 assert.equal(logic.actionCloseNeedsGuard("senderDismiss"), false)
 assert.equal(logic.actionCloseNeedsGuard("senderExpire"), false)
 assert.equal(logic.actionCloseNeedsGuard("action"), true)
+const ownedRef = { tracked: true }
+let ownership = logic.closingOwnershipInitialState()
+ownership = logic.closingOwnershipTransition(ownership, {
+  type: "begin", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
+}).state
+ownership = logic.closingOwnershipTransition(ownership, { type: "remove", originalId: 41 }).state
+const ownedClose = logic.closingOwnershipTransition(ownership, {
+  type: "close", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
+})
+assert.equal(ownedClose.accepted, true, "sender close acknowledges ownership after model removal")
+assert.equal(ownedClose.release, ownedRef)
+assert.equal(ownedClose.state.owners["41"], undefined)
+assert.equal(logic.releaseTrackedNotification(ownedRef), ownedRef)
+assert.equal(ownedRef.tracked, false, "matching closed notification is untracked before ownership cleanup")
+ownedRef.tracked = true
+ownership = logic.closingOwnershipTransition(ownership, {
+  type: "begin", originalId: 41, notification: ownedRef, generation: 4101, identity: "4101:41",
+}).state
+assert.equal(logic.closingOwnershipTransition(ownership, {
+  type: "close", originalId: 41, notification: {}, generation: 4100, identity: "4100:41",
+}).accepted, false, "stale sender object cannot acknowledge a newer tombstone")
+assert.equal(logic.closingOwnershipTransition(ownership, {
+  type: "close", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
+}).accepted, false, "stale sender generation cannot acknowledge a newer tombstone")
+assert.deepEqual(logic.deckOpacityProjection("opening", 0.5, false), { incoming: 0.5, selected: 0.5 })
+assert.deepEqual(logic.deckOpacityProjection("open", 1, true), { incoming: 1, selected: 1 })
+assert.deepEqual(logic.deckOpacityProjection("closing", 0.5, false), { outgoing: 0.5, selected: 0.5 })
+assert.deepEqual(logic.deckOpacityProjection("switching", 0.5, false), { outgoing: 0.5, selected: 0.5 })
+assert.deepEqual(logic.deckOpacityProjection("switching", 0.5, true), { incoming: 0.5, selected: 0.5 })
 const senderA = {}, senderB = {}
 let actionClose = logic.actionCloseInitialState()
 actionClose = logic.actionCloseTransition(actionClose, { type: "begin", originalId: 7, notification: senderA, generation: 7 }).state

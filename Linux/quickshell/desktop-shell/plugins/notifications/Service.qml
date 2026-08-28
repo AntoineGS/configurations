@@ -95,6 +95,7 @@ Item {
   property var actionClosingGenerations: ({})
   property var actionClosingUntil: ({})
   property var actionCloseState: NotificationLogic.actionCloseInitialState()
+  property var closingOwnership: NotificationLogic.closingOwnershipInitialState()
   property var failedHistoryActions: ({})
   property var pendingRefreshes: ({})
   property var pendingSilencedRefreshes: ({})
@@ -293,7 +294,14 @@ Item {
       }
       else if (effect.type === "senderDismiss" || effect.type === "senderExpire") {
         var ref = findLiveReference(effect.identity, effect.snapshot)
-        if (!ref) continue
+        if (!ref) {
+          service.dispatchPresentation({ type: "SENDER_CLOSED", identity: effect.identity, now: Date.now() })
+          continue
+        }
+        service.closingOwnership = NotificationLogic.closingOwnershipTransition(service.closingOwnership, {
+          type: "begin", originalId: effect.snapshot.originalId, notification: ref,
+          generation: effect.snapshot.timestamp, identity: effect.identity
+        }).state
         try {
           if (effect.type === "senderExpire" && typeof ref.expire === "function") ref.expire()
           else if (typeof ref.dismiss === "function") ref.dismiss()
@@ -650,6 +658,7 @@ Item {
     delete service.pendingSilencedRefreshes[String(originalId)]
     delete service.silencedDirty[originalId]
     delete service.pendingPopups[String(originalId)]
+    try { NotificationLogic.releaseTrackedNotification(notification) } catch (error) {}
     if (service.liveRefs[originalId] !== notification) return
     var generation = Number(service.liveGenerations[originalId])
     service.markHistoryUnavailable(originalId, generation)
@@ -672,7 +681,6 @@ Item {
     service.clearFailedHistoryAction(originalId, generation)
     delete service.livePersistenceSources[originalId]
     delete service.restoredPopups[NotificationLogic.popupFileName({ originalId: originalId, timestamp: generation })]
-    try { notification.tracked = false } catch (error) {}
   }
 
   function handleClosedNotification(notification, originalId) {
@@ -681,9 +689,18 @@ Item {
       service.actionCloseState, { type: "close", originalId: originalId, notification: notification, generation: generation })
     if (actionResult && actionResult.accepted) {
       service.actionCloseState = actionResult.state
-      var closingIdentity = service.presentationState.closing[String(originalId)]
-        ? service.presentationState.closing[String(originalId)].identity
-        : service.presentationIdentityForOriginalId(originalId)
+      var owned = service.closingOwnership.owners[String(originalId)]
+      var ownedIdentity = owned ? owned.identity : ""
+      var ownershipResult = NotificationLogic.closingOwnershipTransition(service.closingOwnership, {
+        type: "close", originalId: originalId, notification: notification, generation: generation,
+        identity: service.presentationState.closing[String(originalId)]
+          ? service.presentationState.closing[String(originalId)].identity : ""
+      })
+      service.closingOwnership = ownershipResult.state
+      var closingIdentity = ownershipResult.accepted && ownershipResult.release
+        ? (service.presentationState.closing[String(originalId)]
+          ? service.presentationState.closing[String(originalId)].identity
+          : ownedIdentity) : ""
       if (closingIdentity)
         service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closingIdentity, now: Date.now() })
       service.cleanupClosedNotification(notification, originalId)
@@ -692,6 +709,17 @@ Item {
       return
     }
     if (actionResult) { service.actionCloseState = actionResult.state; return }
+    var owner = service.closingOwnership.owners[String(originalId)]
+    var ownerResult = owner ? NotificationLogic.closingOwnershipTransition(service.closingOwnership, {
+      type: "close", originalId: originalId, notification: notification,
+      generation: owner.generation, identity: owner.identity
+    }) : { state: service.closingOwnership, accepted: false, release: null }
+    if (ownerResult.accepted) {
+      service.closingOwnership = ownerResult.state
+      service.dispatchPresentation({ type: "SENDER_CLOSED", identity: owner.identity, now: Date.now() })
+      service.cleanupClosedNotification(notification, originalId)
+      return
+    }
     if (service.liveRefs[originalId] !== notification) return
     var generation = Number(service.liveGenerations[originalId])
     if (Number(service.actionClosingGenerations[originalId]) === generation) return
@@ -814,7 +842,7 @@ Item {
   }
 
   function clearPopups() {
-    dispatchPresentation({ type: "DISMISS_ALL" })
+    dispatchPresentation({ type: "DISMISS_ALL", now: Date.now() })
   }
 
   function liveAction(ref, identifier) {
@@ -842,6 +870,10 @@ Item {
       actionClosingUntil[entry.originalId] = Date.now() + actionClosingTimeoutMs
       actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
         type: "begin", originalId: entry.originalId, notification: ref, generation: entry.timestamp
+      }).state
+      service.closingOwnership = NotificationLogic.closingOwnershipTransition(service.closingOwnership, {
+        type: "begin", originalId: entry.originalId, notification: ref,
+        generation: entry.timestamp, identity: identity
       }).state
     }
     try {
