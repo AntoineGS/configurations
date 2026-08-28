@@ -78,6 +78,16 @@ function cueGlyph(direction) {
   default: return "•"
   }
 }
+function routeCueKey(route) {
+  if (!route || route.valid !== true || route.visible !== true || route.cueOutput === null) return ""
+  return String(route.output || "") + "\u001f" + String(route.cueOutput || "")
+    + "\u001f" + String(route.direction || "")
+}
+function routeCueVisibleOn(route, outputName, hasNotifications, dismissedKey) {
+  var key = routeCueKey(route)
+  return key !== "" && key !== String(dismissedKey || "") && hasNotifications === true
+    && String(route.cueOutput) === String(outputName || "")
+}
 function copyDeckValue(value) {
   if (value === null || typeof value !== "object") return value
   if (Array.isArray(value)) return value.map(copyDeckValue)
@@ -958,6 +968,8 @@ if (typeof module !== "undefined") {
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
+    routeCueKey: routeCueKey,
+    routeCueVisibleOn: routeCueVisibleOn,
     normalizedDeck: normalizedDeck,
     cardsVisibleOn: cardsVisibleOn,
     senderClosedEvent: senderClosedEvent,
