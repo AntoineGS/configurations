@@ -240,7 +240,7 @@ ElevatedSurface {
       Layout.fillWidth: true
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
-      visible: !root.historyMode && !!root.actions && root.actions.length > 0
+      visible: !root.historyMode && !!root.renderedActions && root.renderedActions.length > 0
       height: Math.max(1, Style.space(1))
       color: root.inkColor
       opacity: root.contentOpacity
@@ -254,7 +254,7 @@ ElevatedSurface {
       Layout.topMargin: Style.space(8)
       Layout.bottomMargin: Style.space(10)
       implicitHeight: actionFlow.implicitHeight
-      visible: !root.historyMode && !!root.actions && root.actions.length > 0
+      visible: !root.historyMode && !!root.renderedActions && root.renderedActions.length > 0
 
       Flow {
         id: actionFlow
