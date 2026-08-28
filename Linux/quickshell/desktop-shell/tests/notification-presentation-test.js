@@ -48,6 +48,7 @@ const normalA = snapshot("1000:1", 1, 10000, 10000)
 const normalB = snapshot("2000:2", 1, 10000, 10000)
 const criticalC = snapshot("3000:3", 2, 0, 0)
 const originalState = JSON.parse(JSON.stringify(state))
+assert.equal(Presentation.createSnapshot({ identity: "1:1", originalId: 1, timestamp: 1 }, 1234).duration, 1234)
 let result = apply(state, { type: "ARRIVE", snapshot: normalA })
 assert.equal(result.effects.length, 2)
 assert.deepEqual(result.effects[1], { type: "startWatchdog", token: 1, kind: "open", output: "DP-1", timeout: 510 })
@@ -162,6 +163,29 @@ routed = step(routed, { type: "ROUTE_CHANGED", visible: true, output: "DP-2" }, 
   assert.equal(s.visual.output, "DP-2")
 })
 
+let hidden = Presentation.createInitialState({ routeVisible: false, output: "" })
+hidden = step(hidden, { type: "ARRIVE", snapshot: snapshot("10001:100", 1, 1000, 1000) }, s => {
+  assert.equal(s.active, null)
+  assert.deepEqual(ids(s.pending), ["10001:100"])
+})
+hidden = step(hidden, { type: "ROUTE_CHANGED", visible: true, output: "DP-3" }, s => {
+  assert.equal(s.phase, "opening")
+  assert.equal(s.active.identity, "10001:100")
+  assert.equal(s.visual.incoming.identity, "10001:100")
+})
+
+let pendingClose = openState(snapshot("10002:102", 2, 0, 0))
+pendingClose = step(pendingClose, { type: "ARRIVE", snapshot: snapshot("10003:103", 1, 1000, 1000) })
+const pendingCloseResult = apply(pendingClose, { type: "SENDER_CLOSED", identity: "10003:103" })
+assert.deepEqual(ids(pendingCloseResult.state.pending), [])
+assert.equal(pendingCloseResult.state.retired["10003:103"], true)
+assert.ok(pendingCloseResult.effects.some(effect => effect.type === "cleanup" && effect.identity === "10003:103"))
+
+const sameRoute = openState(snapshot("10004:104", 1, 1000, 1000))
+const sameRouteResult = apply(sameRoute, { type: "ROUTE_CHANGED", visible: true, output: "DP-1" })
+assert.deepEqual(sameRouteResult.state, sameRoute)
+assert.deepEqual(sameRouteResult.effects, [])
+
 let timers = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 timers = step(timers, { type: "ARRIVE", snapshot: snapshot("11000:11", 1, 1000, 1000) })
 timers = step(timers, { type: "TICK", identity: "11000:11", now: 10 }, s => assert.equal(s.countdown.remaining, 0))
@@ -206,6 +230,8 @@ assert.ok(watchdogResult.effects.some(effect => effect.type === "cancelWatchdog"
 watchdog = watchdogResult.state
 const closeResult = apply(openState(snapshot("14500:145", 1, 1000, 1000)), { type: "DISMISS", identity: "14500:145" })
 assert.ok(closeResult.effects.some(effect => effect.type === "startWatchdog" && effect.timeout === 470 && effect.kind === "close"))
+assert.equal(closeResult.effects.filter(effect => effect.type === "archive").length, 1)
+assert.equal(closeResult.effects.find(effect => effect.type === "archive").reason, "dismiss")
 
 let closing = openState(snapshot("15000:15", 1, 1000, 1000))
 let closingResult = apply(closing, { type: "DISMISS", identity: "15000:15" })
@@ -330,6 +356,35 @@ pendingReplacement = step(pendingReplacement, { type: "REPLACE", identity: "2700
 
 const allSenderDismiss = allResult.effects.filter(effect => effect.type === "senderDismiss")
 assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "25000:25", "25000:26"])
+
+let sourceAware = openState(snapshot("25000:250", 1, 1000, 1000))
+const sourceAwareDismiss = apply(sourceAware, { type: "SENDER_CLOSED", identity: "25000:250" })
+assert.ok(sourceAwareDismiss.effects.some(effect => effect.type === "cleanup" && effect.reason === "closed"))
+assert.equal(sourceAwareDismiss.effects.some(effect => effect.type === "archive"), false)
+const internal = openState(snapshot("-1:-1", 1, 1000, 1000))
+const internalDismiss = apply(internal, { type: "DISMISS", identity: "-1:-1" })
+assert.equal(internalDismiss.effects.some(effect => effect.type === "archive"), false)
+assert.equal(internalDismiss.effects.some(effect => effect.type === "senderDismiss"), false)
+
+let transient = openState(Object.assign(snapshot("25001:251", 1, 1000, 1000), { transient: true }))
+const transientDismiss = apply(transient, { type: "DISMISS", identity: "25001:251" })
+assert.equal(transientDismiss.effects.some(effect => effect.type === "archive"), false)
+
+let replacementCleanup = openState(snapshot("25002:252", 1, 1000, 1000))
+const replacementResult = apply(replacementCleanup, {
+  type: "REPLACE", identity: "25002:252", snapshot: snapshot("25003:252", 1, 1000, 1000)
+})
+assert.ok(replacementResult.effects.some(effect => effect.type === "cleanup" && effect.identity === "25002:252" && effect.reason === "replace"))
+assert.equal(replacementResult.state.retired["25002:252"], true)
+assert.equal(replacementResult.state.active.identity, "25003:252")
+
+let switchCallback = openState(snapshot("25004:254", 1, 1000, 1000))
+switchCallback = step(switchCallback, { type: "ARRIVE", snapshot: snapshot("25005:255", 2, 0, 0) })
+const switchCallbackToken = switchCallback.visual.token
+const switchCallbackResult = apply(switchCallback, {
+  type: "TRANSITION_FINISHED", token: switchCallbackToken, kind: "switch", output: "DP-1"
+})
+assert.equal(switchCallbackResult.state.phase, "open")
 
 let stableReplacement = openState(snapshot("29500:295", 1, 1000, 1000))
 stableReplacement = step(stableReplacement, { type: "TICK", identity: "29500:295", now: 100 })

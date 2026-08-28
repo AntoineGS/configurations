@@ -116,9 +116,9 @@ Item {
   property real activeRemainingLifetime: 0
   property real activeTickStartedAt: 0
   property real activeTickStartRemaining: 0
-  readonly property real remainingFraction: activeDuration > 0
-    ? Math.max(0, Math.min(1, activeRemainingLifetime / activeDuration)) : 1
-  readonly property bool countdownVisible: activeDuration > 0
+  readonly property real remainingFraction: presentationFrame.countdown.duration > 0
+    ? Math.max(0, Math.min(1, presentationFrame.countdown.remaining / presentationFrame.countdown.duration)) : 1
+  readonly property bool countdownVisible: presentationFrame.countdown.visible === true
   property alias historyModel: historyModel
   ListModel { id: historyModel }
   property bool historyOpen: false
@@ -155,6 +155,7 @@ Item {
   property bool _hydrating: false
   property alias doNotDisturb: persisted.doNotDisturb
   property var pendingPopups: ({})
+  property string dndConfirmationIdentity: ""
 
   function durationFor(urgency, expireTimeout) {
     return NotificationLogic.durationFor(
@@ -230,6 +231,14 @@ Item {
       : NotificationLogic.popupIdentity(snapshot)
   }
 
+  function presentationIdentityForOriginalId(originalId) {
+    var state = service.presentationState
+    var rows = state.active ? [state.active].concat(state.pending) : state.pending
+    for (var i = 0; i < rows.length; i++)
+      if (Number(rows[i].originalId) === Number(originalId)) return identityForSnapshot(rows[i])
+    return ""
+  }
+
   function syncPresentationModel() {
     var rows = []
     var state = service.presentationState
@@ -290,6 +299,23 @@ Item {
       if (!effect) continue
       if (effect.type === "persist") persistPopupFile(effect.snapshot)
       else if (effect.type === "archive") archivePopupFileFor(effect.snapshot)
+      else if (effect.type === "cleanup") {
+        var snapshot = effect.snapshot
+        var source = String(snapshot.presentationSource || "")
+        var key = snapshot && snapshot.originalId
+        markHistoryUnavailable(key, snapshot.timestamp)
+        if (!source) source = restoredSource(snapshot) || livePersistenceSources[key] || ""
+        if (source === "history") deleteHistoryFileFor(snapshot)
+        else if (source === "popup") deletePopupFileFor(snapshot)
+        if (restoredPopups[NotificationLogic.popupFileName(snapshot)])
+          delete restoredPopups[NotificationLogic.popupFileName(snapshot)]
+        if (Number(liveGenerations[key]) === Number(snapshot.timestamp)) {
+          delete liveRefs[key]
+          delete liveGenerations[key]
+          delete livePersistenceSources[key]
+        }
+        clearFailedHistoryAction(key, snapshot.timestamp)
+      }
       else if (effect.type === "senderDismiss" || effect.type === "senderExpire") {
         var ref = findLiveReference(effect.identity, effect.snapshot)
         if (!ref) continue
@@ -461,14 +487,18 @@ Item {
   }
 
   function handlePopupOpenFinished(identity, generation, outputName) {
+    if (Number(generation) !== service.presentationState.visual.token) return
     dispatchPresentation({
-      type: "TRANSITION_FINISHED", token: Number(generation), kind: "open", output: String(outputName)
+      type: "TRANSITION_FINISHED", token: service.presentationState.visual.token,
+      kind: service.presentationState.visual.kind, output: service.presentationState.visual.output
     })
   }
 
   function handlePopupCloseFinished(identity, generation, outputName) {
+    if (Number(generation) !== service.presentationState.visual.token) return
     dispatchPresentation({
-      type: "TRANSITION_FINISHED", token: Number(generation), kind: "close", output: String(outputName)
+      type: "TRANSITION_FINISHED", token: service.presentationState.visual.token,
+      kind: service.presentationState.visual.kind, output: service.presentationState.visual.output
     })
   }
 
@@ -563,6 +593,7 @@ Item {
     var previous = liveRefs[snapshot.originalId]
     var previousIdentity = previous && previous !== notification
       ? String(liveGenerations[snapshot.originalId]) + ":" + String(snapshot.originalId) : ""
+    if (previousIdentity === "") previousIdentity = presentationIdentityForOriginalId(snapshot.originalId)
     if (previous && previous !== notification) {
       service.markHistoryUnavailable(snapshot.originalId, liveGenerations[snapshot.originalId])
       delete pendingSilencedRefreshes[String(snapshot.originalId)]
@@ -573,6 +604,7 @@ Item {
     liveGenerations[snapshot.originalId] = snapshot.timestamp
     livePersistenceSources[snapshot.originalId] = snapshot.transient ? "none"
       : (service.doNotDisturb && !shouldBypassDnd(notification) ? "history" : "popup")
+    snapshot.presentationSource = livePersistenceSources[snapshot.originalId]
     notification.closed.connect(function() {
       service.handleClosedNotification(notification, snapshot.originalId)
     })
@@ -588,20 +620,17 @@ Item {
       return
     }
 
-    if (!reservePopupSlot(snapshot.originalId)) {
+    if (previousIdentity === "" && !reservePopupSlot(snapshot.originalId)) {
       service.persistenceError = "notification active popup limit reached"
       releaseLiveNotification(notification, snapshot.originalId, true)
       return
     }
 
     watchForUpdates(notification, snapshot)
-    Qt.callLater(function() {
-      delete service.pendingPopups[String(snapshot.originalId)]
-      if (service.liveRefs[snapshot.originalId] !== notification) return
-      service.dispatchPresentation(previousIdentity === ""
-        ? { type: "ARRIVE", snapshot: snapshot }
-        : { type: "REPLACE", identity: previousIdentity, snapshot: snapshot })
-    })
+    delete service.pendingPopups[String(snapshot.originalId)]
+    service.dispatchPresentation(previousIdentity === ""
+      ? { type: "ARRIVE", snapshot: snapshot }
+      : { type: "REPLACE", identity: previousIdentity, snapshot: snapshot })
   }
 
   function writeSilenced(notification, written) {
@@ -664,6 +693,7 @@ Item {
         latest = NotificationLogic.replacementSnapshot(
           request.notification, request.originalId, request.persisted.timestamp)
         latest.remainingLifetime = 0
+        latest.duration = durationFor(latest.urgency, latest.expireTimeout)
         delete latest.deadline
       } catch (error) {
         service.releaseSilenced(request.notification, request.originalId)
@@ -985,47 +1015,28 @@ Item {
   }
 
   function showDndConfirmation() {
-    for (var i = popupModel.count - 1; i >= 0; i--) {
-      var old = popupModel.get(i)
-      if (old && Number(old.originalId) < 0) {
-        if (i !== 0) finalizePopupRemoval(i, "dismiss")
-      }
+    var id = -Date.now()
+    var next = {
+      id: id, originalId: id, app: "desktop-shell", appIcon: "",
+      summary: service.doNotDisturb ? "Do not disturb enabled" : "Do not disturb disabled",
+      body: "", image: "", urgency: NotificationUrgency.Low, expireTimeout: 2500,
+      remainingLifetime: durationFor(NotificationUrgency.Low, 2500),
+      duration: durationFor(NotificationUrgency.Low, 2500), transient: false,
+      presentationSource: "none", actions: [], timestamp: Date.now()
     }
-    if (popupModel.count > 0 && Number(popupModel.get(0).originalId) < 0) {
-      var confirmation = popupModel.get(0)
-      var identity = NotificationLogic.popupIdentity(confirmation)
-      if (pendingRemovalIdentity === identity) {
-        pendingRemovalIdentity = ""
-        pendingRemovalReason = ""
-      }
-      tickingIdentity = ""
-      popupModel.setProperty(0, "summary",
-        service.doNotDisturb ? "Do not disturb enabled" : "Do not disturb disabled")
-      popupModel.setProperty(0, "remainingLifetime", durationFor(NotificationUrgency.Low, 2500))
-      prepareActiveLifetimeDisplay()
-      if (popupMotionState === "open" && !activePopupHovered) startActiveLifetime()
-      return
-    }
-    if (popupModel.count >= maxActivePopups) {
+    var state = service.presentationState
+    var oldIdentity = service.dndConfirmationIdentity
+    var known = state.active && identityForSnapshot(state.active) === oldIdentity
+    if (!known) for (var i = 0; i < state.pending.length; i++)
+      if (identityForSnapshot(state.pending[i]) === oldIdentity) known = true
+    if (!known && state.active && state.pending.length >= service.maxActivePopups) {
       service.persistenceError = "notification active popup limit reached"
       return
     }
-    var id = -Date.now()
-    dispatchPresentation({ type: "ARRIVE", snapshot: {
-      id: id,
-      originalId: id,
-      app: "desktop-shell",
-      appIcon: "",
-      summary: service.doNotDisturb ? "Do not disturb enabled" : "Do not disturb disabled",
-      body: "",
-      image: "",
-      urgency: NotificationUrgency.Low,
-      expireTimeout: 2500,
-      remainingLifetime: durationFor(NotificationUrgency.Low, 2500),
-      transient: false,
-      actions: [],
-      timestamp: Date.now()
-    } })
+    dispatchPresentation(known
+      ? { type: "REPLACE", identity: oldIdentity, snapshot: next }
+      : { type: "ARRIVE", snapshot: next })
+    dndConfirmationIdentity = identityForSnapshot(next)
   }
 
   Process {
@@ -1512,10 +1523,12 @@ Item {
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
     row.remainingLifetime = 0
+    row.duration = durationFor(row.urgency, row.expireTimeout)
     row.queuePriority = NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
     ensurePopupQueueOrder(row)
     delete row.deadline
     row.transient = false
+    row.presentationSource = "history"
     service.restoredPopups[fileName] = "history"
     service.dispatchPresentation({ type: "ARRIVE", snapshot: row })
   }
@@ -1548,6 +1561,7 @@ Item {
         continue
       }
       var duration = durationFor(entry.urgency, entry.expireTimeout)
+      entry.duration = duration
       var needsMigration = entry.queuePriority === undefined
         || entry.queueOrder === undefined
         || (entry.remainingLifetime === undefined && entry.deadline !== undefined)
@@ -1582,6 +1596,7 @@ Item {
         if (duplicate) continue
         if (restored.remainingLifetime === undefined) restored.remainingLifetime = 0
         if (restored.transient === undefined) restored.transient = false
+        restored.presentationSource = "popup"
         service.restoredPopups[NotificationLogic.popupFileName(restored)] = "popup"
         service.dispatchPresentation({ type: "ARRIVE", snapshot: restored })
       }
@@ -2270,7 +2285,8 @@ Item {
       transitionGeneration: service.popupTransitionGeneration
       remainingFraction: service.remainingFraction
       countdownVisible: service.countdownVisible
-      criticalPending: service.pendingPreemptionIdentity !== "" && service.activePopupHovered
+       criticalPending: service.presentationFrame.visual.incomingDeck.criticalPending
+         && service.presentationFrame.hovered
       fontFamily: service.shell && service.shell.bar
         ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
       barPosition: service.barPosition
