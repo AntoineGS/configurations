@@ -209,15 +209,17 @@ function reduce(input, event) {
 }
 function presentationFrame(state) { return { phase: state.phase, active: copy(state.active), pending: copy(state.pending), visual: copy(state.visual), countdown: copy(state.countdown), route: copy(state.route), hovered: state.hovered } }
 function assertInvariants(state) {
-  var seen = {}, i, transient = isTransition(state.phase)
+  var seen = {}, i, transient, validPhases = { closed: true, opening: true, open: true, switching: true, closing: true, hidden: true }
   if (!state || state.version !== 1 || !state.route || !state.visual || !state.countdown) throw new Error("invalid state")
+  if (!validPhases[state.phase]) throw new Error("invalid phase")
+  transient = isTransition(state.phase)
   for (i = 0; i < state.pending.length; i += 1) {
     if (!identityOf(state.pending[i]) || seen[identityOf(state.pending[i])] || identityOf(state.pending[i]) === identityOf(state.active) || state.retired[identityOf(state.pending[i])]) throw new Error("invalid pending identity")
     seen[identityOf(state.pending[i])] = true
   }
   if (state.active && state.retired[identityOf(state.active)]) throw new Error("retired active")
   if (transient && (!finite(state.visual.token) || state.visual.token <= 0 || state.visual.kind !== ({ opening: "open", switching: "switch", closing: "close" })[state.phase] || typeof state.visual.output !== "string" || state.visual.output !== state.route.output)) throw new Error("invalid transition token")
-  if (!transient && state.phase !== "hidden" && (state.visual.token !== 0 || state.visual.kind !== "" || state.visual.output !== "")) throw new Error("stable transition metadata")
+  if (!transient && (state.visual.token !== 0 || state.visual.kind !== "" || state.visual.output !== "")) throw new Error("stable transition metadata")
   if (state.phase === "opening" && (!state.visual.incoming || state.visual.outgoing)) throw new Error("invalid opening cards")
   if (state.phase === "switching" && (!state.visual.incoming || !state.visual.outgoing)) throw new Error("invalid switching cards")
   if (state.phase === "closing" && (!state.visual.outgoing || state.visual.incoming)) throw new Error("invalid closing cards")
