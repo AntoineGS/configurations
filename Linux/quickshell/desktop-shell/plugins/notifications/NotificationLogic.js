@@ -78,6 +78,23 @@ function cueGlyph(direction) {
   default: return "•"
   }
 }
+function copyDeckValue(value) {
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return value.map(copyDeckValue)
+  var result = {}
+  for (var key in value) if (Object.prototype.hasOwnProperty.call(value, key)) result[key] = copyDeckValue(value[key])
+  return result
+}
+function normalizedDeck(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+      || !Array.isArray(value.snapshots)) return { snapshots: [], queuedCount: 0, criticalPending: false }
+  var queuedCount = Number(value.queuedCount)
+  return {
+    snapshots: value.snapshots.map(copyDeckValue),
+    queuedCount: isFinite(queuedCount) && queuedCount >= 0 ? Math.floor(queuedCount) : 0,
+    criticalPending: value.criticalPending === true,
+  }
+}
 function deckProjection(phase, progress, incomingVisible) {
   var value = Math.max(0, Math.min(1, typeof progress === "number" && isFinite(progress) ? progress : 0))
   if (phase === "opening") return { outgoing: 0, incoming: value }
@@ -935,6 +952,7 @@ if (typeof module !== "undefined") {
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
+    normalizedDeck: normalizedDeck,
     deckProjection: deckProjection,
     deckOpacityProjection: deckOpacityProjection,
     releaseTrackedNotification: releaseTrackedNotification,

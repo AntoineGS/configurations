@@ -157,6 +157,16 @@ assert.deepEqual(logic.deckOpacityProjection("open", 1, true), { incoming: 1, se
 assert.deepEqual(logic.deckOpacityProjection("closing", 0.5, false), { outgoing: 0.5, selected: 0.5 })
 assert.deepEqual(logic.deckOpacityProjection("switching", 0.5, false), { outgoing: 0.5, selected: 0.5 })
 assert.deepEqual(logic.deckOpacityProjection("switching", 0.5, true), { incoming: 0.5, selected: 0.5 })
+const emptyDeck = { snapshots: [], queuedCount: 0, criticalPending: false }
+for (const value of [null, undefined, false, 0, "deck", [], { snapshots: null }, { queuedCount: "bad" }])
+  assert.deepEqual(logic.normalizedDeck(value), emptyDeck, "malformed decks become a canonical empty deck")
+const sourceDeck = { snapshots: [{ identity: "100:1" }], queuedCount: 3, criticalPending: true }
+const normalizedSourceDeck = logic.normalizedDeck(sourceDeck)
+assert.deepEqual(normalizedSourceDeck, sourceDeck)
+assert.notEqual(normalizedSourceDeck, sourceDeck)
+assert.notEqual(normalizedSourceDeck.snapshots, sourceDeck.snapshots)
+sourceDeck.snapshots[0].identity = "changed"
+assert.equal(normalizedSourceDeck.snapshots[0].identity, "100:1", "normalized snapshots are copied")
 const senderA = {}, senderB = {}
 let actionClose = logic.actionCloseInitialState()
 actionClose = logic.actionCloseTransition(actionClose, { type: "begin", originalId: 7, notification: senderA, generation: 7 }).state
