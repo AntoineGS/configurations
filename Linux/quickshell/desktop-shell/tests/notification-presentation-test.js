@@ -476,7 +476,10 @@ const failedCompletion = logic.actionCloseTransition(failedGuard, {
   type: "complete", originalId: 314, notification: failedSender, generation: 31400, success: false,
 })
 assert.equal(failedCompletion.flush, true)
-const failedClose = apply(failedActionPresenter, { type: "SENDER_CLOSED", identity: "31400:314", now: 31401 })
+assert.equal(failedCompletion.state.guards["314"].identity, "31400:314")
+const failedClose = apply(failedActionPresenter, {
+  type: "SENDER_CLOSED", identity: failedCompletion.state.guards["314"].identity, now: 31401,
+})
 assert.equal(failedClose.state.active, null, "failed synchronous close removes the active presenter entry")
 assert.equal(failedClose.state.visual.outgoing.identity, "31400:314")
 const senderClosedReuse = apply(lateReplacement.state, { type: "SENDER_CLOSED", identity: "31200:312", now: 101 })
