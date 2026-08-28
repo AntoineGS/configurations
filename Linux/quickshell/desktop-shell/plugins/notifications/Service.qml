@@ -535,7 +535,11 @@ Item {
     livePersistenceSources = bookkeeping.sources
     snapshot.presentationSource = bookkeeping.presentationSource
     notification.closed.connect(function() {
-      service.handleClosedNotification(notification, snapshot.originalId)
+      var capturedNotification = notification
+      var capturedOriginalId = snapshot.originalId
+      Qt.callLater(function() {
+        service.handleClosedNotification(capturedNotification, capturedOriginalId)
+      })
     })
 
     if (service.doNotDisturb && !shouldBypassDnd(notification)) {
@@ -936,7 +940,11 @@ Item {
           type: "complete", originalId: entry.originalId, notification: ref, generation: entry.timestamp, success: false
         })
         actionCloseState = failedClose.state
-        if (failedClose.flush) service.handleClosedNotification(ref, entry.originalId)
+        if (failedClose.flush) {
+          var failedNotification = ref
+          var failedOriginalId = entry.originalId
+          Qt.callLater(function() { service.handleClosedNotification(failedNotification, failedOriginalId) })
+        }
         else {
           actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
             type: "clear", originalId: entry.originalId, notification: ref, generation: entry.timestamp
@@ -956,7 +964,11 @@ Item {
       })
       actionCloseState = completedClose.state
       requestPopupRemoval(identity, "dismiss")
-      if (completedClose.flush) service.handleClosedNotification(ref, entry.originalId)
+      if (completedClose.flush) {
+        var completedNotification = ref
+        var completedOriginalId = entry.originalId
+        Qt.callLater(function() { service.handleClosedNotification(completedNotification, completedOriginalId) })
+      }
     }
     return true
   }
