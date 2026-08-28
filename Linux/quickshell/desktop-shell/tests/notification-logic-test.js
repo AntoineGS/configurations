@@ -99,21 +99,35 @@ assert.equal(logic.cueGlyph("up"), "↑")
 assert.equal(logic.cueGlyph("down"), "↓")
 assert.equal(logic.cueGlyph(null), "•")
 
-const sender = {}
+assert.equal(logic.actionCloseNeedsGuard("senderDismiss"), false)
+assert.equal(logic.actionCloseNeedsGuard("senderExpire"), false)
+assert.equal(logic.actionCloseNeedsGuard("action"), true)
+const senderA = {}, senderB = {}
 let actionClose = logic.actionCloseInitialState()
-actionClose = logic.actionCloseTransition(actionClose, { type: "begin", notification: sender, generation: 7 }).state
-actionClose = logic.actionCloseTransition(actionClose, { type: "close", notification: sender, generation: 7 }).state
-assert.equal(actionClose.deferred, true, "synchronous sender close is deferred while action is running")
-let completedAction = logic.actionCloseTransition(actionClose, { type: "complete", notification: sender, generation: 7, success: true })
+actionClose = logic.actionCloseTransition(actionClose, { type: "begin", originalId: 7, notification: senderA, generation: 7 }).state
+actionClose = logic.actionCloseTransition(actionClose, { type: "begin", originalId: 8, notification: senderB, generation: 8 }).state
+assert.equal(Object.keys(actionClose.guards).length, 2, "concurrent action guards remain independent")
+actionClose = logic.actionCloseTransition(actionClose, { type: "close", originalId: 7, notification: senderA, generation: 7 }).state
+assert.equal(actionClose.guards["7"].deferred, true, "synchronous sender close is deferred while action is running")
+assert.equal(actionClose.guards["8"].inProgress, true, "another action guard is not overwritten")
+let completedAction = logic.actionCloseTransition(actionClose, { type: "complete", originalId: 7, notification: senderA, generation: 7, success: true })
 assert.equal(completedAction.flush, true, "successful action flushes deferred sender close after dismissal")
-let matchingClose = logic.actionCloseTransition(completedAction.state, { type: "close", notification: sender, generation: 7 })
+let matchingClose = logic.actionCloseTransition(completedAction.state, { type: "close", originalId: 7, notification: senderA, generation: 7 })
 assert.equal(matchingClose.accepted, true, "matching sender close clears the completed action guard")
-let staleClose = logic.actionCloseTransition(actionClose, { type: "close", notification: {}, generation: 7 })
+assert.equal(matchingClose.state.guards["7"], undefined)
+let staleClose = logic.actionCloseTransition(actionClose, { type: "close", originalId: 7, notification: {}, generation: 7 })
 assert.equal(staleClose.accepted, false, "stale sender object cannot clear the current action guard")
-assert.equal(logic.actionCloseTransition(actionClose, { type: "close", notification: sender, generation: 8 }).accepted, false,
+assert.equal(logic.actionCloseTransition(actionClose, { type: "close", originalId: 7, notification: senderA, generation: 8 }).accepted, false,
   "stale sender generation cannot clear the current action guard")
-let failedAction = logic.actionCloseTransition(actionClose, { type: "complete", notification: sender, generation: 7, success: false })
+let failedAction = logic.actionCloseTransition(actionClose, { type: "complete", originalId: 7, notification: senderA, generation: 7, success: false })
 assert.equal(failedAction.flush, true, "failed action flushes deferred sender close as ordinary close")
+let failedClear = logic.actionCloseTransition(failedAction.state, { type: "clear", originalId: 7, notification: senderA, generation: 7 })
+assert.equal(failedClear.state.guards["7"], undefined, "failed action clears its guard object fully")
+let timedAction = logic.actionCloseTransition(actionClose, { type: "complete", originalId: 8, notification: senderB, generation: 8, success: true })
+let timedOut = logic.actionCloseTransition(timedAction.state, { type: "timeout", originalId: 8, notification: senderB, generation: 8 })
+assert.equal(timedOut.accepted, true, "completed action timeout clears the matching guard")
+let reused = logic.actionCloseTransition(timedOut.state, { type: "begin", originalId: 8, notification: {}, generation: 9 })
+assert.equal(reused.accepted, true, "timed-out action ID can be reused")
 
 const actions = [
   { identifier: "default", text: "Open" },

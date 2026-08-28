@@ -85,20 +85,30 @@ function deckProjection(phase, progress, incomingVisible) {
   if (phase === "switching") return incomingVisible ? { outgoing: 0, incoming: value } : { outgoing: value, incoming: 0 }
   return { outgoing: 0, incoming: 1 }
 }
-function actionCloseInitialState() { return { guard: null, inProgress: false, deferred: false } }
+function actionCloseNeedsGuard(source) { return source === "action" }
+function actionCloseInitialState() { return { guards: {} } }
 function actionCloseTransition(state, event) {
-  var guard = state && state.guard, next = {
-    guard: guard, inProgress: !!(state && state.inProgress), deferred: !!(state && state.deferred)
-  }
+  var guards = state && state.guards ? state.guards : {}, id = event && String(event.originalId), guard = id ? guards[id] : null
+  var next = { guards: Object.assign({}, guards) }
   if (!event || typeof event !== "object") return { state: next, accepted: false, flush: false }
-  if (event.type === "begin") return { state: { guard: { notification: event.notification, generation: event.generation }, inProgress: true, deferred: false }, accepted: true, flush: false }
+  if (event.type === "begin") {
+    next.guards[id] = { notification: event.notification, generation: event.generation, inProgress: true, deferred: false }
+    return { state: next, accepted: true, flush: false }
+  }
   if (!guard || guard.notification !== event.notification || guard.generation !== event.generation)
     return { state: next, accepted: false, flush: false }
-  if (event.type === "close" && next.inProgress)
-    return { state: { guard: guard, inProgress: true, deferred: true }, accepted: false, flush: false }
-  if (event.type === "complete")
-    return { state: { guard: guard, inProgress: false, deferred: next.deferred }, accepted: true, flush: next.deferred }
-  if (event.type === "close") return { state: actionCloseInitialState(), accepted: true, flush: next.deferred }
+  if (event.type === "close" && guard.inProgress) {
+    next.guards[id] = Object.assign({}, guard, { deferred: true })
+    return { state: next, accepted: false, flush: false }
+  }
+  if (event.type === "complete") {
+    next.guards[id] = Object.assign({}, guard, { inProgress: false })
+    return { state: next, accepted: true, flush: guard.deferred }
+  }
+  if (event.type === "close" || event.type === "timeout" || event.type === "clear") {
+    delete next.guards[id]
+    return { state: next, accepted: event.type !== "timeout" || !guard.inProgress, flush: guard.deferred && !guard.inProgress }
+  }
   return { state: next, accepted: false, flush: false }
 }
 
@@ -888,6 +898,7 @@ if (typeof module !== "undefined") {
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
     deckProjection: deckProjection,
+    actionCloseNeedsGuard: actionCloseNeedsGuard,
     actionCloseInitialState: actionCloseInitialState,
     actionCloseTransition: actionCloseTransition,
     actionMetadata: actionMetadata,
