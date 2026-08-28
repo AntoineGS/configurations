@@ -20,16 +20,17 @@ Item {
   property real metadataOpacity: 1
   property real contentOpacity: 1
 
+  readonly property var safeSnapshot: root.snapshot || ({})
   readonly property bool hovered: hoverTracker.hovered
-  readonly property string renderedIdentity: String(snapshot.identity || "")
-  readonly property string renderedApp: String(snapshot.app || "")
-  readonly property string renderedAppIcon: String(snapshot.appIcon || "")
-  readonly property string renderedSummary: String(snapshot.summary || "")
-  readonly property string renderedBody: String(snapshot.body || "")
-  readonly property string renderedImage: String(snapshot.image || "")
-  readonly property int renderedUrgency: Number(snapshot.urgency)
-  readonly property double renderedTimestamp: Number(snapshot.timestamp)
-  readonly property var renderedActions: snapshot.actions || []
+  readonly property string renderedIdentity: String(safeSnapshot.identity || "")
+  readonly property string renderedApp: String(safeSnapshot.app || "")
+  readonly property string renderedAppIcon: String(safeSnapshot.appIcon || "")
+  readonly property string renderedSummary: String(safeSnapshot.summary || "")
+  readonly property string renderedBody: String(safeSnapshot.body || "")
+  readonly property string renderedImage: String(safeSnapshot.image || "")
+  readonly property int renderedUrgency: Number(safeSnapshot.urgency)
+  readonly property double renderedTimestamp: Number(safeSnapshot.timestamp)
+  readonly property var renderedActions: safeSnapshot.actions || []
   readonly property bool countdownShown: root.countdown.visible === true
     && String(root.countdown.identity || "") === root.renderedIdentity
   readonly property real countdownFraction: Math.max(0, Math.min(1, Number(root.countdown.fraction) || 0))
