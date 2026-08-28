@@ -12,12 +12,9 @@ PanelWindow {
   required property bool ownsOutput
   property bool surfacesSuppressed: false
   property var shell: null
-  property bool cueVisible: false
   property string fontFamily: Style.font.family
   property string barPosition: "top"
   property real barSize: Style.bar.sizeHorizontal
-  property string cueGlyph: ""
-  property string cueRouteKey: ""
 
   QtObject {
     id: detachedBarPosition
@@ -32,7 +29,6 @@ PanelWindow {
   readonly property real bodyWidth: Math.min(Style.space(380),
     Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
       - Style.popupOuterRadius * (barAttached ? 2 : 0)))
-  readonly property real cueElevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
   readonly property real collarExtent: Style.space(36)
   readonly property real attachedContentTopInset: Style.space(32)
 
@@ -41,7 +37,6 @@ PanelWindow {
   signal actionClicked(string identity, string identifier)
   signal hoverChanged(string identity, bool hovered)
   signal transitionFinished(int token, string kind, string outputName)
-  signal cueDismissRequested(string routeKey)
 
   property var _paintedSnapshot: null
   property bool _popupOpen: false
@@ -58,19 +53,16 @@ PanelWindow {
   property string _lastTransition: ""
 
   screen: root.output
-  visible: !root.surfacesSuppressed && (root.cueVisible || cueSurface.visible || (root.ownsOutput
+  visible: !root.surfacesSuppressed && (root.ownsOutput
     && root._paintedSnapshot !== null && root.presentationFrame.phase !== "closed"
-    && root.presentationFrame.phase !== "hidden"))
+    && root.presentationFrame.phase !== "hidden")
   anchors { top: true; bottom: true; left: true; right: true }
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.namespace: "desktop-shell-notification-rail"
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-  mask: Region {
-    Region { item: cueBody.revealProgress > 0 ? cueBody : null }
-    Region { item: cueShoulders.revealProgress > 0 ? cueShoulders : null }
-  }
+  mask: Region { item: null }
 
   function identity(snapshot) { return snapshot ? String(snapshot.identity || "") : "" }
   function urgencyColor(snapshot) {
@@ -310,65 +302,4 @@ PanelWindow {
     }
   }
 
-  Item {
-    id: cueSurface
-    x: root.width - Style.gapsOut - root.cueElevationInset - root.bodyWidth - Style.popupOuterRadius
-    y: 0
-    width: root.bodyWidth + Style.popupOuterRadius * 2
-    height: Style.space(48)
-    visible: root.cueVisible || cueBody.revealProgress > 0
-
-    ElevatedSurface {
-      id: cueBody
-      x: Style.popupOuterRadius
-      y: 0
-      width: root.bodyWidth
-      height: Style.space(48)
-      color: Color.notifications.background
-      radius: Style.popupOuterRadius
-      topLeftRadius: 0
-      topRightRadius: 0
-      bottomLeftRadius: Style.popupOuterRadius
-      bottomRightRadius: Style.popupOuterRadius
-      revealed: root.cueVisible
-      revealDuration: PopupMotion.surfaceOpenDuration
-      concealDuration: PopupMotion.surfaceCloseDuration
-      revealEasing: PopupMotion.surfaceOpenEasing
-      concealEasing: PopupMotion.surfaceCloseEasing
-      concealedXScale: 1
-      concealedYScale: 0
-      scaleOriginX: width / 2
-      scaleOriginY: 0
-
-      MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton
-        onClicked: root.cueDismissRequested(root.cueRouteKey)
-      }
-
-      Text {
-        anchors.centerIn: parent
-        text: root.cueGlyph
-        color: Color.notifications.text
-        font.family: Style.font.family
-        font.pixelSize: Style.font.display
-      }
-    }
-
-    BarAttachedShoulders {
-      id: cueShoulders
-      z: 1
-      x: 0
-      y: 0
-      bodyWidth: root.bodyWidth
-      surfaceColor: Color.notifications.background
-      gradientStartColor: Color.notifications.background
-      gradientEndColor: Color.notifications.background
-      gradientExtent: Style.popupOuterRadius
-      revealProgress: cueBody.revealProgress
-      onClicked: button => {
-        if (button === Qt.LeftButton) root.cueDismissRequested(root.cueRouteKey)
-      }
-    }
-  }
 }
