@@ -112,6 +112,21 @@ function startCountdownFor(state, row) {
     visible: duration > 0 && !activeCritical(row), lastNow: 0 }
 }
 function syncIncomingDeck(state) { state.visual.incomingDeck = makeDeck(state.pending) }
+function criticalPendingIndex(rows) {
+  for (var i = 0; i < rows.length; i += 1) if (activeCritical(rows[i])) return i
+  return -1
+}
+function reconcileCritical(state, effects) {
+  var index, outgoingRows, displaced
+  if (state.phase !== "open" || state.hovered || activeCritical(state.active)) return false
+  index = criticalPendingIndex(state.pending)
+  if (index < 0) return false
+  outgoingRows = state.pending.slice(); displaced = state.active
+  state.active = state.pending.splice(index, 1)[0]
+  insertPending(state, displaced)
+  startSwitch(state, state.visual.incoming, effects, outgoingRows, state.pending)
+  return true
+}
 function removeActive(state, effects, senderType, reason, now) {
   var old = state.active, displayed = state.visual.incoming || old, next, beforePending = state.pending.slice()
   if (!old) return
@@ -136,12 +151,15 @@ function removeActive(state, effects, senderType, reason, now) {
   if (next) startSwitch(state, displayed, effects, beforePending, state.pending); else startClose(state, displayed, effects, beforePending, state.pending)
 }
 function settle(state, event, effects) {
-  var next, previous
   if (!matching(state, event)) return
   cancel(state, effects)
   if (state.phase === "closing") {
     clearVisual(state)
-    if (state.route.visible && state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
+    if (state.route.visible && state.pending.length) {
+      var nextIndex = criticalPendingIndex(state.pending)
+      state.active = state.pending.splice(nextIndex >= 0 ? nextIndex : 0, 1)[0]
+      startOpen(state, effects)
+    }
     else state.phase = state.route.visible ? "closed" : "hidden"
     return
   }
@@ -150,11 +168,8 @@ function settle(state, event, effects) {
   state.visual.outgoingDeck = emptyDeck(); state.visual.incomingDeck = makeDeck(state.pending); state.visual.kind = ""; state.visual.token = 0; state.visual.output = ""
   state.phase = state.active ? "open" : "closed"
   if (state.active) startCountdown(state)
-  // An arrival during a transition is reconsidered at the atomic boundary.
-  if (state.phase === "open" && !state.hovered && state.pending.length && activeCritical(state.pending[0]) && !activeCritical(state.active)) {
-    next = state.pending.slice(); previous = state.active; state.active = state.pending.shift(); insertPending(state, previous)
-    startSwitch(state, state.visual.incoming, effects, next, state.pending)
-  }
+  // An arrival or replacement during a transition is reconsidered at the atomic boundary.
+  reconcileCritical(state, effects)
 }
 function validRoute(event) { return typeof event.visible === "boolean" && (event.visible ? typeof event.output === "string" && event.output !== "" : event.output === null) }
 function reduce(input, event) {
@@ -254,8 +269,7 @@ function reduce(input, event) {
       state.hovered = event.hovered
       state.countdown.lastNow = 0
       if (!state.hovered && state.phase === "open" && state.pending.length && !activeCritical(state.active)) {
-        var handoffRows = state.pending.slice(), criticalIndex = -1
-        for (i = 0; i < state.pending.length; i += 1) if (activeCritical(state.pending[i])) { criticalIndex = i; break }
+        var handoffRows = state.pending.slice(), criticalIndex = criticalPendingIndex(state.pending)
         if (criticalIndex < 0) break
         next = state.active
         state.active = state.pending.splice(criticalIndex, 1)[0]
@@ -268,10 +282,15 @@ function reduce(input, event) {
        if (!event.visible) {
          if (!state.route.visible || state.phase === "hidden") break
           cancel(state, effects); state.hovered = false; state.route = { visible: false, output: "" }; clearVisual(state); state.phase = "hidden"; state.countdown.visible = false
-       } else {
-         var routeChanged = !state.route.visible || state.route.output !== event.output
-         state.route = { visible: true, output: event.output || "" }
-         if (!state.active && state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
+        } else {
+          var routeChanged = !state.route.visible || state.route.output !== event.output
+          state.route = { visible: true, output: event.output || "" }
+          if (state.phase === "closing" && routeChanged) {
+            cancel(state, effects); clearVisual(state); state.countdown.visible = false
+            state.phase = "closed"
+            if (state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
+          }
+          else if (!state.active && state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
          else if (state.active && (state.phase === "hidden" || routeChanged)) startOpen(state, effects)
          else if (!routeChanged) break
        }
