@@ -302,7 +302,8 @@ PanelWindow {
       id: outgoingSlot
       x: 0; width: parent.width; height: parent.height
       visible: root.onOutput && root._latchedOutgoing !== null
-        && (root.presentationFrame.phase === "closing" || root.presentationFrame.phase === "switching")
+        && (root.presentationFrame.phase === "closing"
+          || (root.presentationFrame.phase === "switching" && !root._incomingVisible))
       opacity: root._progress
       transform: Scale { origin.x: outgoingSlot.width / 2; origin.y: 0; yScale: opacity }
       Loader {
