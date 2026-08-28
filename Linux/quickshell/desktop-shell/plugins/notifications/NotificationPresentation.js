@@ -17,7 +17,7 @@ function identityOf(row) { return row && typeof row.identity === "string" ? row.
 function queueCritical(row) { return !!row && (row.queuePriority !== undefined ? row.queuePriority === true : row.urgency === 2) }
 function activeCritical(row) { return !!row && row.urgency === 2 }
 function emptyDeck() { return { snapshots: [], queuedCount: 0, criticalPending: false } }
-function makeDeck(rows) { return { snapshots: rows.map(copy), queuedCount: rows.length, criticalPending: rows.some(queueCritical) } }
+function makeDeck(rows) { return { snapshots: rows.map(copy), queuedCount: rows.length, criticalPending: rows.some(activeCritical) } }
 function createSnapshot(row, duration) {
   var result
   if (!row || typeof row !== "object" || Array.isArray(row)) return null
@@ -204,7 +204,14 @@ function reduce(input, event) {
           found = true; retire(state, oldIdentity)
           cleanup(state.pending[i], effects, "replace")
           next = copy(row); next.queuePriority = state.pending[i].queuePriority; next.queueOrder = state.pending[i].queueOrder
-          state.pending[i] = next; persist(next, effects); syncIncomingDeck(state); break
+          state.pending[i] = next; persist(next, effects); syncIncomingDeck(state)
+          if (state.phase === "open" && !state.hovered && activeCritical(next) && !activeCritical(state.active)) {
+            var replacementRows = state.pending.slice()
+            state.pending.splice(i, 1)
+            previous = state.active; state.active = next; insertPending(state, previous)
+            startSwitch(state, state.visual.incoming, effects, replacementRows, state.pending)
+          }
+          break
         }
         if (!found) break
       }
@@ -246,11 +253,12 @@ function reduce(input, event) {
       if (state.hovered === event.hovered) break
       state.hovered = event.hovered
       state.countdown.lastNow = 0
-      if (!state.hovered && state.phase === "open" && state.pending.length && activeCritical(state.pending[0]) && !activeCritical(state.active)) {
-        next = state.active
-        state.active = state.pending.shift()
-        insertPending(state, next)
-        startSwitch(state, state.visual.incoming, effects, state.pending.filter(function (item) { return identityOf(item) !== identityOf(next) }), state.pending)
+       if (!state.hovered && state.phase === "open" && state.pending.length && activeCritical(state.pending[0]) && !activeCritical(state.active)) {
+         var handoffRows = state.pending.slice()
+         next = state.active
+         state.active = state.pending.shift()
+         insertPending(state, next)
+         startSwitch(state, state.visual.incoming, effects, handoffRows, state.pending)
       }
       break
     case "ROUTE_CHANGED":
