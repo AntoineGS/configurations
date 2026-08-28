@@ -76,6 +76,8 @@ PanelWindow {
     root._paintedSnapshot = root._latchedIncoming
     root._metadataOpacity = 0
     root._contentOpacity = 0
+    root._animationStartMetadata = 0
+    root._animationStartContent = 0
     root._stage = kind === "switch" ? "switchOpening" : "opening"
     root._popupOpen = true
     openContentMotion.restart()
@@ -99,7 +101,7 @@ PanelWindow {
     var paintedSnapshot = root._paintedSnapshot
     var paintedMetadata = root._metadataOpacity
     var paintedContent = root._contentOpacity
-    root.openContentMotion.stop(); root.closeContentMotion.stop()
+    openContentMotion.stop(); closeContentMotion.stop()
     root._lastTransition = root.frameKey(frame)
     root._latchedKind = kind
     root._latchedToken = Number(v.token)
@@ -147,6 +149,10 @@ PanelWindow {
   function handleConcealed() {
     if (root._stage === "closing") root.finishTransition()
     else if (root._stage === "switchClosing") {
+      if (root.surfacesSuppressed || !root.completionIsCurrent()) {
+        root.clearPresentationState()
+        return
+      }
       root._paintedSnapshot = root._latchedIncoming
       root.beginOpening("switch")
     }
@@ -161,7 +167,7 @@ PanelWindow {
     })
   }
   function clearPresentationState() {
-    root.openContentMotion.stop(); root.closeContentMotion.stop()
+    openContentMotion.stop(); closeContentMotion.stop()
     root._latchedKind = ""; root._latchedToken = 0; root._latchedOutput = ""
     root._latchedIncoming = null; root._latchedOutgoing = null
     root._paintedSnapshot = null; root._popupOpen = false; root._stage = ""
@@ -173,7 +179,7 @@ PanelWindow {
     var frame = root.presentationFrame
     if (frame.phase === "closed" || frame.phase === "hidden") root.clearPresentationState()
     else if (root.surfacesSuppressed || !root.ownsOutput) {
-      root.openContentMotion.stop(); root.closeContentMotion.stop()
+      root.clearPresentationState()
     } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") {
       root.latchTransition()
     } else if (frame.phase === "open") {
@@ -191,7 +197,7 @@ PanelWindow {
     target: Motion
     function onEnabledChanged() {
       if (Motion.enabled) return
-      root.openContentMotion.stop(); root.closeContentMotion.stop()
+      openContentMotion.stop(); closeContentMotion.stop()
       root._metadataOpacity = root._stage === "closing" || root._stage === "switchClosing" ? 0 : 1
       root._contentOpacity = root._metadataOpacity
       root.scheduleEndpointCheck()
@@ -243,7 +249,7 @@ PanelWindow {
     open: root._popupOpen
     triggerMode: "passive"
     coordinateWithBar: false
-    inputEnabled: root.presentationFrame.phase === "open"
+    inputEnabled: root.ownsOutput && !root.surfacesSuppressed && root.presentationFrame.phase === "open"
       && root.incomingIdentity === root.identity(root._paintedSnapshot)
     attached: root.barAttached
     margin: root.barAttached ? 0 : Style.gapsOut
