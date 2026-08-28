@@ -211,7 +211,7 @@ function presentationFrame(state) { return { phase: state.phase, active: copy(st
 function assertInvariants(state) {
   var seen = {}, i, transient, validPhases = { closed: true, opening: true, open: true, switching: true, closing: true, hidden: true }
   if (!state || state.version !== 1 || !state.route || !state.visual || !state.countdown) throw new Error("invalid state")
-  if (!validPhases[state.phase]) throw new Error("invalid phase")
+  if (!Object.prototype.hasOwnProperty.call(validPhases, state.phase)) throw new Error("invalid phase")
   transient = isTransition(state.phase)
   for (i = 0; i < state.pending.length; i += 1) {
     if (!identityOf(state.pending[i]) || seen[identityOf(state.pending[i])] || identityOf(state.pending[i]) === identityOf(state.active) || state.retired[identityOf(state.pending[i])]) throw new Error("invalid pending identity")
