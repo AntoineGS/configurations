@@ -99,9 +99,6 @@ Item {
   property var silencedDirty: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
-  property string pendingRemovalIdentity: ""
-  property string pendingRemovalReason: ""
-  property string pendingPreemptionIdentity: ""
   property alias historyModel: historyModel
   ListModel { id: historyModel }
   property bool historyOpen: false
@@ -350,20 +347,6 @@ Item {
       if (NotificationLogic.popupIdentity(popupModel.get(i)) === wanted) return i
     }
     return -1
-  }
-
-  function enqueuePopup(snapshot) {
-    if (typeof snapshot.queuePriority !== "boolean")
-      snapshot.queuePriority = NotificationLogic.popupQueuePriority(snapshot, NotificationUrgency.Critical)
-    ensurePopupQueueOrder(snapshot)
-    var wasEmpty = popupModel.count === 0
-    var plan = NotificationLogic.popupArrivalPlan(
-      popupRows(), snapshot.urgency, NotificationUrgency.Critical, service.presentationState.hovered)
-    popupModel.insert(plan.insertIndex, snapshot)
-    if (!wasEmpty && (plan.preempt || plan.deferred)) {
-      if (pendingPreemptionIdentity === "")
-        pendingPreemptionIdentity = NotificationLogic.popupIdentity(snapshot)
-    }
   }
 
   Timer {

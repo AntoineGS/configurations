@@ -306,6 +306,22 @@ priority = step(priority, { type: "HOVER_CHANGED", hovered: true })
 priority = step(priority, { type: "ARRIVE", snapshot: snapshot("23000:23", 2, 0, 0) })
 priority = step(priority, { type: "HOVER_CHANGED", hovered: false }, s => assert.deepEqual(ids(s.pending), ["21000:21", "23000:23", "22000:22"]))
 
+let hoveredDismissal = openState(snapshot("22000:220", 1, 1000, 1000))
+hoveredDismissal = step(hoveredDismissal, { type: "ARRIVE", snapshot: snapshot("22100:221", 1, 1000, 1000) })
+hoveredDismissal = step(hoveredDismissal, { type: "HOVER_CHANGED", hovered: true })
+hoveredDismissal = step(hoveredDismissal, { type: "DISMISS", identity: "22000:220" }, s => {
+  assert.equal(s.phase, "switching")
+  assert.equal(s.hovered, false)
+})
+hoveredDismissal = step(hoveredDismissal, {
+  type: "TRANSITION_FINISHED", token: hoveredDismissal.visual.token,
+  kind: "switch", output: hoveredDismissal.visual.output,
+})
+assert.equal(hoveredDismissal.hovered, false)
+hoveredDismissal = step(hoveredDismissal, { type: "TICK", identity: "22100:221", now: 100 })
+const resumedTick = apply(hoveredDismissal, { type: "TICK", identity: "22100:221", now: 200 })
+assert.equal(resumedTick.state.countdown.remaining, 900, "next card timer resumes after hovered card dismissal")
+
 let openingBoundary = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 openingBoundary = step(openingBoundary, { type: "ARRIVE", snapshot: snapshot("23100:231", 1, 1000, 1000) })
 openingBoundary = step(openingBoundary, { type: "ARRIVE", snapshot: snapshot("23200:232", 2, 0, 0) }, s => {

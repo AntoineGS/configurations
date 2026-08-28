@@ -24,6 +24,7 @@ PanelWindow {
   readonly property string incomingIdentity: root.incoming ? String(root.incoming.identity || "") : ""
   readonly property string outgoingIdentity: root.outgoing ? String(root.outgoing.identity || "") : ""
   readonly property bool onOutput: root.presentationFrame.route
+    && root.presentationFrame.route.visible === true
     && String(root.presentationFrame.route.output || "") === String(root.output.name)
   readonly property bool hasCards: root.incoming !== null || root.outgoing !== null
   readonly property bool barAttached: root.barPosition === "top"
@@ -42,6 +43,8 @@ PanelWindow {
   signal transitionFinished(int token, string kind, string outputName)
 
   property real _progress: 1
+  property real _metadataOpacity: 1
+  property real _contentOpacity: 1
   property bool _incomingVisible: true
   property string _latchedKind: ""
   property int _latchedToken: 0
@@ -83,6 +86,7 @@ PanelWindow {
     var v = frame.visual || {}
     var kind = String(v.kind || "")
     if (!kind || !v.token || root._lastTransition === root.frameKey(frame)) return
+    openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     root._lastTransition = root.frameKey(frame)
     root._latchedKind = kind
     root._latchedToken = Number(v.token)
@@ -91,27 +95,44 @@ PanelWindow {
     root._latchedOutgoing = v.outgoing || null
     root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
     root._latchedOutgoingDeck = v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
-    root._incomingVisible = kind !== "close" && kind !== "switch"
-    root._progress = kind === "close" ? 1 : 0
+    root._incomingVisible = kind === "open"
+    root._progress = kind === "close" || kind === "switch" ? 1 : 0
+    root._metadataOpacity = kind === "close" || kind === "switch" ? 1 : 0
+    root._contentOpacity = kind === "close" || kind === "switch" ? 1 : 0
+    openMotion.token = root._latchedToken; openMotion.output = root._latchedOutput
+    closeMotion.token = root._latchedToken; closeMotion.output = root._latchedOutput
+    switchMotion.token = root._latchedToken; switchMotion.output = root._latchedOutput
     if (!Motion.enabled) {
       root._incomingVisible = kind !== "close"
       root._progress = 1
-      root.finishTransition()
+      root.scheduleCompletion(root._latchedToken, root._latchedKind, root._latchedOutput)
     } else if (kind === "open") openMotion.restart()
     else if (kind === "close") closeMotion.restart()
     else switchMotion.restart()
   }
   function finishTransition() {
-    if (!root._latchedKind || root._latchedToken <= 0) return
+    if (!root.onOutput || !root._latchedKind || root._latchedToken <= 0
+        || Number(root.presentationFrame.visual.token) !== root._latchedToken
+        || String(root.presentationFrame.visual.kind || "") !== root._latchedKind
+        || String(root.presentationFrame.visual.output || "") !== root._latchedOutput) return
     var token = root._latchedToken
     var kind = root._latchedKind
     var outputName = root._latchedOutput
     root._progress = 1
+    root._metadataOpacity = 1; root._contentOpacity = 1
     root._incomingVisible = kind !== "close"
     root._latchedKind = ""
     root._latchedToken = 0
     root._latchedOutput = ""
     root.transitionFinished(token, kind, outputName)
+  }
+  function completeAnimation(token, kind, outputName) {
+    if (Number(token) !== root._latchedToken || String(kind) !== root._latchedKind
+        || String(outputName) !== root._latchedOutput) return
+    root.finishTransition()
+  }
+  function scheduleCompletion(token, kind, outputName) {
+    Qt.callLater(function() { root.completeAnimation(token, kind, outputName) })
   }
   function stableDeck() {
     var frame = root.presentationFrame
@@ -127,12 +148,14 @@ PanelWindow {
 
   onPresentationFrameChanged: {
     var frame = root.presentationFrame
-    if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
+    if (!root.onOutput) {
+      openMotion.stop(); closeMotion.stop(); switchMotion.stop()
+    } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
     else if (frame.phase === "open") {
       root._latchedIncoming = frame.visual.incoming || frame.active
       root._latchedIncomingDeck = frame.visual.incomingDeck
       root._incomingVisible = true
-      root._progress = 1
+      root._progress = 1; root._metadataOpacity = 1; root._contentOpacity = 1
     }
   }
   onVisibleChanged: if (root.visible && root.presentationFrame) root.beginDeckSettle()
@@ -144,40 +167,90 @@ PanelWindow {
       if (Motion.enabled) return
       openMotion.stop(); closeMotion.stop(); switchMotion.stop(); deckSettle.stop()
       root._deckSettleOffset = 0
-      root.finishTransition()
+      root.scheduleCompletion(root._latchedToken, root._latchedKind, root._latchedOutput)
     }
   }
 
   NumberAnimation { id: deckSettle; target: root; property: "_deckSettleOffset"; to: 0; duration: 180; easing.type: PopupMotion.overlayContentOpenEasing }
-  NumberAnimation { id: openMotion; target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing; onFinished: root.finishTransition() }
-  NumberAnimation { id: closeMotion; target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing; onFinished: root.finishTransition() }
+  ParallelAnimation {
+    id: openMotion
+    property int token: 0
+    property string output: ""
+    onFinished: root.completeAnimation(openMotion.token, "open", openMotion.output)
+    NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
+    SequentialAnimation {
+      PauseAnimation { duration: PopupMotion.overlayHeaderOpenDelay }
+      NumberAnimation {
+        target: root; property: "_metadataOpacity"; to: 1
+        duration: PopupMotion.overlayHeaderOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
+      }
+    }
+    SequentialAnimation {
+      PauseAnimation { duration: PopupMotion.overlayBodyOpenDelay }
+      NumberAnimation {
+        target: root; property: "_contentOpacity"; to: 1
+        duration: PopupMotion.overlayBodyOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
+      }
+    }
+  }
+  ParallelAnimation {
+    id: closeMotion
+    property int token: 0
+    property string output: ""
+    onFinished: root.completeAnimation(closeMotion.token, "close", closeMotion.output)
+    NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+    NumberAnimation { target: root; property: "_metadataOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+    NumberAnimation { target: root; property: "_contentOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+  }
   SequentialAnimation {
     id: switchMotion
-    NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+    property int token: 0
+    property string output: ""
+    ParallelAnimation {
+      NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+      NumberAnimation { target: root; property: "_metadataOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+      NumberAnimation { target: root; property: "_contentOpacity"; to: 0; duration: 320; easing.type: PopupMotion.overlayContentCloseEasing }
+    }
     ScriptAction { script: { root._incomingVisible = true; root._progress = 0 } }
-    NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
-    ScriptAction { script: root.finishTransition() }
+    ParallelAnimation {
+      NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
+      SequentialAnimation {
+        PauseAnimation { duration: PopupMotion.overlayHeaderOpenDelay }
+        NumberAnimation {
+          target: root; property: "_metadataOpacity"; to: 1
+          duration: PopupMotion.overlayHeaderOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
+        }
+      }
+      SequentialAnimation {
+        PauseAnimation { duration: PopupMotion.overlayBodyOpenDelay }
+        NumberAnimation {
+          target: root; property: "_contentOpacity"; to: 1
+          duration: PopupMotion.overlayBodyOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing
+        }
+      }
+    }
+    ScriptAction { script: root.completeAnimation(switchMotion.token, "switch", switchMotion.output) }
   }
 
   Rectangle {
     id: thirdDeck
     property var deck: root.stableDeck()
-    property var snapshot: deck.snapshots && deck.snapshots.length > 2 ? deck.snapshots[2] : null
+    property var snapshot: deck.snapshots && deck.snapshots.length > 1 ? deck.snapshots[1] : null
     visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
     x: cardFrame.x + root.shoulderRadius + Style.space(16)
     y: cardFrame.y + Style.space(18) + root._deckSettleOffset
-    width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), incomingCard.implicitHeight)
+    width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
     color: root.urgencyColor(snapshot); opacity: 1; z: -2
   }
   Rectangle {
     id: nextDeck
     property var deck: root.stableDeck()
-    property var snapshot: deck.snapshots && deck.snapshots.length > 1 ? deck.snapshots[1] : null
+    property var snapshot: deck.snapshots && deck.snapshots.length > 0 ? deck.snapshots[0] : null
     visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
     x: cardFrame.x + root.shoulderRadius + Style.space(8)
     y: cardFrame.y + Style.space(9) + root._deckSettleOffset
-    width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), incomingCard.implicitHeight)
+    width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
     color: root.urgencyColor(snapshot); opacity: 1; z: -1
   }
@@ -197,20 +270,30 @@ PanelWindow {
     id: cardFrame
     x: root.width - Style.gapsOut - width; y: root.barAttached ? root.barSize : Style.gapsOut
     width: root.bodyWidth + (root.barAttached ? root.shoulderRadius * 2 : 0)
-    height: Math.max(outgoingCard.height, incomingCard.height) + (root.barAttached ? root.shoulderRadius : 0); z: 1
+    property real deckCardHeight: root.presentationFrame.phase === "switching" && !root._incomingVisible
+      ? (outgoingLoader.item ? outgoingLoader.item.implicitHeight : 0)
+      : (incomingLoader.item ? incomingLoader.item.implicitHeight : 0)
+    height: Math.max(outgoingLoader.item ? outgoingLoader.item.height : 0, incomingLoader.item ? incomingLoader.item.height : 0)
+      + (root.barAttached ? root.shoulderRadius : 0); z: 1
 
     Item {
       id: outgoingSlot
       x: 0; width: parent.width; height: parent.height
-      visible: root._latchedOutgoing !== null && (root.presentationFrame.phase === "closing" || root.presentationFrame.phase === "switching")
-      opacity: root.presentationFrame.phase === "switching" ? root._progress : (1 - root._progress)
+      visible: root.onOutput && root._latchedOutgoing !== null
+        && (root.presentationFrame.phase === "closing" || root.presentationFrame.phase === "switching")
+      opacity: root._progress
       transform: Scale { origin.x: outgoingSlot.width / 2; origin.y: 0; yScale: opacity }
-      NotificationCard {
-        id: outgoingCard; x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
-        snapshot: root._latchedOutgoing; interactive: false; fontFamily: root.fontFamily
-        attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
-        gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
-        metadataOpacity: 1; contentOpacity: 1; countdown: ({ identity: "", fraction: 1, visible: false })
+      Loader {
+        id: outgoingLoader
+        active: root._latchedOutgoing !== null
+        sourceComponent: NotificationCard {
+          x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
+          snapshot: root._latchedOutgoing; interactive: false; fontFamily: root.fontFamily
+          attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+          gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+          metadataOpacity: root._metadataOpacity; contentOpacity: root._contentOpacity
+          countdown: ({ identity: "", fraction: 1, visible: false })
+        }
       }
       BarAttachedShoulders {
         x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
@@ -220,20 +303,25 @@ PanelWindow {
     Item {
       id: incomingSlot
       x: 0; width: parent.width; height: parent.height
-      visible: root._latchedIncoming !== null && root._incomingVisible
+      visible: root.onOutput && root._latchedIncoming !== null && root._incomingVisible
       opacity: root.presentationFrame.phase === "opening" || root.presentationFrame.phase === "switching" ? root._progress : 1
       transform: Scale { origin.x: incomingSlot.width / 2; origin.y: 0; yScale: opacity }
-      NotificationCard {
-        id: incomingCard; x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
-        snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
-          && root.incomingIdentity === identity(root._latchedIncoming)
-        fontFamily: root.fontFamily; attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
-        gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
-        countdown: root.presentationFrame.countdown
-        onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
-        onCloseRequested: root.dismissRequested(identity(root._latchedIncoming))
-        onCardClicked: root.cardClicked(identity(root._latchedIncoming))
-        onActionClicked: function(identifier) { root.actionClicked(identity(root._latchedIncoming), identifier) }
+      Loader {
+        id: incomingLoader
+        active: root._latchedIncoming !== null
+        sourceComponent: NotificationCard {
+          x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
+          snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
+            && root.incomingIdentity === identity(root._latchedIncoming)
+          fontFamily: root.fontFamily; attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+          gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+          metadataOpacity: root._metadataOpacity; contentOpacity: root._contentOpacity
+          countdown: root.presentationFrame.countdown
+          onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
+          onCloseRequested: root.dismissRequested(identity(root._latchedIncoming))
+          onCardClicked: root.cardClicked(identity(root._latchedIncoming))
+          onActionClicked: function(identifier) { root.actionClicked(identity(root._latchedIncoming), identifier) }
+        }
       }
       BarAttachedShoulders {
         x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
@@ -243,7 +331,8 @@ PanelWindow {
     }
     Item {
       id: stableInputRegion
-      x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth; height: incomingCard.height
+      x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth
+      height: incomingLoader.item ? incomingLoader.item.height : 0
       visible: root.onOutput && root.presentationFrame.phase === "open" && root.incoming !== null
     }
   }

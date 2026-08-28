@@ -44,6 +44,7 @@ function transition(state, phase, outgoing, incoming, kind, effects, outgoingRow
   if (!outgoingRows) outgoingRows = outgoing ? state.pending : []
   if (!incomingRows) incomingRows = state.pending
   cancel(state, effects)
+  state.hovered = false
   token = state.nextToken
   state.nextToken += 1
   state.phase = phase
@@ -87,6 +88,8 @@ function startCountdown(state) {
 function removeActive(state, effects, senderType, reason) {
   var old = state.active, displayed = state.visual.incoming || old, next, beforePending = state.pending.slice()
   if (!old) return
+  state.hovered = false
+  state.countdown.lastNow = 0
   state.retired[identityOf(old)] = true
   if (reason !== "closed" && Number(old.originalId) >= 0)
     effects.push({ type: senderType || "senderDismiss", identity: identityOf(old), snapshot: copy(old), reason: reason || "dismiss" })
@@ -213,7 +216,7 @@ function reduce(input, event) {
        if (!validRoute(event)) break
        if (!event.visible) {
          if (!state.route.visible || state.phase === "hidden") break
-         cancel(state, effects); state.route = { visible: false, output: "" }; clearVisual(state); state.phase = "hidden"; state.countdown.visible = false
+          cancel(state, effects); state.hovered = false; state.route = { visible: false, output: "" }; clearVisual(state); state.phase = "hidden"; state.countdown.visible = false
        } else {
          var routeChanged = !state.route.visible || state.route.output !== event.output
          state.route = { visible: true, output: event.output || "" }
