@@ -916,9 +916,8 @@ Item {
     if (shouldDismiss) {
       actionClosingGenerations[entry.originalId] = entry.timestamp
       actionClosingUntil[entry.originalId] = Date.now() + actionClosingTimeoutMs
-      actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
-        type: "begin", originalId: entry.originalId, notification: ref, generation: entry.timestamp
-      }).state
+      actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState,
+        NotificationLogic.actionCloseBeginEvent(entry.originalId, ref, entry.timestamp, identity)).state
     }
     try {
       action.invoke()
