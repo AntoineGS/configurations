@@ -294,13 +294,6 @@ Item {
       else if (effect.type === "senderDismiss" || effect.type === "senderExpire") {
         var ref = findLiveReference(effect.identity, effect.snapshot)
         if (!ref) continue
-        actionClosingGenerations[effect.snapshot.originalId] = effect.snapshot.timestamp
-        actionClosingUntil[effect.snapshot.originalId] = Date.now() + actionClosingTimeoutMs
-        if (!actionCloseState.guard || actionCloseState.guard.notification !== ref
-            || actionCloseState.guard.generation !== effect.snapshot.timestamp)
-          actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
-            type: "begin", notification: ref, generation: effect.snapshot.timestamp
-          }).state
         try {
           if (effect.type === "senderExpire" && typeof ref.expire === "function") ref.expire()
           else if (typeof ref.dismiss === "function") ref.dismiss()
@@ -401,7 +394,7 @@ Item {
       for (var key in service.actionClosingUntil) {
         if (Object.prototype.hasOwnProperty.call(service.actionClosingUntil, key)
             && Number(service.actionClosingUntil[key]) <= now) {
-          var guard = service.actionCloseState.guard
+          var guard = service.actionCloseState.guards[String(key)]
           var generation = service.actionClosingGenerations[key]
           if (guard && guard.notification && guard.generation === generation) {
             service.actionCloseState = NotificationLogic.actionCloseTransition(
@@ -828,9 +821,14 @@ Item {
           type: "complete", notification: ref, generation: entry.timestamp, success: false
         })
         actionCloseState = failedClose.state
-        delete actionClosingGenerations[entry.originalId]
-        delete actionClosingUntil[entry.originalId]
         if (failedClose.flush) service.handleClosedNotification(ref, entry.originalId)
+        else {
+          actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
+            type: "clear", originalId: entry.originalId, notification: ref, generation: entry.timestamp
+          }).state
+          delete actionClosingGenerations[entry.originalId]
+          delete actionClosingUntil[entry.originalId]
+        }
       }
       if (historyEntry) service.rememberFailedHistoryAction(historyEntry)
       console.warn("notifications: action failed", error)
