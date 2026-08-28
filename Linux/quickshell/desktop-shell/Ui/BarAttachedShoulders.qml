@@ -14,6 +14,8 @@ Item {
   property real revealProgress: 1
   readonly property bool hovered: leftPointerArea.containsMouse || rightPointerArea.containsMouse
 
+  signal clicked(int button)
+
   width: root.bodyWidth + root.radius * 2
   height: root.radius
   opacity: root.revealProgress
@@ -78,7 +80,7 @@ Item {
     height: root.radius
     acceptedButtons: Qt.AllButtons
     hoverEnabled: true
-    onClicked: {}
+    onClicked: mouse => root.clicked(mouse.button)
   }
 
   MouseArea {
@@ -88,6 +90,6 @@ Item {
     height: root.radius
     acceptedButtons: Qt.AllButtons
     hoverEnabled: true
-    onClicked: {}
+    onClicked: mouse => root.clicked(mouse.button)
   }
 }
