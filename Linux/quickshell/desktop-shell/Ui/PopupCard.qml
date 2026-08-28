@@ -23,7 +23,21 @@ PopupWindow {
   property bool centerOnBar: false
   // "click" — uses HyprlandFocusGrab so clicking outside dismisses the popup.
   // "hover" — passive overlay; the owning widget controls open via hover.
+  // "passive" — passive overlay without hover-specific behavior.
   property string triggerMode: "click"
+  property bool attached: true
+  property bool coordinateWithBar: true
+  property bool inputEnabled: root.open
+  property color surfaceColor: Color.barPanels.background
+  property Gradient surfaceGradient: null
+  property color shoulderGradientStartColor: root.surfaceColor
+  property color shoulderGradientEndColor: root.surfaceColor
+  property real shoulderGradientExtent: shoulders.radius
+
+  readonly property real revealProgress: card.revealProgress
+
+  signal revealFinished()
+  signal concealFinished()
 
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
@@ -87,12 +101,12 @@ PopupWindow {
   implicitWidth: contentWidth + elevationInset * 2
   implicitHeight: contentHeight + elevationInset + shadowBottomPadding
   mask: Region {
-    Region { item: root.open ? card : null }
-    Region { item: root.open ? shoulders : null }
+    Region { item: root.inputEnabled ? card : null }
+    Region { item: root.inputEnabled && root.attached ? shoulders : null }
   }
 
   onOpenChanged: {
-    if (!bar) return
+    if (!bar || !root.coordinateWithBar) return
     if (open) bar.requestPopout(coordinatorKey)
     else if (bar.activePopout === coordinatorKey) bar.releasePopout(coordinatorKey)
   }
@@ -102,7 +116,7 @@ PopupWindow {
   // grab and we close the popup. Skipped for hover-mode popups so the cursor
   // can move freely between the trigger and the popup.
   HyprlandFocusGrab {
-    active: root.open && root.triggerMode === "click"
+    active: root.inputEnabled && root.triggerMode === "click"
     windows: root.anchorWindow ? [root, root.anchorWindow] : [root]
     onCleared: root.close()
   }
@@ -186,12 +200,13 @@ PopupWindow {
       x: root.shadowPadding
       width: root.contentWidth
       height: root.contentHeight
-      color: Color.barPanels.background
+      color: root.surfaceColor
+      gradient: root.surfaceGradient
       borderSpec: root.borderSpec
       padding: root.padding
       radius: Style.popupOuterRadius
-      topLeftRadius: 0
-      topRightRadius: 0
+      topLeftRadius: root.attached ? 0 : Style.popupOuterRadius
+      topRightRadius: root.attached ? 0 : Style.popupOuterRadius
       bottomLeftRadius: Style.popupOuterRadius
       bottomRightRadius: Style.popupOuterRadius
       revealed: root.open
@@ -203,6 +218,8 @@ PopupWindow {
       concealedYScale: 0
       scaleOriginX: width / 2
       scaleOriginY: 0
+      onRevealFinished: root.revealFinished()
+      onConcealFinished: root.concealFinished()
 
       Item {
         id: contentHolder
@@ -223,6 +240,10 @@ PopupWindow {
       z: 1
       bodyWidth: card.width
       surfaceColor: card.color
+      visible: root.attached
+      gradientStartColor: root.shoulderGradientStartColor
+      gradientEndColor: root.shoulderGradientEndColor
+      gradientExtent: root.shoulderGradientExtent
       revealProgress: card.revealProgress
     }
   }
