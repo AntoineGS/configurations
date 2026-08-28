@@ -17,6 +17,7 @@ PanelWindow {
   property string barPosition: "top"
   property real barSize: Style.bar.sizeHorizontal
   property string cueGlyph: ""
+  property string cueRouteKey: ""
 
   QtObject {
     id: detachedBarPosition
@@ -39,6 +40,7 @@ PanelWindow {
   signal actionClicked(string identity, string identifier)
   signal hoverChanged(string identity, bool hovered)
   signal transitionFinished(int token, string kind, string outputName)
+  signal cueDismissRequested(string routeKey)
 
   property var _paintedSnapshot: null
   property bool _popupOpen: false
@@ -55,7 +57,7 @@ PanelWindow {
   property string _lastTransition: ""
 
   screen: root.output
-  visible: !root.surfacesSuppressed && (root.cueVisible || (root.ownsOutput
+  visible: !root.surfacesSuppressed && (root.cueVisible || routeCuePopup.visible || (root.ownsOutput
     && root._paintedSnapshot !== null && root.presentationFrame.phase !== "closed"
     && root.presentationFrame.phase !== "hidden"))
   anchors { top: true; bottom: true; left: true; right: true }
@@ -246,6 +248,14 @@ PanelWindow {
     height: root.barAttached ? root.barSize : 0
   }
 
+  Item {
+    id: cueAnchorItem
+    x: popupAnchorItem.x
+    y: 0
+    width: 1
+    height: 0
+  }
+
   PopupCard {
     id: notificationPopup
     anchorItem: popupAnchorItem
@@ -304,19 +314,38 @@ PanelWindow {
     }
   }
 
-  ElevatedSurface {
-    id: cueSurface
-    visible: !root.surfacesSuppressed && root.cueVisible
-    revealed: !root.surfacesSuppressed && root.cueVisible
-    entranceX: Style.space(12); concealedScale: 1.0
-    motionDuration: 160; shadowBlurMax: 48; shadowBlurAmount: 1.0; shadowOpacityAmount: 0.78; shadowOffsetY: 14
-    shadowScaleAmount: 1.03; effectPaddingRect: Qt.rect(-8, -8, 16, 30); anchors.right: parent.right; anchors.top: parent.top
-    anchors.topMargin: (root.barPosition === "top" && root.shell && root.shell.barVisible !== false
-      ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
-    anchors.rightMargin: (root.barPosition === "right" && root.shell && root.shell.barVisible !== false
-      ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
-    implicitWidth: Style.space(250); implicitHeight: Style.space(48); radius: 0
-    color: Color.notifications.background; borderSpec: Border.none()
-    Text { anchors.centerIn: parent; text: root.cueGlyph; color: Color.notifications.text; font.family: Style.font.family; font.pixelSize: Style.font.display }
+  PopupCard {
+    id: routeCuePopup
+    anchorItem: cueAnchorItem
+    owner: root
+    bar: detachedBarPosition
+    open: !root.surfacesSuppressed && root.cueVisible
+    triggerMode: "passive"
+    coordinateWithBar: false
+    inputEnabled: open
+    attached: true
+    margin: 0
+    padding: 0
+    contentWidth: root.bodyWidth
+    contentHeight: Style.space(48)
+    borderSpec: Border.none()
+    surfaceColor: Color.notifications.background
+    onShoulderClicked: button => {
+      if (button === Qt.LeftButton) root.cueDismissRequested(root.cueRouteKey)
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      acceptedButtons: Qt.LeftButton
+      onClicked: root.cueDismissRequested(root.cueRouteKey)
+    }
+
+    Text {
+      anchors.centerIn: parent
+      text: root.cueGlyph
+      color: Color.notifications.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.display
+    }
   }
 }
