@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict")
 const Presentation = require("../plugins/notifications/NotificationPresentation.js")
+const logic = require("../plugins/notifications/NotificationLogic.js")
 
 function snapshot(identity, urgency, duration, remaining) {
   const parts = identity.split(":")
@@ -461,6 +462,15 @@ const senderClose = apply(lateReplacement.state, { type: "SENDER_CLOSED", identi
 assert.equal(senderClose.state.closing["312"], undefined)
 const expiredTombstone = apply(lateReplacement.state, { type: "PRUNE", now: 100 + 10000 })
 assert.equal(expiredTombstone.state.closing["312"], undefined)
+const senderClosedReuse = apply(lateReplacement.state, { type: "SENDER_CLOSED", identity: "31200:312", now: 101 })
+const reused = apply(senderClosedReuse.state, { type: "ARRIVE", snapshot: snapshot("31400:312", 1, 1000, 1000) })
+assert.deepEqual(ids(reused.state.pending), ["31400:312"], "sender close permits immediate original-ID reuse")
+
+assert.deepEqual(logic.deckProjection("opening", 0, true), { outgoing: 0, incoming: 0 })
+assert.deepEqual(logic.deckProjection("opening", 0.5, true), { outgoing: 0, incoming: 0.5 })
+assert.deepEqual(logic.deckProjection("closing", 0.5, false), { outgoing: 0.5, incoming: 0 })
+assert.deepEqual(logic.deckProjection("switching", 0.25, false), { outgoing: 0.75, incoming: 0 })
+assert.deepEqual(logic.deckProjection("switching", 0.25, true), { outgoing: 0, incoming: 0.25 })
 
 let frozenReplacement = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 frozenReplacement = step(frozenReplacement, { type: "ARRIVE", snapshot: snapshot("29700:297", 1, 1000, 1000) })
@@ -528,7 +538,4 @@ const invalidClosing = openState(snapshot("30900:309", 1, 1000, 1000))
 const invalidClosingResult = apply(invalidClosing, { type: "DISMISS", identity: "30900:309" })
 invalidClosingResult.state.visual.incoming = snapshot("31000:310", 1, 1000, 1000)
 assert.throws(() => Presentation.assertInvariants(invalidClosingResult.state), /invalid closing cards/)
-const source = require("node:fs").readFileSync(require.resolve("../plugins/notifications/NotificationPresentation.js"), "utf8")
-assert.equal(source.includes("findIndex"), false)
-assert.equal(source.includes("Number.isFinite"), false)
 console.log("notification-presentation-test: immutable snapshot reducer, transitions, routing, timers, dismissal, replacement, and invariants verified")

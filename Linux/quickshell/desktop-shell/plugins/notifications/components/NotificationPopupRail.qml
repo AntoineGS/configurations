@@ -3,12 +3,14 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "../NotificationLogic.js" as NotificationLogic
 
 PanelWindow {
   id: root
 
   required property var output
   required property var presentationFrame
+  property bool surfacesSuppressed: false
   property var shell: null
   property bool cueVisible: false
   property string fontFamily: Style.font.family
@@ -61,11 +63,17 @@ PanelWindow {
   property string _lastTransition: ""
   property real _deckSettleOffset: 0
   readonly property real deckProgress: root.presentationFrame.phase === "closing"
-    ? root._progress : (root.presentationFrame.phase === "switching" ? root._progress : 1)
+    ? root._progress : (root.presentationFrame.phase === "opening" || root.presentationFrame.phase === "switching"
+      ? root._progress : 1)
+  readonly property var deckProjection: NotificationLogic.deckProjection(
+    root.presentationFrame.phase, root._progress, root._incomingVisible)
+  readonly property real deckOpacity: root.presentationFrame.phase === "opening"
+    || (root.presentationFrame.phase === "switching" && root._incomingVisible)
+    ? root.deckProjection.incoming : root.deckProjection.outgoing
 
   screen: root.output
-  visible: root.cueVisible || (root.onOutput && root.hasCards && root.presentationFrame.phase !== "closed"
-    && root.presentationFrame.phase !== "hidden")
+  visible: !root.surfacesSuppressed && (root.cueVisible || (root.onOutput && root.hasCards
+    && root.presentationFrame.phase !== "closed" && root.presentationFrame.phase !== "hidden"))
   anchors { top: true; bottom: true; left: true; right: true }
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
@@ -89,6 +97,7 @@ PanelWindow {
       + ":" + String(v.output || "") + ":" + identity(v.incoming) + ":" + identity(v.outgoing)
   }
   function latchTransition() {
+    if (root.surfacesSuppressed) return
     var frame = root.presentationFrame
     var v = frame.visual || {}
     var kind = String(v.kind || "")
@@ -133,6 +142,7 @@ PanelWindow {
     else switchMotion.restart()
   }
   function finishTransition() {
+    if (root.surfacesSuppressed) return
     if (!root.onOutput || !root._latchedKind || root._latchedToken <= 0
         || Number(root.presentationFrame.visual.token) !== root._latchedToken
         || String(root.presentationFrame.visual.kind || "") !== root._latchedKind
@@ -172,7 +182,7 @@ PanelWindow {
 
   onPresentationFrameChanged: {
     var frame = root.presentationFrame
-    if (!root.onOutput) {
+    if (root.surfacesSuppressed || !root.onOutput) {
       openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
     else if (frame.phase === "open") {
@@ -262,34 +272,34 @@ PanelWindow {
     id: thirdDeck
     property var deck: root.stableDeck()
     property var snapshot: deck.snapshots && deck.snapshots.length > 1 ? deck.snapshots[1] : null
-    visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
+    visible: !root.surfacesSuppressed && root.onOutput && root.hasCards && snapshot !== null
     x: cardFrame.x + root.shoulderRadius + Style.space(16)
     y: cardFrame.y + Style.space(18) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(snapshot); opacity: root.deckProgress; z: -2
+    color: root.urgencyColor(snapshot); opacity: root.deckOpacity; z: -2
   }
   Rectangle {
     id: nextDeck
     property var deck: root.stableDeck()
     property var snapshot: deck.snapshots && deck.snapshots.length > 0 ? deck.snapshots[0] : null
-    visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
+    visible: !root.surfacesSuppressed && root.onOutput && root.hasCards && snapshot !== null
     x: cardFrame.x + root.shoulderRadius + Style.space(8)
     y: cardFrame.y + Style.space(9) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(snapshot); opacity: root.deckProgress; z: -1
+    color: root.urgencyColor(snapshot); opacity: root.deckOpacity; z: -1
   }
   Rectangle {
     visible: root.onOutput && root.hasCards && root.stableDeck().criticalPending && root.presentationFrame.hovered
-    opacity: root.deckProgress
+    opacity: root.deckOpacity
     x: cardFrame.x + cardFrame.width - Style.space(10); y: cardFrame.y - Style.space(8)
     width: Style.space(6); height: width; radius: width / 2; color: Color.notifications.critical
   }
   Text {
     visible: root.onOutput && root.hasCards && root.stableDeck().queuedCount > 0
     x: cardFrame.x + cardFrame.width - Style.space(34); y: cardFrame.y + Style.space(5)
-    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckProgress
+    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckOpacity
     font.pixelSize: Style.font.caption; font.bold: true; z: 2
   }
 
@@ -313,7 +323,7 @@ PanelWindow {
       transform: Scale { origin.x: outgoingSlot.width / 2; origin.y: 0; yScale: opacity }
       Loader {
         id: outgoingLoader
-        active: root._latchedOutgoing !== null
+        active: !root.surfacesSuppressed && root._latchedOutgoing !== null
         sourceComponent: NotificationCard {
           x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
           snapshot: root._latchedOutgoing; interactive: false; fontFamily: root.fontFamily
@@ -336,7 +346,7 @@ PanelWindow {
       transform: Scale { origin.x: incomingSlot.width / 2; origin.y: 0; yScale: opacity }
       Loader {
         id: incomingLoader
-        active: root._latchedIncoming !== null
+     active: !root.surfacesSuppressed && root._latchedIncoming !== null
         sourceComponent: NotificationCard {
           x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
           snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
@@ -361,13 +371,14 @@ PanelWindow {
       id: stableInputRegion
       x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth
       height: incomingLoader.item ? incomingLoader.item.height : 0
-      visible: root.onOutput && root.presentationFrame.phase === "open" && root.incoming !== null
+       visible: !root.surfacesSuppressed && root.onOutput && root.presentationFrame.phase === "open" && root.incoming !== null
     }
   }
 
   ElevatedSurface {
     id: cueSurface
-    visible: root.cueVisible; revealed: root.cueVisible; entranceX: Style.space(12); concealedScale: 1.0
+     visible: !root.surfacesSuppressed && root.cueVisible
+     revealed: !root.surfacesSuppressed && root.cueVisible; entranceX: Style.space(12); concealedScale: 1.0
     motionDuration: 160; shadowBlurMax: 48; shadowBlurAmount: 1.0; shadowOpacityAmount: 0.78; shadowOffsetY: 14
     shadowScaleAmount: 1.03; effectPaddingRect: Qt.rect(-8, -8, 16, 30); anchors.right: parent.right; anchors.top: parent.top
     anchors.topMargin: (root.barPosition === "top" && root.shell && root.shell.barVisible !== false

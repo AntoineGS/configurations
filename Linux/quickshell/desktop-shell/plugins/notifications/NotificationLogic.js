@@ -78,6 +78,13 @@ function cueGlyph(direction) {
   default: return "•"
   }
 }
+function deckProjection(phase, progress, incomingVisible) {
+  var value = Math.max(0, Math.min(1, typeof progress === "number" && isFinite(progress) ? progress : 0))
+  if (phase === "opening") return { outgoing: 0, incoming: value }
+  if (phase === "closing") return { outgoing: value, incoming: 0 }
+  if (phase === "switching") return incomingVisible ? { outgoing: 0, incoming: value } : { outgoing: 1 - value, incoming: 0 }
+  return { outgoing: 0, incoming: 1 }
+}
 
 function isActionList(value) {
   return !!value && typeof value.length === "number"
@@ -864,6 +871,7 @@ if (typeof module !== "undefined") {
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
+    deckProjection: deckProjection,
     actionMetadata: actionMetadata,
     actionOutcome: actionOutcome,
     normalizedExpireTimeout: normalizedExpireTimeout,

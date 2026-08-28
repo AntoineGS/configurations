@@ -237,6 +237,10 @@ Item {
     service.presentationFrame = Presentation.presentationFrame(result.state)
     syncPresentationModel()
     applyPresentationEffects(result.effects)
+    if (service.testSurfaceSuppressed && (result.state.phase === "opening"
+        || result.state.phase === "switching" || result.state.phase === "closing"))
+      service.dispatchPresentation({ type: "TRANSITION_FINISHED", token: result.state.visual.token,
+        kind: result.state.visual.kind, output: result.state.visual.output })
   }
 
   function findLiveReference(identity, snapshot) {
@@ -627,8 +631,11 @@ Item {
 
   function handleClosedNotification(notification, originalId) {
     if (service.actionClosingGenerations[originalId] !== undefined) {
+      var closing = service.presentationState.closing[String(originalId)]
       delete service.actionClosingGenerations[originalId]
       delete service.actionClosingUntil[originalId]
+      if (closing && closing.identity)
+        service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closing.identity, now: Date.now() })
       return
     }
     if (service.liveRefs[originalId] !== notification) return
@@ -2078,6 +2085,7 @@ Item {
       required property var modelData
       output: modelData
       presentationFrame: service.presentationFrame
+      surfacesSuppressed: service.testSurfaceSuppressed
       shell: service.shell
       cueVisible: service.cueVisibleOn(modelData)
       fontFamily: service.shell && service.shell.bar

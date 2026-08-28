@@ -9,6 +9,12 @@ if ! command -v quickshell >/dev/null 2>&1; then
 fi
 
 tmp_dir=$(mktemp -d)
+mkdir -p -- "$tmp_dir/runtime"
+host_runtime_dir=${XDG_RUNTIME_DIR:-}
+if [[ -n ${WAYLAND_DISPLAY:-} && -S "$host_runtime_dir/$WAYLAND_DISPLAY" ]]; then
+  ln -s -- "$host_runtime_dir/$WAYLAND_DISPLAY" "$tmp_dir/runtime/$WAYLAND_DISPLAY"
+fi
+export XDG_RUNTIME_DIR="$tmp_dir/runtime"
 shell_pid=""
 trap '[[ -z $shell_pid ]] || kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$tmp_dir"' EXIT
 
@@ -18,6 +24,7 @@ cp -a -- "$shell_dir" "$isolated_shell_dir"
 env \
   HOME="$tmp_dir/home" \
   XDG_CONFIG_HOME="$tmp_dir/home/.config" \
+  XDG_RUNTIME_DIR="$tmp_dir/runtime" \
   DESKTOP_SHELL_TEST_NO_SURFACES=1 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0 \
   quickshell -n -p "$isolated_shell_dir" >"$tmp_dir/quickshell.log" 2>&1 &
