@@ -77,7 +77,6 @@ Item {
   property real presentationWatchdogToken: 0
   property string presentationWatchdogKind: ""
   property string presentationWatchdogOutput: ""
-  property var railDiagnostics: ({})
 
   readonly property string barPosition: shell && shell.barConfig
     ? String(shell.barConfig.position || "top") : "top"
@@ -2105,20 +2104,6 @@ Item {
     return "pong"
   }
 
-  function updateRailDiagnostics(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity) {
-    var name = String(outputName || "")
-    if (!name) return
-    var diagnostics = Object.assign({}, service.railDiagnostics || ({}))
-    diagnostics[name] = {
-      ownsOutput: ownsOutput === true,
-      hasCards: hasCards === true,
-      windowVisible: windowVisible === true,
-      phase: String(phase || ""),
-      incomingIdentity: String(incomingIdentity || "")
-    }
-    service.railDiagnostics = diagnostics
-  }
-
   function status() {
     var frame = service.presentationFrame
     return JSON.stringify({
@@ -2175,7 +2160,6 @@ Item {
       routeCandidateGeneration: service.routeMetadataGeneration,
       routeTransitionCount: service.routeTransitionCount,
       routeInvalidationCount: service.routeInvalidationCount,
-      railDiagnostics: service.railDiagnostics,
       routeTransitionLog: service.routeTransitionLog
     })
   }
@@ -2280,9 +2264,6 @@ Item {
       onTransitionFinished: function(token, kind, outputName) {
         var event = { type: "TRANSITION_FINISHED", token: token, kind: kind, output: outputName }
         service.dispatchPresentation(event)
-      }
-      onStateObserved: function(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity) {
-        service.updateRailDiagnostics(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity)
       }
     }
   }

@@ -41,8 +41,6 @@ PanelWindow {
   signal actionClicked(string identity, string identifier)
   signal hoverChanged(string identity, bool hovered)
   signal transitionFinished(int token, string kind, string outputName)
-  signal stateObserved(string outputName, bool ownsOutput, bool hasCards, bool windowVisible,
-    string phase, string incomingIdentity)
 
   property real _progress: 1
   property real _metadataOpacity: 1
@@ -57,7 +55,6 @@ PanelWindow {
   property var _latchedOutgoingDeck: null
   property var _paintedSnapshot: null
   property var _paintedDeck: null
-  property bool _stateObservationPending: false
   property real _animationStartProgress: 0
   property real _animationStartMetadata: 0
   property real _animationStartContent: 0
@@ -187,19 +184,21 @@ PanelWindow {
     deckSettle.restart()
   }
 
-  function scheduleStateObservation() {
-    if (root._stateObservationPending) return
-    root._stateObservationPending = true
-    Qt.callLater(function() {
-      root._stateObservationPending = false
-      root.stateObserved(String(root.output && root.output.name || ""), root.ownsOutput, root.hasCards,
-        root.visible, String(root.presentationFrame.phase || ""), root.incomingIdentity)
-    })
+  function clearPresentationState() {
+    openMotion.stop(); closeMotion.stop(); switchMotion.stop(); deckSettle.stop()
+    root._latchedKind = ""; root._latchedToken = 0; root._latchedOutput = ""
+    root._latchedIncoming = null; root._latchedOutgoing = null
+    root._latchedIncomingDeck = null; root._latchedOutgoingDeck = null
+    root._paintedSnapshot = null; root._paintedDeck = null
+    root._incomingVisible = true; root._progress = 1
+    root._metadataOpacity = 1; root._contentOpacity = 1; root._deckSettleOffset = 0
+    root._lastTransition = ""
   }
-
   function syncPresentationFrame() {
     var frame = root.presentationFrame
-    if (root.surfacesSuppressed || !root.ownsOutput) {
+    if (frame.phase === "closed" || frame.phase === "hidden") {
+      root.clearPresentationState()
+    } else if (root.surfacesSuppressed || !root.ownsOutput) {
       openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
     else if (frame.phase === "open") {
@@ -211,14 +210,11 @@ PanelWindow {
       root._progress = 1; root._metadataOpacity = 1; root._contentOpacity = 1
     }
   }
-  onPresentationFrameChanged: { root.syncPresentationFrame(); root.scheduleStateObservation() }
+  onPresentationFrameChanged: root.syncPresentationFrame()
   onVisibleChanged: {
     if (root.visible && root.presentationFrame) root.beginDeckSettle()
-    root.scheduleStateObservation()
   }
-  onOwnsOutputChanged: root.scheduleStateObservation()
-  onHasCardsChanged: root.scheduleStateObservation()
-  Component.onCompleted: { root.syncPresentationFrame(); root.scheduleStateObservation() }
+  Component.onCompleted: root.syncPresentationFrame()
 
   Connections {
     target: Motion
@@ -393,12 +389,14 @@ PanelWindow {
         onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
       }
     }
-    Item {
-      id: stableInputRegion
-      x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth
-      height: incomingLoader.item ? incomingLoader.item.height : 0
-      visible: !root.surfacesSuppressed && root.ownsOutput && root.presentationFrame.phase === "open" && root.incoming !== null
-    }
+  }
+
+  Item {
+    id: stableInputRegion
+    x: cardFrame.x + (root.barAttached ? root.shoulderRadius : 0); y: cardFrame.y
+    width: root.bodyWidth; height: incomingLoader.item ? incomingLoader.item.height : 0
+    visible: !root.surfacesSuppressed && root.ownsOutput
+      && root.presentationFrame.phase === "open" && root.incoming !== null
   }
 
   ElevatedSurface {
