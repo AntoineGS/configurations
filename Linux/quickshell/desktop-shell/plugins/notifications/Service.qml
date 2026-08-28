@@ -246,6 +246,13 @@ Item {
         kind: result.state.visual.kind, output: result.state.visual.output })
   }
 
+  function scheduleSenderClosed(identity) {
+    var capturedIdentity = String(identity || "")
+    Qt.callLater(function() {
+      service.dispatchPresentation(NotificationLogic.senderClosedEvent(capturedIdentity, Date.now()))
+    })
+  }
+
   function findLiveReference(identity, snapshot) {
     var originalId = snapshot ? snapshot.originalId : null
     var generation = snapshot ? Number(snapshot.timestamp) : NaN
@@ -297,7 +304,7 @@ Item {
       else if (effect.type === "senderDismiss" || effect.type === "senderExpire") {
         var ref = findLiveReference(effect.identity, effect.snapshot)
         if (!ref) {
-          service.dispatchPresentation({ type: "SENDER_CLOSED", identity: effect.identity, now: Date.now() })
+          service.scheduleSenderClosed(effect.identity)
           continue
         }
         service.closingOwnership = NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
