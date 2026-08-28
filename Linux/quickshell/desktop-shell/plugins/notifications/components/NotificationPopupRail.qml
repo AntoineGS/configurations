@@ -32,6 +32,7 @@ PanelWindow {
   readonly property real bodyWidth: Math.min(Style.space(380),
     Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
       - Style.popupOuterRadius * (barAttached ? 2 : 0)))
+  readonly property real cueElevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
   readonly property real collarExtent: Style.space(36)
   readonly property real attachedContentTopInset: Style.space(32)
 
@@ -311,16 +312,16 @@ PanelWindow {
 
   Item {
     id: cueSurface
-    x: root.width - Style.gapsOut - width
+    x: root.width - Style.gapsOut - root.cueElevationInset - root.bodyWidth - Style.popupOuterRadius
     y: 0
     width: root.bodyWidth + Style.popupOuterRadius * 2
-    height: Style.popupOuterRadius + Style.space(48)
+    height: Style.space(48)
     visible: root.cueVisible || cueBody.revealProgress > 0
 
     ElevatedSurface {
       id: cueBody
       x: Style.popupOuterRadius
-      y: Style.popupOuterRadius
+      y: 0
       width: root.bodyWidth
       height: Style.space(48)
       color: Color.notifications.background
