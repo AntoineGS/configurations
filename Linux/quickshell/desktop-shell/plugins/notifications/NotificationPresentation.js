@@ -169,6 +169,8 @@ function reduce(input, event) {
       else {
         for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === event.identity) {
           row = state.pending.splice(i, 1)[0]; state.retired[event.identity] = true
+          if (Number(row.originalId) >= 0)
+            effects.push({ type: "senderDismiss", identity: event.identity, snapshot: copy(row), reason: event.reason || "dismiss" })
           cleanup(row, effects, event.reason || "dismiss"); archive(row, effects, event.reason || "dismiss"); break
         }
       }

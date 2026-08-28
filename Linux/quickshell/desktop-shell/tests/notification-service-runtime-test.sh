@@ -43,6 +43,8 @@ import json
 import os
 
 status = json.loads(os.environ["DESKTOP_SHELL_STATUS"])
+if status.get("snapshotDuration") != 15000 or status.get("snapshotRemainingLifetime") != 15000:
+    raise SystemExit("service snapshot duration/lifetime propagation is not visible at runtime")
 expected = {
     "phase": "closed",
     "activeIdentity": "",
