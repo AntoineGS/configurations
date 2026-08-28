@@ -20,6 +20,12 @@ PanelWindow {
   property string _displayRouteKey: ""
   property string _displayGlyph: ""
 
+  function syncDisplayedValues() {
+    if (!requestedVisible) return
+    _displayRouteKey = routeKey
+    _displayGlyph = glyph
+  }
+
   screen: output
   visible: requestedVisible || cueBody.revealProgress > 0
   implicitWidth: bodyWidth + elevationInset * 2
@@ -33,11 +39,11 @@ PanelWindow {
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
   onRequestedVisibleChanged: {
-    if (requestedVisible) {
-      _displayRouteKey = routeKey
-      _displayGlyph = glyph
-    }
+    syncDisplayedValues()
   }
+  onRouteKeyChanged: syncDisplayedValues()
+  onGlyphChanged: syncDisplayedValues()
+  Component.onCompleted: syncDisplayedValues()
 
   ElevatedSurface {
     id: cueBody
