@@ -9,13 +9,15 @@ PanelWindow {
 
   required property var output
   property bool requestedVisible: false
+  property bool barAttached: false
   property string routeKey: ""
   property string glyph: ""
   signal dismissRequested(string routeKey)
 
   readonly property real elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
   readonly property real bodyWidth: Math.min(Style.space(380),
-    Math.max(1, output ? output.width - Style.gapsOut * 2 - Style.popupOuterRadius * 2 : 1))
+    Math.max(1, output ? output.width - Style.gapsOut * (barAttached ? 2 : 1)
+      - Style.popupOuterRadius * (barAttached ? 2 : 0) : 1))
 
   property string _displayRouteKey: ""
   property string _displayGlyph: ""
