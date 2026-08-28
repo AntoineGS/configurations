@@ -1,6 +1,8 @@
 "use strict"
 
 var WATCHDOG = { open: 510, switch: 830, close: 470 }
+var CLOSING_TOMBSTONE_TIMEOUT = 10000
+var RETIRED_LIMIT = 128
 
 function copy(value) {
   var result
@@ -31,7 +33,8 @@ function createInitialState(options) {
   options = options || {}
   return { version: 1, phase: "closed", route: { visible: options.routeVisible !== false, output: options.output || "" },
     active: null, pending: [], visual: { outgoing: null, incoming: null, outgoingDeck: emptyDeck(), incomingDeck: emptyDeck(), token: 0, kind: "", output: "" },
-    hovered: false, deferredCritical: false, countdown: { identity: "", duration: 0, remaining: 0, fraction: 1, visible: false, lastNow: 0 }, retired: {}, nextToken: 1 }
+    hovered: false, deferredCritical: false, countdown: { identity: "", duration: 0, remaining: 0, fraction: 1, visible: false, lastNow: 0 },
+    retired: {}, retiredOrder: [], closing: {}, nextToken: 1 }
 }
 function isTransition(phase) { return phase === "opening" || phase === "switching" || phase === "closing" }
 function validEventToken(event) { return finite(event.token) && event.token > 0 && typeof event.kind === "string" && event.kind !== "" && typeof event.output === "string" }
@@ -81,22 +84,51 @@ function archive(row, effects, reason) {
 function startOpen(state, effects) { return transition(state, "opening", null, state.active, "open", effects) }
 function startSwitch(state, outgoing, effects, outgoingRows, incomingRows) { return transition(state, "switching", outgoing, state.active, "switch", effects, outgoingRows, incomingRows) }
 function startClose(state, outgoing, effects, outgoingRows, incomingRows) { return transition(state, "closing", outgoing, null, "close", effects, outgoingRows, incomingRows) }
+function originalKey(row) { return row && row.originalId !== undefined ? String(row.originalId) : "" }
+function retire(state, identity) {
+  if (!identity || state.retired[identity]) return
+  state.retired[identity] = true; state.retiredOrder.push(identity)
+  while (state.retiredOrder.length > RETIRED_LIMIT) delete state.retired[state.retiredOrder.shift()]
+}
+function tombstone(state, row, now) {
+  var key = originalKey(row)
+  if (key) state.closing[key] = { identity: identityOf(row), expiresAt: (finite(now) ? now : Date.now()) + CLOSING_TOMBSTONE_TIMEOUT }
+}
+function prune(state, now) {
+  var key
+  if (!finite(now)) return
+  for (key in state.closing) if (Object.prototype.hasOwnProperty.call(state.closing, key)
+      && state.closing[key].expiresAt <= now) delete state.closing[key]
+}
 function startCountdown(state) {
   var row = state.active, duration = Number(row.duration || 0), remaining = Number(row.remainingLifetime || 0)
   state.countdown = { identity: identityOf(row), duration: duration, remaining: remaining, fraction: duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 1, visible: duration > 0 && !critical(row), lastNow: 0 }
 }
-function removeActive(state, effects, senderType, reason) {
+function startCountdownFor(state, row) {
+  var duration = Number(row.duration || 0), remaining = Number(row.remainingLifetime || 0)
+  state.countdown = { identity: identityOf(row), duration: duration, remaining: remaining,
+    fraction: duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 1,
+    visible: duration > 0 && !critical(row), lastNow: 0 }
+}
+function removeActive(state, effects, senderType, reason, now) {
   var old = state.active, displayed = state.visual.incoming || old, next, beforePending = state.pending.slice()
   if (!old) return
   state.hovered = false
   state.countdown.lastNow = 0
-  state.retired[identityOf(old)] = true
+  retire(state, identityOf(old))
+  if (reason !== "closed") tombstone(state, old, now)
   if (reason !== "closed" && Number(old.originalId) >= 0)
     effects.push({ type: senderType || "senderDismiss", identity: identityOf(old), snapshot: copy(old), reason: reason || "dismiss" })
   cleanup(old, effects, reason || "dismiss")
   archive(old, effects, reason || "dismiss")
   state.countdown.visible = false
-  if (state.phase === "opening") { state.active = null; startClose(state, displayed, effects, beforePending, state.pending); return }
+  if (state.phase === "opening") {
+    next = state.pending.length ? state.pending.shift() : null
+    state.active = next
+    if (next) startSwitch(state, displayed, effects, beforePending, state.pending)
+    else { state.active = null; startClose(state, displayed, effects, beforePending, state.pending) }
+    return
+  }
   next = state.pending.length ? state.pending.shift() : null
   state.active = next
   if (next) startSwitch(state, displayed, effects, beforePending, state.pending); else startClose(state, displayed, effects, beforePending, state.pending)
@@ -130,6 +162,10 @@ function reduce(input, event) {
     case "ARRIVE":
       row = createSnapshot(event.snapshot)
       if (!row || state.retired[identityOf(row)]) break
+      if (state.closing[originalKey(row)]) {
+        effects.push({ type: "release", identity: identityOf(row), snapshot: copy(row) })
+        break
+      }
       persist(row, effects)
       if (!state.route.visible || state.phase === "hidden" || state.phase === "closing" || isTransition(state.phase)) { insertPending(state, row); break }
       if (!state.active) { state.active = copy(row); startOpen(state, effects) }
@@ -140,16 +176,18 @@ function reduce(input, event) {
       break
     case "REPLACE":
       row = createSnapshot(event.snapshot); oldIdentity = event.identity
-      if (!row || typeof oldIdentity !== "string" || !oldIdentity || state.retired[oldIdentity] || state.retired[identityOf(row)]) break
+      if (!row || typeof oldIdentity !== "string" || !oldIdentity || state.retired[identityOf(row)]) break
+      if (state.closing[originalKey(row)]) {
+        effects.push({ type: "release", identity: identityOf(row), snapshot: copy(row) })
+        break
+      }
       if (identityOf(row) === oldIdentity) break
        if (identityOf(state.active) === oldIdentity) {
-        state.retired[oldIdentity] = true
+        retire(state, oldIdentity)
         cleanup(state.active, effects, "replace")
         next = copy(row)
         if (state.phase === "open") {
-          state.countdown.identity = identityOf(next)
-          state.countdown.fraction = state.countdown.duration ? state.countdown.remaining / state.countdown.duration : 1
-          next.remainingLifetime = state.countdown.remaining
+          startCountdownFor(state, next)
         }
         state.active = copy(next)
         if (state.phase === "open") {
@@ -161,7 +199,7 @@ function reduce(input, event) {
       else {
         found = false
         for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === oldIdentity) {
-          found = true; state.retired[oldIdentity] = true
+          found = true; retire(state, oldIdentity)
           cleanup(state.pending[i], effects, "replace")
           next = copy(row); next.queuePriority = state.pending[i].queuePriority; next.queueOrder = state.pending[i].queueOrder
           state.pending[i] = next; persist(next, effects); break
@@ -171,11 +209,11 @@ function reduce(input, event) {
       break
     case "DISMISS":
       if (typeof event.identity !== "string") break
-      if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects,
-        event.reason === "expire" ? "senderExpire" : "senderDismiss", event.reason || "dismiss")
+       if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects,
+         event.reason === "expire" ? "senderExpire" : "senderDismiss", event.reason || "dismiss", event.now)
       else {
         for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === event.identity) {
-          row = state.pending.splice(i, 1)[0]; state.retired[event.identity] = true
+          row = state.pending.splice(i, 1)[0]; retire(state, event.identity); tombstone(state, row, event.now)
           if (Number(row.originalId) >= 0)
             effects.push({ type: "senderDismiss", identity: event.identity, snapshot: copy(row), reason: event.reason || "dismiss" })
           cleanup(row, effects, event.reason || "dismiss"); archive(row, effects, event.reason || "dismiss"); break
@@ -185,13 +223,13 @@ function reduce(input, event) {
     case "DISMISS_ALL":
       row = state.active ? copy(state.active) : null
        if (row) {
-         state.retired[identityOf(row)] = true
+         retire(state, identityOf(row)); tombstone(state, row)
          if (Number(row.originalId) >= 0)
            effects.push({ type: "senderDismiss", identity: identityOf(row), snapshot: copy(row), reason: "dismiss" })
          cleanup(row, effects, "dismiss"); archive(row, effects, "dismiss")
        }
        state.pending.forEach(function (item) {
-         state.retired[identityOf(item)] = true
+         retire(state, identityOf(item)); tombstone(state, item)
          if (Number(item.originalId) >= 0)
            effects.push({ type: "senderDismiss", identity: identityOf(item), snapshot: copy(item), reason: "dismiss" })
          cleanup(item, effects, "dismiss"); archive(item, effects, "dismiss")
@@ -236,14 +274,20 @@ function reduce(input, event) {
       state.countdown.lastNow = event.now
       state.active.remainingLifetime = state.countdown.remaining
       state.countdown.fraction = state.countdown.duration ? state.countdown.remaining / state.countdown.duration : 1
-       if (state.countdown.remaining === 0) removeActive(state, effects, "senderExpire", "expire")
+       if (state.countdown.remaining === 0) removeActive(state, effects, "senderExpire", "expire", event.now)
+       break
+    case "PRUNE":
+      prune(state, event.now)
       break
     case "SENDER_CLOSED":
        if (typeof event.identity !== "string") break
-       if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects, null, "closed")
+       for (var closingKey in state.closing)
+         if (Object.prototype.hasOwnProperty.call(state.closing, closingKey)
+             && state.closing[closingKey].identity === event.identity) delete state.closing[closingKey]
+       if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects, null, "closed", event.now)
        else {
          for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === event.identity) {
-           row = state.pending.splice(i, 1)[0]; state.retired[event.identity] = true
+            row = state.pending.splice(i, 1)[0]; retire(state, event.identity)
            cleanup(row, effects, "closed"); break
          }
        }

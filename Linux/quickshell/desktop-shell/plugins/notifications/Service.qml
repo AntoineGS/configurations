@@ -93,6 +93,7 @@ Item {
   property real latestPopupQueueOrder: -1
   property var livePersistenceSources: ({})
   property var actionClosingGenerations: ({})
+  property var actionClosingUntil: ({})
   property var failedHistoryActions: ({})
   property var pendingRefreshes: ({})
   property var pendingSilencedRefreshes: ({})
@@ -121,6 +122,7 @@ Item {
   readonly property int lowPopupDuration: 10000
   readonly property int normalPopupDuration: 15000
   readonly property int maxPopupDuration: 30000
+  readonly property int actionClosingTimeoutMs: 10000
 
   PersistentProperties {
     id: persisted
@@ -280,18 +282,21 @@ Item {
           delete livePersistenceSources[key]
         }
         clearFailedHistoryAction(key, snapshot.timestamp)
+      } else if (effect.type === "release") {
+        var released = findLiveReference(effect.identity, effect.snapshot)
+        if (released) service.releaseLiveNotification(released, effect.snapshot.originalId, true)
       }
       else if (effect.type === "senderDismiss" || effect.type === "senderExpire") {
         var ref = findLiveReference(effect.identity, effect.snapshot)
         if (!ref) continue
         actionClosingGenerations[effect.snapshot.originalId] = effect.snapshot.timestamp
+        actionClosingUntil[effect.snapshot.originalId] = Date.now() + actionClosingTimeoutMs
         try {
           if (effect.type === "senderExpire" && typeof ref.expire === "function") ref.expire()
           else if (typeof ref.dismiss === "function") ref.dismiss()
         } catch (error) {
           // The sender may have been destroyed before the reducer effect ran.
         }
-        delete actionClosingGenerations[effect.snapshot.originalId]
       } else if (effect.type === "startWatchdog") {
         presentationWatchdogToken = effect.token
         presentationWatchdogKind = effect.kind
@@ -377,6 +382,24 @@ Item {
   }
 
   Timer {
+    interval: 500
+    repeat: true
+    running: Object.keys(service.actionClosingUntil).length > 0
+      || Object.keys(service.presentationState.closing || {}).length > 0
+    onTriggered: {
+      var now = Date.now()
+      for (var key in service.actionClosingUntil) {
+        if (Object.prototype.hasOwnProperty.call(service.actionClosingUntil, key)
+            && Number(service.actionClosingUntil[key]) <= now) {
+          delete service.actionClosingUntil[key]
+          delete service.actionClosingGenerations[key]
+        }
+      }
+      service.dispatchPresentation({ type: "PRUNE", now: now })
+    }
+  }
+
+  Timer {
     id: presentationWatchdog
     repeat: false
     onTriggered: {
@@ -428,6 +451,10 @@ Item {
 
     notification.tracked = true
     var snapshot = snapshotOf(notification)
+    if (service.actionClosingGenerations[snapshot.originalId] !== undefined) {
+      service.releaseLiveNotification(notification, snapshot.originalId, true)
+      return
+    }
     var previous = liveRefs[snapshot.originalId]
     var previousIdentity = previous && previous !== notification
       ? String(liveGenerations[snapshot.originalId]) + ":" + String(snapshot.originalId) : ""
@@ -599,6 +626,11 @@ Item {
   }
 
   function handleClosedNotification(notification, originalId) {
+    if (service.actionClosingGenerations[originalId] !== undefined) {
+      delete service.actionClosingGenerations[originalId]
+      delete service.actionClosingUntil[originalId]
+      return
+    }
     if (service.liveRefs[originalId] !== notification) return
     delete service.pendingRefreshes[String(originalId)]
     delete service.pendingSilencedRefreshes[String(originalId)]
@@ -719,17 +751,17 @@ Item {
 
   function dismissPopup(index) {
     if (index < 0 || index >= popupModel.count) return
-    dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)) })
+    dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)), now: Date.now() })
   }
 
   function expirePopup(index) {
     if (index < 0 || index >= popupModel.count) return
-    dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)) })
+    dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)), reason: "expire", now: Date.now() })
   }
 
   function requestPopupRemoval(identity, reason) {
     dispatchPresentation({
-      type: reason === "closed" ? "SENDER_CLOSED" : "DISMISS", identity: String(identity || "")
+      type: reason === "closed" ? "SENDER_CLOSED" : "DISMISS", identity: String(identity || ""), now: Date.now(), reason: reason
     })
   }
 
@@ -769,7 +801,6 @@ Item {
 
     if (shouldDismiss) {
       requestPopupRemoval(identity, "dismiss")
-      delete actionClosingGenerations[entry.originalId]
     }
     return true
   }
@@ -1915,7 +1946,6 @@ Item {
 
   function status() {
     var frame = service.presentationFrame
-    var canonicalClosed = service.testSurfaceSuppressed
     return JSON.stringify({
       notificationsOwned: service.notificationsOwned,
       ownershipError: service.ownershipError,
@@ -1931,16 +1961,16 @@ Item {
       popupCount: popupModel.count,
       snapshotDuration: service.durationFor(NotificationUrgency.Normal, -1),
       snapshotRemainingLifetime: service.durationFor(NotificationUrgency.Normal, -1),
-      phase: canonicalClosed ? "closed" : frame.phase,
-      activeIdentity: canonicalClosed ? "" : (frame.active ? identityForSnapshot(frame.active) : ""),
-      visualOutgoingIdentity: canonicalClosed ? "" : (frame.visual.outgoing
-        ? identityForSnapshot(frame.visual.outgoing) : ""),
-      visualIncomingIdentity: canonicalClosed ? "" : (frame.visual.incoming
-        ? identityForSnapshot(frame.visual.incoming) : ""),
-      transitionToken: canonicalClosed ? 0 : frame.visual.token,
-      transitionKind: canonicalClosed ? "" : frame.visual.kind,
-      countdownIdentity: canonicalClosed ? "" : frame.countdown.identity,
-      pendingCount: canonicalClosed ? 0 : frame.pending.length,
+      phase: frame.phase,
+      activeIdentity: frame.active ? identityForSnapshot(frame.active) : "",
+      visualOutgoingIdentity: frame.visual.outgoing
+        ? identityForSnapshot(frame.visual.outgoing) : "",
+      visualIncomingIdentity: frame.visual.incoming
+        ? identityForSnapshot(frame.visual.incoming) : "",
+      transitionToken: frame.visual.token,
+      transitionKind: frame.visual.kind,
+      countdownIdentity: frame.countdown.identity,
+      pendingCount: frame.pending.length,
       historyOpen: service.historyOpen,
       historyModelCount: historyModel.count,
       historyCount: service.historyCount,
@@ -2047,9 +2077,7 @@ Item {
       id: popupWindow
       required property var modelData
       output: modelData
-      presentationFrame: service.testSurfaceSuppressed
-        ? Presentation.presentationFrame(Presentation.createInitialState({ routeVisible: false, output: "" }))
-        : service.presentationFrame
+      presentationFrame: service.presentationFrame
       shell: service.shell
       cueVisible: service.cueVisibleOn(modelData)
       fontFamily: service.shell && service.shell.bar

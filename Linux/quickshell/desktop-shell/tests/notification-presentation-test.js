@@ -42,7 +42,7 @@ assert.deepEqual(state, {
     token: 0, kind: "", output: "",
   }, hovered: false, deferredCritical: false,
   countdown: { identity: "", duration: 0, remaining: 0, fraction: 1, visible: false, lastNow: 0 },
-  retired: {}, nextToken: 1,
+  retired: {}, retiredOrder: [], closing: {}, nextToken: 1,
 })
 const normalA = snapshot("1000:1", 1, 10000, 10000)
 const normalB = snapshot("2000:2", 1, 10000, 10000)
@@ -433,11 +433,34 @@ stableReplacement = step(stableReplacement, { type: "REPLACE", identity: "29500:
   assert.equal(s.active.identity, "29600:295")
   assert.equal(s.visual.incoming.identity, "29600:295")
   assert.equal(s.countdown.identity, "29600:295")
-  assert.equal(s.countdown.duration, 1000)
-  assert.equal(s.countdown.remaining, 900)
-  assert.equal(s.active.remainingLifetime, 900)
-  assert.equal(effects.find(effect => effect.type === "persist").snapshot.remainingLifetime, 900)
+  assert.equal(s.countdown.duration, 7000)
+  assert.equal(s.countdown.remaining, 7000)
+  assert.equal(s.active.remainingLifetime, 7000)
+  assert.equal(effects.find(effect => effect.type === "persist").snapshot.remainingLifetime, 7000)
 })
+
+let openingDismissal = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+openingDismissal = step(openingDismissal, { type: "ARRIVE", snapshot: snapshot("31000:310", 1, 1000, 1000) })
+openingDismissal = step(openingDismissal, { type: "ARRIVE", snapshot: snapshot("31100:311", 1, 1000, 1000) })
+openingDismissal = step(openingDismissal, { type: "DISMISS", identity: "31000:310" }, s => {
+  assert.equal(s.phase, "switching")
+  assert.equal(s.active.identity, "31100:311")
+  assert.equal(s.visual.outgoing.identity, "31000:310")
+  assert.equal(s.visual.incoming.identity, "31100:311")
+})
+
+let tombstone = openState(snapshot("31200:312", 1, 1000, 1000))
+tombstone = step(tombstone, { type: "DISMISS", identity: "31200:312", now: 0 })
+const lateReplacement = apply(tombstone, {
+  type: "REPLACE", identity: "31200:312", snapshot: snapshot("31300:312", 1, 1000, 1000), now: 100
+})
+assert.equal(lateReplacement.state.phase, "closing")
+assert.equal(lateReplacement.state.active, null)
+assert.ok(lateReplacement.effects.some(effect => effect.type === "release" && effect.identity === "31300:312"))
+const senderClose = apply(lateReplacement.state, { type: "SENDER_CLOSED", identity: "31200:312", now: 101 })
+assert.equal(senderClose.state.closing["312"], undefined)
+const expiredTombstone = apply(lateReplacement.state, { type: "PRUNE", now: 100 + 10000 })
+assert.equal(expiredTombstone.state.closing["312"], undefined)
 
 let frozenReplacement = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
 frozenReplacement = step(frozenReplacement, { type: "ARRIVE", snapshot: snapshot("29700:297", 1, 1000, 1000) })
@@ -445,10 +468,10 @@ const frozenNext = snapshot("29800:297", 1, 1000, 1000)
 frozenReplacement = step(frozenReplacement, { type: "REPLACE", identity: "29700:297", snapshot: frozenNext })
 frozenReplacement = step(frozenReplacement, { type: "ARRIVE", snapshot: snapshot("29900:299", 1, 1000, 1000) })
 const frozenDismiss = apply(frozenReplacement, { type: "DISMISS", identity: "29800:297" })
-assert.equal(frozenDismiss.state.phase, "closing")
-assert.equal(frozenDismiss.state.active, null)
+assert.equal(frozenDismiss.state.phase, "switching")
+assert.equal(frozenDismiss.state.active.identity, "29900:299")
 assert.equal(frozenDismiss.state.visual.outgoing.identity, "29700:297")
-assert.deepEqual(ids(frozenDismiss.state.pending), ["29900:299"])
+assert.deepEqual(ids(frozenDismiss.state.pending), [])
 
 let malformed = openState(snapshot("30000:30", 1, 1000, 1000))
 for (const badEvent of [null, {}, { type: "ARRIVE" }, { type: "ARRIVE", snapshot: {} },
