@@ -176,8 +176,8 @@ Item {
     var startedAt = NotificationLogic.nextMonotonicTimestamp(service.latestLiveGeneration, requestedAt)
     service.latestLiveGeneration = startedAt
     var snapshot = NotificationLogic.snapshotOf(notification, startedAt)
-    snapshot.duration = durationFor(snapshot.urgency, snapshot.expireTimeout)
-    snapshot.remainingLifetime = durationFor(snapshot.urgency, snapshot.expireTimeout)
+    snapshot = NotificationLogic.withPopupTiming(
+      snapshot, durationFor(snapshot.urgency, snapshot.expireTimeout))
     snapshot.queuePriority = NotificationLogic.popupQueuePriority(snapshot, NotificationUrgency.Critical)
     ensurePopupQueueOrder(snapshot)
     snapshot.transient = isEphemeral(notification)
@@ -493,21 +493,13 @@ Item {
   }
 
   function handlePopupOpenFinished(identity, generation, outputName) {
-    if (Number(generation) !== service.presentationState.visual.token
-        || String(outputName) !== service.presentationState.visual.output) return
-    dispatchPresentation({
-      type: "TRANSITION_FINISHED", token: service.presentationState.visual.token,
-      kind: service.presentationState.visual.kind, output: service.presentationState.visual.output
-    })
+    var event = NotificationLogic.transitionCallbackEvent(service.presentationState, generation, outputName)
+    if (event) dispatchPresentation(event)
   }
 
   function handlePopupCloseFinished(identity, generation, outputName) {
-    if (Number(generation) !== service.presentationState.visual.token
-        || String(outputName) !== service.presentationState.visual.output) return
-    dispatchPresentation({
-      type: "TRANSITION_FINISHED", token: service.presentationState.visual.token,
-      kind: service.presentationState.visual.kind, output: service.presentationState.visual.output
-    })
+    var event = NotificationLogic.transitionCallbackEvent(service.presentationState, generation, outputName)
+    if (event) dispatchPresentation(event)
   }
 
   function promoteCriticalRun() {
@@ -608,11 +600,14 @@ Item {
       delete silencedDirty[snapshot.originalId]
       try { previous.tracked = false } catch (error) {}
     }
-    liveRefs[snapshot.originalId] = notification
-    liveGenerations[snapshot.originalId] = snapshot.timestamp
-    livePersistenceSources[snapshot.originalId] = snapshot.transient ? "none"
+    var source = snapshot.transient ? "none"
       : (service.doNotDisturb && !shouldBypassDnd(notification) ? "history" : "popup")
-    snapshot.presentationSource = livePersistenceSources[snapshot.originalId]
+    var bookkeeping = NotificationLogic.replacementBookkeeping(
+      liveGenerations, livePersistenceSources, snapshot.originalId, snapshot.timestamp, source)
+    liveRefs[snapshot.originalId] = notification
+    liveGenerations = bookkeeping.generations
+    livePersistenceSources = bookkeeping.sources
+    snapshot.presentationSource = bookkeeping.presentationSource
     notification.closed.connect(function() {
       service.handleClosedNotification(notification, snapshot.originalId)
     })
@@ -700,8 +695,9 @@ Item {
       try {
         latest = NotificationLogic.replacementSnapshot(
           request.notification, request.originalId, request.persisted.timestamp)
+        latest = NotificationLogic.withPopupTiming(
+          latest, durationFor(latest.urgency, latest.expireTimeout))
         latest.remainingLifetime = 0
-        latest.duration = durationFor(latest.urgency, latest.expireTimeout)
         delete latest.deadline
       } catch (error) {
         service.releaseSilenced(request.notification, request.originalId)
@@ -854,7 +850,12 @@ Item {
       updated = snapshotOf(notification, Date.now())
       updated.id = originalId
       updated.originalId = originalId
-      updated.presentationSource = livePersistenceSources[originalId] || "popup"
+      var source = updated.transient === true ? "none" : "popup"
+      var bookkeeping = NotificationLogic.replacementBookkeeping(
+        liveGenerations, livePersistenceSources, originalId, updated.timestamp, source)
+      liveGenerations = bookkeeping.generations
+      livePersistenceSources = bookkeeping.sources
+      updated.presentationSource = bookkeeping.presentationSource
     } catch (error) {
       return
     }
@@ -1040,7 +1041,8 @@ Item {
     var known = state.active && identityForSnapshot(state.active) === oldIdentity
     if (!known) for (var i = 0; i < state.pending.length; i++)
       if (identityForSnapshot(state.pending[i]) === oldIdentity) known = true
-    if (!known && (state.active ? state.pending.length + 1 : state.pending.length) >= service.maxActivePopups) {
+    if (!known && !NotificationLogic.canAdmitPopup(state.active ? 1 : 0,
+        state.pending.length, service.maxActivePopups)) {
       service.persistenceError = "notification active popup limit reached"
       return
     }
@@ -1533,8 +1535,7 @@ Item {
       var current = popupModel.get(i)
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
-    row.remainingLifetime = 0
-    row.duration = durationFor(row.urgency, row.expireTimeout)
+    row = NotificationLogic.withPopupTiming(row, durationFor(row.urgency, row.expireTimeout))
     row.queuePriority = NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
     ensurePopupQueueOrder(row)
     delete row.deadline
@@ -1572,7 +1573,7 @@ Item {
         continue
       }
       var duration = durationFor(entry.urgency, entry.expireTimeout)
-      entry.duration = duration
+      entry = NotificationLogic.withPopupTiming(entry, duration)
       var needsMigration = entry.queuePriority === undefined
         || entry.queueOrder === undefined
         || (entry.remainingLifetime === undefined && entry.deadline !== undefined)

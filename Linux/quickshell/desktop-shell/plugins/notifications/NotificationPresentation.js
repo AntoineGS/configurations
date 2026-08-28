@@ -65,7 +65,11 @@ function insertPending(state, row) {
   }
   state.pending.splice(i, 0, copy(row))
 }
-function persist(row, effects) { if (row && row.transient !== true) effects.push({ type: "persist", identity: identityOf(row), snapshot: copy(row) }) }
+function persist(row, effects) {
+  if (row && row.transient !== true && Number(row.originalId) >= 0
+      && row.presentationSource !== "history" && row.presentationSource !== "none")
+    effects.push({ type: "persist", identity: identityOf(row), snapshot: copy(row) })
+}
 function cleanup(row, effects, reason) {
   if (row) effects.push({ type: "cleanup", identity: identityOf(row), snapshot: copy(row), reason: reason || "dismiss" })
 }
@@ -84,7 +88,7 @@ function removeActive(state, effects, senderType, reason) {
   var old = state.active, displayed = state.visual.incoming || old, next, beforePending = state.pending.slice()
   if (!old) return
   state.retired[identityOf(old)] = true
-  if (Number(old.originalId) >= 0)
+  if (reason !== "closed" && Number(old.originalId) >= 0)
     effects.push({ type: senderType || "senderDismiss", identity: identityOf(old), snapshot: copy(old), reason: reason || "dismiss" })
   cleanup(old, effects, reason || "dismiss")
   archive(old, effects, reason || "dismiss")
@@ -233,7 +237,7 @@ function reduce(input, event) {
       break
     case "SENDER_CLOSED":
        if (typeof event.identity !== "string") break
-       if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects, "senderDismiss", "closed")
+       if (state.active && event.identity === identityOf(state.active)) removeActive(state, effects, null, "closed")
        else {
          for (i = 0; i < state.pending.length; i += 1) if (identityOf(state.pending[i]) === event.identity) {
            row = state.pending.splice(i, 1)[0]; state.retired[event.identity] = true

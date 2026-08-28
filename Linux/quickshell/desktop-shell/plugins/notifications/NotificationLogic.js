@@ -284,6 +284,35 @@ function nextMonotonicTimestamp(previous, candidate) {
   return Math.max(requested, prior + 1)
 }
 
+function withPopupTiming(snapshot, duration) {
+  var result = {}
+  var value = Number(duration)
+  for (var key in (snapshot || {})) if (Object.prototype.hasOwnProperty.call(snapshot, key)) result[key] = snapshot[key]
+  result.duration = value
+  result.remainingLifetime = value
+  return result
+}
+
+function replacementBookkeeping(generations, sources, originalId, timestamp, source) {
+  var nextGenerations = {}, nextSources = {}, key
+  for (key in (generations || {})) if (Object.prototype.hasOwnProperty.call(generations, key)) nextGenerations[key] = generations[key]
+  for (key in (sources || {})) if (Object.prototype.hasOwnProperty.call(sources, key)) nextSources[key] = sources[key]
+  nextGenerations[originalId] = timestamp
+  nextSources[originalId] = source
+  return { generations: nextGenerations, sources: nextSources, presentationSource: source }
+}
+
+function canAdmitPopup(activeCount, pendingCount, maximum) {
+  return Number(activeCount) + Number(pendingCount) < Number(maximum)
+}
+
+function transitionCallbackEvent(state, token, output) {
+  var visual = state && state.visual
+  if (!visual || (state.phase !== "opening" && state.phase !== "switching" && state.phase !== "closing")
+      || Number(token) !== visual.token || String(output) !== visual.output) return null
+  return { type: "TRANSITION_FINISHED", token: visual.token, kind: visual.kind, output: visual.output }
+}
+
 function persistenceQueueUpdate(queue, job, maxLength, front, protectedKeys) {
   var next = Array.isArray(queue) ? queue.slice() : []
   var dropped = null
@@ -829,6 +858,10 @@ if (typeof module !== "undefined") {
     migratePopupQueue: migratePopupQueue,
     shouldPersistPopup: shouldPersistPopup,
     nextMonotonicTimestamp: nextMonotonicTimestamp,
+    withPopupTiming: withPopupTiming,
+    replacementBookkeeping: replacementBookkeeping,
+    canAdmitPopup: canAdmitPopup,
+    transitionCallbackEvent: transitionCallbackEvent,
     persistenceQueueUpdate: persistenceQueueUpdate,
     refreshScheduleUpdate: refreshScheduleUpdate,
     admissionUpdate: admissionUpdate,
