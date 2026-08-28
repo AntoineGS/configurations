@@ -10,6 +10,7 @@ PanelWindow {
 
   required property var output
   required property var presentationFrame
+  required property bool ownsOutput
   property bool surfacesSuppressed: false
   property var shell: null
   property bool cueVisible: false
@@ -25,9 +26,6 @@ PanelWindow {
   readonly property var outgoingDeck: NotificationLogic.normalizedDeck(root.visual.outgoingDeck)
   readonly property string incomingIdentity: root.incoming ? String(root.incoming.identity || "") : ""
   readonly property string outgoingIdentity: root.outgoing ? String(root.outgoing.identity || "") : ""
-  readonly property bool onOutput: root.presentationFrame.route
-    && root.presentationFrame.route.visible === true
-    && String(root.presentationFrame.route.output || "") === String(root.output.name)
   readonly property bool hasCards: root.incoming !== null || root.outgoing !== null
   readonly property bool barAttached: root.barPosition === "top"
     && root.shell && root.shell.barVisible !== false
@@ -43,7 +41,7 @@ PanelWindow {
   signal actionClicked(string identity, string identifier)
   signal hoverChanged(string identity, bool hovered)
   signal transitionFinished(int token, string kind, string outputName)
-  signal stateObserved(string outputName, bool onOutput, bool hasCards, bool windowVisible,
+  signal stateObserved(string outputName, bool ownsOutput, bool hasCards, bool windowVisible,
     string phase, string incomingIdentity)
 
   property real _progress: 1
@@ -75,7 +73,7 @@ PanelWindow {
   readonly property real deckOpacity: root.deckOpacityProjection.selected
 
   screen: root.output
-  visible: !root.surfacesSuppressed && (root.cueVisible || (root.onOutput && root.hasCards
+  visible: !root.surfacesSuppressed && (root.cueVisible || (root.ownsOutput && root.hasCards
     && root.presentationFrame.phase !== "closed" && root.presentationFrame.phase !== "hidden"))
   anchors { top: true; bottom: true; left: true; right: true }
   color: "transparent"
@@ -150,7 +148,9 @@ PanelWindow {
   }
   function finishTransition() {
     if (root.surfacesSuppressed) return
-    if (!root.onOutput || !root._latchedKind || root._latchedToken <= 0
+    var route = root.presentationFrame.route || ({})
+    if (!root.ownsOutput || !route.visible || String(route.output || "") !== String(root._latchedOutput)
+        || !root._latchedKind || root._latchedToken <= 0
         || Number(root.presentationFrame.visual.token) !== root._latchedToken
         || String(root.presentationFrame.visual.kind || "") !== root._latchedKind
         || String(root.presentationFrame.visual.output || "") !== root._latchedOutput) return
@@ -192,14 +192,14 @@ PanelWindow {
     root._stateObservationPending = true
     Qt.callLater(function() {
       root._stateObservationPending = false
-      root.stateObserved(String(root.output && root.output.name || ""), root.onOutput, root.hasCards,
+      root.stateObserved(String(root.output && root.output.name || ""), root.ownsOutput, root.hasCards,
         root.visible, String(root.presentationFrame.phase || ""), root.incomingIdentity)
     })
   }
 
   function syncPresentationFrame() {
     var frame = root.presentationFrame
-    if (root.surfacesSuppressed || !root.onOutput) {
+    if (root.surfacesSuppressed || !root.ownsOutput) {
       openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
     else if (frame.phase === "open") {
@@ -216,7 +216,7 @@ PanelWindow {
     if (root.visible && root.presentationFrame) root.beginDeckSettle()
     root.scheduleStateObservation()
   }
-  onOnOutputChanged: root.scheduleStateObservation()
+  onOwnsOutputChanged: root.scheduleStateObservation()
   onHasCardsChanged: root.scheduleStateObservation()
   Component.onCompleted: { root.syncPresentationFrame(); root.scheduleStateObservation() }
 
@@ -295,7 +295,7 @@ PanelWindow {
     id: thirdDeck
     property var deck: root.stableDeck()
     property var snapshot: deck.snapshots && deck.snapshots.length > 1 ? deck.snapshots[1] : null
-    visible: !root.surfacesSuppressed && root.onOutput && root.hasCards && snapshot !== null
+    visible: !root.surfacesSuppressed && root.ownsOutput && root.hasCards && snapshot !== null
     x: cardFrame.x + root.shoulderRadius + Style.space(16)
     y: cardFrame.y + Style.space(18) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), cardFrame.deckCardHeight)
@@ -306,7 +306,7 @@ PanelWindow {
     id: nextDeck
     property var deck: root.stableDeck()
     property var snapshot: deck.snapshots && deck.snapshots.length > 0 ? deck.snapshots[0] : null
-    visible: !root.surfacesSuppressed && root.onOutput && root.hasCards && snapshot !== null
+    visible: !root.surfacesSuppressed && root.ownsOutput && root.hasCards && snapshot !== null
     x: cardFrame.x + root.shoulderRadius + Style.space(8)
     y: cardFrame.y + Style.space(9) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), cardFrame.deckCardHeight)
@@ -315,14 +315,14 @@ PanelWindow {
   }
   Rectangle {
     property var deck: root.stableDeck()
-    visible: root.onOutput && root.hasCards && deck.criticalPending && root.presentationFrame.hovered
+    visible: root.ownsOutput && root.hasCards && deck.criticalPending && root.presentationFrame.hovered
     opacity: root.deckOpacity
     x: cardFrame.x + cardFrame.width - Style.space(10); y: cardFrame.y - Style.space(8)
     width: Style.space(6); height: width; radius: width / 2; color: Color.notifications.critical
   }
   Text {
     property var deck: root.stableDeck()
-    visible: root.onOutput && root.hasCards && deck.queuedCount > 0
+    visible: root.ownsOutput && root.hasCards && deck.queuedCount > 0
     x: cardFrame.x + cardFrame.width - Style.space(34); y: cardFrame.y + Style.space(5)
     text: "+" + deck.queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckOpacity
     font.pixelSize: Style.font.caption; font.bold: true; z: 2
@@ -342,7 +342,7 @@ PanelWindow {
     Item {
       id: outgoingSlot
       x: 0; width: parent.width; height: parent.height
-      visible: root.onOutput && root._latchedOutgoing !== null
+      visible: root.ownsOutput && root._latchedOutgoing !== null
         && (root.presentationFrame.phase === "closing"
           || (root.presentationFrame.phase === "switching" && !root._incomingVisible))
       opacity: root._progress
@@ -367,7 +367,7 @@ PanelWindow {
     Item {
       id: incomingSlot
       x: 0; width: parent.width; height: parent.height
-      visible: root.onOutput && root._latchedIncoming !== null && root._incomingVisible
+      visible: root.ownsOutput && root._latchedIncoming !== null && root._incomingVisible
       opacity: root.presentationFrame.phase === "opening" || root.presentationFrame.phase === "switching" ? root._progress : 1
       transform: Scale { origin.x: incomingSlot.width / 2; origin.y: 0; yScale: opacity }
       Loader {
@@ -397,7 +397,7 @@ PanelWindow {
       id: stableInputRegion
       x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth
       height: incomingLoader.item ? incomingLoader.item.height : 0
-       visible: !root.surfacesSuppressed && root.onOutput && root.presentationFrame.phase === "open" && root.incoming !== null
+      visible: !root.surfacesSuppressed && root.ownsOutput && root.presentationFrame.phase === "open" && root.incoming !== null
     }
   }
 
