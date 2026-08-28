@@ -2251,19 +2251,37 @@ Item {
       barPosition: service.barPosition
       barSize: service.liveBarSize
       cueGlyph: NotificationLogic.cueGlyph(service.route.direction)
-      onDismissRequested: function(identity) { service.requestPopupRemoval(identity, "dismiss") }
-      onCardClicked: function(identity) { service.clickPopupIdentity(identity) }
+      onDismissRequested: function(identity) {
+        var capturedIdentity = String(identity || "")
+        Qt.callLater(function() { service.requestPopupRemoval(capturedIdentity, "dismiss") })
+      }
+      onCardClicked: function(identity) {
+        var capturedIdentity = String(identity || "")
+        Qt.callLater(function() { service.clickPopupIdentity(capturedIdentity) })
+      }
       onActionClicked: function(identity, identifier) {
-        service.invokePopupActionIdentity(identity, identifier)
+        var capturedIdentity = String(identity || "")
+        var capturedIdentifier = String(identifier || "")
+        Qt.callLater(function() { service.invokePopupActionIdentity(capturedIdentity, capturedIdentifier) })
       }
       onHoverChanged: function(identity, hovered) {
-        var incoming = service.presentationFrame.visual.incoming
-        if (incoming && service.identityForSnapshot(incoming) === identity)
-          service.dispatchPresentation({ type: "HOVER_CHANGED", hovered: hovered === true })
+        var capturedIdentity = String(identity || "")
+        var capturedHovered = hovered === true
+        Qt.callLater(function() {
+          var incoming = service.presentationFrame.visual.incoming
+          if (incoming && service.identityForSnapshot(incoming) === capturedIdentity)
+            service.dispatchPresentation({ type: "HOVER_CHANGED", hovered: capturedHovered })
+        })
       }
       onTransitionFinished: function(token, kind, outputName) {
-        var event = { type: "TRANSITION_FINISHED", token: token, kind: kind, output: outputName }
-        service.dispatchPresentation(event)
+        var capturedToken = Number(token)
+        var capturedKind = String(kind || "")
+        var capturedOutput = String(outputName || "")
+        Qt.callLater(function() {
+          service.dispatchPresentation({
+            type: "TRANSITION_FINISHED", token: capturedToken, kind: capturedKind, output: capturedOutput
+          })
+        })
       }
     }
   }
