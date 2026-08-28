@@ -1961,6 +1961,10 @@ Item {
     return screen ? String(screen.name || "") : ""
   }
 
+  function cardsVisibleOn(screen) {
+    return NotificationLogic.cardsVisibleOn(service.route, service.screenName(screen))
+  }
+
   function cueVisibleOn(screen) {
     return !service.testSurfaceSuppressed && service.routeVisible && service.route.cueOutput !== null
       && String(service.route.cueOutput) === screenName(screen)
@@ -2101,12 +2105,12 @@ Item {
     return "pong"
   }
 
-  function updateRailDiagnostics(outputName, onOutput, hasCards, windowVisible, phase, incomingIdentity) {
+  function updateRailDiagnostics(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity) {
     var name = String(outputName || "")
     if (!name) return
     var diagnostics = Object.assign({}, service.railDiagnostics || ({}))
     diagnostics[name] = {
-      onOutput: onOutput === true,
+      ownsOutput: ownsOutput === true,
       hasCards: hasCards === true,
       windowVisible: windowVisible === true,
       phase: String(phase || ""),
@@ -2254,6 +2258,7 @@ Item {
       required property var modelData
       output: modelData
       presentationFrame: service.presentationFrame
+      ownsOutput: service.cardsVisibleOn(modelData)
       surfacesSuppressed: service.testSurfaceSuppressed
       shell: service.shell
       cueVisible: service.cueVisibleOn(modelData)
@@ -2276,8 +2281,8 @@ Item {
         var event = { type: "TRANSITION_FINISHED", token: token, kind: kind, output: outputName }
         service.dispatchPresentation(event)
       }
-      onStateObserved: function(outputName, onOutput, hasCards, windowVisible, phase, incomingIdentity) {
-        service.updateRailDiagnostics(outputName, onOutput, hasCards, windowVisible, phase, incomingIdentity)
+      onStateObserved: function(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity) {
+        service.updateRailDiagnostics(outputName, ownsOutput, hasCards, windowVisible, phase, incomingIdentity)
       }
     }
   }

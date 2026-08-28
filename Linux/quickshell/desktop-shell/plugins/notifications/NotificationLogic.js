@@ -95,6 +95,9 @@ function normalizedDeck(value) {
     criticalPending: value.criticalPending === true,
   }
 }
+function cardsVisibleOn(route, outputName) {
+  return !!route && route.visible === true && String(route.output || "") === String(outputName || "")
+}
 function deckProjection(phase, progress, incomingVisible) {
   var value = Math.max(0, Math.min(1, typeof progress === "number" && isFinite(progress) ? progress : 0))
   if (phase === "opening") return { outgoing: 0, incoming: value }
@@ -953,6 +956,7 @@ if (typeof module !== "undefined") {
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
     normalizedDeck: normalizedDeck,
+    cardsVisibleOn: cardsVisibleOn,
     deckProjection: deckProjection,
     deckOpacityProjection: deckOpacityProjection,
     releaseTrackedNotification: releaseTrackedNotification,
