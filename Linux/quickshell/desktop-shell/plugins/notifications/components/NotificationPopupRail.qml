@@ -57,7 +57,7 @@ PanelWindow {
   property string _lastTransition: ""
 
   screen: root.output
-  visible: !root.surfacesSuppressed && (root.cueVisible || routeCuePopup.visible || (root.ownsOutput
+  visible: !root.surfacesSuppressed && (root.cueVisible || cueSurface.visible || (root.ownsOutput
     && root._paintedSnapshot !== null && root.presentationFrame.phase !== "closed"
     && root.presentationFrame.phase !== "hidden"))
   anchors { top: true; bottom: true; left: true; right: true }
@@ -66,7 +66,10 @@ PanelWindow {
   WlrLayershell.namespace: "desktop-shell-notification-rail"
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-  mask: Region { item: null }
+  mask: Region {
+    Region { item: cueBody.revealProgress > 0 ? cueBody : null }
+    Region { item: cueShoulders.revealProgress > 0 ? cueShoulders : null }
+  }
 
   function identity(snapshot) { return snapshot ? String(snapshot.identity || "") : "" }
   function urgencyColor(snapshot) {
@@ -248,14 +251,6 @@ PanelWindow {
     height: root.barAttached ? root.barSize : 0
   }
 
-  Item {
-    id: cueAnchorItem
-    x: popupAnchorItem.x
-    y: -(routeCuePopup.elevationInset - routeCuePopup.shadowPadding)
-    width: 1
-    height: 0
-  }
-
   PopupCard {
     id: notificationPopup
     anchorItem: popupAnchorItem
@@ -314,39 +309,65 @@ PanelWindow {
     }
   }
 
-  PopupCard {
-    id: routeCuePopup
-    anchorItem: cueAnchorItem
-    owner: root
-    bar: detachedBarPosition
-    open: !root.surfacesSuppressed && root.cueVisible
-    triggerMode: "passive"
-    coordinateWithBar: false
-    inputEnabled: open
-    attached: true
-    margin: 0
-    padding: 0
-    surfaceOffsetY: -elevationInset
-    contentWidth: root.bodyWidth
-    contentHeight: Style.space(48)
-    borderSpec: Border.none()
-    surfaceColor: Color.notifications.background
-    onShoulderClicked: button => {
-      if (button === Qt.LeftButton) root.cueDismissRequested(root.cueRouteKey)
+  Item {
+    id: cueSurface
+    x: root.width - Style.gapsOut - width
+    y: 0
+    width: root.bodyWidth + Style.popupOuterRadius * 2
+    height: Style.popupOuterRadius + Style.space(48)
+    visible: root.cueVisible || cueBody.revealProgress > 0
+
+    ElevatedSurface {
+      id: cueBody
+      x: Style.popupOuterRadius
+      y: Style.popupOuterRadius
+      width: root.bodyWidth
+      height: Style.space(48)
+      color: Color.notifications.background
+      radius: Style.popupOuterRadius
+      topLeftRadius: 0
+      topRightRadius: 0
+      bottomLeftRadius: Style.popupOuterRadius
+      bottomRightRadius: Style.popupOuterRadius
+      revealed: root.cueVisible
+      revealDuration: PopupMotion.surfaceOpenDuration
+      concealDuration: PopupMotion.surfaceCloseDuration
+      revealEasing: PopupMotion.surfaceOpenEasing
+      concealEasing: PopupMotion.surfaceCloseEasing
+      concealedXScale: 1
+      concealedYScale: 0
+      scaleOriginX: width / 2
+      scaleOriginY: 0
+
+      MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        onClicked: root.cueDismissRequested(root.cueRouteKey)
+      }
+
+      Text {
+        anchors.centerIn: parent
+        text: root.cueGlyph
+        color: Color.notifications.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.display
+      }
     }
 
-    MouseArea {
-      anchors.fill: parent
-      acceptedButtons: Qt.LeftButton
-      onClicked: root.cueDismissRequested(root.cueRouteKey)
-    }
-
-    Text {
-      anchors.centerIn: parent
-      text: root.cueGlyph
-      color: Color.notifications.text
-      font.family: Style.font.family
-      font.pixelSize: Style.font.display
+    BarAttachedShoulders {
+      id: cueShoulders
+      z: 1
+      x: 0
+      y: 0
+      bodyWidth: root.bodyWidth
+      surfaceColor: Color.notifications.background
+      gradientStartColor: Color.notifications.background
+      gradientEndColor: Color.notifications.background
+      gradientExtent: Style.popupOuterRadius
+      revealProgress: cueBody.revealProgress
+      onClicked: button => {
+        if (button === Qt.LeftButton) root.cueDismissRequested(root.cueRouteKey)
+      }
     }
   }
 }
