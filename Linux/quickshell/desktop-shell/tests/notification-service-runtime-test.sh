@@ -24,6 +24,7 @@ cp -a -- "$shell_dir" "$isolated_shell_dir"
 env \
   HOME="$tmp_dir/home" \
   XDG_CONFIG_HOME="$tmp_dir/home/.config" \
+  XDG_STATE_HOME="$tmp_dir/home/.local/state" \
   XDG_RUNTIME_DIR="$tmp_dir/runtime" \
   DESKTOP_SHELL_TEST_NO_SURFACES=1 \
   DESKTOP_SHELL_NOTIFICATIONS_REGISTER=0 \
