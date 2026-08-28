@@ -191,6 +191,8 @@ PanelWindow {
   }
 
   onPresentationFrameChanged: root.syncPresentationFrame()
+  onSurfacesSuppressedChanged: root.syncPresentationFrame()
+  onOwnsOutputChanged: root.syncPresentationFrame()
   Component.onCompleted: root.syncPresentationFrame()
 
   Connections {
