@@ -29,6 +29,9 @@ BorderSurface {
   property rect effectPaddingRect: Qt.rect(0, 0, 0, 0)
   property bool _completed: false
 
+  signal revealFinished()
+  signal concealFinished()
+
   opacity: revealProgress
 
   transform: [
@@ -58,6 +61,12 @@ BorderSurface {
 
   onRevealedChanged: {
     if (_completed) revealProgress = revealed ? 1 : 0
+  }
+
+  onRevealProgressChanged: {
+    if (!root._completed) return
+    if (root.revealed && root.revealProgress >= 1) root.revealFinished()
+    else if (!root.revealed && root.revealProgress <= 0) root.concealFinished()
   }
 
   Component.onCompleted: {
