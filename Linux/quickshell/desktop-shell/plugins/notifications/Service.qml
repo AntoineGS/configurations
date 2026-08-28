@@ -397,10 +397,21 @@ Item {
           var guard = service.actionCloseState.guards[String(key)]
           var generation = service.actionClosingGenerations[key]
           if (guard && guard.notification && guard.generation === generation) {
-            service.actionCloseState = NotificationLogic.actionCloseTransition(
-              service.actionCloseState, { type: "close", notification: guard.notification, generation: generation }).state
-            delete service.actionClosingUntil[key]
-            delete service.actionClosingGenerations[key]
+            var actionResult = NotificationLogic.actionCloseTransition(
+              service.actionCloseState, {
+                type: "timeout", originalId: key, notification: guard.notification, generation: generation
+              })
+            if (actionResult.accepted) {
+              service.actionCloseState = actionResult.state
+              var closingIdentity = service.presentationState.closing[String(key)]
+                ? service.presentationState.closing[String(key)].identity
+                : service.presentationIdentityForOriginalId(key)
+              if (closingIdentity)
+                service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closingIdentity, now: now })
+              service.cleanupClosedNotification(guard.notification, key)
+              delete service.actionClosingUntil[key]
+              delete service.actionClosingGenerations[key]
+            } else service.actionCloseState = actionResult.state
           }
         }
       }
@@ -634,50 +645,70 @@ Item {
     return count
   }
 
-  function handleClosedNotification(notification, originalId) {
-    var generation = service.actionClosingGenerations[originalId]
-    var actionResult = generation === undefined ? null : NotificationLogic.actionCloseTransition(
-      service.actionCloseState, { type: "close", notification: notification, generation: generation })
-    if (actionResult && actionResult.accepted) {
-      service.actionCloseState = actionResult.state
-      delete service.actionClosingGenerations[originalId]
-      delete service.actionClosingUntil[originalId]
-      var closing = service.presentationState.closing[String(originalId)]
-      if (closing && closing.identity)
-        service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closing.identity, now: Date.now() })
-      return
-    }
-    if (actionResult) { service.actionCloseState = actionResult.state; return }
-    if (service.liveRefs[originalId] !== notification) return
+  function cleanupClosedNotification(notification, originalId) {
     delete service.pendingRefreshes[String(originalId)]
     delete service.pendingSilencedRefreshes[String(originalId)]
     delete service.silencedDirty[originalId]
+    delete service.pendingPopups[String(originalId)]
+    if (service.liveRefs[originalId] !== notification) return
     var generation = Number(service.liveGenerations[originalId])
     service.markHistoryUnavailable(originalId, generation)
-    if (Number(service.actionClosingGenerations[originalId]) === generation) return
     var source = service.livePersistenceSources[originalId] || "popup"
     var found = false
     for (var i = 0; i < popupModel.count; i++) {
       var row = popupModel.get(i)
       if (row && row.originalId === originalId && Number(row.timestamp) === generation && !isRestoredRow(row)) {
-        service.dispatchPresentation({
-          type: "SENDER_CLOSED",
-          identity: NotificationLogic.popupIdentity(row)
-        })
         found = true
         break
       }
     }
     if (!found) {
-      var row = { originalId: originalId, timestamp: generation }
-      if (source === "history") service.deleteHistoryFileFor(row)
-      else if (source === "popup") service.deletePopupFileFor(row)
+      var fallback = { originalId: originalId, timestamp: generation }
+      if (source === "history") service.deleteHistoryFileFor(fallback)
+      else if (source === "popup") service.deletePopupFileFor(fallback)
     }
     delete service.liveRefs[originalId]
     delete service.liveGenerations[originalId]
     service.clearFailedHistoryAction(originalId, generation)
     delete service.livePersistenceSources[originalId]
+    delete service.restoredPopups[NotificationLogic.popupFileName({ originalId: originalId, timestamp: generation })]
     try { notification.tracked = false } catch (error) {}
+  }
+
+  function handleClosedNotification(notification, originalId) {
+    var generation = service.actionClosingGenerations[originalId]
+    var actionResult = generation === undefined ? null : NotificationLogic.actionCloseTransition(
+      service.actionCloseState, { type: "close", originalId: originalId, notification: notification, generation: generation })
+    if (actionResult && actionResult.accepted) {
+      service.actionCloseState = actionResult.state
+      var closingIdentity = service.presentationState.closing[String(originalId)]
+        ? service.presentationState.closing[String(originalId)].identity
+        : service.presentationIdentityForOriginalId(originalId)
+      if (closingIdentity)
+        service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closingIdentity, now: Date.now() })
+      service.cleanupClosedNotification(notification, originalId)
+      delete service.actionClosingGenerations[originalId]
+      delete service.actionClosingUntil[originalId]
+      return
+    }
+    if (actionResult) { service.actionCloseState = actionResult.state; return }
+    if (service.liveRefs[originalId] !== notification) return
+    var generation = Number(service.liveGenerations[originalId])
+    if (Number(service.actionClosingGenerations[originalId]) === generation) return
+    var found = false
+    var closedIdentity = ""
+    for (var i = 0; i < popupModel.count; i++) {
+      var row = popupModel.get(i)
+      if (row && row.originalId === originalId && Number(row.timestamp) === generation && !isRestoredRow(row)) {
+        closedIdentity = NotificationLogic.popupIdentity(row)
+        service.dispatchPresentation({
+          type: "SENDER_CLOSED", identity: closedIdentity
+        })
+        found = true
+        break
+      }
+    }
+    service.cleanupClosedNotification(notification, originalId)
   }
 
   readonly property var updateSignals: [
@@ -810,7 +841,7 @@ Item {
       actionClosingGenerations[entry.originalId] = entry.timestamp
       actionClosingUntil[entry.originalId] = Date.now() + actionClosingTimeoutMs
       actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
-        type: "begin", notification: ref, generation: entry.timestamp
+        type: "begin", originalId: entry.originalId, notification: ref, generation: entry.timestamp
       }).state
     }
     try {
@@ -818,7 +849,7 @@ Item {
     } catch (error) {
       if (shouldDismiss) {
         var failedClose = NotificationLogic.actionCloseTransition(actionCloseState, {
-          type: "complete", notification: ref, generation: entry.timestamp, success: false
+          type: "complete", originalId: entry.originalId, notification: ref, generation: entry.timestamp, success: false
         })
         actionCloseState = failedClose.state
         if (failedClose.flush) service.handleClosedNotification(ref, entry.originalId)
@@ -837,7 +868,7 @@ Item {
 
     if (shouldDismiss) {
       var completedClose = NotificationLogic.actionCloseTransition(actionCloseState, {
-        type: "complete", notification: ref, generation: entry.timestamp, success: true
+        type: "complete", originalId: entry.originalId, notification: ref, generation: entry.timestamp, success: true
       })
       actionCloseState = completedClose.state
       requestPopupRemoval(identity, "dismiss")

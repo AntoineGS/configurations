@@ -91,6 +91,7 @@ function actionCloseTransition(state, event) {
   var guards = state && state.guards ? state.guards : {}, id = event && String(event.originalId), guard = id ? guards[id] : null
   var next = { guards: Object.assign({}, guards) }
   if (!event || typeof event !== "object") return { state: next, accepted: false, flush: false }
+  if (event.originalId === undefined || event.originalId === null) return { state: next, accepted: false, flush: false }
   if (event.type === "begin") {
     next.guards[id] = { notification: event.notification, generation: event.generation, inProgress: true, deferred: false }
     return { state: next, accepted: true, flush: false }
@@ -107,7 +108,7 @@ function actionCloseTransition(state, event) {
   }
   if (event.type === "close" || event.type === "timeout" || event.type === "clear") {
     delete next.guards[id]
-    return { state: next, accepted: event.type !== "timeout" || !guard.inProgress, flush: guard.deferred && !guard.inProgress }
+    return { state: next, accepted: true, flush: guard.deferred && !guard.inProgress }
   }
   return { state: next, accepted: false, flush: false }
 }
