@@ -85,6 +85,35 @@ function deckProjection(phase, progress, incomingVisible) {
   if (phase === "switching") return incomingVisible ? { outgoing: 0, incoming: value } : { outgoing: value, incoming: 0 }
   return { outgoing: 0, incoming: 1 }
 }
+function deckOpacityProjection(phase, progress, incomingVisible) {
+  var projection = deckProjection(phase, progress, incomingVisible)
+  if (phase === "opening" || phase === "open" || (phase === "switching" && incomingVisible))
+    return { incoming: projection.incoming, selected: projection.incoming }
+  return { outgoing: projection.outgoing, selected: projection.outgoing }
+}
+function closingOwnershipInitialState() { return { owners: {} } }
+function releaseTrackedNotification(notification) {
+  if (notification) notification.tracked = false
+  return notification
+}
+function closingOwnershipTransition(state, event) {
+  var owners = state && state.owners ? state.owners : {}, id = event && String(event.originalId), owner = id ? owners[id] : null
+  var next = { owners: Object.assign({}, owners) }
+  if (!event || typeof event !== "object" || event.originalId === undefined || event.originalId === null)
+    return { state: next, accepted: false, release: null }
+  if (event.type === "begin") {
+    next.owners[id] = { notification: event.notification, generation: event.generation, identity: event.identity }
+    return { state: next, accepted: true, release: null }
+  }
+  if (!owner || owner.notification !== event.notification || owner.generation !== event.generation
+      || owner.identity !== event.identity) return { state: next, accepted: false, release: null }
+  if (event.type === "remove") return { state: next, accepted: true, release: null }
+  if (event.type === "close" || event.type === "clear") {
+    delete next.owners[id]
+    return { state: next, accepted: true, release: owner.notification }
+  }
+  return { state: next, accepted: false, release: null }
+}
 function actionCloseNeedsGuard(source) { return source === "action" }
 function actionCloseInitialState() { return { guards: {} } }
 function actionCloseTransition(state, event) {
@@ -899,6 +928,10 @@ if (typeof module !== "undefined") {
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
     deckProjection: deckProjection,
+    deckOpacityProjection: deckOpacityProjection,
+    closingOwnershipInitialState: closingOwnershipInitialState,
+    closingOwnershipTransition: closingOwnershipTransition,
+    releaseTrackedNotification: releaseTrackedNotification,
     actionCloseNeedsGuard: actionCloseNeedsGuard,
     actionCloseInitialState: actionCloseInitialState,
     actionCloseTransition: actionCloseTransition,

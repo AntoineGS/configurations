@@ -92,7 +92,7 @@ function retire(state, identity) {
 }
 function tombstone(state, row, now) {
   var key = originalKey(row)
-  if (key) state.closing[key] = { identity: identityOf(row), expiresAt: (finite(now) ? now : Date.now()) + CLOSING_TOMBSTONE_TIMEOUT }
+  if (key) state.closing[key] = { identity: identityOf(row), expiresAt: (finite(now) ? now : 0) + CLOSING_TOMBSTONE_TIMEOUT }
 }
 function prune(state, now) {
   var key
@@ -223,13 +223,13 @@ function reduce(input, event) {
     case "DISMISS_ALL":
       row = state.active ? copy(state.active) : null
        if (row) {
-         retire(state, identityOf(row)); tombstone(state, row)
+          retire(state, identityOf(row)); tombstone(state, row, event.now)
          if (Number(row.originalId) >= 0)
            effects.push({ type: "senderDismiss", identity: identityOf(row), snapshot: copy(row), reason: "dismiss" })
          cleanup(row, effects, "dismiss"); archive(row, effects, "dismiss")
        }
        state.pending.forEach(function (item) {
-         retire(state, identityOf(item)); tombstone(state, item)
+          retire(state, identityOf(item)); tombstone(state, item, event.now)
          if (Number(item.originalId) >= 0)
            effects.push({ type: "senderDismiss", identity: identityOf(item), snapshot: copy(item), reason: "dismiss" })
          cleanup(item, effects, "dismiss"); archive(item, effects, "dismiss")

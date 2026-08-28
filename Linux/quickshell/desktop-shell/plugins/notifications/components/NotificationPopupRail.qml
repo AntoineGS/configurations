@@ -67,9 +67,9 @@ PanelWindow {
       ? root._progress : 1)
   readonly property var deckProjection: NotificationLogic.deckProjection(
     root.presentationFrame.phase, root._progress, root._incomingVisible)
-  readonly property real deckOpacity: root.presentationFrame.phase === "opening"
-    || (root.presentationFrame.phase === "switching" && root._incomingVisible)
-    ? root.deckProjection.incoming : root.deckProjection.outgoing
+  readonly property var deckOpacityProjection: NotificationLogic.deckOpacityProjection(
+    root.presentationFrame.phase, root._progress, root._incomingVisible)
+  readonly property real deckOpacity: root.deckOpacityProjection.selected
 
   screen: root.output
   visible: !root.surfacesSuppressed && (root.cueVisible || (root.onOutput && root.hasCards
@@ -327,15 +327,15 @@ PanelWindow {
         sourceComponent: NotificationCard {
           x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
           snapshot: root._latchedOutgoing; interactive: false; fontFamily: root.fontFamily
-          attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
-          gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+           attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+           gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
           metadataOpacity: root._metadataOpacity; contentOpacity: root._contentOpacity
           countdown: ({ identity: "", fraction: 1, visible: false })
         }
       }
       BarAttachedShoulders {
-        x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
-        gradientStartColor: Color.barPanels.background; gradientEndColor: root.urgencyColor(root._latchedOutgoing)
+       x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
+         gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent; gradientEndColor: root.urgencyColor(root._latchedOutgoing)
       }
     }
     Item {
@@ -346,13 +346,13 @@ PanelWindow {
       transform: Scale { origin.x: incomingSlot.width / 2; origin.y: 0; yScale: opacity }
       Loader {
         id: incomingLoader
-     active: !root.surfacesSuppressed && root._latchedIncoming !== null
+       active: !root.surfacesSuppressed && root._latchedIncoming !== null
         sourceComponent: NotificationCard {
           x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
-          snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
+           snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
             && root.incomingIdentity === identity(root._latchedIncoming)
-          fontFamily: root.fontFamily; attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
-          gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+           fontFamily: root.fontFamily; attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+           gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
           metadataOpacity: root._metadataOpacity; contentOpacity: root._contentOpacity
           countdown: root.presentationFrame.countdown
           onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
@@ -363,7 +363,7 @@ PanelWindow {
       }
       BarAttachedShoulders {
         x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
-        gradientStartColor: Color.barPanels.background; gradientEndColor: root.urgencyColor(root._latchedIncoming)
+         gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent; gradientEndColor: root.urgencyColor(root._latchedIncoming)
         onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
       }
     }

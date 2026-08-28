@@ -209,6 +209,11 @@ all = step(all, { type: "DISMISS_ALL" }, s => {
   assert.equal(s.phase, "closing")
 })
 all = step(all, { type: "SENDER_CLOSED", identity: "12000:12" }, s => assert.equal(s.active, null))
+const deterministicDismissAll = openState(snapshot("12001:12", 1, 1000, 1000))
+const dismissAllAtTime = apply(deterministicDismissAll, { type: "DISMISS_ALL", now: 5000 })
+const dismissAllAtTimeAgain = apply(deterministicDismissAll, { type: "DISMISS_ALL", now: 5000 })
+assert.deepEqual(dismissAllAtTime.state, dismissAllAtTimeAgain.state, "dismiss-all reducer state is deterministic from event time")
+assert.equal(dismissAllAtTime.state.closing["12"].expiresAt, 15000)
 for (const event of [null, {}, { type: "UNKNOWN" }, { type: "ARRIVE" }, { type: "TICK", now: "bad" }]) {
   all = step(all, event, s => assertInvariantsOnly(s))
 }
