@@ -21,8 +21,8 @@ PanelWindow {
   readonly property var visual: root.presentationFrame.visual || ({})
   readonly property var incoming: root.visual.incoming || root.presentationFrame.active
   readonly property var outgoing: root.visual.outgoing
-  readonly property var incomingDeck: root.visual.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
-  readonly property var outgoingDeck: root.visual.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+  readonly property var incomingDeck: NotificationLogic.normalizedDeck(root.visual.incomingDeck)
+  readonly property var outgoingDeck: NotificationLogic.normalizedDeck(root.visual.outgoingDeck)
   readonly property string incomingIdentity: root.incoming ? String(root.incoming.identity || "") : ""
   readonly property string outgoingIdentity: root.outgoing ? String(root.outgoing.identity || "") : ""
   readonly property bool onOutput: root.presentationFrame.route
@@ -108,7 +108,7 @@ PanelWindow {
     var paintedContent = root._contentOpacity
     if (!kind || !v.token) return
     if (root._lastTransition === root.frameKey(frame)) {
-      root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+      root._latchedIncomingDeck = NotificationLogic.normalizedDeck(v.incomingDeck)
       return
     }
     if (root._latchedKind) {
@@ -123,10 +123,10 @@ PanelWindow {
     root._latchedIncoming = v.incoming || null
     root._latchedOutgoing = kind === "close" || kind === "switch"
       ? (paintedSnapshot || v.outgoing || null) : (v.outgoing || null)
-    root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+    root._latchedIncomingDeck = NotificationLogic.normalizedDeck(v.incomingDeck)
     root._latchedOutgoingDeck = kind === "close" || kind === "switch"
-      ? (paintedDeck || v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false }))
-      : (v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false }))
+      ? NotificationLogic.normalizedDeck(paintedDeck || v.outgoingDeck)
+      : NotificationLogic.normalizedDeck(v.outgoingDeck)
     root._incomingVisible = kind === "open"
     root._progress = kind === "close" || kind === "switch" ? paintedProgress : 0
     root._metadataOpacity = kind === "close" || kind === "switch" ? paintedMetadata : 0
@@ -174,8 +174,8 @@ PanelWindow {
   function stableDeck() {
     var frame = root.presentationFrame
     if (frame.phase === "switching")
-      return root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck
-    if (frame.phase === "closing") return root._latchedOutgoingDeck
+      return NotificationLogic.normalizedDeck(root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck)
+    if (frame.phase === "closing") return NotificationLogic.normalizedDeck(root._latchedOutgoingDeck)
     return root.incomingDeck
   }
   function beginDeckSettle() {
@@ -184,22 +184,23 @@ PanelWindow {
     deckSettle.restart()
   }
 
-  onPresentationFrameChanged: {
+  function syncPresentationFrame() {
     var frame = root.presentationFrame
     if (root.surfacesSuppressed || !root.onOutput) {
       openMotion.stop(); closeMotion.stop(); switchMotion.stop()
     } else if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
     else if (frame.phase === "open") {
       root._latchedIncoming = frame.visual.incoming || frame.active
-      root._latchedIncomingDeck = frame.visual.incomingDeck
+      root._latchedIncomingDeck = NotificationLogic.normalizedDeck(frame.visual.incomingDeck)
       root._paintedSnapshot = root._latchedIncoming
       root._paintedDeck = root._latchedIncomingDeck
       root._incomingVisible = true
       root._progress = 1; root._metadataOpacity = 1; root._contentOpacity = 1
     }
   }
+  onPresentationFrameChanged: root.syncPresentationFrame()
   onVisibleChanged: if (root.visible && root.presentationFrame) root.beginDeckSettle()
-  Component.onCompleted: root.onPresentationFrameChanged()
+  Component.onCompleted: root.syncPresentationFrame()
 
   Connections {
     target: Motion
@@ -295,15 +296,17 @@ PanelWindow {
     color: root.urgencyColor(snapshot); opacity: root.deckOpacity; z: -1
   }
   Rectangle {
-    visible: root.onOutput && root.hasCards && root.stableDeck().criticalPending && root.presentationFrame.hovered
+    property var deck: root.stableDeck()
+    visible: root.onOutput && root.hasCards && deck.criticalPending && root.presentationFrame.hovered
     opacity: root.deckOpacity
     x: cardFrame.x + cardFrame.width - Style.space(10); y: cardFrame.y - Style.space(8)
     width: Style.space(6); height: width; radius: width / 2; color: Color.notifications.critical
   }
   Text {
-    visible: root.onOutput && root.hasCards && root.stableDeck().queuedCount > 0
+    property var deck: root.stableDeck()
+    visible: root.onOutput && root.hasCards && deck.queuedCount > 0
     x: cardFrame.x + cardFrame.width - Style.space(34); y: cardFrame.y + Style.space(5)
-    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckOpacity
+    text: "+" + deck.queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckOpacity
     font.pixelSize: Style.font.caption; font.bold: true; z: 2
   }
 
