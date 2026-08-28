@@ -453,17 +453,20 @@ urgentPendingReplacement = step(urgentPendingReplacement, { type: "REPLACE", ide
 let hoveredPendingReplacement = openState(snapshot("26000:71", 1, 1000, 1000))
 hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "HOVER_CHANGED", hovered: true })
 hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "ARRIVE", snapshot: Object.assign(snapshot("27000:71", 1, 1000, 1000), { queuePriority: false, queueOrder: 7 }) })
-hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "REPLACE", identity: "27000:71", snapshot: Object.assign(snapshot("28000:71", 2, 0, 0), { queuePriority: false, queueOrder: 99 }) }, s => {
+hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "ARRIVE", snapshot: Object.assign(snapshot("27500:71", 1, 1000, 1000), { queuePriority: false, queueOrder: 8 }) })
+hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "REPLACE", identity: "27500:71", snapshot: Object.assign(snapshot("28000:71", 2, 0, 0), { queuePriority: false, queueOrder: 99 }) }, s => {
   assert.equal(s.phase, "open")
   assert.equal(s.active.identity, "26000:71")
-  assert.deepEqual(ids(s.pending), ["28000:71"])
+  assert.deepEqual(ids(s.pending), ["27000:71", "28000:71"])
   assert.equal(s.visual.incomingDeck.criticalPending, true)
   assert.equal(s.countdown.visible, true)
 })
 hoveredPendingReplacement = step(hoveredPendingReplacement, { type: "HOVER_CHANGED", hovered: false }, s => {
   assert.equal(s.phase, "switching")
   assert.equal(s.active.identity, "28000:71")
-  assert.deepEqual(ids(s.visual.outgoingDeck.snapshots), ["28000:71"])
+  assert.deepEqual(ids(s.pending), ["27000:71", "26000:71"])
+  assert.deepEqual(ids(s.visual.outgoingDeck.snapshots), ["27000:71", "28000:71"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["27000:71", "26000:71"])
   assert.equal(s.visual.outgoingDeck.criticalPending, true)
   assert.equal(s.countdown.visible, false)
 })

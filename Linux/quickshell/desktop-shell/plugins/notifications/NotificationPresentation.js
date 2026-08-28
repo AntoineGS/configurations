@@ -253,12 +253,14 @@ function reduce(input, event) {
       if (state.hovered === event.hovered) break
       state.hovered = event.hovered
       state.countdown.lastNow = 0
-       if (!state.hovered && state.phase === "open" && state.pending.length && activeCritical(state.pending[0]) && !activeCritical(state.active)) {
-         var handoffRows = state.pending.slice()
-         next = state.active
-         state.active = state.pending.shift()
-         insertPending(state, next)
-         startSwitch(state, state.visual.incoming, effects, handoffRows, state.pending)
+      if (!state.hovered && state.phase === "open" && state.pending.length && !activeCritical(state.active)) {
+        var handoffRows = state.pending.slice(), criticalIndex = -1
+        for (i = 0; i < state.pending.length; i += 1) if (activeCritical(state.pending[i])) { criticalIndex = i; break }
+        if (criticalIndex < 0) break
+        next = state.active
+        state.active = state.pending.splice(criticalIndex, 1)[0]
+        insertPending(state, next)
+        startSwitch(state, state.visual.incoming, effects, handoffRows, state.pending)
       }
       break
     case "ROUTE_CHANGED":
