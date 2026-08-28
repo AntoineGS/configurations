@@ -2325,6 +2325,8 @@ Item {
       required property var modelData
       output: modelData
       requestedVisible: service.cueVisibleOn(modelData)
+      barAttached: service.barPosition === "top"
+        && service.shell && service.shell.barVisible !== false
       routeKey: service.currentCueRouteKey
       glyph: NotificationLogic.cueGlyph(service.route.direction)
       onDismissRequested: routeKey => service.dismissRouteCue(routeKey)
