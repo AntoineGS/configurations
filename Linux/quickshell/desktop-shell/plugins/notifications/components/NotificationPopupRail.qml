@@ -326,6 +326,7 @@ PanelWindow {
     attached: true
     margin: 0
     padding: 0
+    surfaceOffsetY: -elevationInset
     contentWidth: root.bodyWidth
     contentHeight: Style.space(48)
     borderSpec: Border.none()
