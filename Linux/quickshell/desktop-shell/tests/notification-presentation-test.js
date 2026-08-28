@@ -177,6 +177,15 @@ hidden = step(hidden, { type: "ROUTE_CHANGED", visible: true, output: "DP-3" }, 
   assert.equal(s.active.identity, "10001:100")
   assert.equal(s.visual.incoming.identity, "10001:100")
 })
+let hiddenUrgent = Presentation.createInitialState({ routeVisible: false, output: "" })
+hiddenUrgent = step(hiddenUrgent, { type: "ARRIVE", snapshot: snapshot("10002:102", 1, 1000, 1000) })
+hiddenUrgent = step(hiddenUrgent, { type: "ARRIVE", snapshot: snapshot("10003:103", 2, 0, 0) })
+hiddenUrgent = step(hiddenUrgent, { type: "ROUTE_CHANGED", visible: true, output: "DP-4" }, s => {
+  assert.equal(s.phase, "opening")
+  assert.equal(s.active.identity, "10003:103", "route start selects critical pending row before normal")
+  assert.deepEqual(ids(s.pending), ["10002:102"])
+  assert.equal(s.visual.output, "DP-4")
+})
 
 let pendingClose = openState(snapshot("10002:102", 2, 0, 0))
 pendingClose = step(pendingClose, { type: "ARRIVE", snapshot: snapshot("10003:103", 1, 1000, 1000) })
@@ -407,6 +416,26 @@ assert.equal(movedClosing.state.phase, "opening")
 assert.equal(movedClosing.state.visual.output, "DP-2")
 assert.equal(movedClosing.state.active.identity, "23630:237")
 assert.ok(movedClosing.effects.some(effect => effect.type === "startWatchdog" && effect.output === "DP-2"))
+
+let closingUrgentMove = openState(snapshot("23640:240", 1, 1000, 1000))
+closingUrgentMove = step(closingUrgentMove, { type: "DISMISS", identity: "23640:240" })
+const staleClosingToken = closingUrgentMove.visual.token
+closingUrgentMove = step(closingUrgentMove, { type: "ARRIVE", snapshot: Object.assign(snapshot("23641:241", 1, 1000, 1000), { queueOrder: 1 }) })
+closingUrgentMove = step(closingUrgentMove, { type: "ARRIVE", snapshot: Object.assign(snapshot("23642:242", 1, 1000, 1000), { queueOrder: 2 }) })
+closingUrgentMove = step(closingUrgentMove, { type: "REPLACE", identity: "23642:242", snapshot: Object.assign(snapshot("23643:242", 2, 0, 0), { queueOrder: 2, queuePriority: false }) })
+const directCriticalMove = apply(closingUrgentMove, { type: "ROUTE_CHANGED", visible: true, output: "DP-3" })
+assert.equal(directCriticalMove.state.phase, "opening")
+assert.equal(directCriticalMove.state.active.identity, "23643:242", "closing route move opens critical pending row directly")
+assert.deepEqual(ids(directCriticalMove.state.pending), ["23641:241"])
+assert.equal(directCriticalMove.state.visual.outgoing, null)
+assert.equal(directCriticalMove.state.visual.incoming.identity, "23643:242")
+assert.equal(directCriticalMove.state.visual.output, "DP-3")
+assert.ok(directCriticalMove.effects.some(effect => effect.type === "cancelWatchdog" && effect.token === staleClosingToken))
+const staleClosingCallback = apply(directCriticalMove.state, {
+  type: "TRANSITION_FINISHED", token: staleClosingToken, kind: "close", output: "DP-1",
+})
+assert.deepEqual(staleClosingCallback.state, directCriticalMove.state)
+assert.deepEqual(staleClosingCallback.effects, [])
 
 let tiedReplacement = openState(snapshot("23800:238", 2, 0, 0))
 const tiedOne = snapshot("23900:239", 1, 1000, 1000); tiedOne.queueOrder = 0

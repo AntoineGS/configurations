@@ -116,6 +116,10 @@ function criticalPendingIndex(rows) {
   for (var i = 0; i < rows.length; i += 1) if (activeCritical(rows[i])) return i
   return -1
 }
+function takeNextPending(state) {
+  var index = criticalPendingIndex(state.pending)
+  return state.pending.splice(index >= 0 ? index : 0, 1)[0]
+}
 function reconcileCritical(state, effects) {
   var index, outgoingRows, displaced
   if (state.phase !== "open" || state.hovered || activeCritical(state.active)) return false
@@ -156,8 +160,7 @@ function settle(state, event, effects) {
   if (state.phase === "closing") {
     clearVisual(state)
     if (state.route.visible && state.pending.length) {
-      var nextIndex = criticalPendingIndex(state.pending)
-      state.active = state.pending.splice(nextIndex >= 0 ? nextIndex : 0, 1)[0]
+      state.active = takeNextPending(state)
       startOpen(state, effects)
     }
     else state.phase = state.route.visible ? "closed" : "hidden"
@@ -288,9 +291,9 @@ function reduce(input, event) {
           if (state.phase === "closing" && routeChanged) {
             cancel(state, effects); clearVisual(state); state.countdown.visible = false
             state.phase = "closed"
-            if (state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
+            if (state.pending.length) { state.active = takeNextPending(state); startOpen(state, effects) }
           }
-          else if (!state.active && state.pending.length) { state.active = state.pending.shift(); startOpen(state, effects) }
+          else if (!state.active && state.pending.length) { state.active = takeNextPending(state); startOpen(state, effects) }
          else if (state.active && (state.phase === "hidden" || routeChanged)) startOpen(state, effects)
          else if (!routeChanged) break
        }
