@@ -82,8 +82,24 @@ function deckProjection(phase, progress, incomingVisible) {
   var value = Math.max(0, Math.min(1, typeof progress === "number" && isFinite(progress) ? progress : 0))
   if (phase === "opening") return { outgoing: 0, incoming: value }
   if (phase === "closing") return { outgoing: value, incoming: 0 }
-  if (phase === "switching") return incomingVisible ? { outgoing: 0, incoming: value } : { outgoing: 1 - value, incoming: 0 }
+  if (phase === "switching") return incomingVisible ? { outgoing: 0, incoming: value } : { outgoing: value, incoming: 0 }
   return { outgoing: 0, incoming: 1 }
+}
+function actionCloseInitialState() { return { guard: null, inProgress: false, deferred: false } }
+function actionCloseTransition(state, event) {
+  var guard = state && state.guard, next = {
+    guard: guard, inProgress: !!(state && state.inProgress), deferred: !!(state && state.deferred)
+  }
+  if (!event || typeof event !== "object") return { state: next, accepted: false, flush: false }
+  if (event.type === "begin") return { state: { guard: { notification: event.notification, generation: event.generation }, inProgress: true, deferred: false }, accepted: true, flush: false }
+  if (!guard || guard.notification !== event.notification || guard.generation !== event.generation)
+    return { state: next, accepted: false, flush: false }
+  if (event.type === "close" && next.inProgress)
+    return { state: { guard: guard, inProgress: true, deferred: true }, accepted: false, flush: false }
+  if (event.type === "complete")
+    return { state: { guard: guard, inProgress: false, deferred: next.deferred }, accepted: true, flush: next.deferred }
+  if (event.type === "close") return { state: actionCloseInitialState(), accepted: true, flush: next.deferred }
+  return { state: next, accepted: false, flush: false }
 }
 
 function isActionList(value) {
@@ -872,6 +888,8 @@ if (typeof module !== "undefined") {
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,
     deckProjection: deckProjection,
+    actionCloseInitialState: actionCloseInitialState,
+    actionCloseTransition: actionCloseTransition,
     actionMetadata: actionMetadata,
     actionOutcome: actionOutcome,
     normalizedExpireTimeout: normalizedExpireTimeout,

@@ -99,6 +99,22 @@ assert.equal(logic.cueGlyph("up"), "↑")
 assert.equal(logic.cueGlyph("down"), "↓")
 assert.equal(logic.cueGlyph(null), "•")
 
+const sender = {}
+let actionClose = logic.actionCloseInitialState()
+actionClose = logic.actionCloseTransition(actionClose, { type: "begin", notification: sender, generation: 7 }).state
+actionClose = logic.actionCloseTransition(actionClose, { type: "close", notification: sender, generation: 7 }).state
+assert.equal(actionClose.deferred, true, "synchronous sender close is deferred while action is running")
+let completedAction = logic.actionCloseTransition(actionClose, { type: "complete", notification: sender, generation: 7, success: true })
+assert.equal(completedAction.flush, true, "successful action flushes deferred sender close after dismissal")
+let matchingClose = logic.actionCloseTransition(completedAction.state, { type: "close", notification: sender, generation: 7 })
+assert.equal(matchingClose.accepted, true, "matching sender close clears the completed action guard")
+let staleClose = logic.actionCloseTransition(actionClose, { type: "close", notification: {}, generation: 7 })
+assert.equal(staleClose.accepted, false, "stale sender object cannot clear the current action guard")
+assert.equal(logic.actionCloseTransition(actionClose, { type: "close", notification: sender, generation: 8 }).accepted, false,
+  "stale sender generation cannot clear the current action guard")
+let failedAction = logic.actionCloseTransition(actionClose, { type: "complete", notification: sender, generation: 7, success: false })
+assert.equal(failedAction.flush, true, "failed action flushes deferred sender close as ordinary close")
+
 const actions = [
   { identifier: "default", text: "Open" },
   { identifier: "archive", text: "Archive" },
