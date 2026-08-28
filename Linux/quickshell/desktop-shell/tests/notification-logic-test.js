@@ -130,29 +130,23 @@ expiringPlan = logic.closingOwnershipPlan(expiringPlan, {
 const prunedPlan = logic.closingOwnershipPlan(expiringPlan, { type: "prune", originalId: 43, now: 100 })
 assert.deepEqual(prunedPlan.steps, ["untrack", "delete"])
 assert.equal(prunedPlan.release, ownedRef)
-let ownership = logic.closingOwnershipInitialState()
-ownership = logic.closingOwnershipTransition(ownership, {
-  type: "begin", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
+let replacedOwnerPlan = logic.closingOwnershipPlanInitialState()
+replacedOwnerPlan = logic.closingOwnershipPlan(replacedOwnerPlan, {
+  type: "begin", originalId: 44, notification: ownedRef, generation: 4400,
+  ownerIdentity: "4400:44", expiresAt: 100,
 }).state
-ownership = logic.closingOwnershipTransition(ownership, { type: "remove", originalId: 41 }).state
-const ownedClose = logic.closingOwnershipTransition(ownership, {
-  type: "close", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
+replacedOwnerPlan = logic.closingOwnershipPlan(replacedOwnerPlan, {
+  type: "refresh", originalId: 44, notification: ownedRef, generation: 4401,
+  ownerIdentity: "4401:44", expiresAt: 200,
+}).state
+const rejectedTimeoutPlan = logic.closingOwnershipPlan(replacedOwnerPlan, {
+  type: "close", originalId: 44, notification: ownedRef, generation: 4400,
+  tombstoneIdentity: "4401:44",
 })
-assert.equal(ownedClose.accepted, true, "sender close acknowledges ownership after model removal")
-assert.equal(ownedClose.release, ownedRef)
-assert.equal(ownedClose.state.owners["41"], undefined)
+assert.equal(rejectedTimeoutPlan.accepted, false, "stale timeout cannot clear a refreshed owner")
+assert.equal(rejectedTimeoutPlan.state.owners["44"].generation, 4401)
 assert.equal(logic.releaseTrackedNotification(ownedRef), ownedRef)
 assert.equal(ownedRef.tracked, false, "matching closed notification is untracked before ownership cleanup")
-ownedRef.tracked = true
-ownership = logic.closingOwnershipTransition(ownership, {
-  type: "begin", originalId: 41, notification: ownedRef, generation: 4101, identity: "4101:41",
-}).state
-assert.equal(logic.closingOwnershipTransition(ownership, {
-  type: "close", originalId: 41, notification: {}, generation: 4100, identity: "4100:41",
-}).accepted, false, "stale sender object cannot acknowledge a newer tombstone")
-assert.equal(logic.closingOwnershipTransition(ownership, {
-  type: "close", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",
-}).accepted, false, "stale sender generation cannot acknowledge a newer tombstone")
 assert.deepEqual(logic.deckOpacityProjection("opening", 0.5, false), { incoming: 0.5, selected: 0.5 })
 assert.deepEqual(logic.deckOpacityProjection("open", 1, true), { incoming: 1, selected: 1 })
 assert.deepEqual(logic.deckOpacityProjection("closing", 0.5, false), { outgoing: 0.5, selected: 0.5 })
