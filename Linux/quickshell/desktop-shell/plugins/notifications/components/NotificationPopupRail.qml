@@ -251,7 +251,7 @@ PanelWindow {
   Item {
     id: cueAnchorItem
     x: popupAnchorItem.x
-    y: 0
+    y: -(routeCuePopup.elevationInset - routeCuePopup.shadowPadding)
     width: 1
     height: 0
   }
@@ -326,7 +326,7 @@ PanelWindow {
     attached: true
     margin: 0
     padding: 0
-    surfaceOffsetY: -elevationInset - Math.max(0, elevationInset - shadowPadding)
+    surfaceOffsetY: -elevationInset
     contentWidth: root.bodyWidth
     contentHeight: Style.space(48)
     borderSpec: Border.none()
