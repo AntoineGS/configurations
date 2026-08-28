@@ -106,7 +106,11 @@ PanelWindow {
     var paintedProgress = root._progress
     var paintedMetadata = root._metadataOpacity
     var paintedContent = root._contentOpacity
-    if (!kind || !v.token || root._lastTransition === root.frameKey(frame)) return
+    if (!kind || !v.token) return
+    if (root._lastTransition === root.frameKey(frame)) {
+      root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+      return
+    }
     if (root._latchedKind) {
       paintedSnapshot = root._incomingVisible ? root._latchedIncoming : root._latchedOutgoing
       paintedDeck = root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck
@@ -307,7 +311,8 @@ PanelWindow {
     id: cardFrame
     x: root.width - Style.gapsOut - width; y: root.barAttached ? root.barSize : Style.gapsOut
     width: root.bodyWidth + (root.barAttached ? root.shoulderRadius * 2 : 0)
-    property real deckCardHeight: root.presentationFrame.phase === "switching" && !root._incomingVisible
+    property real deckCardHeight: (root.presentationFrame.phase === "closing"
+      || (root.presentationFrame.phase === "switching" && !root._incomingVisible))
       ? (outgoingLoader.item ? outgoingLoader.item.implicitHeight : 0)
       : (incomingLoader.item ? incomingLoader.item.implicitHeight : 0)
     height: Math.max(outgoingLoader.item ? outgoingLoader.item.height : 0, incomingLoader.item ? incomingLoader.item.height : 0)
