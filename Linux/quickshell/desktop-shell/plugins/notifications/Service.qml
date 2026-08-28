@@ -68,6 +68,9 @@ Item {
     error: "notification route unavailable"
   })
   readonly property bool routeVisible: routeValid && route.visible === true
+  property string dismissedCueRouteKey: ""
+  readonly property string currentCueRouteKey: service.routeValid
+    ? NotificationLogic.routeCueKey(service.route) : ""
 
   property var presentationState: Presentation.createInitialState({
     routeVisible: service.routeVisible,
@@ -1983,10 +1986,22 @@ Item {
     return NotificationLogic.cardsVisibleOn(service.route, service.screenName(screen))
   }
 
+  function dismissRouteCue(routeKey) {
+    var key = String(routeKey || "")
+    if (key && key === service.currentCueRouteKey) service.dismissedCueRouteKey = key
+  }
+
   function cueVisibleOn(screen) {
-    return !service.testSurfaceSuppressed && service.routeVisible && service.route.cueOutput !== null
-      && String(service.route.cueOutput) === screenName(screen)
-      && (service.presentationFrame.active !== null || service.presentationFrame.pending.length > 0)
+    var hasNotifications = service.presentationFrame.active !== null
+      || service.presentationFrame.pending.length > 0
+    return !service.testSurfaceSuppressed && service.routeVisible
+      && NotificationLogic.routeCueVisibleOn(service.route, service.screenName(screen),
+        hasNotifications, service.dismissedCueRouteKey)
+  }
+
+  onCurrentCueRouteKeyChanged: {
+    if (service.dismissedCueRouteKey && service.dismissedCueRouteKey !== service.currentCueRouteKey)
+      service.dismissedCueRouteKey = ""
   }
 
   onRouteChanged: {
@@ -2265,6 +2280,7 @@ Item {
       surfacesSuppressed: service.testSurfaceSuppressed
       shell: service.shell
       cueVisible: service.cueVisibleOn(modelData)
+      cueRouteKey: service.currentCueRouteKey
       fontFamily: service.shell && service.shell.bar
         ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
       barPosition: service.barPosition
@@ -2283,6 +2299,7 @@ Item {
         var capturedIdentifier = String(identifier || "")
         Qt.callLater(function() { service.invokePopupActionIdentity(capturedIdentity, capturedIdentifier) })
       }
+      onCueDismissRequested: routeKey => service.dismissRouteCue(routeKey)
       onHoverChanged: function(identity, hovered) {
         var capturedIdentity = String(identity || "")
         var capturedHovered = hovered === true
