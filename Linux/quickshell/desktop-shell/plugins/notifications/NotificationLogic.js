@@ -293,6 +293,16 @@ function withPopupTiming(snapshot, duration) {
   return result
 }
 
+function restorePopupTiming(snapshot, duration, now) {
+  var result = {}
+  var value = Number(duration)
+  var remaining = restoredRemainingLifetime(snapshot, value, now)
+  for (var key in (snapshot || {})) if (Object.prototype.hasOwnProperty.call(snapshot, key)) result[key] = snapshot[key]
+  result.duration = value
+  result.remainingLifetime = remaining
+  return result
+}
+
 function replacementBookkeeping(generations, sources, originalId, timestamp, source) {
   var nextGenerations = {}, nextSources = {}, key
   for (key in (generations || {})) if (Object.prototype.hasOwnProperty.call(generations, key)) nextGenerations[key] = generations[key]
@@ -859,6 +869,7 @@ if (typeof module !== "undefined") {
     shouldPersistPopup: shouldPersistPopup,
     nextMonotonicTimestamp: nextMonotonicTimestamp,
     withPopupTiming: withPopupTiming,
+    restorePopupTiming: restorePopupTiming,
     replacementBookkeeping: replacementBookkeeping,
     canAdmitPopup: canAdmitPopup,
     transitionCallbackEvent: transitionCallbackEvent,

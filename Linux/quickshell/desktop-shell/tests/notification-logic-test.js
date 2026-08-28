@@ -205,6 +205,18 @@ assert.equal(logic.remainingLifetime({ deadline: 4000 }, 4500, 8000), 0,
   "expired absolute deadlines do not restart")
 assert.equal(logic.remainingLifetime({ timestamp: 1000 }, 2500, 8000), 6500,
   "legacy rows derive a fixed deadline from their original timestamp")
+assert.deepEqual(logic.restorePopupTiming(
+  { timestamp: 1000, remainingLifetime: 700 }, 15000, 2000),
+  { timestamp: 1000, remainingLifetime: 700, duration: 15000 },
+  "persisted remaining lifetime is retained while restoring popup timing")
+assert.deepEqual(logic.restorePopupTiming(
+  { timestamp: 1000, deadline: 1500 }, 15000, 2000),
+  { timestamp: 1000, deadline: 1500, remainingLifetime: 0, duration: 15000 },
+  "expired legacy deadlines remain expired during restoration")
+assert.equal(logic.restorePopupTiming({ timestamp: 1000 }, 15000, 2000).remainingLifetime, 15000,
+  "missing persisted timing receives the full duration")
+assert.equal(logic.restorePopupTiming({ timestamp: 1000, remainingLifetime: 0 }, 15000, 2000).remainingLifetime, 0,
+  "explicit non-expiring history remains non-expiring")
 
 const normalA = { originalId: 1, timestamp: 1000, urgency: 1 }
 const normalB = { originalId: 2, timestamp: 2000, urgency: 1 }
