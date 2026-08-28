@@ -103,6 +103,33 @@ assert.equal(logic.actionCloseNeedsGuard("senderDismiss"), false)
 assert.equal(logic.actionCloseNeedsGuard("senderExpire"), false)
 assert.equal(logic.actionCloseNeedsGuard("action"), true)
 const ownedRef = { tracked: true }
+let ownershipPlan = logic.closingOwnershipPlanInitialState()
+ownershipPlan = logic.closingOwnershipPlan(ownershipPlan, {
+  type: "begin", originalId: 42, notification: ownedRef, generation: 4200,
+  ownerIdentity: "4200:42", expiresAt: 100,
+}).state
+ownershipPlan = logic.closingOwnershipPlan(ownershipPlan, {
+  type: "refresh", originalId: 42, notification: ownedRef, generation: 4201,
+  ownerIdentity: "4201:42", expiresAt: 200,
+}).state
+const stalePlanAck = logic.closingOwnershipPlan(ownershipPlan, {
+  type: "close", originalId: 42, notification: {}, generation: 4201, tombstoneIdentity: "4201:42",
+})
+assert.equal(stalePlanAck.accepted, false)
+const planAck = logic.closingOwnershipPlan(ownershipPlan, {
+  type: "close", originalId: 42, notification: ownedRef, generation: 4201, tombstoneIdentity: "4201:42",
+})
+assert.deepEqual(planAck.steps, ["untrack", "delete"], "ownership plan orders untrack before delete")
+assert.equal(planAck.release, ownedRef)
+assert.equal(planAck.state.owners["42"], undefined)
+let expiringPlan = logic.closingOwnershipPlanInitialState()
+expiringPlan = logic.closingOwnershipPlan(expiringPlan, {
+  type: "begin", originalId: 43, notification: ownedRef, generation: 4300,
+  ownerIdentity: "4300:43", expiresAt: 100,
+}).state
+const prunedPlan = logic.closingOwnershipPlan(expiringPlan, { type: "prune", originalId: 43, now: 100 })
+assert.deepEqual(prunedPlan.steps, ["untrack", "delete"])
+assert.equal(prunedPlan.release, ownedRef)
 let ownership = logic.closingOwnershipInitialState()
 ownership = logic.closingOwnershipTransition(ownership, {
   type: "begin", originalId: 41, notification: ownedRef, generation: 4100, identity: "4100:41",

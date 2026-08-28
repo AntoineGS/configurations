@@ -96,6 +96,25 @@ function releaseTrackedNotification(notification) {
   if (notification) notification.tracked = false
   return notification
 }
+function closingOwnershipPlanInitialState() { return { owners: {} } }
+function closingOwnershipPlan(state, event) {
+  var owners = state && state.owners ? state.owners : {}, id = event && String(event.originalId), owner = id ? owners[id] : null
+  var next = { owners: Object.assign({}, owners) }
+  if (!event || typeof event !== "object" || event.originalId === undefined || event.originalId === null)
+    return { state: next, accepted: false, release: null, steps: [] }
+  if (event.type === "begin" || event.type === "refresh") {
+    next.owners[id] = { notification: event.notification, generation: event.generation,
+      ownerIdentity: event.ownerIdentity, expiresAt: event.expiresAt }
+    return { state: next, accepted: true, release: null, steps: [] }
+  }
+  if (event.type === "prune") {
+    if (!owner || typeof owner.expiresAt !== "number" || owner.expiresAt > event.now)
+      return { state: next, accepted: false, release: null, steps: [] }
+  } else if (!owner || owner.notification !== event.notification || owner.generation !== event.generation
+      || owner.ownerIdentity !== event.tombstoneIdentity) return { state: next, accepted: false, release: null, steps: [] }
+  delete next.owners[id]
+  return { state: next, accepted: true, release: owner.notification, steps: ["untrack", "delete"] }
+}
 function closingOwnershipTransition(state, event) {
   var owners = state && state.owners ? state.owners : {}, id = event && String(event.originalId), owner = id ? owners[id] : null
   var next = { owners: Object.assign({}, owners) }
@@ -932,6 +951,8 @@ if (typeof module !== "undefined") {
     closingOwnershipInitialState: closingOwnershipInitialState,
     closingOwnershipTransition: closingOwnershipTransition,
     releaseTrackedNotification: releaseTrackedNotification,
+    closingOwnershipPlanInitialState: closingOwnershipPlanInitialState,
+    closingOwnershipPlan: closingOwnershipPlan,
     actionCloseNeedsGuard: actionCloseNeedsGuard,
     actionCloseInitialState: actionCloseInitialState,
     actionCloseTransition: actionCloseTransition,
