@@ -27,6 +27,9 @@ ElevatedSurface {
   property int urgency: 1
   property double timestamp: 0
   property var actions: []
+  property var snapshot: null
+  property var countdown: ({ identity: "", fraction: 1, visible: false })
+  property bool interactive: true
   property string fontFamily: Style.font.family
   property bool historyMode: false
   property bool keyboardSelected: false
@@ -41,28 +44,43 @@ ElevatedSurface {
   property bool showCountdown: false
 
   readonly property bool hovered: hoverTracker.hovered
+  readonly property string renderedIdentity: snapshot ? String(snapshot.identity || "") : ""
+  readonly property string renderedApp: snapshot ? String(snapshot.app || "") : root.app
+  readonly property string renderedAppIcon: snapshot ? String(snapshot.appIcon || "") : root.appIcon
+  readonly property string renderedSummary: snapshot ? String(snapshot.summary || "") : root.summary
+  readonly property string renderedBody: snapshot ? String(snapshot.body || "") : root.body
+  readonly property string renderedImage: snapshot ? String(snapshot.image || "") : root.image
+  readonly property int renderedUrgency: snapshot ? Number(snapshot.urgency) : root.urgency
+  readonly property double renderedTimestamp: snapshot ? Number(snapshot.timestamp) : root.timestamp
+  readonly property var renderedActions: snapshot ? (snapshot.actions || []) : root.actions
+  readonly property bool countdownShown: snapshot
+    ? root.countdown.visible === true && String(root.countdown.identity || "") === root.renderedIdentity
+    : root.showCountdown
+  readonly property real countdownFraction: snapshot
+    ? Math.max(0, Math.min(1, Number(root.countdown.fraction) || 0))
+    : Math.max(0, Math.min(1, root.remainingFraction))
   readonly property real gradientStop: Math.min(1,
     root.gradientExtent / Math.max(1, root.height))
-  readonly property string smallIconSource: image.length > 0
-    ? NotificationLogic.normalizeImageSource(image) : iconSource(appIcon)
+  readonly property string smallIconSource: renderedImage.length > 0
+    ? NotificationLogic.normalizeImageSource(renderedImage) : iconSource(renderedAppIcon)
   readonly property bool hasSmallIcon: smallIconSource.length > 0
-  readonly property string sanitizedBody: sanitizeBody(body)
+  readonly property string sanitizedBody: sanitizeBody(renderedBody)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
-  readonly property color surfaceColor: urgency === 0
-    ? Color.notifications.low : urgency === 2
+  readonly property color surfaceColor: renderedUrgency === 0
+    ? Color.notifications.low : renderedUrgency === 2
       ? Color.notifications.critical : Color.notifications.background
   readonly property real contentTopInset: root.attachedMode
     ? Math.max(0, root.attachedContentTopInset) : 0
   readonly property color inkColor: Color.notifications.text
-  readonly property string sourceLabel: String(app || "SYSTEM").toUpperCase()
-  readonly property string timeLabel: formatTime(timestamp)
+  readonly property string sourceLabel: String(renderedApp || "SYSTEM").toUpperCase()
+  readonly property string timeLabel: formatTime(renderedTimestamp)
 
   signal closeRequested()
   signal cardClicked()
   signal actionClicked(string identifier)
 
   function sanitizeBody(value) {
-    return NotificationLogic.sanitizeBody(value, app, appIcon)
+    return NotificationLogic.sanitizeBody(value, renderedApp, renderedAppIcon)
   }
 
   function iconSource(icon) {
@@ -97,10 +115,14 @@ ElevatedSurface {
     : Border.none()
   clip: true
 
-  HoverHandler { id: hoverTracker }
+  HoverHandler {
+    id: hoverTracker
+    enabled: root.interactive
+  }
 
   MouseArea {
     anchors.fill: parent
+    enabled: root.interactive
     cursorShape: root.historyMode && !root.actionAvailable ? Qt.ArrowCursor : Qt.PointingHandCursor
     acceptedButtons: root.historyMode ? Qt.LeftButton : Qt.LeftButton | Qt.RightButton
     onClicked: function(mouse) {
@@ -181,8 +203,8 @@ ElevatedSurface {
       Layout.rightMargin: Style.space(12)
       Layout.topMargin: Style.space(10)
       Layout.bottomMargin: root.sanitizedBody.length > 0 ? 0 : Style.space(10)
-      visible: root.summary.length > 0
-      text: root.summary
+      visible: root.renderedSummary.length > 0
+      text: root.renderedSummary
       color: root.inkColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.title
@@ -242,7 +264,7 @@ ElevatedSurface {
         spacing: Style.space(6)
 
         Repeater {
-          model: root.actions || []
+          model: root.renderedActions || []
 
           Button {
             required property int index
@@ -258,6 +280,7 @@ ElevatedSurface {
             fontSize: Style.font.caption
             horizontalPadding: Style.space(9)
             verticalPadding: Style.space(6)
+            enabled: root.interactive
             onClicked: root.actionClicked(String(modelData.identifier || ""))
           }
         }
@@ -290,11 +313,11 @@ ElevatedSurface {
     anchors.rightMargin: Style.space(12)
     anchors.bottomMargin: Style.space(5)
     height: Math.max(1, Style.space(2))
-    visible: root.showCountdown
+    visible: root.countdownShown
     color: Util.alpha(root.inkColor, 0.2)
 
     Rectangle {
-      width: parent.width * Math.max(0, Math.min(1, root.remainingFraction))
+      width: parent.width * root.countdownFraction
       height: parent.height
       color: Color.notifications.countdown
     }
@@ -307,8 +330,8 @@ ElevatedSurface {
     anchors.rightMargin: Style.space(3)
     width: Style.space(18)
     height: Style.space(18)
-    visible: !root.historyMode && opacity > 0
-    opacity: root.hovered ? 1 : 0
+    visible: root.interactive && !root.historyMode && opacity > 0
+    opacity: root.interactive && root.hovered ? 1 : 0
 
     Behavior on opacity { NumberAnimation { duration: 100 } }
 
@@ -324,6 +347,7 @@ ElevatedSurface {
       id: closeArea
       anchors.fill: parent
       hoverEnabled: true
+      enabled: root.interactive
       cursorShape: Qt.PointingHandCursor
       onClicked: root.closeRequested()
     }

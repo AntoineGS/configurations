@@ -125,6 +125,7 @@ TopBarOverlay {
           delegate: Item {
             id: cardSlot
             required property int index
+            required property int originalId
             required property string app
             required property string appIcon
             required property string summary
@@ -137,18 +138,24 @@ TopBarOverlay {
             width: root.focusedCardWidth
             height: historyTrack.height
             readonly property bool focused: index === root.selectedIndex
+            readonly property var snapshot: ({
+              identity: String(cardSlot.timestamp) + ":" + String(cardSlot.originalId),
+              app: cardSlot.app,
+              appIcon: cardSlot.appIcon,
+              summary: cardSlot.summary,
+              body: cardSlot.body,
+              image: cardSlot.image,
+              urgency: cardSlot.urgency,
+              timestamp: cardSlot.timestamp,
+              actions: []
+            })
 
             NotificationCard {
               anchors.centerIn: parent
               width: root.focusedCardWidth
-              app: cardSlot.app
-              appIcon: cardSlot.appIcon
-              summary: cardSlot.summary
-              body: cardSlot.body
-              image: cardSlot.image
-              urgency: cardSlot.urgency
-              timestamp: cardSlot.timestamp
-              actions: []
+              snapshot: cardSlot.snapshot
+              countdown: ({ identity: "", fraction: 1, visible: false })
+              interactive: true
               fontFamily: root.fontFamily
               historyMode: true
               keyboardSelected: cardSlot.focused
