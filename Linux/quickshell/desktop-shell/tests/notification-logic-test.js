@@ -102,6 +102,23 @@ assert.equal(logic.cardsVisibleOn({ visible: true, output: "DVI-D-1" }, "DVI-D-1
 assert.equal(logic.cardsVisibleOn({ visible: true, output: "DVI-D-1" }, "HDMI-A-1"), false)
 assert.equal(logic.cardsVisibleOn({ visible: false, output: "DVI-D-1" }, "DVI-D-1"), false)
 assert.equal(logic.cardsVisibleOn(null, "DVI-D-1"), false)
+const cueRoute = {
+  valid: true,
+  visible: true,
+  output: "DP-2",
+  cueOutput: "DVI-D-1",
+  direction: "left",
+}
+const cueRouteKey = logic.routeCueKey(cueRoute)
+assert.equal(cueRouteKey, "DP-2\u001fDVI-D-1\u001fleft")
+assert.equal(logic.routeCueVisibleOn(cueRoute, "DVI-D-1", true, ""), true)
+assert.equal(logic.routeCueVisibleOn(cueRoute, "DVI-D-1", true, cueRouteKey), false,
+  "dismissal suppresses the current route")
+assert.equal(logic.routeCueVisibleOn(cueRoute, "DP-2", true, ""), false)
+assert.equal(logic.routeCueVisibleOn(cueRoute, "DVI-D-1", false, ""), false)
+assert.equal(logic.routeCueKey({ ...cueRoute, visible: false }), "")
+assert.notEqual(logic.routeCueKey({ ...cueRoute, direction: "right" }), cueRouteKey,
+  "a changed direction starts a new cue session")
 assert.deepEqual(logic.senderClosedEvent("100:1", 123), {
   type: "SENDER_CLOSED", identity: "100:1", now: 123,
 })
