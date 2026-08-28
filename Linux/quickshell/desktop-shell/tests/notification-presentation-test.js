@@ -41,7 +41,7 @@ assert.deepEqual(state, {
     outgoingDeck: { snapshots: [], queuedCount: 0, criticalPending: false },
     incomingDeck: { snapshots: [], queuedCount: 0, criticalPending: false },
     token: 0, kind: "", output: "",
-  }, hovered: false, deferredCritical: false,
+  }, hovered: false,
   countdown: { identity: "", duration: 0, remaining: 0, fraction: 1, visible: false, lastNow: 0 },
   retired: {}, retiredOrder: [], closing: {}, nextToken: 1,
 })
@@ -74,11 +74,14 @@ state = step(state, { type: "TRANSITION_FINISHED", token: 1, kind: "open", outpu
 state = step(state, { type: "ARRIVE", snapshot: normalB }, s => {
   assert.deepEqual(ids(s.pending), ["2000:2"])
   assert.equal(s.visual.token, 0)
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["2000:2"])
+  assert.equal(s.visual.incomingDeck.queuedCount, 1)
 })
 state = step(state, { type: "HOVER_CHANGED", hovered: true }, s => assert.equal(s.hovered, true))
 state = step(state, { type: "ARRIVE", snapshot: criticalC }, s => {
   assert.equal(s.phase, "open")
-  assert.equal(s.deferredCritical, true)
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["3000:3", "2000:2"])
+  assert.equal(s.visual.incomingDeck.criticalPending, true)
 })
 state = step(state, { type: "HOVER_CHANGED", hovered: false }, s => {
   assert.equal(s.phase, "switching")
@@ -248,7 +251,9 @@ let closingResult = apply(closing, { type: "DISMISS", identity: "15000:15" })
 assert.equal(closingResult.state.phase, "closing")
 const frozenClose = JSON.parse(JSON.stringify(closingResult.state.visual))
 closingResult = apply(closingResult.state, { type: "ARRIVE", snapshot: snapshot("16000:16", 1, 1000, 1000) })
-assert.deepEqual(closingResult.state.visual, frozenClose)
+assert.equal(closingResult.state.visual.outgoing.identity, frozenClose.outgoing.identity)
+assert.deepEqual(closingResult.state.visual.outgoingDeck, frozenClose.outgoingDeck)
+assert.deepEqual(ids(closingResult.state.visual.incomingDeck.snapshots), ["16000:16"])
 assert.deepEqual(ids(closingResult.state.pending), ["16000:16"])
 const closeToken2 = closingResult.state.visual.token
 closingResult = apply(closingResult.state, { type: "TRANSITION_FINISHED", token: closeToken2, kind: "close", output: "DP-1" })
@@ -378,9 +383,55 @@ pendingReplacement = step(pendingReplacement, { type: "ARRIVE", snapshot: snapsh
 pendingReplacement = step(pendingReplacement, { type: "ARRIVE", snapshot: snapshot("28000:28", 2, 0, 0) })
 pendingReplacement = step(pendingReplacement, { type: "REPLACE", identity: "27000:27", snapshot: snapshot("29000:27", 2, 0, 0) }, s => {
   assert.deepEqual(ids(s.pending), ["28000:28", "29000:27"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["28000:28", "29000:27"])
   assert.equal(s.pending[1].queueOrder, 27000)
   assert.equal(s.pending[1].queuePriority, false)
 })
+
+let pendingRemoval = openState(snapshot("26000:30", 2, 0, 0))
+pendingRemoval = step(pendingRemoval, { type: "ARRIVE", snapshot: snapshot("27000:30", 1, 1000, 1000) })
+pendingRemoval = step(pendingRemoval, { type: "ARRIVE", snapshot: snapshot("28000:30", 1, 1000, 1000) })
+pendingRemoval = step(pendingRemoval, { type: "DISMISS", identity: "27000:30" }, s => {
+  assert.deepEqual(ids(s.pending), ["28000:30"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["28000:30"])
+})
+pendingRemoval = step(pendingRemoval, { type: "SENDER_CLOSED", identity: "28000:30" }, s => {
+  assert.deepEqual(s.pending, [])
+  assert.deepEqual(s.visual.incomingDeck.snapshots, [])
+})
+
+let allDeck = openState(snapshot("26000:40", 1, 1000, 1000))
+allDeck = step(allDeck, { type: "HOVER_CHANGED", hovered: true })
+allDeck = step(allDeck, { type: "ARRIVE", snapshot: snapshot("27000:40", 2, 0, 0) })
+const allDeckResult = apply(allDeck, { type: "DISMISS_ALL" })
+assert.deepEqual(ids(allDeckResult.state.visual.outgoingDeck.snapshots), ["27000:40"])
+assert.equal(allDeckResult.state.visual.outgoingDeck.criticalPending, true)
+
+let urgencyReplacement = openState(Object.assign(snapshot("26000:50", 2, 0, 0), { queuePriority: true }))
+const normalReplacement = Object.assign(snapshot("27000:50", 1, 1000, 1000), { queuePriority: true })
+urgencyReplacement = step(urgencyReplacement, { type: "REPLACE", identity: "26000:50", snapshot: normalReplacement })
+assert.equal(urgencyReplacement.countdown.visible, true, "critical queue priority does not suppress a normal active countdown")
+urgencyReplacement = step(urgencyReplacement, { type: "TICK", identity: "27000:50", now: 1 })
+const urgencyExpiry = apply(urgencyReplacement, { type: "TICK", identity: "27000:50", now: 1001 })
+assert.equal(urgencyExpiry.state.phase, "closing", "normal replacement remains expiring")
+
+let promotedReplacement = openState(snapshot("26000:60", 2, 0, 0))
+const retainedNormal = snapshot("27000:60", 1, 1000, 1000)
+const laterNormal = snapshot("28000:60", 1, 1000, 1000)
+promotedReplacement = step(promotedReplacement, { type: "ARRIVE", snapshot: retainedNormal })
+promotedReplacement = step(promotedReplacement, { type: "ARRIVE", snapshot: laterNormal })
+const retainedCritical = Object.assign(snapshot("29000:60", 2, 0, 0), { queuePriority: false })
+promotedReplacement = step(promotedReplacement, { type: "REPLACE", identity: "27000:60", snapshot: retainedCritical }, s => {
+  assert.deepEqual(ids(s.pending), ["29000:60", "28000:60"], "replacement retains documented queue position")
+  assert.equal(s.pending[0].queuePriority, false, "replacement retains documented queue priority")
+})
+promotedReplacement = step(promotedReplacement, { type: "DISMISS", identity: "26000:60" })
+promotedReplacement = step(promotedReplacement, {
+  type: "TRANSITION_FINISHED", token: promotedReplacement.visual.token,
+  kind: "switch", output: "DP-1",
+})
+assert.equal(promotedReplacement.active.identity, "29000:60")
+assert.equal(promotedReplacement.countdown.visible, false, "promoted critical urgency is non-expiring")
 
 const allSenderDismiss = allResult.effects.filter(effect => effect.type === "senderDismiss")
 assert.deepEqual(allSenderDismiss.map(effect => effect.identity), ["24000:24", "25000:25", "25000:26"])
