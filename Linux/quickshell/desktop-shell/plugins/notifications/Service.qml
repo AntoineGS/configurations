@@ -1535,7 +1535,8 @@ Item {
       var current = popupModel.get(i)
       if (current && NotificationLogic.popupFileName(current) === fileName) return
     }
-    row = NotificationLogic.withPopupTiming(row, durationFor(row.urgency, row.expireTimeout))
+    row = NotificationLogic.restorePopupTiming(
+      row, durationFor(row.urgency, row.expireTimeout), Date.now())
     row.queuePriority = NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
     ensurePopupQueueOrder(row)
     delete row.deadline
@@ -1573,13 +1574,12 @@ Item {
         continue
       }
       var duration = durationFor(entry.urgency, entry.expireTimeout)
-      entry = NotificationLogic.withPopupTiming(entry, duration)
       var needsMigration = entry.queuePriority === undefined
         || entry.queueOrder === undefined
         || (entry.remainingLifetime === undefined && entry.deadline !== undefined)
+      entry = NotificationLogic.restorePopupTiming(entry, duration, now)
       if (entry.queuePriority === undefined)
         entry.queuePriority = NotificationLogic.popupQueuePriority(entry, NotificationUrgency.Critical)
-      entry.remainingLifetime = NotificationLogic.restoredRemainingLifetime(entry, duration, now)
       delete entry.deadline
       if (duration > 0 && entry.remainingLifetime <= 0) {
         archivePopupFileFor(entry)

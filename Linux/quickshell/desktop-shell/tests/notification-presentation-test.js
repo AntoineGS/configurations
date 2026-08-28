@@ -293,6 +293,8 @@ assert.equal(generation.visual.incoming.identity, "19000:18")
 generation = step(generation, { type: "SENDER_CLOSED", identity: "18000:18" }, s => assert.equal(s.active.identity, "19000:18"))
 const activeClose = apply(generation, { type: "SENDER_CLOSED", identity: "19000:18" })
 assert.equal(activeClose.state.phase, "closing")
+assert.equal(activeClose.effects.some(effect => effect.type === "senderDismiss"), false,
+  "sender close does not redundantly dismiss an already-closed sender")
 
 let priority = openState(snapshot("20000:20", 2, 0, 0))
 priority = step(priority, { type: "ARRIVE", snapshot: snapshot("21000:21", 2, 0, 0) }, s => {
