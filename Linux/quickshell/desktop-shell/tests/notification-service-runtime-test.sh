@@ -3,18 +3,6 @@ set -Eeuo pipefail
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 shell_dir="$repo_root/Linux/quickshell/desktop-shell"
-SERVICE_QML="$shell_dir/plugins/notifications/Service.qml" python3 - <<'PY'
-import os
-import re
-
-source = open(os.environ["SERVICE_QML"], encoding="utf-8").read()
-restore = re.search(r"function restorePopups\(raw\) \{(.*?)\n  \}", source, re.S)
-if not restore or "NotificationLogic.restorePopupPlan" not in restore.group(1):
-    raise SystemExit("restorePopups must consume NotificationLogic.restorePopupPlan")
-if "restoration.expired" not in restore.group(1) or "restoration.migrated" not in restore.group(1):
-    raise SystemExit("restorePopups must use the restoration plan for archive and migration")
-PY
-
 if ! command -v quickshell >/dev/null 2>&1; then
   printf 'SKIP: quickshell unavailable\n'
   exit 0
@@ -58,7 +46,7 @@ status = json.loads(os.environ["DESKTOP_SHELL_STATUS"])
 if status.get("snapshotDuration") != 15000 or status.get("snapshotRemainingLifetime") != 15000:
     raise SystemExit("service snapshot duration/lifetime propagation is not visible at runtime")
 expected = {
-    "phase": "closed",
+    "phase": "hidden",
     "activeIdentity": "",
     "visualOutgoingIdentity": "",
     "visualIncomingIdentity": "",

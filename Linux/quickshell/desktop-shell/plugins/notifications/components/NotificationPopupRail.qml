@@ -60,6 +60,8 @@ PanelWindow {
   property real _animationStartContent: 0
   property string _lastTransition: ""
   property real _deckSettleOffset: 0
+  readonly property real deckProgress: root.presentationFrame.phase === "closing"
+    ? root._progress : (root.presentationFrame.phase === "switching" ? root._progress : 1)
 
   screen: root.output
   visible: root.cueVisible || (root.onOutput && root.hasCards && root.presentationFrame.phase !== "closed"
@@ -138,8 +140,9 @@ PanelWindow {
     var token = root._latchedToken
     var kind = root._latchedKind
     var outputName = root._latchedOutput
-    root._progress = 1
-    root._metadataOpacity = 1; root._contentOpacity = 1
+    root._progress = kind === "close" ? 0 : 1
+    root._metadataOpacity = kind === "close" ? 0 : 1
+    root._contentOpacity = kind === "close" ? 0 : 1
     root._incomingVisible = kind !== "close"
     root._latchedKind = ""
     root._latchedToken = 0
@@ -158,6 +161,7 @@ PanelWindow {
     var frame = root.presentationFrame
     if (frame.phase === "switching")
       return root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck
+    if (frame.phase === "closing") return root._latchedOutgoingDeck
     return root.incomingDeck
   }
   function beginDeckSettle() {
@@ -263,7 +267,7 @@ PanelWindow {
     y: cardFrame.y + Style.space(18) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(snapshot); opacity: 1; z: -2
+    color: root.urgencyColor(snapshot); opacity: root.deckProgress; z: -2
   }
   Rectangle {
     id: nextDeck
@@ -274,17 +278,18 @@ PanelWindow {
     y: cardFrame.y + Style.space(9) + root._deckSettleOffset
     width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), cardFrame.deckCardHeight)
     radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(snapshot); opacity: 1; z: -1
+    color: root.urgencyColor(snapshot); opacity: root.deckProgress; z: -1
   }
   Rectangle {
     visible: root.onOutput && root.hasCards && root.stableDeck().criticalPending && root.presentationFrame.hovered
+    opacity: root.deckProgress
     x: cardFrame.x + cardFrame.width - Style.space(10); y: cardFrame.y - Style.space(8)
     width: Style.space(6); height: width; radius: width / 2; color: Color.notifications.critical
   }
   Text {
     visible: root.onOutput && root.hasCards && root.stableDeck().queuedCount > 0
     x: cardFrame.x + cardFrame.width - Style.space(34); y: cardFrame.y + Style.space(5)
-    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily
+    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily; opacity: root.deckProgress
     font.pixelSize: Style.font.caption; font.bold: true; z: 2
   }
 
