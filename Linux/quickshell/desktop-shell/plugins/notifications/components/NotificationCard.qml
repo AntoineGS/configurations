@@ -19,15 +19,7 @@ ElevatedSurface {
   shadowScaleAmount: 1.03
   effectPaddingRect: Qt.rect(-8, -8, 16, 30)
 
-  property string app: ""
-  property string appIcon: ""
-  property string summary: ""
-  property string body: ""
-  property string image: ""
-  property int urgency: 1
-  property double timestamp: 0
-  property var actions: []
-  property var snapshot: null
+  required property var snapshot
   property var countdown: ({ identity: "", fraction: 1, visible: false })
   property bool interactive: true
   property string fontFamily: Style.font.family
@@ -40,25 +32,20 @@ ElevatedSurface {
   property real gradientExtent: Style.space(60)
   property real metadataOpacity: 1
   property real contentOpacity: 1
-  property real remainingFraction: 1
-  property bool showCountdown: false
 
   readonly property bool hovered: hoverTracker.hovered
-  readonly property string renderedIdentity: snapshot ? String(snapshot.identity || "") : ""
-  readonly property string renderedApp: snapshot ? String(snapshot.app || "") : root.app
-  readonly property string renderedAppIcon: snapshot ? String(snapshot.appIcon || "") : root.appIcon
-  readonly property string renderedSummary: snapshot ? String(snapshot.summary || "") : root.summary
-  readonly property string renderedBody: snapshot ? String(snapshot.body || "") : root.body
-  readonly property string renderedImage: snapshot ? String(snapshot.image || "") : root.image
-  readonly property int renderedUrgency: snapshot ? Number(snapshot.urgency) : root.urgency
-  readonly property double renderedTimestamp: snapshot ? Number(snapshot.timestamp) : root.timestamp
-  readonly property var renderedActions: snapshot ? (snapshot.actions || []) : root.actions
-  readonly property bool countdownShown: snapshot
-    ? root.countdown.visible === true && String(root.countdown.identity || "") === root.renderedIdentity
-    : root.showCountdown
-  readonly property real countdownFraction: snapshot
-    ? Math.max(0, Math.min(1, Number(root.countdown.fraction) || 0))
-    : Math.max(0, Math.min(1, root.remainingFraction))
+  readonly property string renderedIdentity: String(snapshot.identity || "")
+  readonly property string renderedApp: String(snapshot.app || "")
+  readonly property string renderedAppIcon: String(snapshot.appIcon || "")
+  readonly property string renderedSummary: String(snapshot.summary || "")
+  readonly property string renderedBody: String(snapshot.body || "")
+  readonly property string renderedImage: String(snapshot.image || "")
+  readonly property int renderedUrgency: Number(snapshot.urgency)
+  readonly property double renderedTimestamp: Number(snapshot.timestamp)
+  readonly property var renderedActions: snapshot.actions || []
+  readonly property bool countdownShown: root.countdown.visible === true
+    && String(root.countdown.identity || "") === root.renderedIdentity
+  readonly property real countdownFraction: Math.max(0, Math.min(1, Number(root.countdown.fraction) || 0))
   readonly property real gradientStop: Math.min(1,
     root.gradientExtent / Math.max(1, root.height))
   readonly property string smallIconSource: renderedImage.length > 0
