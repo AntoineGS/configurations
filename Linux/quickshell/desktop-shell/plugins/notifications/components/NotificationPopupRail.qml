@@ -18,6 +18,11 @@ PanelWindow {
   property real barSize: Style.bar.sizeHorizontal
   property string cueGlyph: ""
 
+  QtObject {
+    id: detachedBarPosition
+    property string position: "top"
+  }
+
   readonly property var visual: root.presentationFrame.visual || ({})
   readonly property var incoming: root.visual.incoming || root.presentationFrame.active
   readonly property string incomingIdentity: root.incoming ? String(root.incoming.identity || "") : ""
@@ -74,20 +79,24 @@ PanelWindow {
   }
   function beginOpening(kind) {
     root._paintedSnapshot = root._latchedIncoming
-    root._metadataOpacity = 0
-    root._contentOpacity = 0
     root._animationStartMetadata = 0
     root._animationStartContent = 0
     root._stage = kind === "switch" ? "switchOpening" : "opening"
+    root._metadataOpacity = Motion.enabled ? 0 : 1
+    root._contentOpacity = Motion.enabled ? 0 : 1
     root._popupOpen = true
-    openContentMotion.restart()
+    if (Motion.enabled) openContentMotion.restart()
     root.scheduleEndpointCheck()
   }
   function beginClosing(kind) {
     root._paintedSnapshot = root._paintedSnapshot || root._latchedOutgoing
     root._stage = kind === "switch" ? "switchClosing" : "closing"
+    if (!Motion.enabled) {
+      root._metadataOpacity = 0
+      root._contentOpacity = 0
+    }
     root._popupOpen = false
-    closeContentMotion.restart()
+    if (Motion.enabled) closeContentMotion.restart()
     root.scheduleEndpointCheck()
   }
   function latchTransition() {
@@ -113,13 +122,7 @@ PanelWindow {
     root._contentOpacity = kind === "close" || kind === "switch" ? paintedContent : 0
     root._animationStartMetadata = root._metadataOpacity
     root._animationStartContent = root._contentOpacity
-    if (!Motion.enabled) {
-      if (kind === "close" || kind === "switch") root.beginClosing(kind)
-      else root.beginOpening(kind)
-      root._metadataOpacity = kind === "close" ? 0 : 1
-      root._contentOpacity = kind === "close" ? 0 : 1
-      root.scheduleEndpointCheck()
-    } else if (kind === "open") root.beginOpening(kind)
+    if (kind === "open") root.beginOpening(kind)
     else root.beginClosing(kind)
   }
   function completionIsCurrent() {
@@ -247,7 +250,7 @@ PanelWindow {
     id: notificationPopup
     anchorItem: popupAnchorItem
     owner: root
-    bar: root.shell ? root.shell.bar : null
+    bar: root.barAttached ? root.shell.bar : detachedBarPosition
     open: root._popupOpen
     triggerMode: "passive"
     coordinateWithBar: false
