@@ -99,26 +99,9 @@ Item {
   property var silencedDirty: ({})
   property alias popupModel: popupModel
   ListModel { id: popupModel }
-  property bool popupSurfaceOpened: false
-  property string popupMotionState: "closed"
-  property int popupTransitionGeneration: 0
   property string pendingRemovalIdentity: ""
   property string pendingRemovalReason: ""
   property string pendingPreemptionIdentity: ""
-  property bool activePopupHovered: false
-  property string popupTransitionOutput: ""
-  property string popupTransitionIdentity: ""
-  property string popupTransitionKind: ""
-  property string popupRenderedOutput: ""
-  property string popupRenderedIdentity: ""
-  property string tickingIdentity: ""
-  property real activeDuration: 0
-  property real activeRemainingLifetime: 0
-  property real activeTickStartedAt: 0
-  property real activeTickStartRemaining: 0
-  readonly property real remainingFraction: presentationFrame.countdown.duration > 0
-    ? Math.max(0, Math.min(1, presentationFrame.countdown.remaining / presentationFrame.countdown.duration)) : 1
-  readonly property bool countdownVisible: presentationFrame.countdown.visible === true
   property alias historyModel: historyModel
   ListModel { id: historyModel }
   property bool historyOpen: false
@@ -249,32 +232,11 @@ Item {
     for (var i = 0; i < rows.length; i++) popupModel.append(rows[i])
   }
 
-  function syncLegacyPresentation() {
-    var state = service.presentationState
-    var visual = state.visual || {}
-    var countdown = state.countdown || {}
-    popupMotionState = service.testSurfaceSuppressed ? "closed" : state.phase
-    popupTransitionGeneration = Number(visual.token) || 0
-    popupTransitionKind = String(visual.kind || "")
-    popupTransitionOutput = String(visual.output || state.route.output || "")
-    popupTransitionIdentity = visual.incoming
-      ? identityForSnapshot(visual.incoming) : (visual.outgoing ? identityForSnapshot(visual.outgoing) : "")
-    popupSurfaceOpened = !service.testSurfaceSuppressed
-      && (state.phase === "opening" || state.phase === "open" || state.phase === "switching")
-    tickingIdentity = String(countdown.identity || "")
-    activeDuration = Number(countdown.duration) || 0
-    activeRemainingLifetime = Number(countdown.remaining) || 0
-    activeTickStartedAt = Number(countdown.lastNow) || 0
-    activeTickStartRemaining = activeRemainingLifetime
-    activePopupHovered = state.hovered === true
-  }
-
   function dispatchPresentation(event) {
     var result = Presentation.reduce(service.presentationState, event)
     service.presentationState = result.state
     service.presentationFrame = Presentation.presentationFrame(result.state)
     syncPresentationModel()
-    syncLegacyPresentation()
     applyPresentationEffects(result.effects)
   }
 
@@ -396,118 +358,11 @@ Item {
     ensurePopupQueueOrder(snapshot)
     var wasEmpty = popupModel.count === 0
     var plan = NotificationLogic.popupArrivalPlan(
-      popupRows(), snapshot.urgency, NotificationUrgency.Critical, activePopupHovered)
+      popupRows(), snapshot.urgency, NotificationUrgency.Critical, service.presentationState.hovered)
     popupModel.insert(plan.insertIndex, snapshot)
-    if (wasEmpty) requestPopupOpen()
-    else if (plan.preempt || plan.deferred) {
+    if (!wasEmpty && (plan.preempt || plan.deferred)) {
       if (pendingPreemptionIdentity === "")
         pendingPreemptionIdentity = NotificationLogic.popupIdentity(snapshot)
-      if (plan.preempt) requestPopupClose("preempt")
-    }
-    if (popupMotionState === "closed" && routeVisible) requestPopupOpen()
-  }
-
-  function startActiveLifetime() {
-    if (popupModel.count === 0 || popupMotionState !== "open"
-        || activePopupHovered || !routeVisible) return
-    var row = popupModel.get(0)
-    activeDuration = durationFor(row.urgency, row.expireTimeout)
-    activeRemainingLifetime = Number(row.remainingLifetime) || 0
-    if (activeDuration <= 0) return
-    tickingIdentity = NotificationLogic.popupIdentity(row)
-    activeTickStartedAt = Date.now()
-    activeTickStartRemaining = activeRemainingLifetime
-  }
-
-  function prepareActiveLifetimeDisplay() {
-    if (popupModel.count === 0) {
-      activeDuration = 0
-      activeRemainingLifetime = 0
-      return
-    }
-    var row = popupModel.get(0)
-    activeDuration = durationFor(row.urgency, row.expireTimeout)
-    activeRemainingLifetime = Number(row.remainingLifetime) || 0
-  }
-
-  function updateActiveLifetime(now, requestExpiry) {
-    if (tickingIdentity === "") return
-    activeRemainingLifetime = NotificationLogic.consumeRemainingLifetime(
-      activeTickStartRemaining, Number(now) - activeTickStartedAt)
-    if (requestExpiry === true && activeRemainingLifetime <= 0)
-      requestPopupRemoval(tickingIdentity, "expire")
-  }
-
-  function pauseActiveLifetime() {
-    if (tickingIdentity === "") return
-    updateActiveLifetime(Date.now(), false)
-    var index = popupIndexForIdentity(tickingIdentity)
-    if (index >= 0) popupModel.setProperty(index, "remainingLifetime", activeRemainingLifetime)
-    checkpointPopupIdentity(tickingIdentity)
-    tickingIdentity = ""
-  }
-
-  function checkpointPopupIdentity(identity) {
-    var index = popupIndexForIdentity(identity)
-    if (index < 0) return
-    popupModel.setProperty(index, "remainingLifetime", activeRemainingLifetime)
-    var row = popupModel.get(index)
-    if (row && NotificationLogic.shouldPersistPopup(row)) persistPopupFile(row)
-  }
-
-  function setActivePopupHovered(hovered) {
-    dispatchPresentation({ type: "HOVER_CHANGED", hovered: hovered === true })
-  }
-
-  function requestPopupOpen() {
-    if (testSurfaceSuppressed) {
-      popupSurfaceOpened = false
-      popupMotionState = "closed"
-      return
-    }
-    if (popupModel.count === 0 || !routeVisible || popupMotionState !== "closed") return
-    promoteCriticalRun()
-    if (pendingPreemptionIdentity !== ""
-        && pendingPreemptionIdentity === NotificationLogic.popupIdentity(popupModel.get(0)))
-      pendingPreemptionIdentity = ""
-    popupTransitionGeneration++
-    popupTransitionKind = "open"
-    popupTransitionOutput = String(route.output || "")
-    popupTransitionIdentity = NotificationLogic.popupIdentity(popupModel.get(0))
-    popupRenderedOutput = ""
-    popupRenderedIdentity = ""
-    prepareActiveLifetimeDisplay()
-    popupMotionState = "opening"
-    popupSurfaceOpened = true
-  }
-
-  function requestPopupClose(reason) {
-    if (popupMotionState === "closed" || popupMotionState === "closing") return
-    pauseActiveLifetime()
-    popupTransitionGeneration++
-    popupTransitionOutput = popupRenderedOutput || popupTransitionOutput
-    popupTransitionIdentity = popupRenderedIdentity || popupTransitionIdentity
-    popupMotionState = "closing"
-    popupTransitionKind = "close"
-    popupSurfaceOpened = false
-  }
-
-  function handlePopupOpenFinished(identity, generation, outputName) {
-    var event = NotificationLogic.transitionCallbackEvent(service.presentationState, generation, outputName)
-    if (event) dispatchPresentation(event)
-  }
-
-  function handlePopupCloseFinished(identity, generation, outputName) {
-    var event = NotificationLogic.transitionCallbackEvent(service.presentationState, generation, outputName)
-    if (event) dispatchPresentation(event)
-  }
-
-  function promoteCriticalRun() {
-    var target = 0
-    for (var i = 0; i < popupModel.count; i++) {
-      if (!NotificationLogic.popupQueuePriority(popupModel.get(i), NotificationUrgency.Critical)) continue
-      if (i !== target) popupModel.move(i, target, 1)
-      target++
     }
   }
 
@@ -879,37 +734,6 @@ Item {
     return row ? restoredPopups[NotificationLogic.popupFileName(row)] : ""
   }
 
-  function replacePopupRow(rowIndex, updated) {
-    var row = popupModel.get(rowIndex)
-    if (!row || !updated) return
-    var oldIdentity = NotificationLogic.popupIdentity(row)
-    var newIdentity = NotificationLogic.popupIdentity(updated)
-    if (pendingRemovalIdentity === oldIdentity) {
-      pendingRemovalIdentity = ""
-      pendingRemovalReason = ""
-    }
-    if (pendingPreemptionIdentity === oldIdentity) pendingPreemptionIdentity = newIdentity
-    var active = rowIndex === 0
-    if (active) pauseActiveLifetime()
-    service.markHistoryUnavailable(row.originalId, row.timestamp)
-    service.deletePopupFileFor(row)
-    updated.remainingLifetime = durationFor(updated.urgency, updated.expireTimeout)
-    updated.queuePriority = typeof row.queuePriority === "boolean"
-      ? row.queuePriority : NotificationLogic.popupQueuePriority(row, NotificationUrgency.Critical)
-    updated.queueOrder = ensurePopupQueueOrder(row)
-    var roles = NotificationLogic.popupRoles()
-    popupModel.setProperty(rowIndex, "timestamp", updated.timestamp)
-    for (var r = 0; r < roles.length; r++) popupModel.setProperty(rowIndex, roles[r], updated[roles[r]])
-    service.liveGenerations[updated.originalId] = updated.timestamp
-    service.livePersistenceSources[updated.originalId] = updated.transient ? "none" : "popup"
-    if (NotificationLogic.shouldPersistPopup(updated)) service.persistPopupFile(updated)
-    if (active) {
-      if (popupMotionState === "open") popupRenderedIdentity = newIdentity
-      prepareActiveLifetimeDisplay()
-      if (popupMotionState === "open" && !activePopupHovered) startActiveLifetime()
-    }
-  }
-
   function dismissPopup(index) {
     if (index < 0 || index >= popupModel.count) return
     dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)) })
@@ -918,44 +742,6 @@ Item {
   function expirePopup(index) {
     if (index < 0 || index >= popupModel.count) return
     dispatchPresentation({ type: "DISMISS", identity: identityForSnapshot(popupModel.get(index)) })
-  }
-
-  function finalizePopupRemoval(index, reason) {
-    if (index < 0 || index >= popupModel.count) return
-    var entry = popupModel.get(index)
-    var originalId = entry ? entry.originalId : -1
-    if (entry) service.markHistoryUnavailable(originalId, entry.timestamp)
-    var internal = Number(originalId) < 0
-    var restored = isRestoredRow(entry)
-    var source = restoredSource(entry) || livePersistenceSources[originalId] || ""
-    var ref = !internal && !restored && originalId >= 0 ? liveRefs[originalId] : null
-
-    if (entry && !internal && reason === "closed") {
-      if (source === "history") deleteHistoryFileFor(entry)
-      else if (source === "popup") deletePopupFileFor(entry)
-    } else if (entry && !internal && source !== "history" && entry.transient !== true) {
-      archivePopupFileFor(entry)
-    }
-    if (restored) delete restoredPopups[NotificationLogic.popupFileName(entry)]
-    popupModel.remove(index)
-    if (pendingPreemptionIdentity !== ""
-        && popupIndexForIdentity(pendingPreemptionIdentity) < 0)
-      pendingPreemptionIdentity = ""
-
-    if (ref && reason !== "closed") {
-      delete liveRefs[originalId]
-      delete liveGenerations[originalId]
-      delete livePersistenceSources[originalId]
-      service.clearFailedHistoryAction(originalId, entry.timestamp)
-      try {
-        if (ref.tracked) {
-          if (reason === "expire" && typeof ref.expire === "function") ref.expire()
-          else ref.dismiss()
-        }
-      } catch (error) {
-        // The sender can tear down a reference before the card disappears.
-      }
-    }
   }
 
   function requestPopupRemoval(identity, reason) {
@@ -2004,17 +1790,10 @@ Item {
     return screen ? String(screen.name || "") : ""
   }
 
-  function cardsVisibleOn(screen) {
-    return !service.testSurfaceSuppressed && service.routeVisible
-      && service.route.output !== null
-      && String(service.route.output) === screenName(screen)
-      && popupModel.count > 0
-  }
-
   function cueVisibleOn(screen) {
     return !service.testSurfaceSuppressed && service.routeVisible && service.route.cueOutput !== null
       && String(service.route.cueOutput) === screenName(screen)
-      && popupModel.count > 0
+      && (service.presentationFrame.active !== null || service.presentationFrame.pending.length > 0)
   }
 
   onRouteChanged: {
@@ -2285,16 +2064,11 @@ Item {
       id: popupWindow
       required property var modelData
       output: modelData
-      popupModel: service.popupModel
+      presentationFrame: service.testSurfaceSuppressed
+        ? Presentation.presentationFrame(Presentation.createInitialState({ routeVisible: false, output: "" }))
+        : service.presentationFrame
       shell: service.shell
-      cardsVisible: service.cardsVisibleOn(modelData)
       cueVisible: service.cueVisibleOn(modelData)
-      opened: service.popupSurfaceOpened && service.cardsVisibleOn(modelData)
-      transitionGeneration: service.popupTransitionGeneration
-      remainingFraction: service.remainingFraction
-      countdownVisible: service.countdownVisible
-       criticalPending: service.presentationFrame.visual.incomingDeck.criticalPending
-         && service.presentationFrame.hovered
       fontFamily: service.shell && service.shell.bar
         ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
       barPosition: service.barPosition
@@ -2305,12 +2079,14 @@ Item {
       onActionClicked: function(identity, identifier) {
         service.invokePopupActionIdentity(identity, identifier)
       }
-      onActiveHoverChanged: function(hovered) { service.setActivePopupHovered(hovered) }
-      onOpenFinished: function(identity, generation, outputName) {
-        service.handlePopupOpenFinished(identity, generation, outputName)
+      onHoverChanged: function(identity, hovered) {
+        var incoming = service.presentationFrame.visual.incoming
+        if (incoming && service.identityForSnapshot(incoming) === identity)
+          service.dispatchPresentation({ type: "HOVER_CHANGED", hovered: hovered === true })
       }
-      onCloseFinished: function(identity, generation, outputName) {
-        service.handlePopupCloseFinished(identity, generation, outputName)
+      onTransitionFinished: function(token, kind, outputName) {
+        var event = { type: "TRANSITION_FINISHED", token: token, kind: kind, output: outputName }
+        service.dispatchPresentation(event)
       }
     }
   }

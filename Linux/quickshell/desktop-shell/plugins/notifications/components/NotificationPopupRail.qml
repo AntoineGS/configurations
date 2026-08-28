@@ -8,64 +8,54 @@ PanelWindow {
   id: root
 
   required property var output
-  required property var popupModel
+  required property var presentationFrame
   property var shell: null
-  property bool cardsVisible: false
   property bool cueVisible: false
-  property bool opened: false
-  property int transitionGeneration: 0
-  property real remainingFraction: 1
-  property bool countdownVisible: false
-  property bool criticalPending: false
   property string fontFamily: Style.font.family
   property string barPosition: "top"
   property real barSize: Style.bar.sizeHorizontal
   property string cueGlyph: ""
 
-  readonly property var activeRow: popupModel && popupModel.count > 0
-    ? popupModel.get(0) : null
-  readonly property string activeIdentity: activeRow
-    ? String(activeRow.timestamp) + ":" + String(activeRow.originalId) : ""
-  readonly property var nextRow: popupModel && popupModel.count > 1
-    ? popupModel.get(1) : null
-  readonly property var thirdRow: popupModel && popupModel.count > 2
-    ? popupModel.get(2) : null
-  readonly property int queuedCount: popupModel ? Math.max(0, popupModel.count - 1) : 0
+  readonly property var visual: root.presentationFrame.visual || ({})
+  readonly property var incoming: root.visual.incoming || root.presentationFrame.active
+  readonly property var outgoing: root.visual.outgoing
+  readonly property var incomingDeck: root.visual.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+  readonly property var outgoingDeck: root.visual.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+  readonly property string incomingIdentity: root.incoming ? String(root.incoming.identity || "") : ""
+  readonly property string outgoingIdentity: root.outgoing ? String(root.outgoing.identity || "") : ""
+  readonly property bool onOutput: root.presentationFrame.route
+    && String(root.presentationFrame.route.output || "") === String(root.output.name)
+  readonly property bool hasCards: root.incoming !== null || root.outgoing !== null
+  readonly property bool barAttached: root.barPosition === "top"
+    && root.shell && root.shell.barVisible !== false
   readonly property real shoulderRadius: Style.popupOuterRadius
   readonly property real bodyWidth: Math.min(Style.space(380),
     Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
       - shoulderRadius * (barAttached ? 2 : 0)))
   readonly property real collarExtent: Style.space(36)
   readonly property real attachedContentTopInset: Style.space(32)
-  readonly property bool barAttached: root.barPosition === "top"
-    && root.shell && root.shell.barVisible !== false
-  readonly property string motionState: root._motionState
 
   signal dismissRequested(string identity)
   signal cardClicked(string identity)
   signal actionClicked(string identity, string identifier)
-  signal activeHoverChanged(bool hovered)
-  signal openFinished(string identity, int generation, string outputName)
-  signal closeFinished(string identity, int generation, string outputName)
+  signal hoverChanged(string identity, bool hovered)
+  signal transitionFinished(int token, string kind, string outputName)
 
-  property real materialYScale: 0
-  property real metadataOpacity: 0
-  property real contentOpacity: 0
-  property string _motionState: "closed"
-  property string _transitionIdentity: ""
-  property int _transitionGeneration: 0
-  property string _transitionKind: ""
-  property bool _completionEmitted: false
-  property string _lastActiveIdentity: ""
-  property bool _syncScheduled: false
-  property bool _syncForcePending: false
-  property bool _syncedOpened: false
-  property int _syncedGeneration: -1
+  property real _progress: 1
+  property bool _incomingVisible: true
+  property string _latchedKind: ""
+  property int _latchedToken: 0
+  property string _latchedOutput: ""
+  property var _latchedIncoming: null
+  property var _latchedOutgoing: null
+  property var _latchedIncomingDeck: null
+  property var _latchedOutgoingDeck: null
+  property string _lastTransition: ""
   property real _deckSettleOffset: 0
-  property int _previousQueuedCount: 0
 
   screen: root.output
-  visible: root.cardsVisible || root.cueVisible || root.motionState !== "closed"
+  visible: root.cueVisible || (root.onOutput && root.hasCards && root.presentationFrame.phase !== "closed"
+    && root.presentationFrame.phase !== "hidden")
   anchors { top: true; bottom: true; left: true; right: true }
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
@@ -73,359 +63,202 @@ PanelWindow {
   WlrLayershell.layer: WlrLayer.Overlay
   WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-  mask: Region {
-    item: cardInputRegion.visible ? cardInputRegion : null
-  }
+  // The installed Region API cannot subtract transparent shoulder gutters.
+  // Body-only input is exact and avoids making the painted shoulders clickable.
+  mask: Region { item: stableInputRegion.visible ? stableInputRegion : null }
 
-  function urgencyColor(row) {
-    if (!row) return "transparent"
-    return Number(row.urgency) === 0 ? Color.notifications.low
-      : Number(row.urgency) === 2 ? Color.notifications.critical
-        : Color.notifications.background
+  function identity(snapshot) { return snapshot ? String(snapshot.identity || "") : "" }
+  function urgencyColor(snapshot) {
+    if (!snapshot) return "transparent"
+    return Number(snapshot.urgency) === 0 ? Color.notifications.low
+      : Number(snapshot.urgency) === 2 ? Color.notifications.critical : Color.notifications.background
   }
-
-  function outputName() {
-    return String(root.output.name)
+  function frameKey(frame) {
+    var v = frame.visual || {}
+    return String(frame.phase || "") + ":" + String(v.token || 0) + ":" + String(v.kind || "")
+      + ":" + String(v.output || "") + ":" + identity(v.incoming) + ":" + identity(v.outgoing)
   }
-
-  function settleOpenMotion() {
-    root.materialYScale = 1
-    root.metadataOpacity = 1
-    root.contentOpacity = 1
-    root._motionState = "open"
-    if (!root._completionEmitted && root._transitionKind === "open") {
-      root._completionEmitted = true
-      root.openFinished(root._transitionIdentity, root._transitionGeneration, root.outputName())
-    }
-  }
-
-  function settleClosedMotion() {
-    root.materialYScale = 0
-    root.metadataOpacity = 0
-    root.contentOpacity = 0
-    root._motionState = "closed"
-    if (!root._completionEmitted && root._transitionKind === "close") {
-      root._completionEmitted = true
-      root.closeFinished(root._transitionIdentity, root._transitionGeneration, root.outputName())
-    }
-  }
-
-  function beginOpenMotion() {
-    closeMotion.stop()
-    root._transitionIdentity = root.activeIdentity
-    root._transitionGeneration = root.transitionGeneration
-    root._transitionKind = "open"
-    root._completionEmitted = false
-    if (root._motionState === "closed") {
-      root.materialYScale = 0
-      root.metadataOpacity = 0
-      root.contentOpacity = 0
-    }
-    root._motionState = "opening"
+  function latchTransition() {
+    var frame = root.presentationFrame
+    var v = frame.visual || {}
+    var kind = String(v.kind || "")
+    if (!kind || !v.token || root._lastTransition === root.frameKey(frame)) return
+    root._lastTransition = root.frameKey(frame)
+    root._latchedKind = kind
+    root._latchedToken = Number(v.token)
+    root._latchedOutput = String(v.output || "")
+    root._latchedIncoming = v.incoming || null
+    root._latchedOutgoing = v.outgoing || null
+    root._latchedIncomingDeck = v.incomingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+    root._latchedOutgoingDeck = v.outgoingDeck || ({ snapshots: [], queuedCount: 0, criticalPending: false })
+    root._incomingVisible = kind !== "close" && kind !== "switch"
+    root._progress = kind === "close" ? 1 : 0
     if (!Motion.enabled) {
-      root.settleOpenMotion()
-      return
-    }
-    openMotion.restart()
+      root._incomingVisible = kind !== "close"
+      root._progress = 1
+      root.finishTransition()
+    } else if (kind === "open") openMotion.restart()
+    else if (kind === "close") closeMotion.restart()
+    else switchMotion.restart()
   }
-
-  function beginCloseMotion() {
-    openMotion.stop()
-    root._transitionIdentity = root._lastActiveIdentity || root.activeIdentity
-    root._transitionGeneration = root.transitionGeneration
-    root._transitionKind = "close"
-    root._completionEmitted = false
-    if (root._motionState === "closed") {
-      root.settleClosedMotion()
-      return
-    }
-    root._motionState = "closing"
-    if (!Motion.enabled) {
-      root.settleClosedMotion()
-      return
-    }
-    closeMotion.restart()
+  function finishTransition() {
+    if (!root._latchedKind || root._latchedToken <= 0) return
+    var token = root._latchedToken
+    var kind = root._latchedKind
+    var outputName = root._latchedOutput
+    root._progress = 1
+    root._incomingVisible = kind !== "close"
+    root._latchedKind = ""
+    root._latchedToken = 0
+    root._latchedOutput = ""
+    root.transitionFinished(token, kind, outputName)
   }
-
-  function scheduleTransitionSync(force) {
-    if (force) root._syncForcePending = true
-    if (root._syncScheduled) return
-    root._syncScheduled = true
-    Qt.callLater(function() {
-      root._syncScheduled = false
-      var forcePending = root._syncForcePending
-      root._syncForcePending = false
-      if (!forcePending && root._syncedOpened === root.opened
-          && root._syncedGeneration === root.transitionGeneration) return
-      root._syncedOpened = root.opened
-      root._syncedGeneration = root.transitionGeneration
-      if (root.opened) root.beginOpenMotion()
-      else root.beginCloseMotion()
-    })
+  function stableDeck() {
+    var frame = root.presentationFrame
+    if (frame.phase === "switching")
+      return root._incomingVisible ? root._latchedIncomingDeck : root._latchedOutgoingDeck
+    return root.incomingDeck
   }
-
   function beginDeckSettle() {
-    if (!Motion.enabled) {
-      root._deckSettleOffset = 0
-      return
-    }
+    if (!Motion.enabled) { root._deckSettleOffset = 0; return }
     root._deckSettleOffset = -Style.space(12)
-    deckSettleAnimation.restart()
+    deckSettle.restart()
   }
 
-  onActiveIdentityChanged: if (root.activeIdentity !== "") root._lastActiveIdentity = root.activeIdentity
-  onOpenedChanged: root.scheduleTransitionSync()
-  onTransitionGenerationChanged: root.scheduleTransitionSync()
-  onQueuedCountChanged: {
-    if (root.queuedCount > root._previousQueuedCount) root.beginDeckSettle()
-    root._previousQueuedCount = root.queuedCount
+  onPresentationFrameChanged: {
+    var frame = root.presentationFrame
+    if (frame.phase === "opening" || frame.phase === "closing" || frame.phase === "switching") root.latchTransition()
+    else if (frame.phase === "open") {
+      root._latchedIncoming = frame.visual.incoming || frame.active
+      root._latchedIncomingDeck = frame.visual.incomingDeck
+      root._incomingVisible = true
+      root._progress = 1
+    }
   }
-
-  Component.onCompleted: {
-    if (root.activeIdentity !== "") root._lastActiveIdentity = root.activeIdentity
-    root._syncedOpened = root.opened
-    root._syncedGeneration = root.transitionGeneration
-    if (root.opened) root.scheduleTransitionSync(true)
-  }
+  onVisibleChanged: if (root.visible && root.presentationFrame) root.beginDeckSettle()
+  Component.onCompleted: root.onPresentationFrameChanged()
 
   Connections {
     target: Motion
     function onEnabledChanged() {
       if (Motion.enabled) return
-      openMotion.stop()
-      closeMotion.stop()
-      deckSettleAnimation.stop()
+      openMotion.stop(); closeMotion.stop(); switchMotion.stop(); deckSettle.stop()
       root._deckSettleOffset = 0
-      if (root.opened) root.settleOpenMotion()
-      else root.settleClosedMotion()
+      root.finishTransition()
     }
   }
 
-  ParallelAnimation {
-    id: openMotion
-    onFinished: root.settleOpenMotion()
-
-    NumberAnimation {
-      target: root
-      property: "materialYScale"
-      to: 1
-      duration: PopupMotion.surfaceOpenDuration
-      easing.type: PopupMotion.surfaceOpenEasing
-    }
-    SequentialAnimation {
-      PauseAnimation { duration: PopupMotion.overlayHeaderOpenDelay }
-      NumberAnimation {
-        target: root
-        property: "metadataOpacity"
-        to: 1
-        duration: PopupMotion.overlayHeaderOpenDuration
-        easing.type: PopupMotion.overlayContentOpenEasing
-      }
-    }
-    SequentialAnimation {
-      PauseAnimation { duration: PopupMotion.overlayBodyOpenDelay }
-      NumberAnimation {
-        target: root
-        property: "contentOpacity"
-        to: 1
-        duration: PopupMotion.overlayBodyOpenDuration
-        easing.type: PopupMotion.overlayContentOpenEasing
-      }
-    }
-  }
-
-  NumberAnimation {
-    id: deckSettleAnimation
-    target: root
-    property: "_deckSettleOffset"
-    to: 0
-    duration: PopupMotion.overlayBodyOpenDuration
-    easing.type: PopupMotion.overlayContentOpenEasing
-  }
-
-  ParallelAnimation {
-    id: closeMotion
-    onFinished: root.settleClosedMotion()
-
-    NumberAnimation {
-      target: root
-      property: "metadataOpacity"
-      to: 0
-      duration: PopupMotion.overlayHeaderCloseDuration
-      easing.type: PopupMotion.overlayContentCloseEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "contentOpacity"
-      to: 0
-      duration: PopupMotion.overlayBodyCloseDuration
-      easing.type: PopupMotion.overlayContentCloseEasing
-    }
-    NumberAnimation {
-      target: root
-      property: "materialYScale"
-      to: 0
-      duration: PopupMotion.surfaceCloseDuration
-      easing.type: PopupMotion.surfaceCloseEasing
-    }
+  NumberAnimation { id: deckSettle; target: root; property: "_deckSettleOffset"; to: 0; duration: 180; easing.type: PopupMotion.overlayContentOpenEasing }
+  NumberAnimation { id: openMotion; target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing; onFinished: root.finishTransition() }
+  NumberAnimation { id: closeMotion; target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing; onFinished: root.finishTransition() }
+  SequentialAnimation {
+    id: switchMotion
+    NumberAnimation { target: root; property: "_progress"; from: 1; to: 0; duration: 320; easing.type: PopupMotion.surfaceCloseEasing }
+    ScriptAction { script: { root._incomingVisible = true; root._progress = 0 } }
+    NumberAnimation { target: root; property: "_progress"; from: 0; to: 1; duration: 360; easing.type: PopupMotion.surfaceOpenEasing }
+    ScriptAction { script: root.finishTransition() }
   }
 
   Rectangle {
     id: thirdDeck
-    visible: (root.cardsVisible || root.motionState !== "closed") && root.thirdRow !== null
+    property var deck: root.stableDeck()
+    property var snapshot: deck.snapshots && deck.snapshots.length > 2 ? deck.snapshots[2] : null
+    visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
     x: cardFrame.x + root.shoulderRadius + Style.space(16)
     y: cardFrame.y + Style.space(18) + root._deckSettleOffset
-    width: Math.max(1, root.bodyWidth - Style.space(32))
-    height: Math.max(Style.space(36), card.implicitHeight)
-    radius: Style.popupInnerRadius
-    bottomLeftRadius: Style.popupOuterRadius
-    bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(root.thirdRow)
-    opacity: root.cardsVisible ? 1 : 0
-    z: -2
-    Behavior on opacity {
-      NumberAnimation { duration: PopupMotion.overlayBodyOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing }
-    }
+    width: Math.max(1, root.bodyWidth - Style.space(32)); height: Math.max(Style.space(36), incomingCard.implicitHeight)
+    radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
+    color: root.urgencyColor(snapshot); opacity: 1; z: -2
   }
-
   Rectangle {
     id: nextDeck
-    visible: (root.cardsVisible || root.motionState !== "closed") && root.nextRow !== null
+    property var deck: root.stableDeck()
+    property var snapshot: deck.snapshots && deck.snapshots.length > 1 ? deck.snapshots[1] : null
+    visible: root.onOutput && root.hasCards && snapshot !== null && root.presentationFrame.phase !== "closing"
     x: cardFrame.x + root.shoulderRadius + Style.space(8)
     y: cardFrame.y + Style.space(9) + root._deckSettleOffset
-    width: Math.max(1, root.bodyWidth - Style.space(16))
-    height: Math.max(Style.space(42), card.implicitHeight)
-    radius: Style.popupInnerRadius
-    bottomLeftRadius: Style.popupOuterRadius
-    bottomRightRadius: Style.popupOuterRadius
-    color: root.urgencyColor(root.nextRow)
-    opacity: root.cardsVisible ? 1 : 0
-    z: -1
-    Behavior on opacity {
-      NumberAnimation { duration: PopupMotion.overlayBodyOpenDuration; easing.type: PopupMotion.overlayContentOpenEasing }
-    }
+    width: Math.max(1, root.bodyWidth - Style.space(16)); height: Math.max(Style.space(42), incomingCard.implicitHeight)
+    radius: Style.popupInnerRadius; bottomLeftRadius: Style.popupOuterRadius; bottomRightRadius: Style.popupOuterRadius
+    color: root.urgencyColor(snapshot); opacity: 1; z: -1
   }
-
   Rectangle {
-    visible: root.cardsVisible && root.criticalPending
-    x: cardFrame.x + cardFrame.width - Style.space(10)
-    y: cardFrame.y - Style.space(8)
-    width: Style.space(6)
-    height: width
-    radius: width / 2
-    color: Color.notifications.critical
+    visible: root.onOutput && root.hasCards && root.stableDeck().criticalPending && root.presentationFrame.hovered
+    x: cardFrame.x + cardFrame.width - Style.space(10); y: cardFrame.y - Style.space(8)
+    width: Style.space(6); height: width; radius: width / 2; color: Color.notifications.critical
   }
-
   Text {
-    visible: root.cardsVisible && root.queuedCount > 0
-    x: cardFrame.x + cardFrame.width - Style.space(34)
-    y: cardFrame.y + Style.space(5)
-    text: "+" + root.queuedCount
-    color: Color.notifications.text
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.caption
-    font.bold: true
-    z: 2
-  }
-
-  Item {
-    id: cardInputRegion
-    x: cardFrame.x
-    y: cardFrame.y
-    width: cardFrame.width
-    height: card.height * root.materialYScale
-    visible: (root.cardsVisible || root.motionState !== "closed") && root.activeRow !== null && height > 0
+    visible: root.onOutput && root.hasCards && root.stableDeck().queuedCount > 0
+    x: cardFrame.x + cardFrame.width - Style.space(34); y: cardFrame.y + Style.space(5)
+    text: "+" + root.stableDeck().queuedCount; color: Color.notifications.text; font.family: root.fontFamily
+    font.pixelSize: Style.font.caption; font.bold: true; z: 2
   }
 
   Item {
     id: cardFrame
-    x: root.width - Style.gapsOut - width
-    y: root.barAttached ? root.barSize : Style.gapsOut
+    x: root.width - Style.gapsOut - width; y: root.barAttached ? root.barSize : Style.gapsOut
     width: root.bodyWidth + (root.barAttached ? root.shoulderRadius * 2 : 0)
-    height: card.height + (root.barAttached ? root.shoulderRadius : 0)
-    z: 1
+    height: Math.max(outgoingCard.height, incomingCard.height) + (root.barAttached ? root.shoulderRadius : 0); z: 1
 
-    transform: Scale {
-      origin.x: cardFrame.width / 2
-      origin.y: 0
-      xScale: 1
-      yScale: root.materialYScale
-    }
-
-    NotificationCard {
-      id: card
-      x: root.barAttached ? root.shoulderRadius : 0
-      width: root.bodyWidth
-      visible: (root.cardsVisible || root.motionState !== "closed") && root.activeRow !== null
-      app: root.activeRow ? String(root.activeRow.app || "") : ""
-      appIcon: root.activeRow ? String(root.activeRow.appIcon || "") : ""
-      summary: root.activeRow ? String(root.activeRow.summary || "") : ""
-      body: root.activeRow ? String(root.activeRow.body || "") : ""
-      image: root.activeRow ? String(root.activeRow.image || "") : ""
-      urgency: root.activeRow ? Number(root.activeRow.urgency) : 1
-      timestamp: root.activeRow ? Number(root.activeRow.timestamp) : 0
-      actions: root.activeRow ? (root.activeRow.actions || []) : []
-      fontFamily: root.fontFamily
-      attachedMode: root.barAttached
-      attachedContentTopInset: root.attachedContentTopInset
-      gradientStartColor: Color.barPanels.background
-      gradientExtent: root.collarExtent
-      metadataOpacity: root.metadataOpacity
-      contentOpacity: root.contentOpacity
-      remainingFraction: root.remainingFraction
-      showCountdown: root.countdownVisible
-
-      onHoveredChanged: root.activeHoverChanged(card.hovered || shoulders.hovered)
-      onCloseRequested: root.dismissRequested(root.activeIdentity)
-      onCardClicked: root.cardClicked(root.activeIdentity)
-      onActionClicked: function(identifier) {
-        root.actionClicked(root.activeIdentity, identifier)
+    Item {
+      id: outgoingSlot
+      x: 0; width: parent.width; height: parent.height
+      visible: root._latchedOutgoing !== null && (root.presentationFrame.phase === "closing" || root.presentationFrame.phase === "switching")
+      opacity: root.presentationFrame.phase === "switching" ? root._progress : (1 - root._progress)
+      transform: Scale { origin.x: outgoingSlot.width / 2; origin.y: 0; yScale: opacity }
+      NotificationCard {
+        id: outgoingCard; x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
+        snapshot: root._latchedOutgoing; interactive: false; fontFamily: root.fontFamily
+        attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+        gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+        metadataOpacity: 1; contentOpacity: 1; countdown: ({ identity: "", fraction: 1, visible: false })
+      }
+      BarAttachedShoulders {
+        x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
+        gradientStartColor: Color.barPanels.background; gradientEndColor: root.urgencyColor(root._latchedOutgoing)
       }
     }
-
-    BarAttachedShoulders {
-      id: shoulders
-      x: 0
-      visible: (root.cardsVisible || root.motionState !== "closed") && root.barAttached
-      bodyWidth: root.bodyWidth
-      gradientStartColor: Color.barPanels.background
-      gradientEndColor: root.urgencyColor(root.activeRow)
-      gradientExtent: root.collarExtent
-      onHoveredChanged: root.activeHoverChanged(card.hovered || shoulders.hovered)
+    Item {
+      id: incomingSlot
+      x: 0; width: parent.width; height: parent.height
+      visible: root._latchedIncoming !== null && root._incomingVisible
+      opacity: root.presentationFrame.phase === "opening" || root.presentationFrame.phase === "switching" ? root._progress : 1
+      transform: Scale { origin.x: incomingSlot.width / 2; origin.y: 0; yScale: opacity }
+      NotificationCard {
+        id: incomingCard; x: root.barAttached ? root.shoulderRadius : 0; width: root.bodyWidth
+        snapshot: root._latchedIncoming; interactive: root.presentationFrame.phase === "open"
+          && root.incomingIdentity === identity(root._latchedIncoming)
+        fontFamily: root.fontFamily; attachedMode: root.barAttached; attachedContentTopInset: root.attachedContentTopInset
+        gradientStartColor: Color.barPanels.background; gradientExtent: root.collarExtent
+        countdown: root.presentationFrame.countdown
+        onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
+        onCloseRequested: root.dismissRequested(identity(root._latchedIncoming))
+        onCardClicked: root.cardClicked(identity(root._latchedIncoming))
+        onActionClicked: function(identifier) { root.actionClicked(identity(root._latchedIncoming), identifier) }
+      }
+      BarAttachedShoulders {
+        x: 0; visible: root.barAttached; bodyWidth: root.bodyWidth
+        gradientStartColor: Color.barPanels.background; gradientEndColor: root.urgencyColor(root._latchedIncoming)
+        onHoveredChanged: root.hoverChanged(identity(root._latchedIncoming), hovered)
+      }
+    }
+    Item {
+      id: stableInputRegion
+      x: root.barAttached ? root.shoulderRadius : 0; y: 0; width: root.bodyWidth; height: incomingCard.height
+      visible: root.onOutput && root.presentationFrame.phase === "open" && root.incoming !== null
     }
   }
 
   ElevatedSurface {
     id: cueSurface
-    visible: root.cueVisible
-    revealed: root.cueVisible
-    entranceX: Style.space(12)
-    concealedScale: 1.0
-    motionDuration: 160
-    shadowBlurMax: 48
-    shadowBlurAmount: 1.0
-    shadowOpacityAmount: 0.78
-    shadowOffsetY: 14
-    shadowScaleAmount: 1.03
-    effectPaddingRect: Qt.rect(-8, -8, 16, 30)
-    anchors.right: parent.right
-    anchors.top: parent.top
-    anchors.topMargin: (root.barPosition === "top" && root.shell
-      && root.shell.barVisible !== false ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
-    anchors.rightMargin: (root.barPosition === "right" && root.shell
-      && root.shell.barVisible !== false ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
-    implicitWidth: Style.space(250)
-    implicitHeight: Style.space(48)
-    radius: 0
-    color: Color.notifications.background
-    borderSpec: Border.none()
-
-    Text {
-      anchors.centerIn: parent
-      text: root.cueGlyph
-      color: Color.notifications.text
-      font.family: Style.font.family
-      font.pixelSize: Style.font.display
-    }
+    visible: root.cueVisible; revealed: root.cueVisible; entranceX: Style.space(12); concealedScale: 1.0
+    motionDuration: 160; shadowBlurMax: 48; shadowBlurAmount: 1.0; shadowOpacityAmount: 0.78; shadowOffsetY: 14
+    shadowScaleAmount: 1.03; effectPaddingRect: Qt.rect(-8, -8, 16, 30); anchors.right: parent.right; anchors.top: parent.top
+    anchors.topMargin: (root.barPosition === "top" && root.shell && root.shell.barVisible !== false
+      ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
+    anchors.rightMargin: (root.barPosition === "right" && root.shell && root.shell.barVisible !== false
+      ? root.barSize + Style.gapsOut : Style.gapsOut) + Style.space(24)
+    implicitWidth: Style.space(250); implicitHeight: Style.space(48); radius: 0
+    color: Color.notifications.background; borderSpec: Border.none()
+    Text { anchors.centerIn: parent; text: root.cueGlyph; color: Color.notifications.text; font.family: Style.font.family; font.pixelSize: Style.font.display }
   }
 }
