@@ -406,22 +406,24 @@ Item {
           var guard = service.actionCloseState.guards[String(key)]
           var generation = service.actionClosingGenerations[key]
           if (guard && guard.notification && guard.generation === generation) {
+            var timeoutOwner = service.closingOwnership.owners[String(key)]
+            var timeoutTombstone = service.presentationState.closing[String(key)]
+            var timeoutIdentity = timeoutTombstone ? timeoutTombstone.identity
+              : timeoutOwner ? timeoutOwner.ownerIdentity : ""
+            var timeoutPlan = timeoutOwner ? NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
+              type: "close", originalId: key, notification: guard.notification,
+              generation: generation, tombstoneIdentity: timeoutIdentity
+            }) : { state: service.closingOwnership, accepted: true, release: guard.notification }
+            if (timeoutOwner && !timeoutPlan.accepted) continue
             var actionResult = NotificationLogic.actionCloseTransition(
               service.actionCloseState, {
                 type: "timeout", originalId: key, notification: guard.notification, generation: generation
               })
             if (actionResult.accepted) {
               service.actionCloseState = actionResult.state
-              var timeoutOwner = service.closingOwnership.owners[String(key)]
-              var timeoutTombstone = service.presentationState.closing[String(key)]
-              var timeoutIdentity = timeoutTombstone ? timeoutTombstone.identity
-                : timeoutOwner ? timeoutOwner.ownerIdentity : service.presentationIdentityForOriginalId(key)
               if (timeoutOwner) {
                 NotificationLogic.releaseTrackedNotification(timeoutOwner.notification)
-                service.closingOwnership = NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
-                  type: "close", originalId: key, notification: timeoutOwner.notification,
-                  generation: timeoutOwner.generation, tombstoneIdentity: timeoutIdentity
-                }).state
+                service.closingOwnership = timeoutPlan.state
               }
               if (timeoutIdentity)
                 service.dispatchPresentation({ type: "SENDER_CLOSED", identity: timeoutIdentity, now: now })
@@ -440,6 +442,15 @@ Item {
           service.closingOwnership = NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
             type: "prune", originalId: ownerKey, now: now
           }).state
+          var ownerGuard = service.actionCloseState.guards[String(ownerKey)]
+          if (ownerGuard && ownerGuard.notification === owner.notification
+              && ownerGuard.generation === owner.generation) {
+            service.actionCloseState = NotificationLogic.actionCloseTransition(service.actionCloseState, {
+              type: "timeout", originalId: ownerKey, notification: owner.notification, generation: owner.generation
+            }).state
+            delete service.actionClosingUntil[ownerKey]
+            delete service.actionClosingGenerations[ownerKey]
+          }
         }
       }
       service.dispatchPresentation({ type: "PRUNE", now: now })
@@ -704,22 +715,31 @@ Item {
 
   function handleClosedNotification(notification, originalId) {
     var generation = service.actionClosingGenerations[originalId]
+    var actionGuard = generation === undefined ? null : service.actionCloseState.guards[String(originalId)]
+    var actionIdentity = actionGuard ? actionGuard.identity : ""
+    var actionOwner = generation === undefined ? null : service.closingOwnership.owners[String(originalId)]
+    var actionTombstone = service.presentationState.closing[String(originalId)]
+    var actionOwnershipPlan = actionOwner ? NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
+      type: "close", originalId: originalId, notification: notification, generation: generation,
+      tombstoneIdentity: actionTombstone ? actionTombstone.identity : actionOwner.ownerIdentity
+    }) : null
+    if (actionOwnershipPlan && !actionOwnershipPlan.accepted) return
     var actionResult = generation === undefined ? null : NotificationLogic.actionCloseTransition(
       service.actionCloseState, { type: "close", originalId: originalId, notification: notification, generation: generation })
     if (actionResult && actionResult.accepted) {
       service.actionCloseState = actionResult.state
-      var owned = service.closingOwnership.owners[String(originalId)]
-      var tombstone = service.presentationState.closing[String(originalId)]
+      var owned = actionOwner
+      var tombstone = actionTombstone
       var ownedIdentity = owned ? owned.ownerIdentity : ""
-      var ownershipResult = owned ? NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
-        type: "close", originalId: originalId, notification: notification, generation: generation,
-        tombstoneIdentity: tombstone ? tombstone.identity : ownedIdentity
-      }) : { state: service.closingOwnership, accepted: false, release: null }
+      var ownershipResult = actionOwnershipPlan || { state: service.closingOwnership, accepted: false, release: null }
       if (ownershipResult.accepted) NotificationLogic.releaseTrackedNotification(notification)
       service.closingOwnership = ownershipResult.state
-      var closingIdentity = ownershipResult.accepted && ownershipResult.release
-        ? (service.presentationState.closing[String(originalId)]
-          ? service.presentationState.closing[String(originalId)].identity : ownedIdentity) : ""
+      var closingIdentity = ""
+      if (ownershipResult.accepted) {
+        closingIdentity = tombstone ? tombstone.identity : ownedIdentity
+      } else if (!owned) {
+        closingIdentity = actionIdentity
+      }
       if (closingIdentity)
         service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closingIdentity, now: Date.now() })
       service.cleanupClosedNotification(notification, originalId)
@@ -898,10 +918,6 @@ Item {
       actionClosingUntil[entry.originalId] = Date.now() + actionClosingTimeoutMs
       actionCloseState = NotificationLogic.actionCloseTransition(actionCloseState, {
         type: "begin", originalId: entry.originalId, notification: ref, generation: entry.timestamp
-      }).state
-      service.closingOwnership = NotificationLogic.closingOwnershipTransition(service.closingOwnership, {
-        type: "begin", originalId: entry.originalId, notification: ref,
-        generation: entry.timestamp, identity: identity
       }).state
     }
     try {

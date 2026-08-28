@@ -91,7 +91,6 @@ function deckOpacityProjection(phase, progress, incomingVisible) {
     return { incoming: projection.incoming, selected: projection.incoming }
   return { outgoing: projection.outgoing, selected: projection.outgoing }
 }
-function closingOwnershipInitialState() { return { owners: {} } }
 function releaseTrackedNotification(notification) {
   if (notification) notification.tracked = false
   return notification
@@ -115,24 +114,6 @@ function closingOwnershipPlan(state, event) {
   delete next.owners[id]
   return { state: next, accepted: true, release: owner.notification, steps: ["untrack", "delete"] }
 }
-function closingOwnershipTransition(state, event) {
-  var owners = state && state.owners ? state.owners : {}, id = event && String(event.originalId), owner = id ? owners[id] : null
-  var next = { owners: Object.assign({}, owners) }
-  if (!event || typeof event !== "object" || event.originalId === undefined || event.originalId === null)
-    return { state: next, accepted: false, release: null }
-  if (event.type === "begin") {
-    next.owners[id] = { notification: event.notification, generation: event.generation, identity: event.identity }
-    return { state: next, accepted: true, release: null }
-  }
-  if (!owner || owner.notification !== event.notification || owner.generation !== event.generation
-      || owner.identity !== event.identity) return { state: next, accepted: false, release: null }
-  if (event.type === "remove") return { state: next, accepted: true, release: null }
-  if (event.type === "close" || event.type === "clear") {
-    delete next.owners[id]
-    return { state: next, accepted: true, release: owner.notification }
-  }
-  return { state: next, accepted: false, release: null }
-}
 function actionCloseNeedsGuard(source) { return source === "action" }
 function actionCloseInitialState() { return { guards: {} } }
 function actionCloseTransition(state, event) {
@@ -141,7 +122,8 @@ function actionCloseTransition(state, event) {
   if (!event || typeof event !== "object") return { state: next, accepted: false, flush: false }
   if (event.originalId === undefined || event.originalId === null) return { state: next, accepted: false, flush: false }
   if (event.type === "begin") {
-    next.guards[id] = { notification: event.notification, generation: event.generation, inProgress: true, deferred: false }
+    next.guards[id] = { notification: event.notification, generation: event.generation,
+      identity: event.identity || "", inProgress: true, deferred: false }
     return { state: next, accepted: true, flush: false }
   }
   if (!guard || guard.notification !== event.notification || guard.generation !== event.generation)
@@ -948,8 +930,6 @@ if (typeof module !== "undefined") {
     cueGlyph: cueGlyph,
     deckProjection: deckProjection,
     deckOpacityProjection: deckOpacityProjection,
-    closingOwnershipInitialState: closingOwnershipInitialState,
-    closingOwnershipTransition: closingOwnershipTransition,
     releaseTrackedNotification: releaseTrackedNotification,
     closingOwnershipPlanInitialState: closingOwnershipPlanInitialState,
     closingOwnershipPlan: closingOwnershipPlan,
