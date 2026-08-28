@@ -359,6 +359,55 @@ boundaryCritical = step(boundaryCritical, { type: "TRANSITION_FINISHED", token: 
   assert.deepEqual(ids(s.pending), ["23700:237", "23500:235"])
 })
 
+let openingReplacementBehindNormal = Presentation.createInitialState({ routeVisible: true, output: "DP-1" })
+openingReplacementBehindNormal = step(openingReplacementBehindNormal, { type: "ARRIVE", snapshot: snapshot("23550:235", 1, 1000, 1000) })
+openingReplacementBehindNormal = step(openingReplacementBehindNormal, { type: "ARRIVE", snapshot: Object.assign(snapshot("23560:235", 1, 1000, 1000), { queueOrder: 2 }) })
+openingReplacementBehindNormal = step(openingReplacementBehindNormal, { type: "REPLACE", identity: "23560:235", snapshot: Object.assign(snapshot("23570:235", 2, 0, 0), { queueOrder: 99, queuePriority: false }) })
+openingReplacementBehindNormal = step(openingReplacementBehindNormal, {
+  type: "TRANSITION_FINISHED", token: openingReplacementBehindNormal.visual.token, kind: "open", output: "DP-1",
+}, s => {
+  assert.equal(s.phase, "switching")
+  assert.equal(s.active.identity, "23570:235", "opening reconciliation promotes critical replacement behind a normal")
+  assert.deepEqual(ids(s.visual.outgoingDeck.snapshots), ["23570:235"])
+  assert.deepEqual(ids(s.visual.incomingDeck.snapshots), ["23550:235"])
+})
+
+let switchingReplacementBehindNormal = openState(snapshot("23580:235", 1, 1000, 1000))
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "HOVER_CHANGED", hovered: true })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "ARRIVE", snapshot: snapshot("23590:236", 2, 0, 0) })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "ARRIVE", snapshot: snapshot("23550:237", 1, 1000, 1000) })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "HOVER_CHANGED", hovered: false })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "DISMISS", identity: "23590:236" })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, { type: "REPLACE", identity: "23580:235", snapshot: Object.assign(snapshot("23600:235", 2, 0, 0), { queuePriority: false, queueOrder: 99 }) })
+switchingReplacementBehindNormal = step(switchingReplacementBehindNormal, {
+  type: "TRANSITION_FINISHED", token: switchingReplacementBehindNormal.visual.token, kind: "switch", output: "DP-1",
+}, s => {
+  assert.equal(s.phase, "switching")
+  assert.equal(s.active.identity, "23600:235", "switching reconciliation promotes critical replacement")
+})
+
+let closingRoute = openState(snapshot("23610:236", 1, 1000, 1000))
+closingRoute = step(closingRoute, { type: "DISMISS", identity: "23610:236" })
+const closingRouteToken = closingRoute.visual.token
+const closingRouteResult = apply(closingRoute, {
+  type: "ROUTE_CHANGED", visible: true, output: "DP-2",
+})
+assert.equal(closingRouteResult.state.phase, "closed")
+assert.equal(closingRouteResult.state.visual.token, 0)
+assert.equal(closingRouteResult.state.route.output, "DP-2")
+assert.equal(closingRouteResult.state.visual.output, "")
+assert.ok(closingRouteResult.effects.some(effect => effect.type === "cancelWatchdog" && effect.token === closingRouteToken))
+assert.equal(apply(closingRouteResult.state, { type: "TRANSITION_FINISHED", token: closingRouteToken, kind: "close", output: "DP-1" }).state.phase, "closed")
+
+let closingRouteArrival = openState(snapshot("23620:236", 1, 1000, 1000))
+closingRouteArrival = step(closingRouteArrival, { type: "DISMISS", identity: "23620:236" })
+closingRouteArrival = step(closingRouteArrival, { type: "ARRIVE", snapshot: snapshot("23630:237", 1, 1000, 1000) })
+const movedClosing = apply(closingRouteArrival, { type: "ROUTE_CHANGED", visible: true, output: "DP-2" })
+assert.equal(movedClosing.state.phase, "opening")
+assert.equal(movedClosing.state.visual.output, "DP-2")
+assert.equal(movedClosing.state.active.identity, "23630:237")
+assert.ok(movedClosing.effects.some(effect => effect.type === "startWatchdog" && effect.output === "DP-2"))
+
 let tiedReplacement = openState(snapshot("23800:238", 2, 0, 0))
 const tiedOne = snapshot("23900:239", 1, 1000, 1000); tiedOne.queueOrder = 0
 const tiedTwo = snapshot("24000:240", 1, 1000, 1000); tiedTwo.queueOrder = 0

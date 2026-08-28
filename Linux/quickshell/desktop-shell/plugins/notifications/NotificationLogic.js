@@ -103,7 +103,11 @@ function closingOwnershipPlan(state, event) {
     return { state: next, accepted: false, release: null, steps: [] }
   if (event.type === "begin" || event.type === "refresh") {
     next.owners[id] = { notification: event.notification, generation: event.generation,
-      ownerIdentity: event.ownerIdentity, expiresAt: event.expiresAt }
+      ownerIdentity: event.ownerIdentity, expiresAt: event.expiresAt,
+      persistenceDisposition: event.persistenceDisposition || (event.type === "refresh" && owner
+        ? owner.persistenceDisposition : "delete"),
+      persistenceReason: event.persistenceReason || (event.type === "refresh" && owner
+        ? owner.persistenceReason : "") }
     return { state: next, accepted: true, release: null, steps: [] }
   }
   if (event.type === "prune") {

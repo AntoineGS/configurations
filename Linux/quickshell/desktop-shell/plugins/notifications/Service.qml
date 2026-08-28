@@ -96,6 +96,7 @@ Item {
   property var actionClosingUntil: ({})
   property var actionCloseState: NotificationLogic.actionCloseInitialState()
   property var closingOwnership: NotificationLogic.closingOwnershipPlanInitialState()
+  property var preservedClosingPersistence: ({})
   property var failedHistoryActions: ({})
   property var pendingRefreshes: ({})
   property var pendingSilencedRefreshes: ({})
@@ -276,7 +277,8 @@ Item {
         var key = snapshot && snapshot.originalId
         markHistoryUnavailable(key, snapshot.timestamp)
         if (!source) source = restoredSource(snapshot) || livePersistenceSources[key] || ""
-        if (effect.reason === "closed" || effect.reason === "replace") {
+        if ((effect.reason === "closed" || effect.reason === "replace")
+            && !(effect.reason === "closed" && service.preservedClosingPersistence[key] === true)) {
           if (source === "history") deleteHistoryFileFor(snapshot)
           else if (source === "popup") deletePopupFileFor(snapshot)
         }
@@ -301,7 +303,8 @@ Item {
         service.closingOwnership = NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
           type: "begin", originalId: effect.snapshot.originalId, notification: ref,
           generation: effect.snapshot.timestamp, ownerIdentity: effect.identity,
-          expiresAt: Date.now() + actionClosingTimeoutMs
+          expiresAt: Date.now() + actionClosingTimeoutMs, persistenceDisposition: "archive",
+          persistenceReason: effect.reason
         }).state
         try {
           if (effect.type === "senderExpire" && typeof ref.expire === "function") ref.expire()
@@ -683,7 +686,7 @@ Item {
     return count
   }
 
-  function cleanupClosedNotification(notification, originalId) {
+  function cleanupClosedNotification(notification, originalId, preservePersistence) {
     delete service.pendingRefreshes[String(originalId)]
     delete service.pendingSilencedRefreshes[String(originalId)]
     delete service.silencedDirty[originalId]
@@ -701,7 +704,7 @@ Item {
         break
       }
     }
-    if (!found) {
+    if (!found && preservePersistence !== true) {
       var fallback = { originalId: originalId, timestamp: generation }
       if (source === "history") service.deleteHistoryFileFor(fallback)
       else if (source === "popup") service.deletePopupFileFor(fallback)
@@ -719,6 +722,7 @@ Item {
     var actionIdentity = actionGuard ? actionGuard.identity : ""
     var actionOwner = generation === undefined ? null : service.closingOwnership.owners[String(originalId)]
     var actionTombstone = service.presentationState.closing[String(originalId)]
+    var preserveActionPersistence = !!actionOwner && actionOwner.persistenceDisposition === "archive"
     var actionOwnershipPlan = actionOwner ? NotificationLogic.closingOwnershipPlan(service.closingOwnership, {
       type: "close", originalId: originalId, notification: notification, generation: generation,
       tombstoneIdentity: actionTombstone ? actionTombstone.identity : actionOwner.ownerIdentity
@@ -740,9 +744,11 @@ Item {
       } else if (!owned) {
         closingIdentity = actionIdentity
       }
+      if (preserveActionPersistence) service.preservedClosingPersistence[String(originalId)] = true
       if (closingIdentity)
         service.dispatchPresentation({ type: "SENDER_CLOSED", identity: closingIdentity, now: Date.now() })
-      service.cleanupClosedNotification(notification, originalId)
+      service.cleanupClosedNotification(notification, originalId, preserveActionPersistence)
+      delete service.preservedClosingPersistence[String(originalId)]
       delete service.actionClosingGenerations[originalId]
       delete service.actionClosingUntil[originalId]
       return
@@ -755,10 +761,13 @@ Item {
       generation: owner.generation, tombstoneIdentity: ownerTombstone.identity
     }) : { state: service.closingOwnership, accepted: false, release: null }
     if (ownerResult.accepted) {
+      var preserveOwnerPersistence = owner.persistenceDisposition === "archive"
+      if (preserveOwnerPersistence) service.preservedClosingPersistence[String(originalId)] = true
       NotificationLogic.releaseTrackedNotification(notification)
       service.closingOwnership = ownerResult.state
       service.dispatchPresentation({ type: "SENDER_CLOSED", identity: ownerTombstone.identity, now: Date.now() })
-      service.cleanupClosedNotification(notification, originalId)
+      service.cleanupClosedNotification(notification, originalId, preserveOwnerPersistence)
+      delete service.preservedClosingPersistence[String(originalId)]
       return
     }
     if (service.liveRefs[originalId] !== notification) return

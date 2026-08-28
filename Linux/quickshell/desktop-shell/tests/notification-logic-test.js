@@ -108,8 +108,11 @@ assert.equal(actionBegin.identity, "4100:41", "action guard begin freezes popup 
 let ownershipPlan = logic.closingOwnershipPlanInitialState()
 ownershipPlan = logic.closingOwnershipPlan(ownershipPlan, {
   type: "begin", originalId: 42, notification: ownedRef, generation: 4200,
-  ownerIdentity: "4200:42", expiresAt: 100,
+  ownerIdentity: "4200:42", expiresAt: 100, persistenceDisposition: "archive", persistenceReason: "expire",
 }).state
+assert.equal(ownershipPlan.owners["42"].persistenceDisposition, "archive",
+  "reducer-initiated sender close records archive ownership before invoking the sender")
+assert.equal(ownershipPlan.owners["42"].persistenceReason, "expire")
 ownershipPlan = logic.closingOwnershipPlan(ownershipPlan, {
   type: "refresh", originalId: 42, notification: ownedRef, generation: 4201,
   ownerIdentity: "4201:42", expiresAt: 200,
