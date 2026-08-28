@@ -43,6 +43,8 @@ PanelWindow {
   signal actionClicked(string identity, string identifier)
   signal hoverChanged(string identity, bool hovered)
   signal transitionFinished(int token, string kind, string outputName)
+  signal stateObserved(string outputName, bool onOutput, bool hasCards, bool windowVisible,
+    string phase, string incomingIdentity)
 
   property real _progress: 1
   property real _metadataOpacity: 1
@@ -57,6 +59,7 @@ PanelWindow {
   property var _latchedOutgoingDeck: null
   property var _paintedSnapshot: null
   property var _paintedDeck: null
+  property bool _stateObservationPending: false
   property real _animationStartProgress: 0
   property real _animationStartMetadata: 0
   property real _animationStartContent: 0
@@ -184,6 +187,16 @@ PanelWindow {
     deckSettle.restart()
   }
 
+  function scheduleStateObservation() {
+    if (root._stateObservationPending) return
+    root._stateObservationPending = true
+    Qt.callLater(function() {
+      root._stateObservationPending = false
+      root.stateObserved(String(root.output && root.output.name || ""), root.onOutput, root.hasCards,
+        root.visible, String(root.presentationFrame.phase || ""), root.incomingIdentity)
+    })
+  }
+
   function syncPresentationFrame() {
     var frame = root.presentationFrame
     if (root.surfacesSuppressed || !root.onOutput) {
@@ -198,9 +211,14 @@ PanelWindow {
       root._progress = 1; root._metadataOpacity = 1; root._contentOpacity = 1
     }
   }
-  onPresentationFrameChanged: root.syncPresentationFrame()
-  onVisibleChanged: if (root.visible && root.presentationFrame) root.beginDeckSettle()
-  Component.onCompleted: root.syncPresentationFrame()
+  onPresentationFrameChanged: { root.syncPresentationFrame(); root.scheduleStateObservation() }
+  onVisibleChanged: {
+    if (root.visible && root.presentationFrame) root.beginDeckSettle()
+    root.scheduleStateObservation()
+  }
+  onOnOutputChanged: root.scheduleStateObservation()
+  onHasCardsChanged: root.scheduleStateObservation()
+  Component.onCompleted: { root.syncPresentationFrame(); root.scheduleStateObservation() }
 
   Connections {
     target: Motion
