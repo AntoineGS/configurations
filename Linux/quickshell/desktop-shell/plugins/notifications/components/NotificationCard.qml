@@ -31,7 +31,28 @@ ElevatedSurface {
   property real contentOpacity: 1
 
   readonly property bool hovered: content.hovered
+  readonly property string renderedIdentity: content.renderedIdentity
+  readonly property string renderedApp: content.renderedApp
+  readonly property string renderedAppIcon: content.renderedAppIcon
+  readonly property string renderedSummary: content.renderedSummary
+  readonly property string renderedBody: content.renderedBody
+  readonly property string renderedImage: content.renderedImage
+  readonly property int renderedUrgency: content.renderedUrgency
+  readonly property double renderedTimestamp: content.renderedTimestamp
+  readonly property var renderedActions: content.renderedActions
+  readonly property bool countdownShown: content.countdownShown
+  readonly property real countdownFraction: content.countdownFraction
+  readonly property real gradientStop: Math.min(1,
+    root.gradientExtent / Math.max(1, root.height))
+  readonly property string smallIconSource: content.smallIconSource
+  readonly property bool hasSmallIcon: content.hasSmallIcon
+  readonly property string sanitizedBody: content.sanitizedBody
+  readonly property string styledBody: content.styledBody
   readonly property color surfaceColor: content.surfaceColor
+  readonly property color inkColor: content.inkColor
+  readonly property string sourceLabel: content.sourceLabel
+  readonly property string timeLabel: content.timeLabel
+  readonly property real contentTopInset: content.contentTopInset
 
   signal closeRequested()
   signal cardClicked()
@@ -48,12 +69,12 @@ ElevatedSurface {
   gradient: Gradient {
     orientation: Gradient.Vertical
     GradientStop { position: 0; color: root.gradientStartColor }
-    GradientStop { position: Math.min(1, root.gradientExtent / Math.max(1, root.height)); color: root.surfaceColor }
+    GradientStop { position: root.gradientStop; color: root.surfaceColor }
     GradientStop { position: 1; color: root.surfaceColor }
   }
   color: surfaceColor
   borderSpec: root.keyboardSelected
-    ? Border.flat(root.content.inkColor, Math.max(2, Style.space(2)))
+    ? Border.flat(root.inkColor, Math.max(2, Style.space(2)))
     : Border.none()
   clip: true
 
