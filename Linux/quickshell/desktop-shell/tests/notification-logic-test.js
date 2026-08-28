@@ -103,6 +103,8 @@ assert.equal(logic.actionCloseNeedsGuard("senderDismiss"), false)
 assert.equal(logic.actionCloseNeedsGuard("senderExpire"), false)
 assert.equal(logic.actionCloseNeedsGuard("action"), true)
 const ownedRef = { tracked: true }
+const actionBegin = logic.actionCloseBeginEvent(41, ownedRef, 4100, "4100:41")
+assert.equal(actionBegin.identity, "4100:41", "action guard begin freezes popup identity")
 let ownershipPlan = logic.closingOwnershipPlanInitialState()
 ownershipPlan = logic.closingOwnershipPlan(ownershipPlan, {
   type: "begin", originalId: 42, notification: ownedRef, generation: 4200,

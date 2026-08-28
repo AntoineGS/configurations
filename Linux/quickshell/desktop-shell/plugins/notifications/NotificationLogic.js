@@ -115,6 +115,9 @@ function closingOwnershipPlan(state, event) {
   return { state: next, accepted: true, release: owner.notification, steps: ["untrack", "delete"] }
 }
 function actionCloseNeedsGuard(source) { return source === "action" }
+function actionCloseBeginEvent(originalId, notification, generation, identity) {
+  return { type: "begin", originalId: originalId, notification: notification, generation: generation, identity: identity }
+}
 function actionCloseInitialState() { return { guards: {} } }
 function actionCloseTransition(state, event) {
   var guards = state && state.guards ? state.guards : {}, id = event && String(event.originalId), guard = id ? guards[id] : null
@@ -934,6 +937,7 @@ if (typeof module !== "undefined") {
     closingOwnershipPlanInitialState: closingOwnershipPlanInitialState,
     closingOwnershipPlan: closingOwnershipPlan,
     actionCloseNeedsGuard: actionCloseNeedsGuard,
+    actionCloseBeginEvent: actionCloseBeginEvent,
     actionCloseInitialState: actionCloseInitialState,
     actionCloseTransition: actionCloseTransition,
     actionMetadata: actionMetadata,

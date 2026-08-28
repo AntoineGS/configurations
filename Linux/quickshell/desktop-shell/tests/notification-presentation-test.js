@@ -467,6 +467,18 @@ const senderClose = apply(lateReplacement.state, { type: "SENDER_CLOSED", identi
 assert.equal(senderClose.state.closing["312"], undefined)
 const expiredTombstone = apply(lateReplacement.state, { type: "PRUNE", now: 100 + 10000 })
 assert.equal(expiredTombstone.state.closing["312"], undefined)
+let failedActionPresenter = openState(snapshot("31400:314", 1, 1000, 1000))
+const failedSender = {}
+let failedGuard = logic.actionCloseTransition(logic.actionCloseInitialState(),
+  logic.actionCloseBeginEvent(314, failedSender, 31400, "31400:314")).state
+failedGuard = logic.actionCloseTransition(failedGuard, { type: "close", originalId: 314, notification: failedSender, generation: 31400 }).state
+const failedCompletion = logic.actionCloseTransition(failedGuard, {
+  type: "complete", originalId: 314, notification: failedSender, generation: 31400, success: false,
+})
+assert.equal(failedCompletion.flush, true)
+const failedClose = apply(failedActionPresenter, { type: "SENDER_CLOSED", identity: "31400:314", now: 31401 })
+assert.equal(failedClose.state.active, null, "failed synchronous close removes the active presenter entry")
+assert.equal(failedClose.state.visual.outgoing.identity, "31400:314")
 const senderClosedReuse = apply(lateReplacement.state, { type: "SENDER_CLOSED", identity: "31200:312", now: 101 })
 const reused = apply(senderClosedReuse.state, { type: "ARRIVE", snapshot: snapshot("31400:312", 1, 1000, 1000) })
 assert.deepEqual(ids(reused.state.pending), ["31400:312"], "sender close permits immediate original-ID reuse")
