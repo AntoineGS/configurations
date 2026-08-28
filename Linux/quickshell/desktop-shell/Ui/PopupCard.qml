@@ -39,7 +39,6 @@ PopupWindow {
 
   signal revealFinished()
   signal concealFinished()
-  signal shoulderClicked(int button)
 
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
@@ -247,7 +246,6 @@ PopupWindow {
       gradientEndColor: root.shoulderGradientEndColor
       gradientExtent: root.shoulderGradientExtent
       revealProgress: card.revealProgress
-      onClicked: button => root.shoulderClicked(button)
     }
   }
 }

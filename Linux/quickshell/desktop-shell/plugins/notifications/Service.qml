@@ -2279,13 +2279,10 @@ Item {
       ownsOutput: service.cardsVisibleOn(modelData)
       surfacesSuppressed: service.testSurfaceSuppressed
       shell: service.shell
-      cueVisible: service.cueVisibleOn(modelData)
-      cueRouteKey: service.currentCueRouteKey
       fontFamily: service.shell && service.shell.bar
         ? String(service.shell.bar.fontFamily || Style.font.family) : Style.font.family
       barPosition: service.barPosition
       barSize: service.liveBarSize
-      cueGlyph: NotificationLogic.cueGlyph(service.route.direction)
       onDismissRequested: function(identity) {
         var capturedIdentity = String(identity || "")
         Qt.callLater(function() { service.requestPopupRemoval(capturedIdentity, "dismiss") })
@@ -2299,7 +2296,6 @@ Item {
         var capturedIdentifier = String(identifier || "")
         Qt.callLater(function() { service.invokePopupActionIdentity(capturedIdentity, capturedIdentifier) })
       }
-      onCueDismissRequested: routeKey => service.dismissRouteCue(routeKey)
       onHoverChanged: function(identity, hovered) {
         var capturedIdentity = String(identity || "")
         var capturedHovered = hovered === true
@@ -2319,6 +2315,19 @@ Item {
           })
         })
       }
+    }
+  }
+
+  Variants {
+    model: Quickshell.screens
+
+    RouteCueWindow {
+      required property var modelData
+      output: modelData
+      requestedVisible: service.cueVisibleOn(modelData)
+      routeKey: service.currentCueRouteKey
+      glyph: NotificationLogic.cueGlyph(service.route.direction)
+      onDismissRequested: routeKey => service.dismissRouteCue(routeKey)
     }
   }
 
