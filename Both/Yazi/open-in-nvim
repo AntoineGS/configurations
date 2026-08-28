@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Open seekable files normally and stream GVFS FTP files into read-only buffers.
+# Minimum Bash version: 4.4
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+readonly gvfs_root="$runtime_dir/gvfs"
+
+is_ftp_file() {
+  local resolved
+
+  resolved="$(realpath -e -- "$1")" || return 1
+  [[ "$resolved" == "$gvfs_root/ftp:"* ]]
+}
+
+open_remote_file() {
+  local file="$1"
+
+  gio cat "$file" | env YAZI_REMOTE_PATH="$file" nvim -R -n - \
+    +'lua vim.api.nvim_buf_set_name(0, "ftp-readonly://" .. vim.env.YAZI_REMOTE_PATH)' \
+    +'setlocal nomodifiable readonly'
+}
+
+main() {
+  local file
+  local has_remote=0
+
+  [[ $# -gt 0 ]] || {
+    printf 'Usage: %s FILE...\n' "${0##*/}" >&2
+    return 2
+  }
+
+  for file in "$@"; do
+    if is_ftp_file "$file"; then
+      has_remote=1
+      break
+    fi
+  done
+
+  if (( has_remote == 0 )); then
+    exec nvim "$@"
+  fi
+
+  for file in "$@"; do
+    if is_ftp_file "$file"; then
+      open_remote_file "$file"
+    else
+      nvim "$file"
+    fi
+  done
+}
+
+main "$@"
