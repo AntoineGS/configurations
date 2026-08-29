@@ -15,7 +15,7 @@ PanelWindow {
   signal dismissRequested(string routeKey)
 
   readonly property real elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
-  readonly property real bodyWidth: Math.min(Style.space(380),
+  readonly property real bodyWidth: Math.min(Style.space(96),
     Math.max(1, output ? output.width - Style.gapsOut * (barAttached ? 2 : 1)
       - Style.popupOuterRadius * (barAttached ? 2 : 0) : 1))
 
