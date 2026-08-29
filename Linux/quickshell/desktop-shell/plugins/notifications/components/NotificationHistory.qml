@@ -134,6 +134,7 @@ TopBarOverlay {
             required property int urgency
             required property double timestamp
             required property bool actionAvailable
+            required property bool actionExpired
 
             width: root.focusedCardWidth
             height: historyTrack.height
@@ -160,6 +161,7 @@ TopBarOverlay {
               historyMode: true
               keyboardSelected: cardSlot.focused
               actionAvailable: cardSlot.actionAvailable
+              actionExpired: cardSlot.actionExpired
               opacity: cardSlot.focused ? 1 : 0.52
               scale: cardSlot.focused ? 1 : 0.9
 

@@ -1376,7 +1376,12 @@ Item {
         image: row.image,
         urgency: row.urgency,
         timestamp: row.timestamp,
+        defaultActionExpected: row.defaultActionExpected === true,
+        durableActionKind: String(row.durableActionKind || ""),
+        durableActionTarget: String(row.durableActionTarget || ""),
         actionAvailable: NotificationLogic.historyActionAvailable(
+          row, liveRefs[row.originalId], liveGenerations[row.originalId]),
+        actionExpired: NotificationLogic.historyActionExpired(
           row, liveRefs[row.originalId], liveGenerations[row.originalId])
       })
     }
@@ -1398,7 +1403,12 @@ Item {
         image: captured.image,
         urgency: captured.urgency,
         timestamp: captured.timestamp,
+        defaultActionExpected: captured.defaultActionExpected === true,
+        durableActionKind: String(captured.durableActionKind || ""),
+        durableActionTarget: String(captured.durableActionTarget || ""),
         actionAvailable: NotificationLogic.historyActionAvailable(
+          captured, liveRefs[captured.originalId], liveGenerations[captured.originalId]),
+        actionExpired: NotificationLogic.historyActionExpired(
           captured, liveRefs[captured.originalId], liveGenerations[captured.originalId])
       })
     }
@@ -1455,16 +1465,28 @@ Item {
     var generation = entry ? liveGenerations[entry.originalId] : null
     if (!NotificationLogic.historyActionAvailable(entry, ref, generation)) {
       historyModel.setProperty(index, "actionAvailable", false)
+      historyModel.setProperty(index, "actionExpired", entry && entry.defaultActionExpected === true)
       return false
     }
 
     var popupIndex = popupIndexForHistoryIdentity(entry.originalId, entry.timestamp)
-    if (popupIndex < 0 || !service.invokePopupDefault(popupIndex, entry)) {
-      historyModel.setProperty(index, "actionAvailable", false)
-      return false
+    if (popupIndex >= 0 && Number(entry.timestamp) === Number(generation)
+        && service.liveAction(ref, "default")
+        && service.invokePopupDefault(popupIndex, entry)) {
+      service.closeHistory()
+      return true
     }
-    service.closeHistory()
-    return true
+
+    var durableAction = NotificationLogic.durableHistoryAction(entry)
+    if (durableAction && durableAction.kind === "edit-screenshot") {
+      Quickshell.execDetached(["cmd-screenshot", "--edit-existing", durableAction.target])
+      service.closeHistory()
+      return true
+    }
+
+    historyModel.setProperty(index, "actionAvailable", false)
+    historyModel.setProperty(index, "actionExpired", entry.defaultActionExpected === true)
+    return false
   }
 
   function markHistoryUnavailable(originalId, timestamp) {
@@ -1472,7 +1494,9 @@ Item {
     for (var i = 0; i < historyModel.count; i++) {
       var row = historyModel.get(i)
       if (row && row.originalId === originalId && Number(row.timestamp) === Number(timestamp)) {
-        historyModel.setProperty(i, "actionAvailable", false)
+        var available = NotificationLogic.durableHistoryAction(row) !== null
+        historyModel.setProperty(i, "actionAvailable", available)
+        historyModel.setProperty(i, "actionExpired", !available && row.defaultActionExpected === true)
         return
       }
     }
