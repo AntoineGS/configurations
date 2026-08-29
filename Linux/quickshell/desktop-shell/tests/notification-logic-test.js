@@ -323,6 +323,49 @@ const liveDefaultRef = {
   ],
 }
 const historyIdentity = { originalId: 42, timestamp: 1786930001000 }
+const durableNotification = {
+  actions: [{ identifier: "default", text: "Edit" }],
+  hints: {
+    "x-desktop-shell-history-action": "edit-screenshot",
+    "x-desktop-shell-history-action-target": "/home/user/Pictures/screenshot.png",
+  },
+}
+assert.deepEqual(logic.durableActionMetadata(durableNotification), {
+  kind: "edit-screenshot",
+  target: "/home/user/Pictures/screenshot.png",
+}, "recognized durable actions retain a typed absolute target")
+assert.equal(logic.durableActionMetadata({
+  hints: {
+    "x-desktop-shell-history-action": "run-command",
+    "x-desktop-shell-history-action-target": "rm -rf /",
+  },
+}), null, "unknown durable action kinds cannot persist commands")
+assert.equal(logic.durableActionMetadata({
+  hints: {
+    "x-desktop-shell-history-action": "edit-screenshot",
+    "x-desktop-shell-history-action-target": "/home/user/Pictures/../secret.png",
+  },
+}), null, "durable screenshot targets reject traversal segments")
+const durableSnapshot = logic.snapshotOf(durableNotification, 1786930001000)
+assert.equal(durableSnapshot.defaultActionExpected, true)
+assert.equal(durableSnapshot.durableActionKind, "edit-screenshot")
+assert.equal(durableSnapshot.durableActionTarget, "/home/user/Pictures/screenshot.png")
+const durableSerialized = logic.serializePopup(
+  logic.persistablePopup(durableSnapshot, "/state/images/").entry, 1)
+const durableRestored = logic.parsePopupFiles(durableSerialized, 1)[0]
+assert.equal(durableRestored.defaultActionExpected, true,
+  "persisted history remembers that the notification offered a default action")
+assert.deepEqual(logic.durableHistoryAction(durableRestored), {
+  kind: "edit-screenshot",
+  target: "/home/user/Pictures/screenshot.png",
+}, "persisted history retains validated durable action metadata")
+assert.equal(logic.historyActionAvailable(durableRestored, null, null), true,
+  "a durable action remains available after its live notification expires")
+assert.equal(logic.historyActionExpired(durableRestored, null, null), false)
+assert.equal(logic.historyActionExpired({ defaultActionExpected: true }, null, null), true,
+  "an unavailable action that originally existed is expired")
+assert.equal(logic.historyActionExpired({}, null, null), false,
+  "informational history rows are not labeled as expired actions")
 assert.equal(logic.nextMonotonicTimestamp(-1, 1786930001000), 1786930001000)
 assert.equal(logic.nextMonotonicTimestamp(1786930001000, 1786930001000), 1786930001001)
 assert.equal(logic.nextMonotonicTimestamp(1786930001001, 1786930000500), 1786930001002)
@@ -614,7 +657,10 @@ assert.deepEqual(snapshot, {
   expireTimeout: 3000,
   timestamp: 1786930001000,
   actions,
-}, "snapshot keeps notification display data without private action hints")
+  defaultActionExpected: true,
+  durableActionKind: "",
+  durableActionTarget: "",
+}, "snapshot keeps notification display data and normalized action metadata")
 
 const unsafeSnapshot = logic.snapshotOf({
   id: 49,
@@ -694,10 +740,14 @@ assert.deepEqual(replacement, {
   expireTimeout: 5000,
   timestamp: 1786930002000,
   actions: [],
+  defaultActionExpected: false,
+  durableActionKind: "",
+  durableActionTarget: "",
 }, "replacement keeps the original popup identity while updating display data")
 assert.deepEqual(logic.popupRoles(), [
   "app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime",
-  "queuePriority", "queueOrder", "transient", "actions",
+  "queuePriority", "queueOrder", "transient", "actions", "defaultActionExpected", "durableActionKind",
+  "durableActionTarget",
 ])
 assert.ok(logic.popupRoles().includes("queueOrder"))
 assert.equal(logic.popupRowChanged(snapshot, snapshot), false)
@@ -721,6 +771,9 @@ assert.deepEqual(persisted, {
   expireTimeout: 3000,
   timestamp: 1786930001000,
   actions: [],
+  defaultActionExpected: true,
+  durableActionKind: "",
+  durableActionTarget: "",
   deadline: 1786930010000,
 })
 const persistedRemaining = logic.popupEntry({ ...snapshot, remainingLifetime: 2500 }, 1)
@@ -746,6 +799,9 @@ assert.deepEqual(logic.historyEntry({ id: 7, app: "unknown", timestamp: 10 }, 1)
   expireTimeout: 0,
   timestamp: 10,
   actions: [],
+  defaultActionExpected: false,
+  durableActionKind: "",
+  durableActionTarget: "",
 })
 assert.deepEqual(logic.parseSettings('{"dnd":true,"past":[]}'), {
   error: false, dnd: true, legacy: true,
@@ -764,6 +820,9 @@ assert.equal(logic.serializePopup(snapshot, 1), JSON.stringify({
   expireTimeout: 3000,
   timestamp: 1786930001000,
   actions: [],
+  defaultActionExpected: true,
+  durableActionKind: "",
+  durableActionTarget: "",
 }))
 
 const popupLines = [
@@ -819,6 +878,9 @@ assert.deepEqual(logic.latestHistoryRow(popupLines, 1), {
   expireTimeout: 0,
   timestamp: 1786930003000,
   actions: [],
+  defaultActionExpected: false,
+  durableActionKind: "",
+  durableActionTarget: "",
 }, "restore selects only the newest archived entry")
 assert.equal(logic.latestHistoryRow("", 1), null)
 assert.equal(logic.popupFileName(snapshot), "1786930001000-42.json")

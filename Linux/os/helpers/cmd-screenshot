@@ -6,11 +6,6 @@ set -Eeuo pipefail
 # Saves to ~/Pictures by default, but that can be changed via SCREENSHOT_DIR.
 # Editor defaults to Satty but can be changed via --editor=<name> or SCREENSHOT_EDITOR env
 
-OUTPUT_DIR="${SCREENSHOT_DIR:-$HOME/Pictures}"
-mkdir -p "$OUTPUT_DIR"
-
-pkill slurp && exit 0 || true
-
 SCREENSHOT_EDITOR="${SCREENSHOT_EDITOR:-satty}"
 
 # Parse --editor flag from any position
@@ -36,6 +31,21 @@ open_editor() {
     "$SCREENSHOT_EDITOR" "$filepath"
   fi
 }
+
+if [[ ${1:-} == --edit-existing ]]; then
+  if [[ $# -ne 2 || $2 != /* || $2 != *.png || ! -f $2 ]]; then
+    printf 'Usage: %s --edit-existing /absolute/path/to/screenshot.png\n' "${0##*/}" >&2
+    exit 2
+  fi
+  open_editor "$2"
+  exit 0
+fi
+
+OUTPUT_DIR="${SCREENSHOT_DIR:-$HOME/Pictures}"
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR=$(cd -- "$OUTPUT_DIR" && pwd -P)
+
+pkill slurp && exit 0 || true
 
 MODE="${1:-smart}"
 PROCESSING="${2:-slurp}"
@@ -124,7 +134,14 @@ if [[ $PROCESSING == "slurp" ]]; then
   wl-copy <"$FILEPATH"
 
   (
-    ACTION=$(notify-send "Screenshot saved to clipboard and file" "Edit with Super + Alt + , (or click this)" -t 10000 -i "$FILEPATH" -A "default=edit")
+    ACTION=$(notify-send \
+      "Screenshot saved to clipboard and file" \
+      "Edit with Super + Alt + , (or click this)" \
+      -t 10000 \
+      -i "$FILEPATH" \
+      -A "default=edit" \
+      --hint=string:x-desktop-shell-history-action:edit-screenshot \
+      --hint="string:x-desktop-shell-history-action-target:$FILEPATH")
     [[ $ACTION == "default" ]] && open_editor "$FILEPATH"
   ) &
 else

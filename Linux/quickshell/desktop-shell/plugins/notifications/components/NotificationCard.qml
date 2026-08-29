@@ -23,6 +23,7 @@ ElevatedSurface {
   property bool historyMode: false
   property bool keyboardSelected: false
   property bool actionAvailable: true
+  property bool actionExpired: false
   property bool attachedMode: false
   property real attachedContentTopInset: 0
   property color gradientStartColor: root.surfaceColor
@@ -88,6 +89,7 @@ ElevatedSurface {
     historyMode: root.historyMode
     keyboardSelected: root.keyboardSelected
     actionAvailable: root.actionAvailable
+    actionExpired: root.actionExpired
     attachedMode: root.attachedMode
     attachedContentTopInset: root.attachedContentTopInset
     metadataOpacity: root.metadataOpacity

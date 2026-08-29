@@ -74,6 +74,30 @@ function isEphemeral(notification) {
   return !!(notification && notification.transient === true) || !!(hints && hints.transient)
 }
 
+function normalizedDurableScreenshotTarget(value) {
+  var target = boundedSource(value, NOTIFICATION_LIMITS.maxImageLength)
+  if (!target || target.charAt(0) !== "/" || target.indexOf("\0") >= 0 || !/\.png$/i.test(target)) return ""
+  var segments = target.split("/")
+  for (var i = 1; i < segments.length; i++) {
+    if (!segments[i] || segments[i] === "." || segments[i] === "..") return ""
+  }
+  return target
+}
+
+function durableActionMetadata(notification) {
+  var hints = notification && notification.hints
+  if (!hints || String(hints["x-desktop-shell-history-action"] || "") !== "edit-screenshot") return null
+  var target = normalizedDurableScreenshotTarget(hints["x-desktop-shell-history-action-target"])
+  return target ? { kind: "edit-screenshot", target: target } : null
+}
+
+function durableHistoryAction(entry) {
+  var value = entry || {}
+  if (String(value.durableActionKind || "") !== "edit-screenshot") return null
+  var target = normalizedDurableScreenshotTarget(value.durableActionTarget)
+  return target ? { kind: "edit-screenshot", target: target } : null
+}
+
 function cueGlyph(direction) {
   switch (direction) {
   case "left": return "←"
@@ -663,6 +687,7 @@ function snapshotOf(notification, timestamp) {
   var expireTimeout = normalizedExpireTimeout(n.expireTimeout)
   var image = normalizeImageSource(n.image)
   var hintedImage = imagePathHint(n)
+  var durableAction = durableActionMetadata(n)
   if (!image && hintedImage) image = hintedImage
   var result = {
     // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
@@ -677,12 +702,15 @@ function snapshotOf(notification, timestamp) {
     expireTimeout: expireTimeout,
     timestamp: timestamp === undefined ? Date.now() : timestamp,
     actions: actionMetadata(n),
+    defaultActionExpected: actionOutcome(n.actions, "default", true).found,
+    durableActionKind: durableAction ? durableAction.kind : "",
+    durableActionTarget: durableAction ? durableAction.target : "",
   }
   if (isEphemeral(n)) result.transient = true
   return result
 }
 
-var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime", "queuePriority", "queueOrder", "transient", "actions"]
+var POPUP_ROLES = ["app", "appIcon", "summary", "body", "image", "urgency", "expireTimeout", "remainingLifetime", "queuePriority", "queueOrder", "transient", "actions", "defaultActionExpected", "durableActionKind", "durableActionTarget"]
 
 function popupRoles() {
   return POPUP_ROLES
@@ -732,6 +760,7 @@ function replacementSnapshot(notification, originalId, timestamp) {
 
 function historyEntry(value, normalUrgency) {
   var e = value || {}
+  var durableAction = durableHistoryAction(e)
   return {
     id: e.id || 0,
     originalId: e.originalId || e.id || 0,
@@ -744,12 +773,16 @@ function historyEntry(value, normalUrgency) {
     expireTimeout: 0,
     timestamp: e.timestamp || 0,
     actions: [],
+    defaultActionExpected: e.defaultActionExpected === true,
+    durableActionKind: durableAction ? durableAction.kind : "",
+    durableActionTarget: durableAction ? durableAction.target : "",
   }
 }
 
 function historyDisplayEntry(value, normalUrgency) {
   var entry = historyEntry(value, normalUrgency)
-  entry.actionAvailable = !!value && value.actionAvailable === true
+  entry.actionAvailable = (!!value && value.actionAvailable === true) || durableHistoryAction(entry) !== null
+  entry.actionExpired = !entry.actionAvailable && entry.defaultActionExpected
   return entry
 }
 
@@ -906,14 +939,21 @@ function historyRows(raw, liveRows, normalUrgency, limit) {
 }
 
 function historyActionAvailable(entry, liveRef, liveGeneration) {
-  if (!entry || !liveRef || Number(entry.timestamp) !== Number(liveGeneration)) return false
-  var actions = liveRef.actions
-  if (!isActionList(actions)) return false
-  var limit = Math.min(actions.length, NOTIFICATION_LIMITS.maxActions)
-  for (var i = 0; i < limit; i++) {
-    if (actions[i] && String(actions[i].identifier || "") === "default") return true
+  if (durableHistoryAction(entry)) return true
+  if (entry && liveRef && Number(entry.timestamp) === Number(liveGeneration)) {
+    var actions = liveRef.actions
+    if (!isActionList(actions)) return false
+    var limit = Math.min(actions.length, NOTIFICATION_LIMITS.maxActions)
+    for (var i = 0; i < limit; i++) {
+      if (actions[i] && String(actions[i].identifier || "") === "default") return true
+    }
   }
   return false
+}
+
+function historyActionExpired(entry, liveRef, liveGeneration) {
+  return !!entry && entry.defaultActionExpected === true
+    && !historyActionAvailable(entry, liveRef, liveGeneration)
 }
 
 function historyActionIdentity(entry) {
@@ -973,6 +1013,8 @@ if (typeof module !== "undefined") {
     routeMetadataCompletion: routeMetadataCompletion,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
+    durableActionMetadata: durableActionMetadata,
+    durableHistoryAction: durableHistoryAction,
     cueGlyph: cueGlyph,
     routeCueKey: routeCueKey,
     routeCueVisibleOn: routeCueVisibleOn,
@@ -1025,6 +1067,7 @@ if (typeof module !== "undefined") {
     historyEntry: historyEntry,
     parseSettings: parseSettings,
     historyActionAvailable: historyActionAvailable,
+    historyActionExpired: historyActionExpired,
     historyActionIdentity: historyActionIdentity,
     historyActionRetryAllowed: historyActionRetryAllowed,
     historyReadAccepted: historyReadAccepted,

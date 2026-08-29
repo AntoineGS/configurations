@@ -15,6 +15,7 @@ Item {
   property bool historyMode: false
   property bool keyboardSelected: false
   property bool actionAvailable: true
+  property bool actionExpired: false
   property bool attachedMode: false
   property real attachedContentTopInset: 0
   property real metadataOpacity: 1
@@ -248,8 +249,8 @@ Item {
       Layout.rightMargin: Style.space(12)
       Layout.topMargin: Style.space(6)
       Layout.bottomMargin: Style.space(10)
-      visible: root.historyMode && !root.actionAvailable
-      text: "ACTION UNAVAILABLE"
+      visible: root.historyMode && root.actionExpired
+      text: "ACTION EXPIRED"
       color: root.inkColor
       opacity: 0.62 * root.contentOpacity
       font.family: root.fontFamily
