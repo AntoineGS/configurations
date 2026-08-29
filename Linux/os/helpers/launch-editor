@@ -7,7 +7,7 @@ cmd-present "$EDITOR" || EDITOR=nvim
 
 case "$EDITOR" in
 nvim | vim | nano | micro | hx | helix | fresh)
-  exec launch-tui "$EDITOR" "$@"
+  exec launch-tui-large "$EDITOR" "$@"
   ;;
 *)
   exec setsid uwsm-app -- "$EDITOR" "$@"
