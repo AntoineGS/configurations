@@ -11,6 +11,8 @@ readonly NOTIFICATION_LEASE_RENEW_INTERVAL=1
 NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-1}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
 NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
+LOCAL_HOSTNAME=$(hostname)
+readonly LOCAL_HOSTNAME
 
 : "${XDG_RUNTIME_DIR:=/run/user/$UID}"
 
@@ -96,11 +98,13 @@ hide_rustdesk_connection_managers() {
 notification_route_state() {
   local monitors_json=$1
   local clients_json=$2
+  local routing_hostname=${3:-$LOCAL_HOSTNAME}
 
   jq -rnc \
     --argjson monitors "$monitors_json" \
     --argjson clients "$clients_json" \
-    --argjson supported "$SUPPORTED_NOTIFICATION_OUTPUTS_JSON" '
+    --argjson supported "$SUPPORTED_NOTIFICATION_OUTPUTS_JSON" \
+    --arg routing_hostname "$routing_hostname" '
       def center: {
         x: (.x + (.width / 2)),
         y: (.y + (.height / 2))
@@ -111,13 +115,17 @@ notification_route_state() {
         | select((if has("dpmsStatus") then .dpmsStatus else true end) == true)
         | select(.name as $name | ($supported | index($name)) != null)
       ] as $active
-      | [$clients[]
-          | select((.mapped // false) == true)
-          | select((.visible // false) == true)
-          | select((.class // "") | test("rustdesk"; "i"))
-          | select((.title // "") | test("Remote Desktop"; "i"))
-          | .monitor
-        ] | unique as $excluded
+      | (if ($routing_hostname | ascii_downcase) == "desktop-e07vtrn" then
+           [$clients[]
+             | select((.mapped // false) == true)
+             | select(.monitor as $monitor
+                 | .workspace.id == ($active[] | select(.id == $monitor) | .activeWorkspace.id))
+             | select((.class // "") | test("rustdesk"; "i"))
+             | select((.title // "") | test("Remote Desktop"; "i"))
+             | .monitor
+           ] | unique
+         else []
+         end) as $excluded
       | [$active[]
           | select(.id as $id | ($excluded | index($id)) == null)
         ] as $safe
@@ -468,7 +476,7 @@ reconcile_notification_routing() {
     return 1
   fi
   hide_rustdesk_connection_managers "$clients_json" || true
-  if ! state=$(notification_route_state "$monitors_json" "$clients_json"); then
+  if ! state=$(notification_route_state "$monitors_json" "$clients_json" "$LOCAL_HOSTNAME"); then
     invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1

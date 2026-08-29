@@ -16,6 +16,15 @@ fail() {
 # shellcheck disable=SC1090,SC1091 # The path is resolved from this repository at runtime.
 source "$watcher"
 
+actual_hostname=$(hostname)
+# shellcheck disable=SC2016 # The child shell expands LOCAL_HOSTNAME after sourcing the watcher.
+resolved_hostname=$(env HOSTNAME=DESKTOP-E07VTRN bash -c '
+  source "$1"
+  printf "%s\n" "$LOCAL_HOSTNAME"
+' -- "$watcher")
+[[ $resolved_hostname == "$actual_hostname" ]] ||
+  fail "the routing host trusted inherited HOSTNAME: $resolved_hostname"
+
 hyprctl() {
   case $1 in
     clients)
@@ -54,6 +63,48 @@ hyprctl() {
       ;;
   esac
 }
+
+single_monitor='[
+  {
+    "id": 0,
+    "name": "eDP-1",
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080,
+    "focused": true,
+    "disabled": false,
+    "dpmsStatus": true,
+    "activeWorkspace": {"id": 1}
+  }
+]'
+inactive_rustdesk='[
+  {
+    "mapped": true,
+    "visible": true,
+    "monitor": 0,
+    "workspace": {"id": 6},
+    "class": "rustdesk",
+    "title": "Office PC - Remote Desktop - RustDesk"
+  }
+]'
+active_rustdesk=${inactive_rustdesk/\"id\": 6/\"id\": 1}
+
+route=$(notification_route_state "$single_monitor" "$inactive_rustdesk" omarchbook)
+[[ $route == 'rustdesk-route-eDP-1|none|none' ]] ||
+  fail "non-privacy hosts hid notifications for an inactive RustDesk workspace: $route"
+
+route=$(notification_route_state "$single_monitor" "$active_rustdesk" omarchbook)
+[[ $route == 'rustdesk-route-eDP-1|none|none' ]] ||
+  fail "non-privacy hosts applied RustDesk notification routing: $route"
+
+route=$(notification_route_state "$single_monitor" "$inactive_rustdesk" DESKTOP-E07VTRN)
+[[ $route == 'rustdesk-route-eDP-1|none|none' ]] ||
+  fail "the privacy host treated an inactive RustDesk workspace as visible: $route"
+
+route=$(notification_route_state "$single_monitor" "$active_rustdesk" DESKTOP-E07VTRN)
+[[ $route == 'rustdesk-route-hidden|eDP-1|none' ]] ||
+  fail "the privacy host exposed notifications over an active RustDesk workspace: $route"
 
 reconcile_notification_routing() {
   return 0
