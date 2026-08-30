@@ -2,19 +2,18 @@
 set -Eeuo pipefail
 
 if (($# != 1)); then
-  printf 'usage: %s <recording|voxtype|codex|disk|memory|cpu>\n' "${0##*/}" >&2
+  printf 'usage: %s <codex|disk>\n' "${0##*/}" >&2
   exit 2
 fi
 
 case $1 in
-  recording|voxtype|codex|disk|memory|cpu) ;;
+  codex|disk) ;;
   *)
     printf 'unknown status adapter: %s\n' "$1" >&2
     exit 2
     ;;
 esac
 
-readonly PROC_ROOT="${DESKTOP_SHELL_PROC_ROOT:-/proc}"
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/desktop-shell/status"
 ERROR_FILE=$(mktemp)
 readonly ERROR_FILE
@@ -113,77 +112,9 @@ write_result() {
   printf '%s\n' "$normalized"
 }
 
-json_output() {
-  jq -cn --arg text "$1" --arg tooltip "$2" --arg class "$3" \
-    '{text: $text, tooltip: $tooltip, class: $class}'
-}
-
 json_metric_output() {
   jq -cn --arg icon "$1" --arg value "$2" --arg tooltip "$3" --arg class "$4" \
     '{icon: $icon, value: $value, text: ($icon + " " + $value), tooltip: $tooltip, class: $class}'
-}
-
-json_percentage_output() {
-  jq -cn --arg icon "$1" --arg value "$2" --arg tooltip "$3" --arg class "$4" --argjson percentage "$5" \
-    '{icon: $icon, value: $value, text: ($icon + " " + $value), tooltip: $tooltip, class: $class,
-      percentage: $percentage}'
-}
-
-recording_status() {
-  local result
-  local pgrep_status
-
-  : >"$ERROR_FILE"
-  if pgrep -f '^gpu-screen-recorder' >/dev/null 2>"$ERROR_FILE"; then
-    result=$(json_output '󰻂' 'Stop recording' 'active')
-  else
-    pgrep_status=$?
-    if ((pgrep_status != 1)); then
-      adapter_error recording "$(error_message "recording process check failed")"
-      return $?
-    fi
-    result=$(json_output '' '' '')
-  fi
-
-  write_result recording "$result"
-}
-
-voxtype_status() {
-  local source
-  local state
-  local icon
-  local result
-
-  : >"$ERROR_FILE"
-  if ! source=$(voxtype status --extended --format json 2>"$ERROR_FILE"); then
-    adapter_error voxtype "$(error_message "Voxtype status query failed")"
-    return $?
-  fi
-
-  : >"$ERROR_FILE"
-  if ! state=$(jq -er '.class | strings' <<<"$source" 2>"$ERROR_FILE"); then
-    adapter_error voxtype "$(error_message "Voxtype status has no class")"
-    return $?
-  fi
-
-  case $state in
-    idle) icon='' ;;
-    recording) icon='󰍬' ;;
-    transcribing) icon='󱔟' ;;
-    *)
-      adapter_error voxtype "unsupported Voxtype class: $state"
-      return $?
-      ;;
-  esac
-
-  : >"$ERROR_FILE"
-  if ! result=$(jq -c --arg icon "$icon" \
-    '.text = $icon | .tooltip = (.tooltip // "") | .class = (.class // "")' <<<"$source" 2>"$ERROR_FILE"); then
-    adapter_error voxtype "$(error_message "invalid Voxtype status JSON")"
-    return $?
-  fi
-
-  write_result voxtype "$result"
 }
 
 codex_status() {
@@ -299,155 +230,9 @@ disk_status() {
   write_result disk "$result"
 }
 
-memory_status() {
-  local total=""
-  local available=""
-  local key value
-  local used_kib
-  local percentage
-  local total_gib
-  local tmp_raw
-  local tmp_line
-  local tmp_total
-  local tmp_used
-  local tmp_capacity
-  local tmp_percentage
-  local result
-
-  : >"$ERROR_FILE"
-  if [[ ! -r $PROC_ROOT/meminfo ]]; then
-    adapter_error memory "memory info is unavailable: $PROC_ROOT/meminfo"
-    return $?
-  fi
-
-  while read -r key value _ _; do
-    case $key in
-      MemTotal:) total=$value ;;
-      MemAvailable:) available=$value ;;
-    esac
-  done <"$PROC_ROOT/meminfo"
-
-  if [[ ! $total =~ ^[0-9]+$ || ! $available =~ ^[0-9]+$ || $total -eq 0 ]]; then
-    adapter_error memory "memory info has invalid totals"
-    return $?
-  fi
-
-  used_kib=$((total - available))
-  if ((used_kib < 0)); then
-    used_kib=0
-  fi
-  percentage=$((100 - (available * 100 / total)))
-  if ((percentage < 0)); then
-    percentage=0
-  fi
-  if ((percentage > 100)); then
-    percentage=100
-  fi
-
-  : >"$ERROR_FILE"
-  if ! tmp_raw=$(df -Pk /tmp 2>"$ERROR_FILE"); then
-    adapter_error memory "$(error_message "/tmp usage query failed")"
-    return $?
-  fi
-  tmp_line=${tmp_raw##*$'\n'}
-  if [[ $tmp_line == "$tmp_raw" || -z $tmp_line ]]; then
-    adapter_error memory "df returned no /tmp filesystem row"
-    return $?
-  fi
-  read -r _ tmp_total tmp_used _ tmp_capacity _ <<<"$tmp_line"
-  tmp_percentage=${tmp_capacity%\%}
-  if [[ ! $tmp_total =~ ^[0-9]+$ || ! $tmp_used =~ ^[0-9]+$ || ! $tmp_percentage =~ ^[0-9]+$ ]]; then
-    adapter_error memory "df returned an invalid /tmp filesystem row"
-    return $?
-  fi
-
-  total_gib=$(format_kib_gib "$total")
-  total_gib=${total_gib%.0}
-  result=$(json_percentage_output $'\uefc5' "$percentage%" \
-    "$(format_kib_gib "$used_kib") / $total_gib GiB"$'\n'"/tmp: $(format_kib_gib "$tmp_used") GiB ($tmp_percentage%)" \
-    '' "$percentage")
-  write_result memory "$result"
-}
-
-read_cpu_snapshot() {
-  local cpu user nice system idle iowait irq softirq steal
-  local value
-  local total
-
-  if [[ ! -r $PROC_ROOT/stat ]]; then
-    printf 'CPU statistics are unavailable: %s\n' "$PROC_ROOT/stat" >&2
-    return 1
-  fi
-
-  if ! read -r cpu user nice system idle iowait irq softirq steal _ <"$PROC_ROOT/stat"; then
-    printf 'CPU statistics could not be read\n' >&2
-    return 1
-  fi
-  if [[ $cpu != cpu ]]; then
-    printf 'CPU statistics have no aggregate row\n' >&2
-    return 1
-  fi
-
-  for value in "$user" "$nice" "$system" "$idle" "$iowait" "$irq" "$softirq" "$steal"; do
-    if [[ ! $value =~ ^[0-9]+$ ]]; then
-      printf 'CPU statistics contain a non-numeric value\n' >&2
-      return 1
-    fi
-  done
-
-  total=$((user + nice + system + idle + iowait + irq + softirq + steal))
-  printf '%s %s\n' "$total" "$((idle + iowait))"
-}
-
-cpu_status() {
-  local first second
-  local total1 idle1 total2 idle2
-  local total_delta busy_delta usage
-  local result
-
-  : >"$ERROR_FILE"
-  if ! first=$(read_cpu_snapshot 2>"$ERROR_FILE"); then
-    adapter_error cpu "$(error_message "first CPU sample failed")"
-    return $?
-  fi
-  : >"$ERROR_FILE"
-  if ! sleep 1 2>"$ERROR_FILE"; then
-    adapter_error cpu "$(error_message "CPU sample delay failed")"
-    return $?
-  fi
-  : >"$ERROR_FILE"
-  if ! second=$(read_cpu_snapshot 2>"$ERROR_FILE"); then
-    adapter_error cpu "$(error_message "second CPU sample failed")"
-    return $?
-  fi
-
-  read -r total1 idle1 <<<"$first"
-  read -r total2 idle2 <<<"$second"
-  total_delta=$((total2 - total1))
-  busy_delta=$(((total2 - idle2) - (total1 - idle1)))
-  if ((total_delta <= 0 || busy_delta < 0)); then
-    adapter_error cpu "CPU samples have no positive interval"
-    return $?
-  fi
-
-  usage=$((busy_delta * 100 / total_delta))
-  if ((usage < 0)); then
-    usage=0
-  fi
-  if ((usage > 100)); then
-    usage=100
-  fi
-  result=$(json_percentage_output '' "$usage%" "CPU usage: $usage%" '' "$usage")
-  write_result cpu "$result"
-}
-
 case $1 in
-  recording) recording_status ;;
-  voxtype) voxtype_status ;;
   codex) codex_status ;;
   disk) disk_status ;;
-  memory) memory_status ;;
-  cpu) cpu_status ;;
   *)
     printf 'unknown status adapter: %s\n' "$1" >&2
     exit 2

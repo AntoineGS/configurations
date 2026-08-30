@@ -1,0 +1,8 @@
+#!/bin/sh
+printf 'lifecycle\n'
+while :; do
+  if [ -r "${VM_FIXTURE_WATCHER_MODE:?}" ] && [ "$(tr -d '\r\n' < "$VM_FIXTURE_WATCHER_MODE")" = flap ]; then
+    exit 1
+  fi
+  sleep 0.05
+done

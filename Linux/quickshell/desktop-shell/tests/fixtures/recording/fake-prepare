@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+count_file=${RECORDING_FIXTURE_COUNT:?}
+active_file=${RECORDING_FIXTURE_ACTIVE:?}
+mode_file=${RECORDING_FIXTURE_MODE:?}
+
+count=0
+[ -f "$count_file" ] && count=$(cat "$count_file")
+count=$((count + 1))
+printf '%s\n' "$count" >"$count_file"
+: >"$active_file"
+trap 'rm -f "$active_file"' EXIT INT TERM
+
+if [ "$(tr -d '\r\n' < "$mode_file")" != success ]; then
+  exit 1
+fi
+sleep 0.05

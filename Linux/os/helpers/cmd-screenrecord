@@ -11,7 +11,14 @@ set -Eeuo pipefail
 [[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
 OUTPUT_DIR="${SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}"
 
-if [[ ! -d $OUTPUT_DIR ]]; then
+STATE_MODE="${1:-}"
+if [[ $STATE_MODE != --prepare-state && $STATE_MODE != --reconcile-state && $STATE_MODE != --watch-state && $STATE_MODE != --cleanup-if-output && $STATE_MODE != --cleanup-if-identity ]]; then
+  if [[ $OUTPUT_DIR != /* ]]; then
+    notify-send "Screen recording error" "Recording directory must be absolute: $OUTPUT_DIR" -u critical -t 5000
+    exit 1
+  fi
+fi
+if [[ $STATE_MODE != --prepare-state && $STATE_MODE != --reconcile-state && $STATE_MODE != --watch-state && $STATE_MODE != --cleanup-if-output && $STATE_MODE != --cleanup-if-identity && ! -d $OUTPUT_DIR ]]; then
   notify-send "Screen recording directory does not exist: $OUTPUT_DIR" -u critical -t 3000
   exit 1
 fi
@@ -24,8 +31,106 @@ CAPTURE_MODE="portal"
 CAPTURE_TARGET="portal"
 RESOLUTION=""
 STOP_RECORDING="false"
-RECORDING_FILE="${SCREENRECORD_STATE_FILE:-/tmp/screenrecord-filename}"
+RECORDING_STATE_DIR="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR must be set}/desktop-shell"
+RECORDING_FILE="$RECORDING_STATE_DIR/recording.json"
+RECORDING_OWNER_FILE="$RECORDING_STATE_DIR/recording.owner"
 RECORDING_LOG="${SCREENRECORD_LOG_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/screenrecord/gpu-screen-recorder.log}"
+RECORDING_STATE_TEMP=""
+RECORDING_OUTPUT=""
+RECORDING_SESSION=""
+RECORDING_PID=""
+STARTUP_RECORDING_PID=""
+STARTUP_RECORDING_SESSION=""
+STARTUP_RECORDING_OUTPUT=""
+WEBCAM_PID=""
+STOP_OUTPUT=""
+STOP_SESSION=""
+STOP_PID=""
+RECORDING_LOCK_HELD=false
+
+cleanup_recording_state_temp() {
+  [[ -z $RECORDING_STATE_TEMP ]] || rm -f "$RECORDING_STATE_TEMP"
+}
+
+cleanup_owned_startup_children() {
+  local pid
+  for pid in "$STARTUP_RECORDING_PID" "$WEBCAM_PID"; do
+    [[ $pid =~ ^[0-9]+$ ]] || continue
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in {1..20}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.05
+      done
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+  done
+  STARTUP_RECORDING_PID=""
+  WEBCAM_PID=""
+}
+
+cleanup_startup_lifecycle() {
+  local session_id=$STARTUP_RECORDING_SESSION
+  local pid=$STARTUP_RECORDING_PID
+  local output=$STARTUP_RECORDING_OUTPUT
+  cleanup_owned_startup_children
+  cleanup_recording_state_if_identity "$session_id" "$pid" "$output"
+  STARTUP_RECORDING_SESSION=""
+  STARTUP_RECORDING_OUTPUT=""
+}
+
+prepare_recording_state_dir() {
+  local saved_umask
+  saved_umask=$(umask)
+  umask 077
+  mkdir -p -- "$RECORDING_STATE_DIR"
+  umask "$saved_umask"
+  [[ ! -L $RECORDING_STATE_DIR && -d $RECORDING_STATE_DIR ]] || return 1
+  chmod 700 "$RECORDING_STATE_DIR"
+}
+
+parse_recording_state() {
+  local state
+  [[ -f $RECORDING_FILE ]] || return 1
+  state=$(<"$RECORDING_FILE") || return 1
+  RECORDING_OUTPUT=$(jq -er 'select(.version == 1 and .active == true and (.output | type) == "string" and (.output | startswith("/"))) | .output' <<<"$state" 2>/dev/null) || {
+    RECORDING_OUTPUT=""
+    return 1
+  }
+  local owner
+  [[ -f $RECORDING_OWNER_FILE ]] || return 1
+  owner=$(<"$RECORDING_OWNER_FILE") || return 1
+  RECORDING_SESSION=$(jq -er 'select((.session | type) == "string" and (.session | length) > 0) | .session' <<<"$owner" 2>/dev/null) || return 1
+  RECORDING_PID=$(jq -er 'select((.pid | type) == "number" and .pid > 0 and (.pid | floor) == .pid) | .pid' <<<"$owner" 2>/dev/null) || return 1
+}
+
+with_state_lock() {
+  local lock_fd
+  [[ -d $RECORDING_STATE_DIR && ! -L $RECORDING_STATE_DIR/.recording.lock ]] || return 1
+  if ! exec {lock_fd}>>"$RECORDING_STATE_DIR/.recording.lock"; then
+    return 1
+  fi
+  if ! flock "$lock_fd"; then
+    exec {lock_fd}>&-
+    return 1
+  fi
+  RECORDING_LOCK_HELD=true
+  local result=0
+  "$@" || result=$?
+  RECORDING_LOCK_HELD=false
+  flock -u "$lock_fd" || result=1
+  exec {lock_fd}>&-
+  return "$result"
+}
+
+cleanup_recording_state_on_signal() {
+  cleanup_recording_state_temp
+  exit 130
+}
+
+trap cleanup_recording_state_temp EXIT
+trap 'cleanup_startup_lifecycle; cleanup_recording_state_on_signal' HUP INT TERM
 
 for arg in "$@"; do
   case "$arg" in
@@ -82,6 +187,7 @@ start_webcam_overlay() {
     -fflags nobuffer -flags low_delay \
     -probesize 32 -analyzeduration 0 \
     -loglevel quiet &
+  WEBCAM_PID=$!
   sleep 1
 }
 
@@ -107,8 +213,9 @@ select_capture_target() {
 }
 
 start_screenrecording() {
-  local filename
-  filename="$OUTPUT_DIR/screenrecording-$(date +'%Y-%m-%d_%H-%M-%S').mp4"
+  local filename session_id
+  session_id="$(date +%s%N)-$$-$RANDOM"
+  filename="$OUTPUT_DIR/screenrecording-$(date +'%Y-%m-%d_%H-%M-%S')-$session_id.mp4"
   local audio_devices=""
   local audio_args=()
 
@@ -130,6 +237,12 @@ start_screenrecording() {
     return 1
   fi
 
+  if ! prepare_recording_state_dir; then
+    notify-send "Screen recording error" "Could not prepare recording state: $RECORDING_FILE" -u critical -t 5000
+    return 1
+  fi
+  cleanup_recording_state
+
   saved_umask=$(umask)
   umask 077
   if ! exec {recording_log_fd}>"$RECORDING_LOG"; then
@@ -144,9 +257,14 @@ start_screenrecording() {
     return 1
   fi
 
+  rm -f -- "$filename"
   gpu-screen-recorder -w "$CAPTURE_TARGET" -k auto -s "$resolution" -f 60 -fm cfr -fallback-cpu-encoding yes -o "$filename" "${audio_args[@]}" \
     </dev/null >&"$recording_log_fd" 2>&1 &
   local pid=$!
+  STARTUP_RECORDING_PID=$pid
+  STARTUP_RECORDING_SESSION=$session_id
+  STARTUP_RECORDING_OUTPUT=$filename
+  RECORDING_OUTPUT=$filename
   exec {recording_log_fd}>&-
 
   # Wait for recording to actually start (file appears after portal selection)
@@ -155,12 +273,86 @@ start_screenrecording() {
   done
 
   if kill -0 $pid 2>/dev/null; then
-    echo "$filename" >"$RECORDING_FILE"
+    if ! publish_recording_state_unlocked "$filename" "$session_id" "$pid"; then
+      kill -SIGINT "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      cleanup_recording_state_if_identity_locked "$session_id" "$pid" "$filename"
+      return 1
+    fi
+    local watcher_pid
+    ("$0" --watch-state "$pid" "$session_id" "$filename") </dev/null >/dev/null 2>&1 &
+    watcher_pid=$!
+    sleep 0.05
+    if ! kill -0 "$watcher_pid" 2>/dev/null; then
+      kill -SIGINT "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      cleanup_recording_state_if_identity "$session_id" "$pid" "$filename"
+      return 1
+    fi
+    STARTUP_RECORDING_PID=""
+    STARTUP_RECORDING_SESSION=""
+    STARTUP_RECORDING_OUTPUT=""
+    disown "$watcher_pid" || true
+  else
+    wait "$pid" 2>/dev/null || true
+    cleanup_recording_state_if_identity_locked "$session_id" "$pid" "$filename"
+    STARTUP_RECORDING_PID=""
+    STARTUP_RECORDING_SESSION=""
+    STARTUP_RECORDING_OUTPUT=""
+    return 1
   fi
 }
 
+publish_recording_state_unlocked() {
+  local filename=$1
+  local session_id=$2
+  local pid=$3
+  local public_json owner_json
+  [[ $filename == /* ]] || return 1
+  public_json=$(jq -cn --arg output "$filename" '{version:1,active:true,output:$output}') || return 1
+  owner_json=$(jq -cn --arg session "$session_id" --argjson pid "$pid" '{session:$session,pid:$pid}') || return 1
+  if ! atomic_write_recording_state "$RECORDING_OWNER_FILE" "$owner_json"; then
+    return 1
+  fi
+  if ! atomic_write_recording_state "$RECORDING_FILE" "$public_json"; then
+    rm -f -- "$RECORDING_OWNER_FILE"
+    return 1
+  fi
+}
+
+atomic_write_recording_state() {
+  local target=$1 content=$2 saved_umask
+  saved_umask=$(umask)
+  umask 077
+  if ! RECORDING_STATE_TEMP=$(mktemp "$RECORDING_STATE_DIR/.recording.state.XXXXXX"); then
+    umask "$saved_umask"
+    return 1
+  fi
+  if ! printf '%s\n' "$content" >"$RECORDING_STATE_TEMP" \
+    || ! chmod 600 "$RECORDING_STATE_TEMP" \
+    || ! mv -f -- "$RECORDING_STATE_TEMP" "$target"; then
+    cleanup_recording_state_temp
+    RECORDING_STATE_TEMP=""
+    umask "$saved_umask"
+    return 1
+  fi
+  RECORDING_STATE_TEMP=""
+  umask "$saved_umask"
+}
+
 stop_screenrecording() {
-  trap cleanup_recording_state EXIT
+  RECORDING_OUTPUT=""
+  RECORDING_SESSION=""
+  RECORDING_PID=""
+  STOP_OUTPUT=""
+  STOP_SESSION=""
+  STOP_PID=""
+  if parse_recording_state; then
+    STOP_OUTPUT="$RECORDING_OUTPUT"
+    STOP_SESSION="$RECORDING_SESSION"
+    STOP_PID="$RECORDING_PID"
+  fi
+  trap 'cleanup_recording_state_if_identity_locked "$STOP_SESSION" "$STOP_PID" "$STOP_OUTPUT"' EXIT
 
   pkill -SIGINT -f "^gpu-screen-recorder" || true # SIGINT required to save video properly
 
@@ -177,13 +369,13 @@ stop_screenrecording() {
     pkill -9 -f "^gpu-screen-recorder" || true
     notify-send "Screen recording error" "Recording process had to be force-killed. Video may be corrupted." -u critical -t 5000
   else
-    trim_first_frame
+    trim_first_frame "$STOP_OUTPUT"
     local filename
-    if [[ ! -f $RECORDING_FILE ]]; then
-      rm -f "$RECORDING_FILE"
+    if [[ -z $STOP_OUTPUT ]]; then
+      cleanup_stale_recording_state_locked
       return
     fi
-    filename=$(<"$RECORDING_FILE")
+    filename="$STOP_OUTPUT"
     local preview="${filename%.mp4}-preview.png"
     local notification_image="$filename"
 
@@ -199,11 +391,50 @@ stop_screenrecording() {
     ) &
   fi
 
-  cleanup_recording_state
+  cleanup_recording_state_if_identity_locked "$STOP_SESSION" "$STOP_PID" "$STOP_OUTPUT"
 }
 
 cleanup_recording_state() {
-  rm -f "$RECORDING_FILE" || true
+  rm -f -- "$RECORDING_FILE" "$RECORDING_OWNER_FILE" || true
+}
+
+cleanup_recording_state_if_output() {
+  local expected=$1
+  [[ -n $expected && -d $RECORDING_STATE_DIR ]] || return 0
+  with_state_lock cleanup_recording_state_if_output_locked "$expected" || true
+}
+
+cleanup_recording_state_if_output_locked() {
+  local expected=$1
+  if [[ -f $RECORDING_FILE ]] && parse_recording_state && [[ $RECORDING_OUTPUT == "$expected" ]]; then
+    rm -f -- "$RECORDING_FILE" "$RECORDING_OWNER_FILE"
+  fi
+}
+
+cleanup_recording_state_if_identity() {
+  local session_id=$1
+  local pid=$2
+  local expected=$3
+  [[ -n $session_id && -n $pid && -n $expected && -d $RECORDING_STATE_DIR ]] || return 0
+  if [[ $RECORDING_LOCK_HELD == true ]]; then
+    cleanup_recording_state_if_identity_locked "$session_id" "$pid" "$expected"
+  else
+    with_state_lock cleanup_recording_state_if_identity_locked "$session_id" "$pid" "$expected" || true
+  fi
+}
+
+cleanup_recording_state_if_identity_locked() {
+  local session_id=$1
+  local pid=$2
+  local expected=$3
+  if [[ -f $RECORDING_FILE ]] && parse_recording_state \
+    && [[ $RECORDING_SESSION == "$session_id" && $RECORDING_PID == "$pid" && $RECORDING_OUTPUT == "$expected" ]]; then
+    rm -f -- "$RECORDING_FILE" "$RECORDING_OWNER_FILE"
+  fi
+}
+
+cleanup_stale_recording_state_locked() {
+  rm -f -- "$RECORDING_FILE" "$RECORDING_OWNER_FILE"
 }
 
 screenrecording_active() {
@@ -211,9 +442,7 @@ screenrecording_active() {
 }
 
 trim_first_frame() {
-  local latest
-  [[ -f $RECORDING_FILE ]] || return 0
-  latest=$(<"$RECORDING_FILE")
+  local latest=$1
 
   if [[ -n $latest && -f $latest ]]; then
     local trimmed="${latest%.mp4}-trimmed.mp4"
@@ -225,18 +454,88 @@ trim_first_frame() {
   fi
 }
 
-if screenrecording_active; then
-  stop_screenrecording
-elif [[ $STOP_RECORDING == "true" ]]; then
-  exit 1
-else
-  select_capture_target || exit 0
+reconcile_recording_state_locked() {
+  local pids pid output index session_id pgrep_status=0
+  local -a argv=()
+  pids=$(pgrep -f "^gpu-screen-recorder") || pgrep_status=$?
+  if ((pgrep_status != 0)); then
+    case $pgrep_status in
+    1) rm -f -- "$RECORDING_FILE" "$RECORDING_OWNER_FILE" ; return 0 ;;
+    *) return 1 ;;
+    esac
+  fi
+
+  pid=${pids%%$'\n'*}
+  [[ -n $pid ]] || return 1
+  mapfile -d '' -t argv <"/proc/$pid/cmdline" || return 1
+  [[ ${argv[0]##*/} == gpu-screen-recorder ]] || return 1
+  output=""
+  for ((index = 0; index < ${#argv[@]} - 1; index++)); do
+    if [[ ${argv[index]} == -o ]]; then
+      output=${argv[index + 1]}
+      break
+    fi
+  done
+  [[ $output == /* ]] || return 1
+  if ! parse_recording_state || [[ $RECORDING_OUTPUT != "$output" || $RECORDING_PID != "$pid" ]]; then
+    session_id="$(date +%s%N)-$$-$RANDOM"
+    publish_recording_state_unlocked "$output" "$session_id" "$pid"
+  fi
+}
+
+reconcile_recording_state() {
+  prepare_recording_state_dir || return 1
+  with_state_lock reconcile_recording_state_locked
+}
+
+watch_recording_state() {
+  local pid=$1 session_id=$2 output=$3
+  while kill -0 "$pid" 2>/dev/null && [[ $(ps -o stat= -p "$pid" 2>/dev/null) != Z* ]]; do sleep 0.1; done
+  cleanup_recording_state_if_identity "$session_id" "$pid" "$output"
+}
+
+case "$STATE_MODE" in
+--prepare-state)
+  prepare_recording_state_dir
+  exit
+  ;;
+--reconcile-state)
+  reconcile_recording_state
+  exit
+  ;;
+--watch-state)
+  watch_recording_state "${2:?recorder pid required}" "${3:?recorder session required}" "${4:?recorder output required}"
+  exit
+  ;;
+--cleanup-if-output)
+  cleanup_recording_state_if_output "${2:?recorder output required}"
+  exit
+  ;;
+--cleanup-if-identity)
+  cleanup_recording_state_if_identity "${2:?recorder session required}" "${3:?recorder pid required}" "${4:?recorder output required}"
+  exit
+  ;;
+esac
+
+run_recording_lifecycle_locked() {
+  if screenrecording_active; then
+    stop_screenrecording
+    return
+  fi
+  if [[ $STOP_RECORDING == "true" ]]; then
+    cleanup_stale_recording_state_locked
+    return 1
+  fi
+  select_capture_target || return 0
   if [[ $WEBCAM == "true" ]]; then
     start_webcam_overlay || true
   fi
 
   if ! start_screenrecording; then
     cleanup_webcam
-    exit 1
+    return 1
   fi
-fi
+}
+
+prepare_recording_state_dir || exit 1
+with_state_lock run_recording_lifecycle_locked

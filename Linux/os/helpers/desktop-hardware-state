@@ -5,14 +5,14 @@ shopt -s nullglob
 readonly VM_LIBVIRT_URI=qemu:///system
 
 usage() {
-  printf 'usage: %s <power|monitor|tailscale|vm|bluetooth>\n' "${0##*/}" >&2
+  printf 'usage: %s <monitor|tailscale|vm|bluetooth>\n' "${0##*/}" >&2
   exit 2
 }
 
 (( $# == 1 )) || usage
 domain=$1
 case $domain in
-  power|monitor|tailscale|vm|bluetooth) ;;
+  monitor|tailscale|vm|bluetooth) ;;
   *) usage ;;
 esac
 
@@ -22,7 +22,6 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 sysfs_root=${DESKTOP_HARDWARE_SYSFS_ROOT:-/sys}
-helper_dir=${DESKTOP_HARDWARE_HELPER_DIR:-}
 state_dir=${DESKTOP_HARDWARE_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/desktop-shell/hardware}
 cache_file="$state_dir/$domain.json"
 
@@ -58,20 +57,6 @@ current_time_ns() {
   printf '%s\n' "$value"
 }
 
-resolve_helper() {
-  local name=$1
-  local candidate
-
-  if [[ -n $helper_dir ]]; then
-    candidate="$helper_dir/$name"
-    [[ -x $candidate ]] || return 1
-    printf '%s\n' "$candidate"
-    return 0
-  fi
-
-  command -v "$name" 2>/dev/null
-}
-
 resolve_command() {
   command -v "$1" 2>/dev/null
 }
@@ -104,6 +89,15 @@ emit_payload() {
 write_cache() {
   local payload=$1
   local temporary=''
+
+  if [[ -r $cache_file ]] && jq -e --argjson next "$payload" '
+      (.available == $next.available) and
+      (.stale == $next.stale) and
+      (.error == $next.error) and
+      (.data == $next.data)
+    ' "$cache_file" >/dev/null 2>&1; then
+    return 0
+  fi
 
   if ! mkdir -p -- "$state_dir"; then
     return 0
@@ -273,107 +267,6 @@ read_keyboard_backlight() {
   done
 
   printf '%s\n' '{"available":false,"device":"","percent":0}'
-}
-
-state_power() {
-  local battery_present=''
-  local battery_available=false
-  local status=0
-  local battery_status=''
-  local battery_state=''
-  local battery_on_battery=''
-  local battery_capacity=''
-  local battery_remaining=''
-  local upower_command=''
-  local battery_device=''
-  local profiles_available=false
-  local active_profile=''
-  local profiles='[]'
-  local profile_command
-  local active_raw
-  local profiles_raw
-  local profile_data
-  local data
-
-  if battery_present=$(resolve_helper battery-present); then
-    "$battery_present" >/dev/null 2>&1 || status=$?
-    if (( status == 0 )); then
-      battery_available=true
-    elif (( status != 1 )); then
-      emit_stale 'battery presence check failed'
-    fi
-  fi
-
-  if [[ $battery_available == true ]]; then
-    if ! battery_status=$("$(resolve_helper battery-status)" 2>/dev/null); then
-      emit_stale 'battery status helper failed'
-    fi
-    if ! battery_capacity=$("$(resolve_helper battery-capacity)" 2>/dev/null); then
-      emit_stale 'battery capacity helper failed'
-    fi
-    if ! battery_remaining=$("$(resolve_helper battery-remaining-time)" 2>/dev/null); then
-      emit_stale 'battery remaining-time helper failed'
-    fi
-    if upower_command=$(resolve_command upower); then
-      battery_on_battery=$("$upower_command" -d 2>/dev/null \
-        | awk '/^[[:space:]]*on-battery:/ { print $2; exit }') || battery_on_battery=''
-      if battery_device=$("$upower_command" -e 2>/dev/null | awk '/BAT/ { print; exit }') \
-          && [[ -n $battery_device ]]; then
-        battery_state=$("$upower_command" -i "$battery_device" 2>/dev/null \
-          | awk '/^[[:space:]]*state:/ { print $2; exit }') || battery_state=''
-      fi
-    fi
-  fi
-
-  if profile_command=$(resolve_command powerprofilesctl); then
-    if ! active_raw=$("$profile_command" get 2>/dev/null); then
-      emit_stale 'power profile query failed'
-    fi
-    if ! profiles_raw=$("$profile_command" list 2>/dev/null); then
-      emit_stale 'power profile list failed'
-    fi
-
-    active_profile=${active_raw%%$'\n'*}
-    active_profile=${active_profile//$'\r'/}
-    active_profile="${active_profile#"${active_profile%%[![:space:]]*}"}"
-    active_profile="${active_profile%"${active_profile##*[![:space:]]}"}"
-    if [[ ! $active_profile =~ ^[[:alnum:]][[:alnum:]_.+-]*$ ]]; then
-      active_profile=''
-    fi
-
-    if ! profiles=$(printf '%s\n' "$profiles_raw" | jq -Rsc '
-      split("\n")
-      | map(sub("^\\s*\\*?\\s*"; "") | sub(":$"; "") | select(test("^[A-Za-z0-9][A-Za-z0-9_.+-]*$")))
-      | unique
-    '); then
-      emit_stale 'power profile list was malformed'
-    fi
-    profiles_available=true
-  fi
-
-  profile_data=$(jq -cn \
-    --arg available "$profiles_available" \
-    --arg active "$active_profile" \
-    --argjson profiles "$profiles" \
-    '{available: ($available == "true"), active: $active, profiles: $profiles}')
-  data=$(jq -cn \
-    --arg status "$battery_status" \
-    --arg state "$battery_state" \
-    --arg onBattery "$battery_on_battery" \
-    --arg capacity "$battery_capacity" \
-    --arg remaining "$battery_remaining" \
-    --argjson profile "$profile_data" \
-    '{battery: {
-      status: $status,
-      state: $state,
-      onBattery: (if $onBattery == "yes" then true elif $onBattery == "no" then false else null end),
-      capacity: $capacity,
-      remainingTime: $remaining
-    }, profile: $profile}')
-  if [[ $battery_available == true || $profiles_available == true ]]; then
-    emit_available "$data"
-  fi
-  emit_unavailable "$data"
 }
 
 state_monitor() {
@@ -886,7 +779,6 @@ state_tailscale() {
 }
 
 case $domain in
-  power) state_power ;;
   monitor) state_monitor ;;
   tailscale) state_tailscale ;;
   vm) state_vm ;;

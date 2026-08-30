@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.recording",
+  "name": "Recording",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Screen recording status",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Recording",
+    "description": "Screen recording status",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

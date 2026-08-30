@@ -12,21 +12,20 @@ Panel {
   ipcTarget: "desktop.power"
   manageIpc: false
   property var pluginRegistry: null
-  property var hardwareState: ({ available: false, stale: false, data: {} })
-  property bool loaded: true
   property bool cursorActive: false
   property int profileIndex: 0
+  property string actionError: ""
+  property int actionGeneration: 0
+  property int actionFinalizedGeneration: 0
 
-  readonly property bool capabilityAvailable: hardwareState && hardwareState.available === true
-  readonly property var stateData: hardwareState && hardwareState.data ? hardwareState.data : ({})
-  readonly property var battery: stateData.battery || ({})
-  readonly property var profile: stateData.profile || ({})
-  readonly property var profiles: Array.isArray(profile.profiles) ? profile.profiles : []
-  readonly property string activeProfile: String(profile.active || "")
-  readonly property int batteryPercent: Model.batteryPercentage(battery.status)
-  readonly property string batteryState: String(battery.state || "")
-  readonly property var batteryOnBattery: battery.onBattery
-  readonly property bool batteryAvailable: String(battery.status || "") !== ""
+  readonly property bool capabilityAvailable: PowerState.capabilityAvailable
+  readonly property var profiles: PowerState.profiles
+  readonly property string activeProfile: PowerState.activeProfile
+  readonly property int batteryPercent: PowerState.batteryPercent
+  readonly property string batteryState: PowerState.batteryState
+  readonly property bool batteryOnBattery: PowerState.batteryOnBattery
+  readonly property bool batteryAvailable: PowerState.batteryAvailable
+  readonly property string batteryStatus: batteryAvailable ? batteryState : "Battery state unavailable"
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -38,22 +37,6 @@ Panel {
     else registry.recordPluginError(moduleName, "Battery capability unavailable", scope)
   }
 
-  function applyState(raw) {
-    var parsed = Model.parseState(raw)
-    if (!parsed) {
-      hardwareState = { available: false, stale: true, error: "Invalid hardware state", data: {} }
-      reportCapability()
-      return
-    }
-    hardwareState = parsed
-    reportCapability()
-    if (profileIndex >= profiles.length) profileIndex = Math.max(0, profiles.length - 1)
-  }
-
-  function refresh() {
-    if (!stateProcess.running) stateProcess.running = true
-  }
-
   function selectProfileByDelta(delta) {
     profileIndex = Model.selectProfileIndex(profileIndex, delta, profiles)
   }
@@ -61,6 +44,8 @@ Panel {
   function setProfile(profileName) {
     var name = String(profileName || "")
     if (name === "" || actionProcess.running) return
+    actionError = ""
+    actionGeneration++
     actionProcess.command = ["desktop-hardware-action", "power", "set-profile", name]
     actionProcess.running = true
   }
@@ -79,27 +64,13 @@ Panel {
   onBarChanged: reportCapability()
   Component.onCompleted: {
     reportCapability()
-    refresh()
+    if (profileIndex >= profiles.length) profileIndex = Math.max(0, profiles.length - 1)
   }
-  Component.onDestruction: {
-    loaded = false
-    refreshTimer.stop()
-  }
-
-  Timer {
-    id: refreshTimer
-    interval: 5000
-    running: root.loaded
-    repeat: true
-    onTriggered: root.refresh()
-  }
-
-  Process {
-    id: stateProcess
-    command: ["desktop-hardware-state", "power"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyState(text)
+  Connections {
+    target: PowerState
+    function onReconciliationGenerationChanged() {
+      root.reportCapability()
+      if (root.profileIndex >= root.profiles.length) root.profileIndex = Math.max(0, root.profiles.length - 1)
     }
   }
 
@@ -107,8 +78,44 @@ Panel {
     id: actionProcess
     command: []
     stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: root.refresh()
+    stderr: StdioCollector {
+      id: actionStderr
+      waitForEnd: true
+    }
+    onStarted: actionStartCheckTimer.stop()
+    onExited: function(exitCode) {
+      if (actionFinalizedGeneration === actionGeneration) return
+      actionFinalizedGeneration = actionGeneration
+      actionStartCheckTimer.stop()
+      if (Number(exitCode) === 0) {
+        actionError = ""
+        PowerState.reconcile()
+      } else {
+        actionError = String(actionStderr.text || "").trim() || "Power profile action failed"
+        PowerState.markProfileActionFailed(actionError)
+      }
+    }
+    onRunningChanged: {
+      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
+        actionStartCheckTimer.generation = actionGeneration
+        actionStartCheckTimer.start()
+      }
+    }
+  }
+
+  Timer {
+    id: actionStartCheckTimer
+    property int generation: 0
+    interval: 100
+    repeat: false
+    onTriggered: {
+      if (!actionProcess.running && generation === root.actionGeneration
+          && root.actionFinalizedGeneration !== generation) {
+        root.actionFinalizedGeneration = generation
+        root.actionError = "Power profile action failed to start"
+        PowerState.markProfileActionFailed(root.actionError)
+      }
+    }
   }
 
   BarMetricButton {
@@ -178,7 +185,7 @@ Panel {
         Text {
           width: parent.width
           visible: root.batteryAvailable
-          text: root.battery.status || "Battery state unavailable"
+          text: root.batteryStatus
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -191,6 +198,16 @@ Panel {
           text: "POWER PROFILE"
           foreground: root.foreground
           fontFamily: root.fontFamily
+        }
+
+        Text {
+          visible: root.actionError !== ""
+          width: parent.width
+          text: root.actionError
+          color: root.urgent
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.Wrap
         }
 
         Row {
