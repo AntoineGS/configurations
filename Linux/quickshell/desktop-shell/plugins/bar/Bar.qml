@@ -727,7 +727,7 @@ Item {
 
     Process {
       id: customProc
-      command: ["bash", "-lc", String(customRoot.setting("exec", ""))]
+      command: ["bash", "-c", String(customRoot.setting("exec", ""))]
       stdout: StdioCollector {
         waitForEnd: true
         onStreamFinished: customRoot.update(text)

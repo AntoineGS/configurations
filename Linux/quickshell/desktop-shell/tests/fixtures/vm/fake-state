@@ -1,0 +1,14 @@
+#!/bin/sh
+mode=$(tr -d '\r\n' < "${VM_FIXTURE_STATE:?}")
+case "$mode" in
+  running-missing)
+    printf '%s\n' '{"available":true,"stale":false,"error":null,"data":{"name":"fixture","vcpus":2,"cpu":{"available":false},"memory":{"allocationAvailable":true,"usageAvailable":false,"currentKiB":1048576,"maximumKiB":2097152}}}' ;;
+  stopped)
+    printf '%s\n' '{"available":false,"stale":false,"error":null,"data":{"name":"","vcpus":0,"cpu":{"available":false},"memory":{"allocationAvailable":false,"usageAvailable":false}}}' ;;
+  stale)
+    printf '%s\n' '{"available":true,"stale":true,"error":"fixture stale","data":{"name":"fixture","vcpus":2,"cpu":{"available":false},"memory":{"allocationAvailable":true,"usageAvailable":false}}}' ;;
+  multiple)
+    printf '%s\n' '{"available":false,"stale":true,"error":"more than one running VM was found","data":{"name":"","vcpus":0,"cpu":{"available":false},"memory":{"allocationAvailable":false,"usageAvailable":false}}}' ;;
+  *)
+    printf '%s\n' '{"available":false,"stale":false,"error":null,"data":{"name":"","vcpus":0,"cpu":{"available":false},"memory":{"allocationAvailable":false,"usageAvailable":false}}}' ;;
+esac

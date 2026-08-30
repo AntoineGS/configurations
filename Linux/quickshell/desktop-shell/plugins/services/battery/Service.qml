@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.Commons
 import "BatteryModel.js" as BatteryModel
 
 Item {
@@ -8,8 +9,9 @@ Item {
 
   property var shell: null
   property var pluginRegistry: null
-  property bool loaded: true
-  property var pendingWarning: null
+  property var deliveryState: ({ active: null, queued: null, processRunning: false })
+  property int warningGeneration: 0
+  property int warningFinalizedGeneration: 0
   readonly property int lowBatteryThreshold: 20
   readonly property int criticalBatteryThreshold: 10
 
@@ -27,46 +29,33 @@ Item {
     else pluginRegistry.recordPluginError("desktop.battery", "Battery capability unavailable", scope)
   }
 
-  function checkBattery(raw) {
-    var envelope
-    try {
-      envelope = JSON.parse(String(raw || ""))
-    } catch (error) {
-      reportCapability(false)
+  function checkBattery() {
+    reportCapability(PowerState.batteryAvailable)
+    if (!PowerState.batteryAvailable || PowerState.batteryOnBattery === false) {
+      var reset = BatteryModel.warningDeliveryTransition(deliveryState, "ac-reset")
+      deliveryState = reset.state
+      persisted.lowNotified = false
+      persisted.criticalNotified = false
       return
     }
-    if (!envelope || envelope.available !== true || !envelope.data || !envelope.data.battery) {
-      reportCapability(false)
-      return
-    }
-
-    reportCapability(true)
-    var battery = envelope.data.battery
     var result = BatteryModel.warningState(
-      battery.status,
-      battery.onBattery,
+      PowerState.batteryPercent,
+      PowerState.batteryOnBattery,
       lowBatteryThreshold,
       criticalBatteryThreshold,
       persisted.lowNotified,
       persisted.criticalNotified
     )
-    if (result.notify) {
+    var transition = BatteryModel.warningDeliveryTransition(deliveryState, "warning", result)
+    deliveryState = transition.state
+    if (transition.action === "send") {
       sendLowBatteryWarning(result)
-      return
     }
-    if (battery.onBattery === false) pendingWarning = null
-    persisted.lowNotified = result.lowNotified
-    persisted.criticalNotified = result.criticalNotified
-  }
-
-  function refresh() {
-    if (!stateProcess.running) stateProcess.running = true
   }
 
   function sendLowBatteryWarning(result) {
-    if (warningProcess.running) return
+    deliveryState = BatteryModel.warningDeliveryTransition(deliveryState, "started").state
     var critical = result.urgency === "critical"
-    pendingWarning = result
     warningProcess.command = [
       "notify-send",
       "--app-name", "Desktop Shell",
@@ -78,41 +67,54 @@ Item {
         ? "Battery is down to " + result.level + "%"
         : "Battery is down to " + result.level + "% - consider plugging in"
     ]
+    warningGeneration++
     warningProcess.running = true
   }
 
-  Component.onCompleted: refresh()
-  Component.onDestruction: {
-    loaded = false
-    refreshTimer.stop()
+  function finishWarning(exitCode, failedStart) {
+    if (warningFinalizedGeneration === warningGeneration) return
+    warningFinalizedGeneration = warningGeneration
+    warningStartCheckTimer.stop()
+    var event = failedStart || Number(exitCode) !== 0 ? "failure" : "success"
+    var transition = BatteryModel.warningDeliveryTransition(root.deliveryState, event)
+    root.deliveryState = transition.state
+    if (transition.committed) {
+      persisted.lowNotified = transition.committed.lowNotified
+      persisted.criticalNotified = transition.committed.criticalNotified
+    }
+    if (transition.action === "retry") root.checkBattery()
   }
 
-  Process {
-    id: stateProcess
-    command: ["desktop-hardware-state", "power"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.checkBattery(text)
-    }
+  Component.onCompleted: checkBattery()
+
+  Connections {
+    target: PowerState
+    function onBatteryAvailableChanged() { root.checkBattery() }
+    function onBatteryPercentChanged() { root.checkBattery() }
+    function onBatteryStateChanged() { root.checkBattery() }
+    function onBatteryOnBatteryChanged() { root.checkBattery() }
+    function onReconciliationGenerationChanged() { root.checkBattery() }
   }
 
   Process {
     id: warningProcess
-    onExited: function(exitCode) {
-      if (Number(exitCode) === 0 && root.pendingWarning) {
-        persisted.lowNotified = root.pendingWarning.lowNotified
-        persisted.criticalNotified = root.pendingWarning.criticalNotified
+    onStarted: warningStartCheckTimer.stop()
+    onExited: function(exitCode) { root.finishWarning(exitCode, false) }
+    onRunningChanged: {
+      if (!warningProcess.running && warningGeneration > warningFinalizedGeneration) {
+        warningStartCheckTimer.generation = warningGeneration
+        warningStartCheckTimer.start()
       }
-      root.pendingWarning = null
     }
   }
 
   Timer {
-    id: refreshTimer
-    interval: 30000
-    running: root.loaded
-    repeat: true
-    triggeredOnStart: false
-    onTriggered: root.refresh()
+    id: warningStartCheckTimer
+    property int generation: 0
+    interval: 100
+    repeat: false
+    onTriggered: if (!warningProcess.running && generation === root.warningGeneration)
+      root.finishWarning(1, true)
   }
+
 }

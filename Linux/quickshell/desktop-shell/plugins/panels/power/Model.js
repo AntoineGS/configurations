@@ -83,6 +83,25 @@ function profileIcon(name) {
   return "󰂄"
 }
 
+function profileNames(hasPerformanceProfile) {
+  return hasPerformanceProfile ? ["power-saver", "balanced", "performance"] : ["power-saver", "balanced"]
+}
+
+function nativeBatteryPercent(available, ratio) {
+  var value = Number(ratio)
+  return available && isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 100) : -1
+}
+
+function nativeBatteryState(state) {
+  return ["unknown", "charging", "discharging", "empty", "fully-charged", "pending-charge", "pending-discharge"][
+    Number(state)
+  ] || "unknown"
+}
+
+function nativeProfileName(profile) {
+  return ["power-saver", "balanced", "performance"][Number(profile)] || ""
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clampIndex: clampIndex,
@@ -98,6 +117,10 @@ if (typeof module !== "undefined") {
     batteryBarValueIsIcon: batteryBarValueIsIcon,
     modeLabel: modeLabel,
     parseState: parseState,
-    profileIcon: profileIcon
+    profileIcon: profileIcon,
+    profileNames: profileNames,
+    nativeBatteryPercent: nativeBatteryPercent,
+    nativeBatteryState: nativeBatteryState,
+    nativeProfileName: nativeProfileName
   }
 }

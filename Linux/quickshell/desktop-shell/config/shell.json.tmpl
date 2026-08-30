@@ -17,8 +17,7 @@
 {{ end }}
       } }],
       "center": [
-        { "id": "recording", "type": "command", "exec": "desktop-shell-status recording", "interval": 1, "onClick": "cmd-screenrecord" },
-        { "id": "voxtype", "type": "command", "exec": "desktop-shell-status voxtype", "interval": 1, "onClick": "voxtype-model", "onRightClick": "voxtype-config" },
+        { "id": "desktop.recording" },
         { "id": "desktop.clock", "format": "dddd MMMM dd yyyy - HH:mm:ss" }
       ],
       "right": [
@@ -32,7 +31,7 @@
         { "id": "desktop.monitor" },
         { "id": "desktop.power" },
 {{ end }}
-        { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 30, "onClick": "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'" },
+        { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 300, "onClick": "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'" },
         { "id": "desktop.vm" }
       ]
     }

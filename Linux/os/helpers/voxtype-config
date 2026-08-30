@@ -1,6 +1,0 @@
-#!/bin/bash
-set -e
-
-# Used by the Quickshell Voxtype widget to open its config on right click
-
-exec launch-editor ~/.config/voxtype/config.toml

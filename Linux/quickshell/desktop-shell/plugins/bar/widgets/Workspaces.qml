@@ -2,8 +2,10 @@ import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Hyprland
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "WorkspacesModel.js" as WorkspacesModel
 
 BarWidget {
   id: root
@@ -11,9 +13,15 @@ BarWidget {
   readonly property var window: root.QsWindow.window
   readonly property string screenName: window && window.screen ? String(window.screen.name || "") : ""
   readonly property var labels: root.setting("labels", ({}))
+  property int workspaceGeneration: 0
+  property int activeWorkspaceId: -1
+  property bool activeRefreshQueued: false
+  property int activeRefreshGeneration: 0
+  property int activeRefreshFinalizedGeneration: 0
 
   function workspaceById(id) {
-    var values = Hyprland.workspaces.values
+    workspaceGeneration
+    var values = WorkspacesModel.objectModelValues(Hyprland.workspaces.values)
     for (var i = 0; i < values.length; i++) {
       if (values[i].id === id) return values[i]
     }
@@ -23,7 +31,8 @@ BarWidget {
 
   function workspaceIds() {
     var ids = []
-    var values = Hyprland.workspaces.values
+    workspaceGeneration
+    var values = WorkspacesModel.objectModelValues(Hyprland.workspaces.values)
 
     for (var i = 0; i < values.length; i++) {
       var workspace = values[i]
@@ -44,12 +53,49 @@ BarWidget {
   }
 
   function focusWorkspace(id) {
-    var workspace = root.workspaceById(id)
-    if (workspace && typeof workspace.activate === "function") {
-      workspace.activate()
+    Hyprland.dispatch("hl.dsp.focus({workspace=" + String(id) + "})")
+  }
+
+  function refreshActiveWorkspace() {
+    if (!screenName) return
+    if (activeWorkspaceProcess.running
+        || activeRefreshGeneration > activeRefreshFinalizedGeneration) {
+      activeRefreshQueued = true
       return
     }
-    Hyprland.dispatch("workspace " + String(id))
+    activeRefreshGeneration++
+    activeRefreshStartCheck.generation = activeRefreshGeneration
+    activeWorkspaceProcess.running = true
+  }
+
+  function queueActiveWorkspaceRefresh() {
+    activeRefreshDebounce.restart()
+  }
+
+  function finishActiveRefresh(exitCode) {
+    if (activeRefreshFinalizedGeneration === activeRefreshGeneration) return
+    activeRefreshFinalizedGeneration = activeRefreshGeneration
+    activeRefreshStartCheck.stop()
+    if (Number(exitCode) === 0) {
+      try {
+        activeWorkspaceId = WorkspacesModel.confirmedActiveWorkspaceId(
+          activeWorkspaceId, JSON.parse(activeWorkspaceStdout.text || "[]"), screenName)
+      } catch (error) {
+        // Keep the last confirmed workspace when Hyprland returns an incomplete snapshot.
+      }
+    }
+    if (activeRefreshQueued) {
+      activeRefreshQueued = false
+      Qt.callLater(root.refreshActiveWorkspace)
+    }
+  }
+
+  function isWorkspaceEvent(name) {
+    return name === "workspace" || name === "workspacev2"
+      || name === "focusedmon" || name === "focusedmonv2"
+      || name === "monitoradded" || name === "monitoraddedv2"
+      || name === "monitorremoved" || name === "monitorremovedv2"
+      || name === "moveworkspace" || name === "moveworkspacev2"
   }
 
   readonly property real trailingGap: root.vertical ? 0 : Style.spaceReal(1.5)
@@ -73,7 +119,7 @@ BarWidget {
 
         readonly property var workspace: root.workspaceById(modelData)
         readonly property bool occupied: workspace !== null && workspace.toplevels.values.length > 0
-        readonly property bool focused: workspace !== null && workspace.active
+        readonly property bool focused: modelData === root.activeWorkspaceId
         readonly property string displayName: root.workspaceLabel(modelData, workspace)
 
         bar: root.bar
@@ -88,4 +134,57 @@ BarWidget {
       }
     }
   }
+
+  Process {
+    id: activeWorkspaceProcess
+    command: ["hyprctl", "-j", "monitors", "all"]
+    stdout: StdioCollector {
+      id: activeWorkspaceStdout
+      waitForEnd: true
+    }
+    onStarted: activeRefreshStartCheck.stop()
+    onExited: function(exitCode) { root.finishActiveRefresh(exitCode) }
+    onRunningChanged: {
+      if (!running && root.activeRefreshGeneration > root.activeRefreshFinalizedGeneration) {
+        activeRefreshStartCheck.generation = root.activeRefreshGeneration
+        activeRefreshStartCheck.restart()
+      }
+    }
+  }
+
+  Timer {
+    id: activeRefreshStartCheck
+    property int generation: 0
+    interval: 100
+    onTriggered: {
+      if (!activeWorkspaceProcess.running && generation === root.activeRefreshGeneration)
+        root.finishActiveRefresh(1)
+    }
+  }
+
+  Timer {
+    id: activeRefreshDebounce
+    interval: 0
+    onTriggered: root.refreshActiveWorkspace()
+  }
+
+  Connections {
+    target: Hyprland.workspaces
+    function onValuesChanged() { root.workspaceGeneration++ }
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (!root.isWorkspaceEvent(String(event.name || ""))) return
+      root.workspaceGeneration++
+      root.queueActiveWorkspaceRefresh()
+    }
+  }
+
+  onScreenNameChanged: {
+    if (!screenName) activeWorkspaceId = -1
+    else queueActiveWorkspaceRefresh()
+  }
+  Component.onCompleted: refreshActiveWorkspace()
 }

@@ -11,14 +11,15 @@ Panel {
   moduleName: "desktop.vm"
   ipcTarget: "desktop.vm"
 
-  property var vmState: Model.emptyState()
+  property var vmState: vmMonitor.state
   property var hostMemoryState: Model.emptyHostStat()
   property var hostCpuState: Model.emptyHostStat()
   property var popupAnchorItem: vmCpuButton
   property int previewGiB: 1
   property bool resizePending: false
   property string actionError: ""
-  property bool refreshQueued: false
+  property int actionGeneration: 0
+  property int actionFinalizedGeneration: 0
   readonly property color foreground: panelForeground
   readonly property color statForeground: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -29,12 +30,6 @@ Panel {
   readonly property string vmTooltip: vmState.stale
     ? vmState.name + " (stale): " + vmState.error
     : vmState.name
-
-  function refresh() {
-    if (!stateProcess.running) stateProcess.running = true
-    if (!hostMemoryProcess.running) hostMemoryProcess.running = true
-    if (!hostCpuProcess.running) hostCpuProcess.running = true
-  }
 
   function openFrom(anchorItem) {
     if (!vmState.visible || !anchorItem) return
@@ -53,7 +48,22 @@ Panel {
     actionError = ""
     previewGiB = value
     actionProcess.command = ["desktop-hardware-action", "vm", "set-memory", String(value)]
+    actionGeneration++
     actionProcess.running = true
+  }
+
+  function finishMemoryAction(exitCode, failedStart) {
+    if (actionFinalizedGeneration === actionGeneration) return
+    actionFinalizedGeneration = actionGeneration
+    actionStartCheckTimer.stop()
+    resizePending = false
+    if (failedStart || Number(exitCode) !== 0) {
+      previewGiB = Model.currentGiB(vmState)
+      actionError = failedStart ? "VM memory action failed to start" : String(actionStderr.text || "").trim()
+    } else {
+      actionError = ""
+      vmMonitor.refreshNow()
+    }
   }
 
   function reportStateError() {
@@ -62,14 +72,6 @@ Panel {
     var scope = "capability:panel:" + moduleName
     if (vmState.stale && vmState.error) registry.recordPluginError(moduleName, vmState.error, scope)
     else registry.clearPluginError(moduleName, scope)
-  }
-
-  function applyState(raw, processError) {
-    var nextState = Model.stateFromRaw(vmState, raw, processError)
-    if (!nextState.malformed && !nextState.visible && root.opened) root.close()
-    vmState = nextState
-    reportStateError()
-    if (!memorySlider.dragging && !resizePending) previewGiB = Model.currentGiB(vmState)
   }
 
   visible: hostMemoryState.available || hostCpuState.available || vmState.visible
@@ -84,36 +86,18 @@ Panel {
   }
   onBarChanged: reportStateError()
 
-  Timer {
-    id: refreshTimer
-    interval: 5000
-    repeat: true
-    running: true
-    triggeredOnStart: true
-    onTriggered: root.refresh()
+  HostMetrics {
+    id: hostMetrics
+    onCpuStateChanged: root.hostCpuState = cpuState
+    onMemoryStateChanged: root.hostMemoryState = memoryState
   }
 
-  Process {
-    id: stateProcess
-    command: ["desktop-hardware-state", "vm"]
-    stdout: StdioCollector {
-      id: stateStdout
-      waitForEnd: true
-    }
-    stderr: StdioCollector {
-      id: stateStderr
-      waitForEnd: true
-    }
-    onExited: {
-      var processError = ""
-      if (Number(exitCode) !== 0) {
-        processError = String(stateStderr.text || "").trim()
-        if (!processError) processError = "desktop-hardware-state exited with code " + String(exitCode)
-      }
-      root.applyState(stateStdout.text || "", processError)
-      if (!root.refreshQueued) return
-      root.refreshQueued = false
-      root.refresh()
+  VmMonitor {
+    id: vmMonitor
+    onStateChanged: {
+      if (!state.malformed && !state.visible && root.opened) root.close()
+      root.reportStateError()
+      if (!memorySlider.dragging && !root.resizePending) root.previewGiB = Model.currentGiB(state)
     }
   }
 
@@ -125,37 +109,25 @@ Panel {
       id: actionStderr
       waitForEnd: true
     }
-    onExited: {
-      root.resizePending = false
-      if (exitCode === 0) {
-        root.actionError = ""
-        if (stateProcess.running) root.refreshQueued = true
-        else root.refresh()
-      } else {
-        root.previewGiB = Model.currentGiB(root.vmState)
-        root.actionError = String(actionStderr.text || "").trim()
+    onExited: function(exitCode) {
+      root.finishMemoryAction(exitCode, false)
+    }
+    onStarted: actionStartCheckTimer.stop()
+    onRunningChanged: {
+      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
+        actionStartCheckTimer.generation = actionGeneration
+        actionStartCheckTimer.start()
       }
     }
   }
 
-  Process {
-    id: hostMemoryProcess
-    command: ["desktop-shell-status", "memory"]
-    stdout: StdioCollector {
-      id: hostMemoryStdout
-      waitForEnd: true
-    }
-    onExited: root.hostMemoryState = Model.hostStateFromRaw(root.hostMemoryState, hostMemoryStdout.text || "")
-  }
-
-  Process {
-    id: hostCpuProcess
-    command: ["desktop-shell-status", "cpu"]
-    stdout: StdioCollector {
-      id: hostCpuStdout
-      waitForEnd: true
-    }
-    onExited: root.hostCpuState = Model.hostStateFromRaw(root.hostCpuState, hostCpuStdout.text || "")
+  Timer {
+    id: actionStartCheckTimer
+    property int generation: 0
+    interval: 100
+    repeat: false
+    onTriggered: if (!actionProcess.running && generation === root.actionGeneration)
+      root.finishMemoryAction(1, true)
   }
 
   Row {

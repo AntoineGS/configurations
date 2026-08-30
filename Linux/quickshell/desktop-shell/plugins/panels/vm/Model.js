@@ -1,5 +1,190 @@
 var KIB_PER_GIB = 1048576
 var MINIMUM_MEMORY_GIB = 1
+var BACKOFF_SECONDS = [2, 4, 8, 16, 32, 60]
+
+function nextBackoff(seconds) {
+  var current = Number(seconds)
+  if (!isFinite(current) || current <= 0) return BACKOFF_SECONDS[0]
+  for (var i = 0; i < BACKOFF_SECONDS.length - 1; i++) {
+    if (current <= BACKOFF_SECONDS[i]) return BACKOFF_SECONDS[i + 1]
+  }
+  return BACKOFF_SECONDS[BACKOFF_SECONDS.length - 1]
+}
+
+function vmMonitorState() {
+  return {
+    capabilityAvailable: false,
+    watcherGeneration: 0,
+    watcherStartedGeneration: 0,
+    watcherFailureGeneration: 0,
+    stabilityGeneration: 0,
+    stableGeneration: 0,
+    reconciliationRunning: false,
+    reconciliationQueued: false,
+    reconciliationGeneration: 0,
+    reconciliationWatcherGeneration: 0,
+    queuedReconciliationGeneration: 0,
+    reconciliationFinishedGeneration: 0,
+    startupPhase: true,
+    backoffSeconds: 0,
+    runningConfirmed: false,
+  }
+}
+
+function vmMonitorTransition(state, event, argument) {
+  var next = Object.assign({}, vmMonitorState(), state || {})
+  var result = { state: next, startWatcher: false, retryWatcher: false, startReconciliation: false, generation: 0 }
+  if (event === "capability-found") {
+    next.capabilityAvailable = true
+    next.watcherGeneration += 1
+    next.watcherFailureGeneration = 0
+    next.stabilityGeneration = 0
+    next.stableGeneration = 0
+    result.startWatcher = true
+    if (next.reconciliationRunning) {
+      next.reconciliationQueued = true
+      next.queuedReconciliationGeneration = next.watcherGeneration
+    } else {
+      result.startReconciliation = true
+      next.reconciliationRunning = true
+      next.reconciliationGeneration += 1
+      next.reconciliationWatcherGeneration = next.watcherGeneration
+      result.generation = next.reconciliationGeneration
+    }
+  } else if (event === "capability-missing") {
+    next.capabilityAvailable = false
+    next.runningConfirmed = false
+  } else if (event === "watcher-start") {
+    next.watcherGeneration += 1
+    next.watcherStartedGeneration = 0
+    next.watcherFailureGeneration = 0
+    next.stabilityGeneration = 0
+    next.stableGeneration = 0
+    result.startWatcher = true
+    result.generation = next.watcherGeneration
+  } else if (event === "watcher-started") {
+    if (argument === next.watcherGeneration) {
+      next.watcherStartedGeneration = argument
+      next.stabilityGeneration = argument
+    }
+  } else if (event === "watcher-stopped" || event === "watcher-exited") {
+    if (argument === next.watcherGeneration && next.watcherFailureGeneration !== argument) {
+      next.watcherFailureGeneration = argument
+      next.stabilityGeneration = 0
+      next.stableGeneration = 0
+      next.backoffSeconds = nextBackoff(next.backoffSeconds)
+      result.retryWatcher = true
+    }
+  } else if (event === "watcher-stable") {
+    var stability = argument || {}
+    if (stability.generation === next.watcherGeneration && stability.running
+        && next.stabilityGeneration === stability.generation)
+      next.stableGeneration = stability.generation
+  } else if (event === "reconcile-request") {
+    if (next.reconciliationRunning) {
+      next.reconciliationQueued = true
+      next.queuedReconciliationGeneration = argument || next.watcherGeneration
+    }
+    else {
+      next.reconciliationRunning = true
+      next.reconciliationGeneration += 1
+      next.reconciliationWatcherGeneration = argument || next.watcherGeneration
+      result.generation = next.reconciliationGeneration
+      result.startReconciliation = true
+    }
+  } else if (event === "schedule-tick") {
+    next.startupPhase = false
+    if (next.reconciliationRunning) {
+      next.reconciliationQueued = true
+      next.queuedReconciliationGeneration = next.watcherGeneration
+    } else {
+      next.reconciliationRunning = true
+      next.reconciliationGeneration += 1
+      next.reconciliationWatcherGeneration = next.watcherGeneration
+      result.generation = next.reconciliationGeneration
+      result.startReconciliation = true
+    }
+  } else if (event === "reconcile-finished") {
+    var reconciliation = argument || {}
+    if (reconciliation.generation !== next.reconciliationGeneration
+        || next.reconciliationFinishedGeneration === reconciliation.generation) return result
+    next.reconciliationRunning = false
+    next.reconciliationFinishedGeneration = reconciliation.generation
+    if (reconciliation.watcherGeneration === next.watcherGeneration && reconciliation.fresh
+        && reconciliation.stable && next.stableGeneration === reconciliation.watcherGeneration) {
+      next.backoffSeconds = 0
+    }
+    if (next.reconciliationQueued) {
+      next.reconciliationQueued = false
+      next.reconciliationRunning = true
+      next.reconciliationGeneration += 1
+      next.reconciliationWatcherGeneration = next.queuedReconciliationGeneration || next.watcherGeneration
+      next.queuedReconciliationGeneration = 0
+      result.generation = next.reconciliationGeneration
+      result.startReconciliation = true
+    }
+  } else if (event === "reconcile-process-stopped") {
+    var stopped = argument || {}
+    if (stopped.generation !== next.reconciliationGeneration
+        || next.reconciliationFinishedGeneration === stopped.generation) return result
+    next.reconciliationRunning = false
+    next.reconciliationFinishedGeneration = stopped.generation
+    if (next.reconciliationQueued) {
+      next.reconciliationQueued = false
+      next.reconciliationRunning = true
+      next.reconciliationGeneration += 1
+      next.reconciliationWatcherGeneration = next.queuedReconciliationGeneration || next.watcherGeneration
+      next.queuedReconciliationGeneration = 0
+      result.generation = next.reconciliationGeneration
+      result.startReconciliation = true
+    }
+  } else if (event === "state-applied") {
+    next.runningConfirmed = argument === true
+  }
+  return result
+}
+
+function parseCpuSnapshot(raw) {
+  if (typeof raw !== "string") return null
+  var fields = raw.split(/\r?\n/)[0].trim().split(/\s+/)
+  if (fields.length < 9 || fields[0] !== "cpu") return null
+  var values = fields.slice(1, 9).map(function(value) { return /^\d+$/.test(value) ? Number(value) : NaN })
+  if (values.some(function(value) { return !isFinite(value) })) return null
+  var idle = values[3] + (values[4] || 0)
+  var total = values.reduce(function(sum, value) { return sum + value }, 0)
+  return isFinite(total) && isFinite(idle) ? { total: total, idle: idle } : null
+}
+
+function cpuUsage(previous, current) {
+  if (!previous || !current) return null
+  var totalDelta = current.total - previous.total
+  var idleDelta = current.idle - previous.idle
+  if (!isFinite(totalDelta) || !isFinite(idleDelta) || totalDelta <= 0 || idleDelta < 0) return null
+  return Math.max(0, Math.min(100, Math.floor((totalDelta - idleDelta) * 100 / totalDelta)))
+}
+
+function parseMemorySnapshot(raw) {
+  if (typeof raw !== "string") return null
+  var values = {}
+  raw.split(/\r?\n/).forEach(function(line) {
+    var match = /^(MemTotal|MemAvailable):\s+(\d+)\s+kB\s*$/.exec(line)
+    if (match) values[match[1]] = Number(match[2])
+  })
+  var total = values.MemTotal
+  var available = values.MemAvailable
+  if (!isFinite(total) || !isFinite(available) || total <= 0 || available < 0 || available > total) return null
+  var used = total - available
+  return { totalKiB: total, availableKiB: available, usedKiB: used, percent: 100 - Math.floor(available * 100 / total) }
+}
+
+function formatKibGiB(kib) {
+  var tenths = Math.floor((kib * 10 + 524288) / 1048576)
+  return Math.floor(tenths / 10) + "." + (tenths % 10)
+}
+
+function formatMemoryTooltip(snapshot) {
+  return formatKibGiB(snapshot.usedKiB) + " / " + formatKibGiB(snapshot.totalKiB).replace(/\.0$/, "") + " GiB"
+}
 
 function isPlainObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value)
@@ -50,7 +235,8 @@ function emptyState(error) {
     maximumKiB: null,
     usedKiB: null,
     showMemoryUsage: false,
-    canResize: false
+    canResize: false,
+    confirmedRunning: false
   }
 }
 
@@ -160,7 +346,8 @@ function normalizeState(raw) {
       showMemoryUsage: available && memoryUsageAvailable && memoryPercent !== undefined && memoryPercent !== null
         && usedKiB !== null,
       canResize: available && !stale && memoryAllocationAvailable && currentKiB !== null && maximumKiB !== null
-        && maximumKiB > 0
+        && maximumKiB > 0,
+      confirmedRunning: available && !stale
     }
   } catch (error) {
     return malformedState(error && error.message ? error.message : String(error))
@@ -175,7 +362,8 @@ function staleState(previous, error) {
   retained.stale = true
   retained.malformed = true
   retained.error = errorValue(error) || "VM state helper output was malformed"
-  retained.canResize = false
+    retained.canResize = false
+    retained.confirmedRunning = false
   return retained
 }
 
@@ -278,6 +466,11 @@ function memoryCritical(percent) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    parseCpuSnapshot: parseCpuSnapshot,
+    cpuUsage: cpuUsage,
+    parseMemorySnapshot: parseMemorySnapshot,
+    formatKibGiB: formatKibGiB,
+    formatMemoryTooltip: formatMemoryTooltip,
     emptyState: emptyState,
     emptyHostStat: emptyHostStat,
     normalizeState: normalizeState,
@@ -290,6 +483,9 @@ if (typeof module !== "undefined") {
     maximumGiB: maximumGiB,
     currentGiB: currentGiB,
     vmMetricText: vmMetricText,
-    memoryCritical: memoryCritical
+    memoryCritical: memoryCritical,
+    nextBackoff: nextBackoff,
+    vmMonitorState: vmMonitorState,
+    vmMonitorTransition: vmMonitorTransition,
   }
 }

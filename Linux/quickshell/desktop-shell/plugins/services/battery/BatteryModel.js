@@ -1,4 +1,7 @@
 function batteryPercentage(status) {
+  if (typeof status === "number") {
+    return isFinite(status) && status >= 0 && status <= 100 ? Math.round(status) : -1
+  }
   var match = String(status || "").match(/([0-9]{1,3})%/)
   if (!match) return -1
   return Math.max(0, Math.min(100, Number(match[1])))
@@ -57,11 +60,56 @@ function warningState(status, onBattery, lowThreshold, criticalThreshold, lowNot
   }
 }
 
+function warningDeliveryTransition(state, event, result) {
+  var current = state || {}
+  var next = {
+    active: current.active || null,
+    queued: current.queued || null,
+    processRunning: current.processRunning === true
+  }
+  var committed = null
+  var action = ""
+  var reset = false
+
+  if (event === "warning") {
+    if (result && result.notify === true) {
+      if (next.active || next.processRunning) next.queued = result
+      else {
+        next.active = result
+        action = "send"
+      }
+    } else {
+      next.queued = null
+    }
+  } else if (event === "started") {
+    next.processRunning = true
+  } else if (event === "success") {
+    if (next.active) committed = {
+      lowNotified: next.active.lowNotified,
+      criticalNotified: next.active.criticalNotified
+    }
+    next.active = null
+    next.processRunning = false
+    if (next.queued) action = "retry"
+  } else if (event === "failure") {
+    next.active = null
+    next.processRunning = false
+    if (next.queued) action = "retry"
+  } else if (event === "ac-reset") {
+    next.active = null
+    next.queued = null
+    reset = true
+  }
+
+  return { state: next, committed: committed, action: action, reset: reset }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     batteryPercentage: batteryPercentage,
     isDischarging: isDischarging,
     isPluggedIn: isPluggedIn,
-    warningState: warningState
+    warningState: warningState,
+    warningDeliveryTransition: warningDeliveryTransition
   }
 }

@@ -1,6 +1,7 @@
 module qs.Commons
 singleton Border 1.0 Border.qml
 singleton Color 1.0 Color.qml
+singleton PowerState 1.0 PowerState.qml
 singleton Motion 1.0 Motion.qml
 singleton PopupMotion 1.0 PopupMotion.qml
 singleton Style 1.0 Style.qml
