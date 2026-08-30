@@ -19,9 +19,5 @@ return {
         end
       end,
     })
-
-    if vim.list_contains({ "csv", "tsv" }, vim.bo.filetype) then
-      csvview.enable(0)
-    end
   end,
 }
