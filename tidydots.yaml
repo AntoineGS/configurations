@@ -961,6 +961,7 @@ applications:
       managers:
         yay: outlook-for-linux-bin
     name: outlook-for-linux
+    when: '{{eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:
           linux: ~/.config/outlook-for-linux
