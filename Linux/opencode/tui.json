@@ -1,7 +1,17 @@
 {
   "$schema": "https://opencode.ai/tui.json",
   "theme": "catppuccin",
-  "vim_enter_submit": true,
+  "plugin": [
+    [
+      "@leohenon/opencode-vim-plugin",
+      {
+        "enabled": true,
+        "vim_initial_mode": "insert",
+        "indicator": true,
+        "vim_enter_submit": true
+      }
+    ]
+  ],
   "keybinds": {
     "app_exit": "ctrl+c,<leader>q",
     "input_submit": "alt+return",

@@ -63,7 +63,7 @@ applications:
   - package:
       managers:
         brew: opencode
-        yay: opencode-vim-bin
+        pacman: opencode
     name: opencode
     description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; context analysis and magic-context plugins
     entries:
