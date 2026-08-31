@@ -85,7 +85,7 @@ launch_on_workspace 2 '^desktop-shell-pc$' false \
 
 rename_workspace 3 work
 launch_on_workspace 3 '^desktop-shell-work$' false \
-  uwsm-app -- xdg-terminal-exec --app-id=desktop-shell-work ssh 'MULTIDEV/a.simard'@antoinews || failed=1
+  uwsm-app -- xdg-terminal-exec --app-id=desktop-shell-work ssh 'MULTIDEV\a.simard'@antoinews-linux || failed=1
 
 rename_workspace 4 browser
 launch_on_workspace 4 '^brave-browser$' true \
