@@ -2151,6 +2151,11 @@ applications:
           linux: herdr plugin link "$HOME/.config/herdr/plugins/local/actionable-notifications" --enabled
         name: actionable-notifications-plugin
       - check:
+          linux: herdr plugin list --json | jq -e '.result.plugins[] | select(.plugin_id == "mirror" and .enabled == true and ((.warnings // []) | length == 0))' >/dev/null
+        run:
+          linux: herdr plugin install nikok6/herdr-mirror --yes
+        name: mirror-plugin
+      - check:
           linux: herdr plugin action list --plugin vim-herdr-navigation | jq -e '.result.actions | length == 4' >/dev/null
         run:
           linux: herdr plugin install paulbkim-dev/vim-herdr-navigation --yes
