@@ -28,6 +28,9 @@ assert.equal(Model.formatMemoryTooltip({ usedKiB: 12582912, totalKiB: 16777216 }
 
 assert.deepEqual([2, 4, 8, 16, 32, 60].map(Model.nextBackoff), [4, 8, 16, 32, 60, 60])
 assert.equal(Model.nextBackoff(null), 2)
+assert.equal(Model.popupOpenRefreshRequested(false, true), true)
+assert.equal(Model.popupOpenRefreshRequested(true, true), false)
+assert.equal(Model.popupOpenRefreshRequested(false, false), false)
 
 let monitor = Model.vmMonitorState()
 let transition = Model.vmMonitorTransition(monitor, "reconcile-request")

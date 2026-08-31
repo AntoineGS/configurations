@@ -164,7 +164,7 @@ BarWidget {
 
   Timer {
     id: activeRefreshDebounce
-    interval: 0
+    interval: 50
     onTriggered: root.refreshActiveWorkspace()
   }
 

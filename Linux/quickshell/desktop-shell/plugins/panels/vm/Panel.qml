@@ -94,6 +94,7 @@ Panel {
 
   VmMonitor {
     id: vmMonitor
+    popupOpen: root.opened
     onStateChanged: {
       if (!state.malformed && !state.visible && root.opened) root.close()
       root.reportStateError()

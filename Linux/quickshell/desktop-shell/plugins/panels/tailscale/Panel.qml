@@ -56,6 +56,7 @@ Panel {
   Service {
     id: tailscale
     pluginRegistry: root.pluginRegistry
+    panelOpen: root.opened
   }
 
   visible: capabilityAvailable

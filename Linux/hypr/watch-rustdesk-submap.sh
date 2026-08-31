@@ -6,11 +6,14 @@ set -Eeuo pipefail
 
 readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["DVI-D-1","HDMI-A-1","DP-2","DP-1","eDP-1"]'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
-readonly NOTIFICATION_LEASE_MAX_AGE_MS=5000
-readonly NOTIFICATION_LEASE_RENEW_INTERVAL=1
-NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-1}
+readonly NOTIFICATION_LEASE_MAX_AGE_MS=15000
+readonly NOTIFICATION_LEASE_RENEW_INTERVAL=5
+NOTIFICATION_RECONCILE_INTERVAL=${NOTIFICATION_RECONCILE_INTERVAL:-30}
 HYPRLAND_EVENT_RECONNECT_DELAY=${HYPRLAND_EVENT_RECONNECT_DELAY:-2}
 NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=-1
+NOTIFICATION_ROUTE_CACHED_UPDATED_AT=""
+NOTIFICATION_ROUTE_CACHE_INVALID=false
+NOTIFICATION_ROUTE_RECONCILE_GENERATION=0
 LOCAL_HOSTNAME=$(hostname)
 readonly LOCAL_HOSTNAME
 
@@ -464,24 +467,80 @@ write_notification_route_state() {
   if [[ $route_rewritten == true ]]; then
     NOTIFICATION_ROUTE_LAST_WRITE_SECONDS=$monotonic_now
   fi
+  NOTIFICATION_ROUTE_CACHED_UPDATED_AT=$route_updated_at
   return 0
+}
+
+renew_notification_route_lease() {
+  local route_updated_at=$NOTIFICATION_ROUTE_CACHED_UPDATED_AT
+
+  [[ $route_updated_at =~ ^[0-9]+$ ]] || return 1
+  if write_notification_route_lease \
+    "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_LEASE_FILE" "$route_updated_at"; then
+    return 0
+  fi
+
+  NOTIFICATION_ROUTE_CACHED_UPDATED_AT=""
+  NOTIFICATION_ROUTE_CACHE_INVALID=true
+  invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
+  return 1
+}
+
+notification_heartbeat_tick() {
+  if [[ $NOTIFICATION_ROUTE_CACHE_INVALID == true ]]; then
+    return 0
+  fi
+  if ! renew_notification_route_lease; then
+    reconcile_notification_routing || true
+  fi
+}
+
+notification_scheduler_step() {
+  local now=$1
+  local reconciliation_deadline=$2
+  local heartbeat_deadline=$3
+  local cache_valid=$4
+  local chosen_deadline=$reconciliation_deadline
+
+  if [[ $cache_valid == true ]] && ((heartbeat_deadline < chosen_deadline)); then
+    chosen_deadline=$heartbeat_deadline
+  fi
+  NOTIFICATION_SCHEDULER_REMAINING=$((chosen_deadline - now))
+
+  if ((now >= reconciliation_deadline)); then
+    NOTIFICATION_SCHEDULER_ACTION=reconcile
+  elif ((now >= heartbeat_deadline)) && [[ $cache_valid == true ]]; then
+    NOTIFICATION_SCHEDULER_ACTION=heartbeat
+  else
+    NOTIFICATION_SCHEDULER_ACTION="wait"
+  fi
 }
 
 reconcile_notification_routing() {
   local monitors_json clients_json state
 
+  NOTIFICATION_ROUTE_RECONCILE_GENERATION=$((NOTIFICATION_ROUTE_RECONCILE_GENERATION + 1))
+  NOTIFICATION_ROUTE_CACHED_UPDATED_AT=""
+
   if ! monitors_json=$(hyprctl monitors -j) || ! clients_json=$(hyprctl clients -j); then
+    NOTIFICATION_ROUTE_CACHE_INVALID=true
     invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
   hide_rustdesk_connection_managers "$clients_json" || true
   if ! state=$(notification_route_state "$monitors_json" "$clients_json" "$LOCAL_HOSTNAME"); then
+    NOTIFICATION_ROUTE_CACHE_INVALID=true
     invalidate_notification_route_lease "$NOTIFICATION_LEASE_FILE" || true
     publish_hidden_notification_route_state "$NOTIFICATION_ROUTE_DIR" "$NOTIFICATION_ROUTE_FILE" || true
     return 1
   fi
-  write_notification_route_state "$state"
+  if write_notification_route_state "$state"; then
+    NOTIFICATION_ROUTE_CACHE_INVALID=false
+    return 0
+  fi
+  NOTIFICATION_ROUTE_CACHE_INVALID=true
+  return 1
 }
 
 is_notification_routing_event() {
@@ -581,63 +640,48 @@ handle_hyprland_event() {
 consume_hyprland_event_stream() {
   local clean_state_name=$1
   local reconcile_interval=$NOTIFICATION_RECONCILE_INTERVAL
-  local evline read_status last_write_before_event monotonic_now
-  local last_write_before_reconciliation reconcile_status
-  local next_reconciliation remaining route_deadline
+  local evline read_status monotonic_now remaining
+  local next_reconciliation next_heartbeat
+  local reconcile_generation_before_event
+  local cache_valid
 
-  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]] ||
-    ((reconcile_interval > NOTIFICATION_LEASE_RENEW_INTERVAL)); then
-    reconcile_interval=$NOTIFICATION_LEASE_RENEW_INTERVAL
+  if [[ ! $reconcile_interval =~ ^[1-9][0-9]*$ ]]; then
+    reconcile_interval=30
   fi
 
   reconcile_notification_routing || true
   monotonic_now=$(monotonic_seconds)
   next_reconciliation=$((monotonic_now + reconcile_interval))
-  if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
-    route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
-    if ((route_deadline < next_reconciliation)); then
-      next_reconciliation=$route_deadline
-    fi
-  fi
+  next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
 
   while :; do
     monotonic_now=$(monotonic_seconds)
-    remaining=$((next_reconciliation - monotonic_now))
+    cache_valid=false
+    if [[ $NOTIFICATION_ROUTE_CACHE_INVALID == false ]]; then cache_valid=true; fi
+    notification_scheduler_step "$monotonic_now" "$next_reconciliation" "$next_heartbeat" "$cache_valid"
+    remaining=$NOTIFICATION_SCHEDULER_REMAINING
+
     if ((remaining <= 0)); then
-      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
-      if reconcile_notification_routing; then
-        reconcile_status=0
-      else
-        reconcile_status=$?
-      fi
-      monotonic_now=$(monotonic_seconds)
-      next_reconciliation=$((monotonic_now + reconcile_interval))
-      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
-        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
-        if ((route_deadline < next_reconciliation)); then
-          next_reconciliation=$route_deadline
-        fi
-      fi
-      if ((reconcile_status != 0)) &&
-        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+      if [[ $NOTIFICATION_SCHEDULER_ACTION == reconcile ]]; then
+        reconcile_notification_routing || true
         monotonic_now=$(monotonic_seconds)
-        next_reconciliation=$((monotonic_now + 1))
+        next_reconciliation=$((monotonic_now + reconcile_interval))
+        next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
+      elif [[ $NOTIFICATION_SCHEDULER_ACTION == heartbeat ]]; then
+        notification_heartbeat_tick
+        monotonic_now=$(monotonic_seconds)
+        next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
       fi
       continue
     fi
 
     if IFS= read -r -t "$remaining" evline; then
-      last_write_before_event=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
+      reconcile_generation_before_event=$NOTIFICATION_ROUTE_RECONCILE_GENERATION
       handle_hyprland_event "$evline" "$clean_state_name"
-      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} != "$last_write_before_event" ]]; then
+      if ((NOTIFICATION_ROUTE_RECONCILE_GENERATION != reconcile_generation_before_event)); then
         monotonic_now=$(monotonic_seconds)
         next_reconciliation=$((monotonic_now + reconcile_interval))
-        if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
-          route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
-          if ((route_deadline < next_reconciliation)); then
-            next_reconciliation=$route_deadline
-          fi
-        fi
+        next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
       fi
       continue
     else
@@ -645,24 +689,19 @@ consume_hyprland_event_stream() {
     fi
 
     if ((read_status > 128)); then
-      last_write_before_reconciliation=${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-}
-      if reconcile_notification_routing; then
-        reconcile_status=0
-      else
-        reconcile_status=$?
-      fi
       monotonic_now=$(monotonic_seconds)
-      next_reconciliation=$((monotonic_now + reconcile_interval))
-      if [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} =~ ^[0-9]+$ ]]; then
-        route_deadline=$((NOTIFICATION_ROUTE_LAST_WRITE_SECONDS + NOTIFICATION_ROUTE_REWRITE_INTERVAL))
-        if ((route_deadline < next_reconciliation)); then
-          next_reconciliation=$route_deadline
-        fi
-      fi
-      if ((reconcile_status != 0)) &&
-        [[ ${NOTIFICATION_ROUTE_LAST_WRITE_SECONDS:-} == "$last_write_before_reconciliation" ]]; then
+      cache_valid=false
+      if [[ $NOTIFICATION_ROUTE_CACHE_INVALID == false ]]; then cache_valid=true; fi
+      notification_scheduler_step "$monotonic_now" "$next_reconciliation" "$next_heartbeat" "$cache_valid"
+      if [[ $NOTIFICATION_SCHEDULER_ACTION == reconcile ]]; then
+        reconcile_notification_routing || true
         monotonic_now=$(monotonic_seconds)
-        next_reconciliation=$((monotonic_now + 1))
+        next_reconciliation=$((monotonic_now + reconcile_interval))
+        next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
+      elif [[ $NOTIFICATION_SCHEDULER_ACTION == heartbeat ]]; then
+        notification_heartbeat_tick
+        monotonic_now=$(monotonic_seconds)
+        next_heartbeat=$((monotonic_now + NOTIFICATION_LEASE_RENEW_INTERVAL))
       fi
       continue
     fi

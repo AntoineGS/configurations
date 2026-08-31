@@ -12,7 +12,12 @@ var NOTIFICATION_LIMITS = {
   maxPersistenceJobs: 100,
 }
 
-var MAX_ROUTE_LEASE_MS = 5000
+var MAX_ROUTE_LEASE_MS = 15000
+
+function routeMetadataCompletion(currentRevision, matchingSnapshot, exitCode) {
+  return currentRevision && matchingSnapshot && Number(exitCode) === 0
+    ? { action: "promote" } : { action: currentRevision ? "fail-closed" : "retry" }
+}
 
 function limits() {
   var result = {}
@@ -965,6 +970,7 @@ if (typeof module !== "undefined") {
     sanitizeBody: sanitizeBody,
     normalizeRoute: normalizeRoute,
     normalizeLease: normalizeLease,
+    routeMetadataCompletion: routeMetadataCompletion,
     shouldBypassDnd: shouldBypassDnd,
     isEphemeral: isEphemeral,
     cueGlyph: cueGlyph,

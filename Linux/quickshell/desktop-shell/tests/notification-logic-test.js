@@ -1,6 +1,15 @@
 const assert = require("node:assert/strict")
 const logic = require("../plugins/notifications/NotificationLogic.js")
 
+assert.deepEqual(logic.routeMetadataCompletion(true, false, 0), { action: "fail-closed" },
+  "current-generation missing metadata fails closed")
+assert.deepEqual(logic.routeMetadataCompletion(true, true, 1), { action: "fail-closed" },
+  "current-generation metadata process failure fails closed")
+assert.deepEqual(logic.routeMetadataCompletion(true, true, 0), { action: "promote" },
+  "current-generation valid metadata promotes")
+assert.deepEqual(logic.routeMetadataCompletion(false, false, 1), { action: "retry" },
+  "generation mismatch remains retry-only")
+
 const fresh = JSON.stringify({
   version: 1,
   visible: true,
@@ -34,6 +43,20 @@ assert.deepEqual(logic.normalizeLease(freshLease, 1786930001000, 1786930000), {
   routeUpdatedAt: 1786930000,
   error: "",
 })
+const exactMaximumLease = JSON.stringify({
+  version: 2,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930015000,
+  routeUpdatedAt: 1786930000,
+})
+assert.equal(logic.normalizeLease(exactMaximumLease, 1786930001000, 1786930000).valid, true)
+const overMaximumLease = JSON.stringify({
+  version: 2,
+  refreshedAtMs: 1786930000000,
+  expiresAtMs: 1786930015001,
+  routeUpdatedAt: 1786930000,
+})
+assert.match(logic.normalizeLease(overMaximumLease, 1786930001000, 1786930000).error, /too long/)
 assert.equal(logic.normalizeLease("", 1786930001000, 1786930000).valid, false)
 assert.match(logic.normalizeLease(freshLease, 1786930005000, 1786930000).error, /stale/)
 assert.match(logic.normalizeLease(freshLease, 1786930001000, 1786930001).error, /route timestamp/)
@@ -47,7 +70,7 @@ assert.match(logic.normalizeLease(JSON.stringify({
 for (const raw of [
   "{",
   JSON.stringify({ version: 1, refreshedAt: 1786930000, expiresAt: 1786930001, routeUpdatedAt: 1786930000 }),
-  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930005001, routeUpdatedAt: 1786930000 }),
+  JSON.stringify({ version: 2, refreshedAtMs: 1786930000000, expiresAtMs: 1786930015001, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: 1786930001501, expiresAtMs: 1786930003001, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: 1786930000000.5, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),
   JSON.stringify({ version: 2, refreshedAtMs: -1, expiresAtMs: 1786930001500, routeUpdatedAt: 1786930000 }),

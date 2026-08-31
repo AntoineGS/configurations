@@ -13,13 +13,20 @@ Item {
   property int startupReconciliationInterval: 45000
   property int steadyReconciliationInterval: 60000
   property int stabilityInterval: 10000
-  property int utilizationInterval: 5000
+  property bool popupOpen: false
+  property int closedUtilizationInterval: 15000
+  property int openUtilizationInterval: 5000
+  property int utilizationInterval: popupOpen ? openUtilizationInterval : closedUtilizationInterval
   property int processStartGraceInterval: 100
   readonly property bool capabilityAvailable: monitorState.capabilityAvailable
   readonly property bool watcherRunning: watcherProcess.running
   readonly property bool utilizationRunning: utilizationTimer.running
   readonly property int backoffSeconds: monitorState.backoffSeconds
   readonly property bool reconciliationRunning: monitorState.reconciliationRunning
+
+  onPopupOpenChanged: {
+    if (Model.popupOpenRefreshRequested(!popupOpen, popupOpen)) root.refreshNow()
+  }
 
   function transition(event, argument) {
     var next = Model.vmMonitorTransition(monitorState, event, argument)
