@@ -7,11 +7,11 @@ installer=$test_dir/../install-outlook-preview
 readonly installer
 expected_package_name=outlook-for-linux
 readonly expected_package_name
-expected_version=1.4.0_test.3-1
+expected_version=2.0.0_test.9-1
 readonly expected_version
-expected_url=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-3/outlook-for-linux-1.4.0-test.3-x86_64.pkg.tar.zst
+expected_url=https://github.com/AntoineGS/outlook-for-linux/releases/download/temp-build-9/outlook-for-linux-2.0.0-test.9-x86_64.pkg.tar.zst
 readonly expected_url
-expected_sha256=19ffcb721b286a29dfc667382725fa9b958c9aa25191f4e168b1c6b9289d45ae
+expected_sha256=f14bab7563b8234a947e921b2e1f1bbf36d5b4e5c5843a2d4a005fe00fee8155
 readonly expected_sha256
 tmpdir=$(mktemp -d)
 readonly tmpdir
@@ -133,7 +133,7 @@ if compgen -G "$TMPDIR/outlook-for-linux.*.pkg.tar.zst" >/dev/null; then
   fail '--check created a temporary package'
 fi
 
-printf '1.4.0-1\n' >"$FAKE_STATE"
+printf '2.0.0-1\n' >"$FAKE_STATE"
 if "$installer" --check; then fail '--check accepted the stable version'; fi
 
 reset_state
