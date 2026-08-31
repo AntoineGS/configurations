@@ -1,0 +1,18 @@
+autostart = true
+always_control = true
+close_remote_on_local_close = false
+
+{{ if ne .Hostname "omarchbook" -}}
+[hosts.L]
+target = "ssh://antoinegs@omarchbook"
+{{ end }}
+
+{{ if and (ne .Hostname "desktop-e07vtrn") (ne .Hostname "DESKTOP-E07VTRN") -}}
+[hosts.D]
+target = "ssh://antoinegs@desktop-e07vtrn"
+{{ end }}
+
+{{ if ne .Hostname "antoinews-linux" -}}
+[hosts.W]
+target = "ssh://MULTIDEV\\a.simard@antoinews-linux"
+{{ end }}
