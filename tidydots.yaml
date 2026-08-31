@@ -195,11 +195,6 @@ applications:
           windows: ~/AppData/Roaming/nushell/themes
         name: themes
         backup: ./Both/Nushell/themes
-      - check:
-          linux: test -x "$HOME/.local/bin/nu" && test "$("$HOME/.local/bin/nu" --version 2>/dev/null)" = 0.113.1
-        run:
-          linux: cargo install nu --locked --version 0.113.1 --root "$HOME/.local"
-        name: exact-linux-version
   - package:
       managers:
         brew: wezterm
@@ -1009,11 +1004,6 @@ applications:
         name: configure FZF_DEFAULT_OPTS_FILE
   - package:
       managers:
-        pacman: kitten
-    name: kitten
-    entries: []
-  - package:
-      managers:
         pacman: perl
     name: perl
     entries: []
@@ -1775,14 +1765,6 @@ applications:
         winget: GitHub.cli
     name: gh
     description: GitHub CLI
-    entries: []
-  - package:
-      managers:
-        pacman: rustup
-        winget: Rustlang.Rustup
-    name: rustup
-    description: Rust toolchain package
-    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (eq .Distro "arch")) }}'
     entries: []
   - package:
       custom:
