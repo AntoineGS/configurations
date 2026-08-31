@@ -18,6 +18,7 @@ Panel {
   property bool batteryRefreshQueued: false
   property int batteryRefreshGeneration: 0
   property int batteryProcessGeneration: 0
+  property string batteryTopologyKey: ""
 
   readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
@@ -61,6 +62,13 @@ Panel {
     }
     batteryProcessGeneration = batteryRefreshGeneration
     batteryProcess.running = true
+  }
+
+  function syncBatteryTopology() {
+    var nextKey = Model.deviceTopologyKey(connectedDevices)
+    if (nextKey === batteryTopologyKey) return
+    batteryTopologyKey = nextKey
+    refreshBatteries()
   }
 
   function applyBatteryState(raw) {
@@ -230,9 +238,10 @@ Panel {
   onPluginRegistryChanged: reportCapability()
   onBarChanged: reportCapability()
   onCapabilityAvailableChanged: reportCapability()
-  onConnectedDevicesChanged: refreshBatteries()
+  onConnectedDevicesChanged: syncBatteryTopology()
   Component.onCompleted: {
     reportCapability()
+    batteryTopologyKey = Model.deviceTopologyKey(connectedDevices)
     refreshBatteries()
   }
   Component.onDestruction: {
@@ -262,7 +271,7 @@ Panel {
 
   Timer {
     id: batteryRefreshTimer
-    interval: 60000
+    interval: 300000
     repeat: true
     running: root.batteryCollectorLoaded
     onTriggered: root.refreshBatteries()

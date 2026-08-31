@@ -9,6 +9,7 @@ Item {
   property var settings: ({})
   property var pluginRegistry: null
   property bool loaded: true
+  property bool panelOpen: false
   property bool available: false
   property bool running: false
   property bool needsLogin: false
@@ -123,6 +124,9 @@ Item {
   }
 
   Component.onCompleted: refresh()
+  onPanelOpenChanged: {
+    if (panelOpen) refresh()
+  }
   Component.onDestruction: {
     loaded = false
     refreshTimer.stop()
@@ -130,7 +134,7 @@ Item {
 
   Timer {
     id: refreshTimer
-    interval: 15000
+    interval: root.panelOpen ? 15000 : 60000
     running: root.loaded
     repeat: true
     onTriggered: root.refresh()

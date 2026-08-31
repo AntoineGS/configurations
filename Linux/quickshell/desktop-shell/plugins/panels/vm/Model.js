@@ -11,6 +11,10 @@ function nextBackoff(seconds) {
   return BACKOFF_SECONDS[BACKOFF_SECONDS.length - 1]
 }
 
+function popupOpenRefreshRequested(previousOpen, open) {
+  return previousOpen === false && open === true
+}
+
 function vmMonitorState() {
   return {
     capabilityAvailable: false,
@@ -485,6 +489,7 @@ if (typeof module !== "undefined") {
     vmMetricText: vmMetricText,
     memoryCritical: memoryCritical,
     nextBackoff: nextBackoff,
+    popupOpenRefreshRequested: popupOpenRefreshRequested,
     vmMonitorState: vmMonitorState,
     vmMonitorTransition: vmMonitorTransition,
   }

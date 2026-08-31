@@ -17,6 +17,18 @@ function toArray(values) {
   return list
 }
 
+function deviceTopologyKey(devices) {
+  var values = toArray(devices)
+  var identities = []
+  for (var i = 0; i < values.length; i++) {
+    var device = values[i]
+    var identity = String(device && (device.address || device.dbusPath) || "")
+    if (identity !== "") identities.push(identity)
+  }
+  identities.sort()
+  return identities.join("\n")
+}
+
 function displayBatteryPercent(value) {
   if (typeof value !== "number" || !isFinite(value)) return null
   var rounded = Math.round(value)
@@ -222,6 +234,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     deviceLabel: deviceLabel,
     toArray: toArray,
+    deviceTopologyKey: deviceTopologyKey,
     parseBatteryState: parseBatteryState,
     batteryValues: batteryValues,
     isLowBattery: isLowBattery,

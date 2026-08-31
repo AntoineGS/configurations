@@ -473,7 +473,7 @@ PATH="$bin_dir:$PATH" \
 reconcile_runtime="$test_root/reconcile-runtime"
 mkdir -p "$reconcile_runtime/desktop-shell"
 reconcile_output="$videos_dir/video with spaces.mp4"
-bash -c 'exec -a gpu-screen-recorder bash -c "sleep 5" -- -o "$1"' _ "$reconcile_output" &
+bash -c 'exec -a gpu-screen-recorder bash -c "sleep 5; :" -- -o "$1"' _ "$reconcile_output" &
 reconcile_pid=$!
 printf '%s\n' "$reconcile_pid" >"$pid_file"
 printf '%s\n' '{"version":1,"active":true,"output":"'"$reconcile_output"'"}' >"$reconcile_runtime/desktop-shell/recording.json"

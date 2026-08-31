@@ -1700,16 +1700,6 @@ Item {
   }
 
   Timer {
-    id: routeExpiryTimer
-    interval: 1000
-    repeat: true
-    running: true
-    onTriggered: {
-      service.scheduleRouteMetadataCheck()
-    }
-  }
-
-  Timer {
     id: routeCandidateSettleTimer
     interval: 100
     repeat: false
@@ -1792,11 +1782,12 @@ Item {
       "route_dir=$1\nroute_file=$2\nlease_file=$3\nrevision=$4\n" +
       "[[ $revision =~ ^[0-9]+$ ]] || exit 2\n" +
       "secure_identity() {\n" +
-      "  local path=$1 identity owner mode type\n" +
-      "  [[ -e $path && ! -L $path ]] || exit 10\n" +
-      "  identity=$(stat -c '%d %i %u %a %F' -- \"$path\") || exit 10\n" +
-      "  read -r _device _inode owner mode type <<<\"$identity\"\n" +
-      "  [[ $owner == $uid && $mode == $2 && $type == $3 ]] || exit 10\n" +
+       "  local path=$1 expected_mode=$2 expected_type=$3 identity owner mode\n" +
+       "  [[ -e $path && ! -L $path ]] || exit 10\n" +
+       "  identity=$(stat -c '%d %i %u %a' -- \"$path\") || exit 10\n" +
+       "  read -r _device _inode owner mode <<<\"$identity\"\n" +
+       "  [[ $owner == $uid && $mode == $expected_mode ]] || exit 10\n" +
+       "  [[ $expected_type == directory && -d $path ]] || [[ $expected_type == regular-file && -f $path ]] || exit 10\n" +
       "  printf '%s\\n' \"$identity\"\n" +
       "}\n" +
       "bounded_base64() {\n" +
@@ -1810,12 +1801,12 @@ Item {
       "  printf '%s' \"$encoded\"\n" +
       "}\n" +
       "directory_before=$(secure_identity \"$route_dir\" 700 directory)\n" +
-      "route_before=$(secure_identity \"$route_file\" 600 'regular file')\n" +
-      "lease_before=$(secure_identity \"$lease_file\" 600 'regular file')\n" +
+       "route_before=$(secure_identity \"$route_file\" 600 regular-file)\n" +
+       "lease_before=$(secure_identity \"$lease_file\" 600 regular-file)\n" +
       "route_b64=$(bounded_base64 \"$route_file\")\n" +
       "lease_b64=$(bounded_base64 \"$lease_file\")\n" +
-      "route_after=$(secure_identity \"$route_file\" 600 'regular file')\n" +
-      "lease_after=$(secure_identity \"$lease_file\" 600 'regular file')\n" +
+       "route_after=$(secure_identity \"$route_file\" 600 regular-file)\n" +
+       "lease_after=$(secure_identity \"$lease_file\" 600 regular-file)\n" +
       "directory_after=$(secure_identity \"$route_dir\" 700 directory)\n" +
       "[[ $directory_before == \"$directory_after\" ]] || exit 12\n" +
       "[[ $route_before == \"$route_after\" && $lease_before == \"$lease_after\" ]] || exit 12\n" +
@@ -1871,13 +1862,15 @@ Item {
     var matchingSnapshot = !!snapshot && snapshot.revision === revision
     service.routeMetadataSnapshot = null
     service.routeMetadataSnapshotRevision = -1
-    if (!currentRevision) {
+    var completion = NotificationLogic.routeMetadataCompletion(currentRevision, matchingSnapshot, exitCode)
+    if (completion.action === "retry") {
       service.scheduleRouteMetadataCheck()
       return
     }
-    if (!matchingSnapshot || Number(exitCode) !== 0) {
-      service.routeCandidatePending = true
-      service.routeCandidateMetadataPending = true
+    if (completion.action === "fail-closed") {
+      service.failClosedRoute(Number(exitCode) !== 0
+        ? "notification route metadata check failed (exit " + String(exitCode) + ")"
+        : "notification route metadata snapshot unavailable")
       return
     }
     service.promoteRouteCandidate(snapshot)
@@ -2099,7 +2092,7 @@ Item {
   }
 
   Timer {
-    interval: 5000
+    interval: 60000
     repeat: true
     running: service.ownershipEnabled
     onTriggered: service.probeNotificationOwner()

@@ -24,6 +24,7 @@ Item {
   property bool sawSteadyPhase: false
   property int watcherStartEvents: 0
   property int reconciliationStartEvents: 0
+  property int popupRefreshBaseline: 0
 
   function finish() {
     var success = sawRunning && sawStopped && sawStale && sawMultiple && sawUtilization
@@ -127,6 +128,16 @@ Item {
         modeFile.setText("multiple\n")
         monitor.refreshNow()
       } else if (root.sawMultiple) {
+        if (root.popupRefreshBaseline === 0) {
+          root.popupRefreshBaseline = root.reconciliationStartEvents
+          monitor.popupOpen = true
+          return
+        }
+        if (root.reconciliationStartEvents <= root.popupRefreshBaseline) {
+          console.error("VM popup opening did not request an immediate refresh")
+          Qt.exit(1)
+          return
+        }
         stop()
         root.finish()
       }

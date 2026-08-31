@@ -93,7 +93,7 @@ Item {
 
   Timer {
     id: cpuRefreshTimer
-    interval: 5000
+    interval: 10000
     repeat: true
     running: true
     triggeredOnStart: true
@@ -115,7 +115,7 @@ Item {
 
   Timer {
     id: memoryRefreshTimer
-    interval: 10000
+    interval: 30000
     repeat: true
     running: true
     triggeredOnStart: true

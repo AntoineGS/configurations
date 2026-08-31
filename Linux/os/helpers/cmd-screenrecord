@@ -490,7 +490,7 @@ reconcile_recording_state() {
 
 watch_recording_state() {
   local pid=$1 session_id=$2 output=$3
-  while kill -0 "$pid" 2>/dev/null && [[ $(ps -o stat= -p "$pid" 2>/dev/null) != Z* ]]; do sleep 0.1; done
+  while kill -0 "$pid" 2>/dev/null && [[ $(ps -o stat= -p "$pid" 2>/dev/null) != Z* ]]; do sleep 1; done
   cleanup_recording_state_if_identity "$session_id" "$pid" "$output"
 }
 

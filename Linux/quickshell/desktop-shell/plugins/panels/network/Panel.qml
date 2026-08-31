@@ -322,7 +322,7 @@ Panel {
 
   Timer {
     id: idleRefreshTimer
-    interval: 15000
+    interval: 60000
     repeat: true
     running: !root.opened && (!root.initialProbeCompleted || root.initialProbeHadStation)
     onTriggered: root.requestRefresh(false)
