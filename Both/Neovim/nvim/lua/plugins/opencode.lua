@@ -4,7 +4,7 @@ wk.add {
   { "<leader>oa", group = "append" },
 }
 
-local opencode_cmd = "opencode-v --port" -- symlink to ocv; name must match the plugin's `pgrep -f "opencode.*--port"` discovery
+local opencode_cmd = "opencode --port" -- symlink to ocv; name must match the plugin's `pgrep -f "opencode.*--port"` discovery
 
 ---@type snacks.terminal.Opts
 local terminal_opts = {
