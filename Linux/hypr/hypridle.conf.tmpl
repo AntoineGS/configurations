@@ -4,7 +4,7 @@ general {
     before_sleep_cmd = loginctl lock-session                # lock before suspend.
     inhibit_sleep = 3                                       # wait until screen is locked
     {{- end }}
-    after_sleep_cmd = sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on"}))'   # to avoid having to press a key twice to turn on the display. (Lua-parser-compatible; legacy `dispatch dpms on` is rejected by Hyprland 0.55+ Lua mode)
+    after_sleep_cmd = sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on"}))'   # to avoid having to press a key twice to turn on the display.
 }
 
 {{- if eq .Hostname "omarchbook" -}}
