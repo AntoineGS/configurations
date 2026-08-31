@@ -2159,6 +2159,10 @@ applications:
           linux: ~/.config/herdr/plugins/local/actionable-notifications
         name: actionable-notifications-config
         backup: ./Linux/herdr/actionable-notifications
+      - targets:
+          linux: ~/.config/herdr-mirror
+        name: mirror-config
+        backup: ./Linux/herdr/mirror
       - check:
           linux: 'canonical_plugin_root="$(realpath -- "$HOME/.config/herdr/plugins/local/actionable-notifications")" && herdr plugin list --json | jq -e --arg plugin_root "$canonical_plugin_root" ''.result.plugins[] | select(.plugin_id == "local.actionable-notifications" and .enabled == true and .plugin_root == $plugin_root and ((.warnings // []) | length == 0))'' >/dev/null'
         run:
