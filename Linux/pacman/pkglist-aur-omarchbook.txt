@@ -1,4 +1,4 @@
-1password-beta
+1password
 1password-cli
 asdcontrol
 brave-bin
@@ -10,17 +10,15 @@ golangci-lint-bin
 hyprland-preview-share-picker
 insync
 limine-snapper-sync
+localsend-bin
 oh-my-zsh-git
-opencode-bin
-pinta
 posting
 python-terminaltexteffects
-rustdesk-bin
+rustdesk-drm-preview-bin
 tidydots-bin
 tobi-try
 tpack-bin
 ttf-ia-writer
-typora
 tzupdate
 ufw-docker
 xdg-terminal-exec
