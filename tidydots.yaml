@@ -996,6 +996,21 @@ applications:
         pacman: perl
     name: perl
     entries: []
+  - name: tidydots
+    description: Cross-platform dotfile manager
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/tidydots
+        name: updater
+        backup: ./Both/Tidydots
+        files:
+          - setup-tidydots.sh
+      - check:
+          linux: ~/.config/tidydots/setup-tidydots.sh --check
+        run:
+          linux: ~/.config/tidydots/setup-tidydots.sh --apply
+        name: binary
   - name: shell-picker
     description: Cross-platform fzf backend and shell adapters
     entries:
