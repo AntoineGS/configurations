@@ -2,26 +2,35 @@
 
 Reference for `tidydots.yaml`. Examples are drawn from the real repo.
 
-The local app configuration is separate from this schema and lives at
-`~/.config/tidydots/config.yaml`:
+The local app configuration lives at `~/.config/tidydots/config.yaml` and selects the
+repository:
 
 ```yaml
 config_dir: ~/.dotfiles
+```
+
+Hostname choices belong in the tracked `tidydots.yaml` v3 config:
+
+```yaml
+version: 3
 hostnames:
   - desktop
   - laptop
 ```
 
-`config_dir` selects the repository. `hostnames` is optional TUI metadata for the
-When chooser; it must not be added to `tidydots.yaml`. The chooser generates
+`hostnames` is optional TUI metadata for the When chooser. The chooser generates
 `{{ eq .Hostname "desktop" }}` for one selected host or
 `{{ or (eq .Hostname "desktop") (eq .Hostname "laptop") }}` for multiple hosts,
 which is stored as an application's or entry's v3 `when` expression.
+For compatibility, a local `hostnames` list is used only when `tidydots.yaml` omits it.
 
 ## Top level
 
 ```yaml
 version: 3
+hostnames:               # optional choices for the TUI When chooser
+  - desktop
+  - laptop
 manager_priority:        # order tidydots tries package managers
   - pacman
   - yay
