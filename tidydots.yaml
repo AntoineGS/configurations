@@ -85,7 +85,7 @@ applications:
         name: config
         backup: ./Linux/opencode
       - check:
-          linux: "herdr integration status | grep -q '^opencode: current '"
+          linux: 'herdr integration status | grep -q ''^opencode: current '''
         run:
           linux: herdr integration install opencode
         name: herdr-integration
@@ -124,9 +124,9 @@ applications:
         files:
           - interbase-mcp.service
       - check:
-          linux: 'target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes'
+          linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
         run:
-          linux: 'target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"'
+          linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
         name: enable-user-lingering
       - check:
           linux: systemctl --user is-enabled --quiet interbase-mcp.service && systemctl --user is-active --quiet interbase-mcp.service && test "$(systemctl --user show interbase-mcp.service --property=NeedDaemonReload --value)" = no && started=$(date --date="$(systemctl --user show interbase-mcp.service --property=ExecMainStartTimestamp --value)" +%s) && test "$started" -ge "$(stat -Lc %Y "$HOME/.local/libexec/interbase-mcp/interbase-mcp-supervisor")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/systemd/user/interbase-mcp.service")"
@@ -412,7 +412,7 @@ applications:
           linux: omp plugin install github:obra/superpowers
         name: superpowers
       - check:
-          linux: "herdr integration status | grep -q '^omp: current '"
+          linux: 'herdr integration status | grep -q ''^omp: current '''
         run:
           linux: herdr integration install omp
         name: herdr-integration
@@ -853,9 +853,9 @@ applications:
   - package:
       managers:
         pacman:
-          name: quickshell
           deps:
             - inotify-tools
+          name: quickshell
     name: desktop-shell
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries:
@@ -1309,33 +1309,33 @@ applications:
       - targets:
           linux: ~/.local/share/applications
         name: asbru-cm desktop override
+        when: '{{ eq .Hostname "antoinews-linux" }}'
         backup: ./Linux/os/application-overrides
         files:
           - asbru-cm.desktop
-        when: '{{ eq .Hostname "antoinews-linux" }}'
       - targets:
           linux: ~/.local/share/applications/antoinews-linux
         name: antoinews-linux .desktop files
-        backup: ./Linux/os/applications/antoinews-linux
         when: '{{ eq .Hostname "antoinews-linux" }}'
+        backup: ./Linux/os/applications/antoinews-linux
       - targets:
           linux: ~/.local/share/applications/desktop-e07vtrn
         name: desktop-e07vtrn .desktop files
-        backup: ./Linux/os/applications/desktop-e07vtrn
         when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+        backup: ./Linux/os/applications/desktop-e07vtrn
       - targets:
           linux: ~/.local/share/applications/omarchbook
         name: omarchbook .desktop files
-        backup: ./Linux/os/applications/omarchbook
         when: '{{ eq .Hostname "omarchbook" }}'
+        backup: ./Linux/os/applications/omarchbook
       - targets:
           linux: ~/.config/systemd/user
         name: battery-monitor-service
+        when: '{{ eq .Hostname "omarchbook" }}'
         backup: ./Linux/os/systemd
         files:
           - battery-monitor.service
           - battery-monitor.timer
-        when: '{{ eq .Hostname "omarchbook" }}'
       - check:
           linux: systemctl --user is-active --quiet battery-monitor.timer
         run:
@@ -1372,9 +1372,9 @@ applications:
   - package:
       managers:
         pacman:
-          name: cifs-utils
           deps:
             - gvfs
+          name: cifs-utils
     name: office-shares
     description: Kerberos SMB and keyring-authenticated FTP mounts with stable home-directory links
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
@@ -2047,13 +2047,13 @@ applications:
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
       - check:
-          linux: "! systemctl is-enabled --quiet snapper-timeline.timer && ! systemctl is-enabled --quiet snapper-cleanup.timer"
+          linux: '! systemctl is-enabled --quiet snapper-timeline.timer && ! systemctl is-enabled --quiet snapper-cleanup.timer'
         run:
           linux: systemctl disable --now snapper-timeline.timer snapper-cleanup.timer
         name: disable-snapper-timers
         sudo: true
       - check:
-          linux: "! systemctl is-enabled --quiet limine-snapper-sync.service"
+          linux: '! systemctl is-enabled --quiet limine-snapper-sync.service'
         run:
           linux: systemctl disable --now limine-snapper-sync.service
         name: disable-snapper-sync
@@ -2146,7 +2146,7 @@ applications:
         name: mirror-config
         backup: ./Linux/herdr/mirror
       - check:
-          linux: 'canonical_plugin_root="$(realpath -- "$HOME/.config/herdr/plugins/local/actionable-notifications")" && herdr plugin list --json | jq -e --arg plugin_root "$canonical_plugin_root" ''.result.plugins[] | select(.plugin_id == "local.actionable-notifications" and .enabled == true and .plugin_root == $plugin_root and ((.warnings // []) | length == 0))'' >/dev/null'
+          linux: canonical_plugin_root="$(realpath -- "$HOME/.config/herdr/plugins/local/actionable-notifications")" && herdr plugin list --json | jq -e --arg plugin_root "$canonical_plugin_root" '.result.plugins[] | select(.plugin_id == "local.actionable-notifications" and .enabled == true and .plugin_root == $plugin_root and ((.warnings // []) | length == 0))' >/dev/null
         run:
           linux: herdr plugin link "$HOME/.config/herdr/plugins/local/actionable-notifications" --enabled
         name: actionable-notifications-plugin
