@@ -2,6 +2,6 @@
 prepend_keymap = [
   { on = [ "q" ], run = "plugin sessionquit", desc = "Quit (save session if launched with autosession)" },
   { on = [ "Q" ], run = "quit",               desc = "Quit without saving session" },
-  { on = [ "<C-y>" ], run = '''shell -- for file in "$@"; do jq -rn --arg file "$file" '"file://" + ($file | @uri | gsub("%%2F"; "/"))'; done | wl-copy --type text/uri-list''', desc = "Copy file(s)/folder(s) to Linux clipboard", for = "linux" },
-  { on = [ "<C-y>" ], run = '''shell 'powershell -NoProfile -ExecutionPolicy Bypass -File "%APPDATA%\yazi\config\clip.ps1" %*' --block''', desc = "Copy file(s)/folder(s) to Windows clipboard", for = "windows" },
+  { on = [ "<C-y>" ], run = '''shell -- for file in %s; do jq -rn --arg file "$file" '"file://" + ($file | @uri | gsub("%%2F"; "/"))'; done | wl-copy --type text/uri-list''', desc = "Copy file(s)/folder(s) to Linux clipboard", for = "linux" },
+  { on = [ "<C-y>" ], run = '''shell 'powershell -NoProfile -ExecutionPolicy Bypass -File "%APPDATA%\yazi\config\clip.ps1" %s' --block''', desc = "Copy file(s)/folder(s) to Windows clipboard", for = "windows" },
 ]
