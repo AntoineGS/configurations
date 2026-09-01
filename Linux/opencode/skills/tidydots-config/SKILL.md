@@ -71,15 +71,14 @@ non-trivial. Quick recipes:
 - **Gate by platform/host:** add a `when:` Go-template expression, e.g.
   `when: '{{ eq .OS "linux" }}'`.
 
-In the TUI, hostnames configured in the local app config can be selected from the
+In the TUI, top-level `hostnames` from `tidydots.yaml` can be selected from the
 When chooser. One selected host generates `{{ eq .Hostname "desktop" }}`; multiple
-hosts generate `{{ or (eq .Hostname "desktop") (eq .Hostname "laptop") }}`. The
-chooser only writes the generated expression into the repository application's
-or entry's `when` field; it does not add `hostnames` to `tidydots.yaml`.
+hosts generate `{{ or (eq .Hostname "desktop") (eq .Hostname "laptop") }}`. Press
+`enter` to apply the expression or `ctrl+s` to apply it and save the form.
 
 The global `--dir` flag overrides which repository is selected for an operation;
-it does not discard local app metadata. In particular, the TUI can still load
-saved hostnames from `~/.config/tidydots/config.yaml`.
+the TUI loads hostname choices from that repository. For compatibility, it falls
+back to local app-config hostnames when the repository does not define them.
 
 An entry must match both its own condition and its application's condition.
 Packages are application-level only and use the application's condition.

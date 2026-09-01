@@ -1,4 +1,10 @@
 version: 3
+hostnames:
+  - omarchbook
+  - antoinews
+  - antoinews-linux
+  - DESKTOP-E07VTRN
+  - server
 manager_priority:
   - pacman
   - yay
