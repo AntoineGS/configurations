@@ -5,7 +5,7 @@ usage() {
   printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
 }
 
-latest_commit="3c44d2ecf7c7b315aa29e4660aa0f82861950d84"
+latest_commit="32cc5417ef751d6ad73d06de8bb5d20bbfbab925"
 repository="${SHELL_PICKER_REPOSITORY:-https://github.com/AntoineGS/shell-picker.git}"
 source_dir="${SHELL_PICKER_SOURCE_DIR:-$HOME/gits/shell-picker}"
 binary="${SHELL_PICKER_BINARY:-$HOME/.local/bin/shell-picker}"
