@@ -17,6 +17,7 @@ Panel {
   property string actionError: ""
   property int actionGeneration: 0
   property int actionFinalizedGeneration: 0
+  property string batteryStatusOutput: ""
 
   readonly property bool capabilityAvailable: PowerState.capabilityAvailable
   readonly property var profiles: PowerState.profiles
@@ -25,7 +26,14 @@ Panel {
   readonly property string batteryState: PowerState.batteryState
   readonly property bool batteryOnBattery: PowerState.batteryOnBattery
   readonly property bool batteryAvailable: PowerState.batteryAvailable
-  readonly property string batteryStatus: batteryAvailable ? batteryState : "Battery state unavailable"
+  readonly property string batteryStatus: batteryStatusOutput !== ""
+    ? batteryStatusOutput : (batteryAvailable ? batteryState : "Battery state unavailable")
+  readonly property string batteryHint: {
+    var separator = batteryStatus.indexOf("·")
+    return separator < 0 ? batteryStatus : batteryStatus.slice(separator + 1).trim()
+  }
+  readonly property bool batteryHintVisible: !!bar && bar.tooltipShown && bar.tooltipTarget === button
+  readonly property bool batteryStatusVisible: opened || batteryHintVisible
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -55,11 +63,23 @@ Panel {
     setProfile(profiles[profileIndex])
   }
 
+  function refreshBatteryStatus() {
+    if (!batteryStatusVisible || !batteryAvailable || batteryStatusProcess.running) return
+    batteryStatusProcess.running = true
+  }
+
   visible: capabilityAvailable
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0
 
   onCapabilityAvailableChanged: reportCapability()
+  onBatteryAvailableChanged: if (batteryAvailable) refreshBatteryStatus()
+  onBatteryHintVisibleChanged: if (batteryHintVisible && bar) bar.tooltipText = batteryHint
+  onBatteryHintChanged: if (batteryHintVisible && bar) bar.tooltipText = batteryHint
+  onBatteryStatusVisibleChanged: {
+    if (batteryStatusVisible) refreshBatteryStatus()
+    else if (batteryStatusProcess.running) batteryStatusProcess.signal(15)
+  }
   onPluginRegistryChanged: reportCapability()
   onBarChanged: reportCapability()
   Component.onCompleted: {
@@ -118,6 +138,25 @@ Panel {
     }
   }
 
+  Timer {
+    interval: 5000
+    running: root.batteryStatusVisible && root.batteryAvailable
+    repeat: true
+    onTriggered: root.refreshBatteryStatus()
+  }
+
+  Process {
+    id: batteryStatusProcess
+    command: ["battery-status"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var output = text.trim()
+        if (root.batteryStatusVisible && output !== "") root.batteryStatusOutput = output
+      }
+    }
+  }
+
   BarMetricButton {
     id: button
     anchors.fill: parent
@@ -130,6 +169,7 @@ Panel {
       : ""
     valueIsIcon: root.batteryAvailable
       && Model.batteryBarValueIsIcon(root.batteryPercent, root.batteryState, root.batteryOnBattery)
+    tooltipText: root.batteryHint
     onPressed: root.toggle()
   }
 
