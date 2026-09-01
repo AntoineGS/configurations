@@ -5,7 +5,7 @@ usage() {
   printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
 }
 
-latest_commit="240087346ebbeb4091d65f2fa389e6c944d0f702"
+latest_commit="50586611417de9f264df52e7f2e227ae19975a94"
 repository="${TIDYDOTS_REPOSITORY:-https://github.com/AntoineGS/tidydots.git}"
 source_dir="${TIDYDOTS_SOURCE_DIR:-$HOME/gits/tidydots}"
 go_bin="$(go env GOBIN)"
