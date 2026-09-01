@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly REPO_DIR="${CONFIGURATIONS_REPO:-$HOME/gits/configurations}"
+readonly CACHE_DIR="${CONFIGURATION_UPDATES_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/desktop-shell/configuration-updates}"
+readonly CACHE_FILE="$CACHE_DIR/status.json"
+readonly TIDYDOTS_BIN="${TIDYDOTS_BIN:-tidydots}"
+
+usage() {
+  printf 'usage: %s <status|git|tidydots>\n' "${0##*/}"
+}
+
+case "${1:-}" in
+  git)
+    cd -- "$REPO_DIR"
+    exec lazygit
+    ;;
+  tidydots)
+    if "$TIDYDOTS_BIN" --help 2>/dev/null | grep -q -- '--actions'; then
+      exec "$TIDYDOTS_BIN" --dir "$REPO_DIR" --actions
+    fi
+    exec "$TIDYDOTS_BIN" --dir "$REPO_DIR"
+    ;;
+  status) ;;
+  --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+command -v jq >/dev/null || {
+  printf 'desktop-shell-configuration-updates: jq is required\n' >&2
+  exit 1
+}
+
+if [[ ${CONFIGURATION_UPDATES_ALLOW_NON_ARCH:-0} != 1 && ! -e /etc/arch-release ]]; then
+  jq -cn '{
+    checked_at: (now | floor),
+    git: {
+      visible: false,
+      state: "clean",
+      actionable: false,
+      stale: false,
+      tooltip: "Configuration updates are disabled outside Arch Linux"
+    },
+    tidydots: {
+      visible: false,
+      state: "clean",
+      actionable: false,
+      stale: false,
+      tooltip: "Configuration updates are disabled outside Arch Linux"
+    }
+  }'
+  exit 0
+fi
+
+mkdir -p -- "$CACHE_DIR"
+exec 9>"$CACHE_DIR/status.lock"
+flock 9
+
+error_file=$(mktemp)
+trap 'rm -f "$error_file"' EXIT
+
+cached='{}'
+if [[ -s $CACHE_FILE ]]; then
+  cached=$(jq -ce '
+    if type == "object" and (.git | type) == "object" and (.tidydots | type) == "object"
+    then .
+    else error("invalid cache")
+    end
+  ' "$CACHE_FILE" 2>/dev/null) || cached='{}'
+fi
+
+error_detail() {
+  local fallback=$1
+  local detail=""
+
+  if [[ -s $error_file ]]; then
+    detail=$(<"$error_file")
+    detail=${detail//$'\n'/ }
+    detail=${detail//$'\r'/ }
+  fi
+  printf '%s' "${detail:-$fallback}"
+}
+
+warning_status() {
+  local kind=$1
+  local message=$2
+  local previous
+
+  previous=$(jq -c --arg kind "$kind" '.[$kind] // {}' <<<"$cached")
+  jq -cn --argjson previous "$previous" --arg message "$message" '
+    (($previous.tooltip // "") | split("\nCheck failed:")[0]) as $lastTooltip
+    | $previous
+    | .visible = true
+    | .state = "error"
+    | .actionable = ($previous.actionable // false)
+    | .stale = true
+    | .tooltip = (
+        (if $lastTooltip == "" then "" else $lastTooltip + "\n" end)
+        + "Check failed: " + $message
+      )
+  '
+}
+
+git_clean_status() {
+  local tooltip=$1
+  jq -cn --arg tooltip "$tooltip" '{
+    visible: false,
+    state: "clean",
+    actionable: false,
+    stale: false,
+    tooltip: $tooltip
+  }'
+}
+
+git_blocked_status() {
+  local tooltip=$1
+  jq -cn --arg tooltip "$tooltip" '{
+    visible: true,
+    state: "blocked",
+    actionable: true,
+    stale: false,
+    tooltip: $tooltip
+  }'
+}
+
+configuration_git_status() {
+  local branch
+  local upstream
+  local ahead
+  local behind
+  local counts
+
+  if ! git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>"$error_file"; then
+    warning_status git "$(error_detail "not a Git repository: $REPO_DIR")"
+    return
+  fi
+
+  branch=$(git -C "$REPO_DIR" symbolic-ref --quiet --short HEAD 2>"$error_file") || {
+    git_blocked_status 'Configurations is in detached HEAD state; open Lazygit to return to main'
+    return
+  }
+  if [[ $branch != main ]]; then
+    git_blocked_status "Configurations is on $branch; open Lazygit and switch to main"
+    return
+  fi
+
+  upstream=$(git -C "$REPO_DIR" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>"$error_file") || {
+    git_blocked_status 'main has no upstream; open Lazygit and configure origin/main'
+    return
+  }
+  if [[ $upstream != origin/main ]]; then
+    git_blocked_status "main tracks $upstream instead of origin/main; open Lazygit to correct it"
+    return
+  fi
+
+  : >"$error_file"
+  if ! timeout 120 git -C "$REPO_DIR" fetch --quiet origin main 2>"$error_file"; then
+    warning_status git "$(error_detail 'git fetch failed')"
+    return
+  fi
+
+  : >"$error_file"
+  if ! counts=$(git -C "$REPO_DIR" rev-list --left-right --count HEAD...origin/main 2>"$error_file"); then
+    warning_status git "$(error_detail 'cannot compare main with origin/main')"
+    return
+  fi
+  read -r ahead behind <<<"$counts"
+  if [[ ! $ahead =~ ^[0-9]+$ || ! $behind =~ ^[0-9]+$ ]]; then
+    warning_status git 'git returned invalid ahead/behind counts'
+    return
+  fi
+  if ((behind == 0)); then
+    if ((ahead > 0)); then
+      git_clean_status "Configurations main is $ahead commit(s) ahead of origin/main"
+    else
+      git_clean_status 'Configurations main is up to date'
+    fi
+    return
+  fi
+
+  if ((ahead > 0)); then
+    git_blocked_status "Configurations main has diverged ($ahead local, $behind remote); open Lazygit to reconcile it"
+    return
+  fi
+
+  : >"$error_file"
+  if ! git -C "$REPO_DIR" merge --ff-only origin/main >/dev/null 2>"$error_file"; then
+    git_blocked_status "origin/main is $behind commit(s) ahead, but local modifications block the fast-forward; open Lazygit"
+    return
+  fi
+
+  git_clean_status "Pulled $behind configuration commit(s) from origin/main"
+}
+
+tidydots_status() {
+  local source
+  local result
+
+  : >"$error_file"
+  if ! source=$(timeout 300 "$TIDYDOTS_BIN" --dir "$REPO_DIR" status --actions --json 2>"$error_file"); then
+    warning_status tidydots "$(error_detail 'tidydots status failed')"
+    return
+  fi
+
+  if ! result=$(jq -ce '
+      if type != "object"
+        or (.actionable | type) != "boolean"
+        or (.counts | type) != "object"
+        or (.counts.actionable_applications | type) != "number"
+        or (.counts.actionable_entries | type) != "number"
+        or (.counts.actionable_packages | type) != "number"
+        or (.applications | type) != "array"
+      then error("invalid tidydots status")
+      else
+        (.applications | map(.name) | map(select(type == "string")) | unique) as $names
+        | {
+            visible: .actionable,
+            state: (if .actionable then "actionable" else "clean" end),
+            actionable: .actionable,
+            stale: false,
+            tooltip: (
+              if .actionable then
+                "Tidydots: \(.counts.actionable_applications) app(s), "
+                + "\(.counts.actionable_entries) config action(s), "
+                + "\(.counts.actionable_packages) package action(s)"
+                + (if ($names | length) > 0 then "\n" + ($names[:6] | join(", ")) else "" end)
+              else "Tidydots has no pending actions"
+              end
+            ),
+            counts: .counts
+          }
+      end
+    ' <<<"$source" 2>"$error_file"); then
+    warning_status tidydots "$(error_detail 'invalid tidydots status')"
+    return
+  fi
+
+  printf '%s\n' "$result"
+}
+
+git_result=$(configuration_git_status)
+tidydots_result=$(tidydots_status)
+checked_at=$(date +%s)
+result=$(jq -cn \
+  --argjson checked_at "$checked_at" \
+  --argjson git "$git_result" \
+  --argjson tidydots "$tidydots_result" \
+  '{checked_at: $checked_at, git: $git, tidydots: $tidydots}')
+
+if temp_file=$(mktemp "$CACHE_DIR/.status.XXXXXX"); then
+  if ! printf '%s\n' "$result" >"$temp_file" || ! mv -f -- "$temp_file" "$CACHE_FILE"; then
+    rm -f -- "$temp_file"
+  fi
+fi
+
+printf '%s\n' "$result"
