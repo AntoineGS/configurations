@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.configuration-updates",
+  "name": "Configuration updates",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Configuration repository and Tidydots action status",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Configuration updates",
+    "description": "Shows blocked Git updates and pending Tidydots actions",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}
