@@ -27,7 +27,7 @@ hl.on("hyprland.start", function()
 		hl.exec_cmd("signal-desktop")
 		hl.exec_cmd("teams-for-linux")
 		hl.exec_cmd(
-			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="DVI-D-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
+			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
 		)
 	end
 
@@ -39,7 +39,7 @@ hl.on("hyprland.start", function()
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
 		hl.exec_cmd(
-			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3601x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })']]
+			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4481x180", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4480x180", scale = 1 })']]
 		)
 	end
 end)
