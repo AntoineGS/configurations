@@ -1,6 +1,10 @@
 [user]
 	name = Antoine Gaudreau Simard
-	email = {{ if eq .Hostname "ANTOINEWS" }}a.simard@multidev.net{{ else }}antoineg.simard@gmail.com{{ end }}
+  {{ if or (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") }}
+	email = a.simard@multidev.net
+  {{ else }}
+	email = antoineg.simard@gmail.com
+  {{ end }}
 	signingkey = ""
 [filter "lfs"]
 	smudge = git-lfs smudge -- %f
