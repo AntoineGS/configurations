@@ -187,6 +187,7 @@ applications:
         winget: Nushell.Nushell
     name: nushell
     description: A new type of shell
+    when: '{{ eq .Hostname "antoinews" }}'
     entries:
       - targets:
           linux: ~/.config/nushell
@@ -388,7 +389,7 @@ applications:
           binary: omp
     name: oh-my-pi
     description: Batteries-included Pi fork with native LSP, subagents, and Agent Hub
-    when: '{{ eq .OS "linux" }}'
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
       - targets:
           linux: ~/.omp/agent
@@ -635,18 +636,6 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: hyprshot
-    name: hyprshot
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        pacman: hyprsunset
-    name: hyprsunset
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
         pacman: impala
     name: impala
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -685,7 +674,7 @@ applications:
       managers:
         pacman: fprintd
     name: fprintd
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries: []
   - package:
       managers:
@@ -733,12 +722,6 @@ applications:
       managers:
         pacman: wl-clipboard
     name: wl-clipboard
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        pacman: wl-clip-persist
-    name: wl-clip-persist
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - package:
@@ -950,7 +933,7 @@ applications:
         pacman: teams-for-linux
         yay: teams-for-linux-electron-bin
     name: teams-for-linux
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
       - targets:
           linux: ~/.config/teams-for-linux
@@ -972,7 +955,7 @@ applications:
           - config.json
   - name: outlook-for-linux-preview
     description: Install the temporary Outlook for Linux preview package
-    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
       - targets:
           linux: ~/.local/bin
@@ -1207,13 +1190,11 @@ applications:
     description: Allow conditional BlueZ recovery when the Keyball44 wakes without HID devices
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
-      - targets:
-          linux: /etc/sudoers.d
+      - check:
+          linux: sudo -n -l /usr/bin/systemctl restart bluetooth.service >/dev/null 2>&1
+        run:
+          linux: visudo -cf ./Linux/sudoers/90-keyball-bluetooth-restart && install -m 0440 ./Linux/sudoers/90-keyball-bluetooth-restart /etc/sudoers.d/90-keyball-bluetooth-restart
         name: sudoers
-        method: copy
-        backup: ./Linux/sudoers
-        files:
-          - 90-keyball-bluetooth-restart
         sudo: true
   - package:
       managers:
@@ -1334,19 +1315,6 @@ applications:
         name: omarchbook .desktop files
         when: '{{ eq .Hostname "omarchbook" }}'
         backup: ./Linux/os/applications/omarchbook
-      - targets:
-          linux: ~/.config/systemd/user
-        name: battery-monitor-service
-        when: '{{ eq .Hostname "omarchbook" }}'
-        backup: ./Linux/os/systemd
-        files:
-          - battery-monitor.service
-          - battery-monitor.timer
-      - check:
-          linux: systemctl --user is-active --quiet battery-monitor.timer
-        run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now battery-monitor.timer
-        name: enable-battery-monitor
   - package:
       managers:
         pacman: iwd
@@ -1589,12 +1557,6 @@ applications:
       managers:
         pacman: bluez
     name: bluez
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        pacman: bluez-utils
-    name: bluez-utils
     when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
     entries: []
   - package:
@@ -1961,6 +1923,7 @@ applications:
             windows: ~/.local/share/fzf
           sudo: true
     name: fzf-repo
+    when: '{{ eq .Hostname "antoinews" }}'
     entries: []
   - package:
       managers:
