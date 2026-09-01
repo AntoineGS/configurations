@@ -34,21 +34,28 @@ elseif hostname == "antoinews-linux" then
 	hl.window_rule({ name = "windowrule-3", match = { class = "brave-browser" }, workspace = "8" })
 	hl.window_rule({ name = "windowrule-4", match = { class = "org.float-large.yazi" }, workspace = "10" })
 elseif hostname == "DESKTOP-E07VTRN" then
-	-- Desktop: multi-monitor setup (1x scale for 1080p/1440p displays)
-	hl.monitor({ output = "DVI-D-1", mode = "1680x1050@59.88", position = "0x0", scale = 1 })
-	hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "1680x0", scale = 1 })
-	hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "3600x0", scale = 1 })
+	-- Desktop: 1080p side displays around a 4K center display at 1.5x scale.
+	hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "0x180", scale = 1 })
+	hl.monitor({
+		output = "DP-3",
+		mode = "3840x2160@143.85",
+		position = "1920x0",
+		scale = 1.5,
+		bitdepth = 10,
+		cm = "srgb",
+	})
+	hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4480x180", scale = 1 })
 	hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
 	-- Keep workspace layouts pinned to dwindle so they cannot silently drift into master/scrolling.
-	hl.workspace_rule({ workspace = "1", monitor = "DVI-D-1", layout = "dwindle", persistent = true, default = true })
-	hl.workspace_rule({ workspace = "2", monitor = "HDMI-A-1", layout = "dwindle", persistent = true, default = true })
+	hl.workspace_rule({ workspace = "1", monitor = "HDMI-A-1", layout = "dwindle", persistent = true, default = true })
+	hl.workspace_rule({ workspace = "2", monitor = "DP-3", layout = "dwindle", persistent = true, default = true })
 	hl.workspace_rule({ workspace = "3", monitor = "DP-2", layout = "dwindle", persistent = true, default = true })
-	hl.workspace_rule({ workspace = "4", monitor = "DVI-D-1", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "5", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "4", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "5", monitor = "DP-3", layout = "dwindle", persistent = true })
 	hl.workspace_rule({ workspace = "6", monitor = "DP-2", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "7", monitor = "DVI-D-1", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "8", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "7", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "8", monitor = "DP-3", layout = "dwindle", persistent = true })
 	hl.workspace_rule({ workspace = "9", monitor = "DP-2", layout = "dwindle", persistent = true })
 	hl.workspace_rule({ workspace = "10", monitor = "DP-2", layout = "dwindle", persistent = true })
 
