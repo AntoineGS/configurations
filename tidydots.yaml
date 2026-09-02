@@ -1087,7 +1087,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: localsend
+        yay: localsend-bin
     name: localsend
     description: LocalSend file sharing application used by cmd-share
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -1293,11 +1293,6 @@ applications:
         run:
           linux: systemctl --user disable --now battery-monitor.timer >/dev/null 2>&1 || true; systemctl --user stop battery-monitor.service >/dev/null 2>&1 || true; rm -f "$HOME/.config/systemd/user/battery-monitor.timer" "$HOME/.config/systemd/user/battery-monitor.service"; systemctl --user daemon-reload
         name: remove-legacy-battery-monitor
-      - check:
-          linux: ~/.local/share/helpers/setup-remmina-hostkey --check
-        run:
-          linux: ~/.local/share/helpers/setup-remmina-hostkey --apply
-        name: disable-remmina-hostkey
       - targets:
           linux: ~/.local/share/applications/common
         name: common .desktop files
