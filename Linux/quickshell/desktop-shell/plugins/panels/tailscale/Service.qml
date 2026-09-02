@@ -19,10 +19,9 @@ Item {
   property string actionStatus: ""
   property var self: ({})
   property var peers: []
-  property string pendingClipboard: ""
 
   readonly property bool active: available && running
-  readonly property bool busy: stateProcess.running || actionProcess.running || copyProcess.running
+  readonly property bool busy: stateProcess.running || actionProcess.running
   readonly property string selfName: String(self.name || "")
   readonly property string selfDnsName: String(self.dnsName || "")
   readonly property var selfAddresses: Array.isArray(self.addresses) ? self.addresses : []
@@ -109,10 +108,7 @@ Item {
 
   function copyToClipboard(value) {
     var text = String(value || "")
-    if (text === "" || copyProcess.running) return
-    pendingClipboard = text
-    copyProcess.command = ["wl-copy"]
-    copyProcess.running = true
+    if (text !== "") Quickshell.execDetached(["wl-copy", "--", text])
   }
 
   function copyPeerName(peer) {
@@ -159,13 +155,5 @@ Item {
       else root.actionStatus = ""
       root.refresh()
     }
-  }
-
-  Process {
-    id: copyProcess
-    command: []
-    stdinEnabled: true
-    onStarted: write(root.pendingClipboard)
-    onExited: root.pendingClipboard = ""
   }
 }

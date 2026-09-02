@@ -181,13 +181,28 @@ function parseMemorySnapshot(raw) {
   return { totalKiB: total, availableKiB: available, usedKiB: used, percent: 100 - Math.floor(available * 100 / total) }
 }
 
+function parseFilesystemSnapshot(raw) {
+  if (typeof raw !== "string") return null
+  var lines = raw.trim().split(/\r?\n/)
+  if (lines.length < 2) return null
+  var fields = lines[lines.length - 1].trim().split(/\s+/)
+  if (fields.length < 6 || !/^\d+$/.test(fields[1]) || !/^\d+$/.test(fields[2])) return null
+  var total = Number(fields[1])
+  var used = Number(fields[2])
+  if (!isFinite(total) || !isFinite(used) || total <= 0 || used < 0 || used > total) return null
+  return { totalKiB: total, usedKiB: used, percent: Math.floor(used * 100 / total) }
+}
+
 function formatKibGiB(kib) {
   var tenths = Math.floor((kib * 10 + 524288) / 1048576)
   return Math.floor(tenths / 10) + "." + (tenths % 10)
 }
 
-function formatMemoryTooltip(snapshot) {
-  return formatKibGiB(snapshot.usedKiB) + " / " + formatKibGiB(snapshot.totalKiB).replace(/\.0$/, "") + " GiB"
+function formatMemoryTooltip(snapshot, tmpSnapshot) {
+  var text = formatKibGiB(snapshot.usedKiB) + " / " + formatKibGiB(snapshot.totalKiB).replace(/\.0$/, "") + " GiB"
+  if (!tmpSnapshot) return text
+  return text + "\n/tmp: " + formatKibGiB(tmpSnapshot.usedKiB) + " / "
+    + formatKibGiB(tmpSnapshot.totalKiB).replace(/\.0$/, "") + " GiB"
 }
 
 function isPlainObject(value) {
@@ -473,6 +488,7 @@ if (typeof module !== "undefined") {
     parseCpuSnapshot: parseCpuSnapshot,
     cpuUsage: cpuUsage,
     parseMemorySnapshot: parseMemorySnapshot,
+    parseFilesystemSnapshot: parseFilesystemSnapshot,
     formatKibGiB: formatKibGiB,
     formatMemoryTooltip: formatMemoryTooltip,
     emptyState: emptyState,
