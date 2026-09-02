@@ -32,7 +32,8 @@ elseif hostname == "antoinews-linux" then
 	hl.window_rule({ name = "windowrule-1", match = { class = "org.wezfurlong.wezterm" }, workspace = "5" })
 	hl.window_rule({ name = "windowrule-2", match = { class = "com.mitchellh.ghostty" }, workspace = "5" })
 	hl.window_rule({ name = "windowrule-3", match = { class = "brave-browser" }, workspace = "8" })
-	hl.window_rule({ name = "windowrule-4", match = { class = "org.float-large.yazi" }, workspace = "10" })
+	hl.window_rule({ name = "windowrule-4", match = { class = "org.maximized.yazi" }, workspace = "10", maximize = true })
+	hl.window_rule({ name = "windowrule-5", match = { class = "org.maximized.lazygit" }, workspace = "6", maximize = true })
 elseif hostname == "DESKTOP-E07VTRN" then
 	-- Desktop: 1080p side displays around a 4K center display at 1.5x scale.
 	hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "0x180", scale = 1 })
@@ -66,7 +67,8 @@ elseif hostname == "DESKTOP-E07VTRN" then
 	hl.window_rule({ name = "windowrule-4", match = { class = "org.wezfurlong.wezterm" }, workspace = "5" })
 	hl.window_rule({ name = "windowrule-5", match = { class = "com.mitchellh.ghostty" }, workspace = "5" })
 	hl.window_rule({ name = "windowrule-7", match = { class = "brave-browser" }, workspace = "7" })
-	hl.window_rule({ name = "windowrule-8", match = { class = "org.float-large.yazi" }, workspace = "10" })
+	hl.window_rule({ name = "windowrule-6", match = { class = "org.maximized.lazygit" }, workspace = "6", maximize = true })
+	hl.window_rule({ name = "windowrule-8", match = { class = "org.maximized.yazi" }, workspace = "10", maximize = true })
 else
 	-- Unknown hosts: prefer the active output without assuming connector names.
 	hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })

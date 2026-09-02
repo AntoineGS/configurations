@@ -9,7 +9,20 @@ end
 
 hl.bind("SUPER + RETURN",         hl.dsp.exec_cmd("uwsm-app -- env HERDR_NAV_PASSTHROUGH_RE='^(shell-picker|fzf)$' xdg-terminal-exec herdr"), { description = "Terminal" })
 hl.bind("SUPER + SHIFT + RETURN", hl.dsp.exec_cmd("uwsm-app -- xdg-terminal-exec"),                                              { description = "Terminal (no tmux)" })
-hl.bind("SUPER + ALT + Y",        hl.dsp.exec_cmd("launch-tui-large yazi"),                                                     { description = "File manager" })
+hl.bind(
+	"SUPER + ALT + Y",
+	hl.dsp.exec_cmd(
+		[[launch-or-focus org.maximized.yazi "uwsm-app -- xdg-terminal-exec --app-id=org.maximized.yazi -e yazi"]]
+	),
+	{ description = "File manager" }
+)
+hl.bind(
+	"SUPER + ALT + G",
+	hl.dsp.exec_cmd(
+		[[launch-or-focus org.maximized.lazygit "uwsm-app -- xdg-terminal-exec --app-id=org.maximized.lazygit -e lazygit"]]
+	),
+	{ description = "Git client" }
+)
 hl.bind("SUPER + ALT + M",        hl.dsp.exec_cmd("launch-or-focus teams-for-linux"),                                           { description = "MS Teams" })
 hl.bind("SUPER + ALT + B",        hl.dsp.exec_cmd([[launch-or-focus brave-browser "uwsm app -- brave --enable-features=UseOzonePlatform --ozone-platform=wayland --enable-wayland-ime"]]), { description = "Browser" })
 hl.bind("SUPER + ALT + N",        hl.dsp.exec_cmd("launch-editor"),                                                             { description = "Editor" })
