@@ -30,33 +30,33 @@ BarWidget {
   Row {
     id: icons
 
-    WidgetButton {
+    BarIconButton {
       bar: root.bar
       text: root.updates && root.updates.gitVisible ? "󰊢" : ""
       foreground: root.updates && (root.updates.gitState === "blocked" || root.updates.gitState === "error")
         ? root.urgent : root.foreground
       tooltipText: root.updates
-        ? root.updates.gitTooltip + "\nLeft click: refresh\nRight click: open Lazygit"
+        ? root.updates.gitTooltip + "\nLeft click: open Lazygit\nRight click: refresh"
         : ""
 
       onPressed: function(buttonCode) {
-        if (buttonCode === Qt.LeftButton) root.refresh()
-        else if (buttonCode === Qt.RightButton) root.openGit()
+        if (Number(buttonCode) === Number(Qt.LeftButton)) root.openGit()
+        else if (Number(buttonCode) === Number(Qt.RightButton)) root.refresh()
       }
     }
 
-    WidgetButton {
+    BarIconButton {
       bar: root.bar
       text: root.updates && root.updates.tidydotsVisible ? "󰃢" : ""
       foreground: root.updates && root.updates.tidydotsState === "error" ? root.urgent : root.foreground
       active: root.updates && root.updates.tidydotsState === "actionable"
       tooltipText: root.updates
-        ? root.updates.tidydotsTooltip + "\nLeft click: refresh\nRight click: open Tidydots actions"
+        ? root.updates.tidydotsTooltip + "\nLeft click: open Tidydots actions\nRight click: refresh"
         : ""
 
       onPressed: function(buttonCode) {
-        if (buttonCode === Qt.LeftButton) root.refresh()
-        else if (buttonCode === Qt.RightButton) root.openTidydots()
+        if (Number(buttonCode) === Number(Qt.LeftButton)) root.openTidydots()
+        else if (Number(buttonCode) === Number(Qt.RightButton)) root.refresh()
       }
     }
   }
