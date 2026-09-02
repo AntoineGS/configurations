@@ -89,7 +89,10 @@ Panel {
   HostMetrics {
     id: hostMetrics
     onCpuStateChanged: root.hostCpuState = cpuState
-    onMemoryStateChanged: root.hostMemoryState = memoryState
+    onMemoryStateChanged: {
+      root.hostMemoryState = memoryState
+      if (hostMemoryButton.hot && root.bar) root.bar.showTooltip(hostMemoryButton, memoryState.tooltip)
+    }
   }
 
   VmMonitor {
@@ -142,6 +145,7 @@ Panel {
       valueText: root.hostMemoryState.available ? root.hostMemoryState.value : ""
       tooltipText: root.hostMemoryState.tooltip
       foreground: root.hostMemoryCritical ? root.urgent : root.statForeground
+      onHotChanged: if (hot) hostMetrics.refreshTmp()
       onPressed: function(mouseButton) {
         if (mouseButton === Qt.LeftButton) root.openHostMonitor()
       }

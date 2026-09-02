@@ -7,6 +7,8 @@ Item {
 
   property var cpuState: Model.emptyHostStat()
   property var memoryState: Model.emptyHostStat()
+  property var memorySnapshot: null
+  property var tmpSnapshot: null
   property string cpuPath: "/proc/stat"
   property string memoryPath: "/proc/meminfo"
   property var cpuSnapshot: null
@@ -63,10 +65,24 @@ Item {
   }
 
   function applyMemoryText(raw) {
-    var snapshot = Model.parseMemorySnapshot(raw)
-    memoryState = snapshot === null
+    memorySnapshot = Model.parseMemorySnapshot(raw)
+    updateMemoryState()
+  }
+
+  function applyTmpText(raw) {
+    tmpSnapshot = Model.parseFilesystemSnapshot(raw)
+    updateMemoryState()
+  }
+
+  function updateMemoryState() {
+    memoryState = memorySnapshot === null
       ? Model.emptyHostStat()
-      : metric("", snapshot.percent + "%", Model.formatMemoryTooltip(snapshot), snapshot.percent)
+      : metric("", memorySnapshot.percent + "%", Model.formatMemoryTooltip(memorySnapshot, tmpSnapshot),
+        memorySnapshot.percent)
+  }
+
+  function refreshTmp() {
+    if (!tmpProcess.running) tmpProcess.running = true
   }
 
   FileView {
@@ -88,7 +104,19 @@ Item {
     preload: true
     printErrors: false
     onLoaded: root.applyMemoryText(text())
-    onLoadFailed: root.memoryState = Model.emptyHostStat()
+    onLoadFailed: {
+      root.memorySnapshot = null
+      root.updateMemoryState()
+    }
+  }
+
+  Process {
+    id: tmpProcess
+    command: ["df", "-Pk", "/tmp"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyTmpText(text)
+    }
   }
 
   Timer {

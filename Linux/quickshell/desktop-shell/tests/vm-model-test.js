@@ -25,6 +25,15 @@ assert.equal(Model.parseMemorySnapshot("MemTotal: nope kB\nMemAvailable: 1 kB\n"
 assert.equal(Model.formatKibGiB(12582912), "12.0")
 assert.equal(Model.formatKibGiB(16777216), "16.0")
 assert.equal(Model.formatMemoryTooltip({ usedKiB: 12582912, totalKiB: 16777216 }), "12.0 / 16 GiB")
+const tmpSnapshot = Model.parseFilesystemSnapshot(
+  "Filesystem 1024-blocks Used Available Capacity Mounted on\n" +
+  "tmpfs 4194304 2097152 2097152 50% /tmp\n"
+)
+assert.deepEqual(tmpSnapshot, { totalKiB: 4194304, usedKiB: 2097152, percent: 50 })
+assert.equal(Model.formatMemoryTooltip(
+  { usedKiB: 12582912, totalKiB: 16777216 }, tmpSnapshot
+), "12.0 / 16 GiB\n/tmp: 2.0 / 4 GiB")
+assert.equal(Model.parseFilesystemSnapshot("Filesystem 1024-blocks Used Available Capacity Mounted on\n"), null)
 
 assert.deepEqual([2, 4, 8, 16, 32, 60].map(Model.nextBackoff), [4, 8, 16, 32, 60, 60])
 assert.equal(Model.nextBackoff(null), 2)
