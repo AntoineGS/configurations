@@ -1,0 +1,239 @@
+#!/usr/bin/env node
+
+const { execFile } = require("node:child_process")
+const fs = require("node:fs/promises")
+const os = require("node:os")
+const path = require("node:path")
+const { promisify } = require("node:util")
+
+const execFileAsync = promisify(execFile)
+const TERMINAL_CLASSES = new Set([
+  "alacritty",
+  "com.raggesilver.blackbox",
+  "com.mitchellh.ghostty",
+  "com.system76.cosmicterm",
+  "foot",
+  "gnome-terminal-server",
+  "kitty",
+  "org.gnome.ptyxis",
+  "org.kde.konsole",
+  "org.wezfurlong.wezterm",
+])
+const SSH_OPTIONS_WITH_ARGUMENTS = new Set([
+  "-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l",
+  "-m", "-O", "-o", "-P", "-p", "-Q", "-R", "-S", "-W", "-w",
+])
+
+function sshDestination(argv) {
+  const args = Array.isArray(argv) ? argv.slice(1) : []
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = String(args[index] || "")
+    if (argument === "--") return index + 1 < args.length ? String(args[index + 1]) : ""
+    if (!argument.startsWith("-") || argument === "-") return argument
+    const option = argument.slice(0, 2)
+    if (argument.length === 2 && SSH_OPTIONS_WITH_ARGUMENTS.has(option)) index += 1
+  }
+  return ""
+}
+
+function destinationHost(destination) {
+  const value = String(destination || "")
+  const at = value.lastIndexOf("@")
+  return (at >= 0 ? value.slice(at + 1) : value).replace(/^\[|\]$/g, "")
+}
+
+function isTargetSsh(process, target) {
+  return process && process.comm === "ssh" && destinationHost(sshDestination(process.argv)) === String(target || "")
+}
+
+function targetSshDestination(tree, target) {
+  const processes = Array.isArray(tree) ? tree : []
+  const byPid = new Map(processes.map(process => [process.pid, process]))
+  for (const process of processes) {
+    if (!isTargetSsh(process, target)) continue
+    let ancestor = byPid.get(process.ppid)
+    let multiplexed = false
+    while (ancestor) {
+      if (ancestor.comm === "tmux" || ancestor.comm === "screen") {
+        multiplexed = true
+        break
+      }
+      ancestor = byPid.get(ancestor.ppid)
+    }
+    if (!multiplexed) return sshDestination(process.argv)
+  }
+  return ""
+}
+
+function visibleWorkspaceScreens(monitors) {
+  const screens = new Map()
+  for (const monitor of Array.isArray(monitors) ? monitors : []) {
+    if (!monitor || monitor.disabled === true || monitor.dpmsStatus === false) continue
+    for (const workspace of [monitor && monitor.activeWorkspace, monitor && monitor.specialWorkspace]) {
+      const id = Number(workspace && workspace.id)
+      if (Number.isInteger(id) && id !== 0) screens.set(id, String(monitor.name || ""))
+    }
+  }
+  return screens
+}
+
+function visibleWorkspaceIds(monitors) {
+  return new Set(visibleWorkspaceScreens(monitors).keys())
+}
+
+async function processIdentity(pid) {
+  const stat = String(await fs.readFile(`/proc/${pid}/stat`, "utf8"))
+  const closingParen = stat.lastIndexOf(")")
+  if (closingParen < 0) throw new Error("invalid process stat")
+  const fields = stat.slice(closingParen + 2).trim().split(/\s+/)
+  const ppid = Number(fields[1])
+  const startTime = fields[19]
+  if (!Number.isInteger(ppid) || !startTime) throw new Error("invalid process identity")
+  return { pid, ppid, startTime }
+}
+
+function sameIdentity(left, right) {
+  return left && right && left.pid === right.pid && left.ppid === right.ppid && left.startTime === right.startTime
+}
+
+async function processTree(rootPid) {
+  const queue = [{ pid: Number(rootPid), parent: null }]
+  const seen = new Set()
+  const result = []
+  while (queue.length > 0) {
+    const { pid, parent } = queue.shift()
+    if (!Number.isInteger(pid) || pid <= 0 || seen.has(pid)) return null
+    seen.add(pid)
+    try {
+      const before = await processIdentity(pid)
+      if (parent) {
+        const parentBefore = await processIdentity(parent.pid)
+        if (!sameIdentity(parentBefore, parent) || before.ppid !== parent.pid) return null
+      }
+      const [taskIds, comm, cmdline] = await Promise.all([
+        fs.readdir(`/proc/${pid}/task`),
+        fs.readFile(`/proc/${pid}/comm`, "utf8"),
+        fs.readFile(`/proc/${pid}/cmdline`),
+      ])
+      const childLists = await Promise.all(taskIds.filter(id => /^\d+$/.test(id)).map(
+        id => fs.readFile(`/proc/${pid}/task/${id}/children`, "utf8")
+      ))
+      const after = await processIdentity(pid)
+      if (!sameIdentity(before, after)) return null
+      if (parent && !sameIdentity(await processIdentity(parent.pid), parent)) return null
+      result.push({
+        pid,
+        ppid: before.ppid,
+        comm: String(comm).trim(),
+        argv: cmdline.toString("utf8").split("\0").filter(Boolean),
+      })
+      const children = new Set(childLists.flatMap(raw => String(raw).trim().split(/\s+/).filter(Boolean)))
+      for (const child of children) queue.push({ pid: Number(child), parent: before })
+    } catch (_) {
+      return null
+    }
+  }
+  return result
+}
+
+async function commandJson(command, args) {
+  const { stdout } = await execFileAsync(command, args, {
+    encoding: "utf8",
+    timeout: 3000,
+    maxBuffer: 1024 * 1024,
+  })
+  return JSON.parse(stdout)
+}
+
+async function detect(target) {
+  const [monitors, clients] = await Promise.all([
+    commandJson("hyprctl", ["-j", "monitors", "all"]),
+    commandJson("hyprctl", ["-j", "clients"]),
+  ])
+  const visible = visibleWorkspaceScreens(monitors)
+  const terminals = (Array.isArray(clients) ? clients : []).filter(client =>
+    visible.has(Number(client && client.workspace && client.workspace.id))
+      && client.mapped !== false
+      && client.hidden !== true
+      && TERMINAL_CLASSES.has(String(client && client.class || "").toLowerCase())
+  )
+  const trees = await Promise.all(terminals.map(client => processTree(client.pid)))
+  const screens = new Set()
+  let sshTarget = ""
+  for (let index = 0; index < trees.length; index += 1) {
+    const detectedTarget = targetSshDestination(trees[index], target)
+    if (detectedTarget === "") continue
+    if (sshTarget === "") sshTarget = detectedTarget
+    const workspaceId = Number(terminals[index] && terminals[index].workspace && terminals[index].workspace.id)
+    const screen = visible.get(workspaceId)
+    if (screen) screens.add(screen)
+  }
+  return { sshTarget, screens: Array.from(screens).sort() }
+}
+
+function snapshotPath() {
+  // This must match the publisher even when an SSH login does not inherit XDG_STATE_HOME.
+  return path.join(os.homedir(), ".local", "state", "desktop-shell", "remote-bar.json")
+}
+
+async function readSnapshot() {
+  const snapshot = JSON.parse(await fs.readFile(snapshotPath(), "utf8"))
+  snapshot.servedAt = Math.floor(Date.now() / 1000)
+  process.stdout.write(`${JSON.stringify(snapshot)}\n`)
+}
+
+async function fetchSnapshot(target) {
+  const { stdout } = await execFileAsync("ssh", [
+    "-o", "BatchMode=yes",
+    "-o", "ConnectionAttempts=1",
+    "-o", "ConnectTimeout=3",
+    "-o", "ControlMaster=auto",
+    "-o", "ControlPersist=60",
+    "-o", `ControlPath=${path.join(os.homedir(), ".ssh", "cm-%C")}`,
+    target,
+    "$HOME/.local/share/helpers/desktop-remote-bar read",
+  ], {
+    encoding: "utf8",
+    timeout: 7000,
+    maxBuffer: 1024 * 1024,
+  })
+  process.stdout.write(stdout)
+}
+
+async function main(argv) {
+  const [command, target] = argv
+  if (command === "detect" && target) {
+    const result = await detect(target)
+    process.stdout.write(`${JSON.stringify({
+      eligible: result.screens.length > 0,
+      sshTarget: result.sshTarget,
+      screens: result.screens,
+    })}\n`)
+    return
+  }
+  if (command === "fetch" && target) {
+    await fetchSnapshot(target)
+    return
+  }
+  if (command === "read" && !target) {
+    await readSnapshot()
+    return
+  }
+  throw new Error("usage: desktop-remote-bar <detect|fetch> <host> | read")
+}
+
+if (require.main === module) {
+  main(process.argv.slice(2)).catch(error => {
+    process.stderr.write(`${String(error && error.message || error)}\n`)
+    process.exitCode = 1
+  })
+}
+
+module.exports = {
+  destinationHost,
+  isTargetSsh,
+  sshDestination,
+  targetSshDestination,
+  visibleWorkspaceIds,
+  visibleWorkspaceScreens,
+}

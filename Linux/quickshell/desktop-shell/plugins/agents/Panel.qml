@@ -20,6 +20,12 @@ Panel {
   property string compactText: ""
   property string compactTooltip: ""
   property bool compactMuted: false
+  readonly property var remoteSummary: ({
+    available: root.displayText !== "",
+    text: root.displayText,
+    tooltip: root.compactTooltip,
+    muted: root.compactMuted
+  })
 
   readonly property var providers: usage.enabledProviders
   readonly property string displayText: compactText !== "" ? compactText : (providers.length > 0 ? "󱚣" : "")

@@ -1,2 +1,7 @@
 Host *
 	AddKeysToAgent yes
+
+Host antoinews-linux
+	ControlMaster auto
+	ControlPath ~/.ssh/cm-%C
+	ControlPersist 60

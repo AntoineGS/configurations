@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.remote-bar",
+  "name": "Remote Bar",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Remote host state and local override",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "RemoteBar.qml"},
+  "barWidget": {
+    "displayName": "Remote Bar",
+    "description": "Remote host state and local override",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

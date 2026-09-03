@@ -30,6 +30,21 @@ Panel {
   readonly property string vmTooltip: vmState.stale
     ? vmState.name + " (stale): " + vmState.error
     : vmState.name
+  readonly property var remoteSummary: ({
+    available: root.hostMemoryState.available || root.hostCpuState.available || root.vmState.visible,
+    hostMemory: root.hostMemoryState,
+    hostCpu: root.hostCpuState,
+    runningVmCount: root.vmState.visible ? 1 : 0,
+    vm: {
+      visible: root.vmState.visible,
+      name: root.vmState.name,
+      stale: root.vmState.stale,
+      error: root.vmState.error,
+      cpuPercent: root.vmState.cpuPercent,
+      memoryPercent: root.vmState.memoryPercent,
+      showMemoryUsage: root.vmState.showMemoryUsage
+    }
+  })
 
   function openFrom(anchorItem) {
     if (!vmState.visible || !anchorItem) return

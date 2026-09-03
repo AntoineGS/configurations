@@ -21,6 +21,10 @@ ShellRoot {
   property PluginRegistry pluginRegistry: PluginRegistry { }
   property BarWidgetRegistry barWidgetRegistry: BarWidgetRegistry { }
   property AppLibrary appLibrary: AppLibrary { }
+  property RemoteBarService remoteBarService: RemoteBarService {
+    shell: shell
+    config: shell.shellConfig && Util.isPlainObject(shell.shellConfig.remoteBar) ? shell.shellConfig.remoteBar : ({})
+  }
 
   property string home: Quickshell.env("HOME")
 
