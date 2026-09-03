@@ -187,6 +187,18 @@ hiddenUrgent = step(hiddenUrgent, { type: "ROUTE_CHANGED", visible: true, output
   assert.equal(s.visual.output, "DP-4")
 })
 
+let emptyHidden = Presentation.createInitialState({ routeVisible: true, output: "HDMI-A-1" })
+emptyHidden = step(emptyHidden, { type: "ROUTE_CHANGED", visible: false, output: null }, s => {
+  assert.equal(s.phase, "hidden")
+})
+emptyHidden = step(emptyHidden, { type: "ROUTE_CHANGED", visible: true, output: "DP-3" }, s => {
+  assert.equal(s.phase, "closed", "an empty presenter leaves hidden state when routing becomes visible")
+})
+emptyHidden = step(emptyHidden, { type: "ARRIVE", snapshot: snapshot("10004:104", 1, 1000, 1000) }, s => {
+  assert.equal(s.phase, "opening", "the first notification opens after an empty hidden route resumes")
+  assert.equal(s.visual.output, "DP-3")
+})
+
 let pendingClose = openState(snapshot("10002:102", 2, 0, 0))
 pendingClose = step(pendingClose, { type: "ARRIVE", snapshot: snapshot("10003:103", 1, 1000, 1000) })
 const pendingCloseResult = apply(pendingClose, { type: "SENDER_CLOSED", identity: "10003:103" })

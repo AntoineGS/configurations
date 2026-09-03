@@ -102,7 +102,7 @@ assert.equal(logic.isEphemeral({ appName: "other", transient: true, hints: {} })
 assert.equal(logic.isEphemeral({ appName: "build", hints: { transient: true } }), true)
 assert.equal(logic.isEphemeral({ appName: "build", hints: {} }), false)
 
-for (const output of ["DVI-D-1", "HDMI-A-1", "DP-2", "DP-1", "eDP-1"]) {
+for (const output of ["DVI-D-1", "HDMI-A-1", "DP-3", "DP-2", "DP-1", "eDP-1"]) {
   const route = logic.normalizeRoute(JSON.stringify({
     version: 1,
     visible: true,

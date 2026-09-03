@@ -294,7 +294,8 @@ function reduce(input, event) {
             if (state.pending.length) { state.active = takeNextPending(state); startOpen(state, effects) }
           }
           else if (!state.active && state.pending.length) { state.active = takeNextPending(state); startOpen(state, effects) }
-         else if (state.active && (state.phase === "hidden" || routeChanged)) startOpen(state, effects)
+          else if (!state.active && state.phase === "hidden") state.phase = "closed"
+          else if (state.active && (state.phase === "hidden" || routeChanged)) startOpen(state, effects)
          else if (!routeChanged) break
        }
       break
