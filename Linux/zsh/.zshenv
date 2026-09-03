@@ -11,6 +11,7 @@ export GIT_EDITOR=nvim
 export HERDR_NAV_PASSTHROUGH_RE='^(shell-picker|fzf)$'
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
 export ADZUNA_APP_ID=4bb9d1ce
 export ADZUNA_APP_KEY=3801f98eb7fd7d72a8e98db8afd25df9
