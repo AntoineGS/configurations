@@ -1323,6 +1323,7 @@ ShellRoot {
   BarWidgetIpc { pluginId: "desktop.bluetooth" }
   BarWidgetIpc { pluginId: "desktop.power" }
   BarWidgetIpc { pluginId: "desktop.monitor" }
+  BarWidgetIpc { pluginId: "desktop.monitor-layout" }
   BarWidgetIpc { pluginId: "desktop.tailscale" }
   BarWidgetIpc { pluginId: "desktop.agents" }
 
