@@ -1169,6 +1169,18 @@ applications:
         files:
           - blacklist-raydium.conf
         sudo: true
+  - name: bluetooth-usb-power
+    description: Keep the TP-Link Bluetooth adapter responsive by disabling runtime USB autosuspend
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+    entries:
+      - targets:
+          linux: /etc/udev/rules.d
+        name: rules
+        method: copy
+        backup: ./Linux/udev
+        files:
+          - 90-disable-tplink-bluetooth-autosuspend.rules
+        sudo: true
   - name: udev-rules
     description: Detach faulty Raydium touchscreen driver to stop CRC storms and phantom cursor events after resume
     when: '{{ eq .Hostname "omarchbook" }}'
