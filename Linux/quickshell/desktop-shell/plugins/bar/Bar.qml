@@ -52,6 +52,8 @@ Item {
   property int tooltipRequest: 0
   property var clickTargets: []
   property var moduleSlots: []
+  readonly property var remoteBarService: root.shell ? root.shell.remoteBarService : null
+  readonly property var remoteBarEntry: ({ id: "desktop.remote-bar" })
 
   Behavior on background {
     ColorAnimation { duration: 420; easing.type: Easing.InOutCubic }
@@ -87,6 +89,7 @@ Item {
       output.push({
         id: slot.moduleName,
         section: slot.region,
+        screen: slotScreenName(slot),
         x: Math.round(slot.x),
         y: Math.round(slot.y),
         width: Math.round(slot.width),
@@ -215,6 +218,13 @@ Item {
   function layoutEntries(region) {
     var entries = layoutConfig ? layoutConfig[region] : null
     return Array.isArray(entries) ? entries : []
+  }
+
+  function rightLayoutEntries() {
+    var entries = layoutEntries("right").slice()
+    var trayIndex = entryIndex(entries, "desktop.tray")
+    entries.splice(trayIndex < 0 ? 0 : trayIndex + 1, 0, remoteBarEntry)
+    return entries
   }
 
   function panelNavigationSlots(region, window) {
@@ -520,7 +530,7 @@ Item {
   }
 
   component RightModules: ModuleList {
-    entries: root.layoutEntries("right")
+    entries: root.rightLayoutEntries()
     region: "right"
   }
 
@@ -620,7 +630,14 @@ Item {
       return componentLoader.item
     }
     readonly property bool panelOpen: root.activePopout === activeItem
+    readonly property string screenName: root.slotScreenName(slot)
+    readonly property bool suppressedByRemote: {
+      var revision = root.remoteBarService ? root.remoteBarService.modeRevision : 0
+      if (region !== "right" || moduleName === "desktop.remote-bar" || !root.remoteBarService) return false
+      return root.remoteBarService.screenRemoteSelected(screenName)
+    }
 
+    visible: !suppressedByRemote
     implicitWidth: activeItem && activeItem.visible ? activeItem.implicitWidth : 0
     implicitHeight: activeItem && activeItem.visible ? activeItem.implicitHeight : 0
     width: implicitWidth
@@ -669,6 +686,7 @@ Item {
       if ("bar" in target) target.bar = root
       if ("moduleName" in target) target.moduleName = slot.moduleName
       if ("settings" in target) target.settings = slot.moduleSettings
+      if (slot.moduleName === "desktop.remote-bar" && "screenName" in target) target.screenName = slot.screenName
     }
 
     Component {

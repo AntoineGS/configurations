@@ -1,5 +1,16 @@
 {
   "version": 1,
+  "remoteBar": {
+{{ if eq .Hostname "antoinews-linux" }}
+    "publish": true,
+    "host": "antoinews-linux"
+{{ else if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
+    "target": "antoinews-linux",
+    "sourceHost": "{{ .Hostname }}"
+{{ else }}
+    "enabled": false
+{{ end }}
+  },
   "bar": {
     "id": "desktop.bar",
     "position": "top",

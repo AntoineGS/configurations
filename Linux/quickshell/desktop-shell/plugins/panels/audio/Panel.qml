@@ -65,6 +65,17 @@ Panel {
   readonly property bool outputMuted: outputAvailable ? sink.audio.muted : false
   readonly property bool inputMuted: inputAvailable ? source.audio.muted : false
   readonly property bool anyAudible: (outputAvailable && !outputMuted) || (inputAvailable && !inputMuted)
+  readonly property var remoteSummary: ({
+    available: root.outputAvailable,
+    icon: root.icon,
+    volumePercent: Math.round(root.outputVolume * 100),
+    muted: root.outputMuted,
+    deviceLabel: root.outputAvailable ? root.nodeLabel(root.sink) : "",
+    tooltip: root.outputAvailable
+      ? (root.outputMuted ? "Muted" : "Volume: " + Math.round(root.outputVolume * 100) + "%")
+        + (root.nodeLabel(root.sink) !== "" ? "\n" + root.nodeLabel(root.sink) : "")
+      : "Audio unavailable"
+  })
   readonly property string icon: {
     if (!sink || !sink.audio) return ""
     if (Model.isHeadphones(sink)) return "󰋋"
