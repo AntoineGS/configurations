@@ -4,6 +4,7 @@ set -Eeuo pipefail
 # Keep user input below the signed 64-bit arithmetic range used for the limit check.
 readonly MAX_VM_MEMORY_GIB_DIGITS=18
 readonly VM_LIBVIRT_URI=qemu:///system
+readonly MONITOR_LAYOUT_STATE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/desktop-shell/monitor-layout"
 
 usage() {
   printf 'usage: %s <power|monitor|tailscale|vm> <action> [args...]\n' "${0##*/}" >&2
@@ -89,6 +90,219 @@ set_vm_memory() {
   fi
 }
 
+persist_monitor_layout() {
+  local mode=$1
+  local monitor=${2:-}
+  local state_dir=${MONITOR_LAYOUT_STATE_FILE%/*}
+  local temp_file
+
+  mkdir -p "$state_dir" || exit 1
+  temp_file=$(mktemp "$state_dir/.monitor-layout.XXXXXX") || exit 1
+  if ! printf '%s%s\n' "$mode" "${monitor:+ $monitor}" >"$temp_file" \
+      || ! mv -f "$temp_file" "$MONITOR_LAYOUT_STATE_FILE"; then
+    rm -f "$temp_file"
+    exit 1
+  fi
+}
+
+wait_for_monitor_enabled() {
+  local hyprctl_command=$1
+  local name=$2
+  local expected=$3
+  local raw_monitors
+  local attempt
+
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+    if [[ $expected == true ]]; then
+      jq -e --arg name "$name" 'any(.[]; .name == $name and .disabled != true)' \
+        <<<"$raw_monitors" >/dev/null 2>&1 && return
+    else
+      jq -e --arg name "$name" 'any(.[]; .name == $name and .disabled == true)' \
+        <<<"$raw_monitors" >/dev/null 2>&1 && return
+    fi
+    sleep 0.05
+  done
+
+  exit 1
+}
+
+stage_desktop_monitors() {
+  local hyprctl_command=$1
+
+  run_command "$hyprctl_command" eval \
+    'hl.monitor({output="DP-1", mode="1920x1080@60", position="10000x0", scale=1, disabled=false}); hl.monitor({output="DP-2", mode="1920x1080@60", position="11920x0", scale=1, disabled=false}); hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="13840x0", scale=1, disabled=false})'
+  wait_for_monitor_enabled "$hyprctl_command" DP-1 true
+  wait_for_monitor_enabled "$hyprctl_command" DP-2 true
+  wait_for_monitor_enabled "$hyprctl_command" HEADLESS-1 true
+}
+
+move_workspace_to_monitor() {
+  local hyprctl_command=$1
+  local workspace=$2
+  local monitor=$3
+  local raw_workspaces
+  local attempt
+
+  for ((attempt = 0; attempt < 20; attempt++)); do
+    if ! "$hyprctl_command" eval \
+        "hl.dispatch(hl.dsp.workspace.move({workspace=${workspace}, monitor=\"${monitor}\"}))" \
+        >/dev/null 2>&1; then
+      sleep 0.05
+      continue
+    fi
+    raw_workspaces=$("$hyprctl_command" -j workspaces 2>/dev/null) || exit 1
+    jq -e --argjson workspace "$workspace" --arg monitor "$monitor" \
+      'any(.[]; .id == $workspace and .monitor == $monitor)' \
+      <<<"$raw_workspaces" >/dev/null 2>&1 && return
+    sleep 0.05
+  done
+
+  exit 1
+}
+
+set_desktop_monitor_layout() {
+  local mode=$1
+  local hyprctl_command=$2
+  local target_monitor=${3:-}
+  local raw_monitors
+  local raw_workspaces
+  local active_workspace
+  local monitor
+  local workspace
+  local -a other_monitors
+  local -a workspace_ids
+
+  if [[ $(hostname) != antoinews-linux ]]; then
+    printf '%s\n' 'desktop-hardware-action: monitor layouts are only available on antoinews-linux' >&2
+    exit 1
+  fi
+
+  raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+  if ! jq -e 'any(.[]; .name == "HEADLESS-1")' <<<"$raw_monitors" >/dev/null 2>&1; then
+    run_command "$hyprctl_command" output create headless
+    raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+  fi
+  jq -e '
+    any(.[]; .name == "DP-1")
+    and any(.[]; .name == "DP-2")
+    and any(.[]; .name == "HEADLESS-1")
+  ' <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+  if [[ $mode == single ]]; then
+    case $target_monitor in
+      DP-1|DP-2|HEADLESS-1) ;;
+      *) exit 1 ;;
+    esac
+  fi
+
+  active_workspace=$("$hyprctl_command" -j activeworkspace 2>/dev/null) || exit 1
+  active_workspace=$(jq -er '.id | select(type == "number" and . > 0 and floor == .)' <<<"$active_workspace") || exit 1
+  if [[ $mode == single ]]; then
+    raw_workspaces=$("$hyprctl_command" -j workspaces 2>/dev/null) || exit 1
+    mapfile -t workspace_ids < <(jq -r --argjson active "$active_workspace" '
+      .[]
+      | select(.id > 0 and (.id | floor) == .id)
+      | select((.windows // 0) > 0 or .id == $active
+          or .id == 2 or .id == 3 or .id == 4 or .id == 5
+          or .id == 6 or .id == 8 or .id == 9 or .id == 10)
+      | .id
+    ' <<<"$raw_workspaces")
+  fi
+  stage_desktop_monitors "$hyprctl_command"
+
+  case $mode in
+    headless)
+      run_command "$hyprctl_command" eval \
+        'hl.monitor({output="DP-1", mode="1920x1080@60", position="0x0", scale=1, disabled=false}); hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="1920x0", scale=1, disabled=false}); hl.monitor({output="DP-2", mode="1920x1080@60", position="4480x0", scale=1, disabled=false})'
+      run_command "$hyprctl_command" eval 'hl.monitor({output="DP-2", disabled=true})'
+      wait_for_monitor_enabled "$hyprctl_command" DP-2 false
+      for workspace in 2 4 5 8; do
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" HEADLESS-1
+      done
+      for workspace in 3 6 9 10; do
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" DP-1
+      done
+      run_command "$hyprctl_command" eval "hl.dispatch(hl.dsp.focus({workspace=${active_workspace}}))"
+      ;;
+    physical)
+      run_command "$hyprctl_command" eval \
+        'hl.monitor({output="DP-2", mode="1920x1080@60", position="0x0", scale=1, disabled=false}); hl.monitor({output="DP-1", mode="1920x1080@60", position="1920x0", scale=1, disabled=false}); hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="3840x0", scale=1, disabled=false})'
+      run_command "$hyprctl_command" eval 'hl.monitor({output="HEADLESS-1", disabled=true})'
+      wait_for_monitor_enabled "$hyprctl_command" HEADLESS-1 false
+      for workspace in 2 4 5 8; do
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" DP-2
+      done
+      for workspace in 3 6 9 10; do
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" DP-1
+      done
+      run_command "$hyprctl_command" eval "hl.dispatch(hl.dsp.focus({workspace=${active_workspace}}))"
+      ;;
+    single)
+      case $target_monitor in
+        DP-1)
+          run_command "$hyprctl_command" eval \
+            'hl.monitor({output="DP-1", mode="1920x1080@60", position="0x0", scale=1, disabled=false}); hl.monitor({output="DP-2", mode="1920x1080@60", position="1920x0", scale=1, disabled=false}); hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="3840x0", scale=1, disabled=false})'
+          ;;
+        DP-2)
+          run_command "$hyprctl_command" eval \
+            'hl.monitor({output="DP-2", mode="1920x1080@60", position="0x0", scale=1, disabled=false}); hl.monitor({output="DP-1", mode="1920x1080@60", position="1920x0", scale=1, disabled=false}); hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="3840x0", scale=1, disabled=false})'
+          ;;
+        HEADLESS-1)
+          run_command "$hyprctl_command" eval \
+            'hl.monitor({output="HEADLESS-1", mode="2560x1440@60", position="0x0", scale=1, disabled=false}); hl.monitor({output="DP-1", mode="1920x1080@60", position="2560x0", scale=1, disabled=false}); hl.monitor({output="DP-2", mode="1920x1080@60", position="4480x0", scale=1, disabled=false})'
+          ;;
+      esac
+
+      for workspace in "${workspace_ids[@]}"; do
+        [[ $workspace =~ ^[1-9][0-9]*$ ]] || exit 1
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" "$target_monitor"
+      done
+
+      raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+      mapfile -t other_monitors < <(jq -r --arg target "$target_monitor" \
+        '.[] | select(.name != $target and .disabled != true) | .name' <<<"$raw_monitors")
+      for monitor in "${other_monitors[@]}"; do
+        [[ -n $monitor && $monitor != *[!A-Za-z0-9_.:-]* ]] || exit 1
+        run_command "$hyprctl_command" eval "hl.monitor({output=\"${monitor}\", disabled=true})"
+        wait_for_monitor_enabled "$hyprctl_command" "$monitor" false
+      done
+      for workspace in "${workspace_ids[@]}"; do
+        move_workspace_to_monitor "$hyprctl_command" "$workspace" "$target_monitor"
+      done
+      run_command "$hyprctl_command" eval "hl.dispatch(hl.dsp.focus({workspace=${active_workspace}}))"
+      ;;
+    *)
+      exit 1
+      ;;
+  esac
+
+  raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+  case $mode in
+    headless)
+      jq -e '
+        any(.[]; .name == "DP-1" and .disabled != true)
+        and any(.[]; .name == "DP-2" and .disabled == true)
+        and any(.[]; .name == "HEADLESS-1" and .disabled != true)
+      ' <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+      ;;
+    physical)
+      jq -e '
+        any(.[]; .name == "DP-1" and .disabled != true)
+        and any(.[]; .name == "DP-2" and .disabled != true)
+        and any(.[]; .name == "HEADLESS-1" and .disabled == true)
+      ' <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+      ;;
+    single)
+      jq -e --arg target "$target_monitor" '
+        ([.[] | select(.disabled != true)] | length) == 1
+        and any(.[]; .name == $target and .disabled != true)
+      ' <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+      ;;
+  esac
+
+  persist_monitor_layout "$mode" "$target_monitor"
+}
+
 set_monitor_state() {
   local action=$1
   local hyprctl_command
@@ -97,9 +311,33 @@ set_monitor_state() {
   local external
   local enabled
   local mirrored
+  local mode
+  local target_monitor=""
 
   hyprctl_command=$(resolve_command hyprctl) || exit 1
   raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null) || exit 1
+
+  case $action in
+    restore-layout)
+      mode=physical
+      if [[ -r $MONITOR_LAYOUT_STATE_FILE ]]; then
+        read -r mode target_monitor <"$MONITOR_LAYOUT_STATE_FILE" || exit 1
+      fi
+      case $mode in
+        headless|physical) target_monitor="" ;;
+        single)
+          case $target_monitor in
+            DP-1|DP-2|HEADLESS-1) ;;
+            *) mode=physical; target_monitor="" ;;
+          esac
+          ;;
+        *) mode=physical; target_monitor="" ;;
+      esac
+      set_desktop_monitor_layout "$mode" "$hyprctl_command" "$target_monitor"
+      return
+      ;;
+  esac
+
   internal=$(jq -r '[.[] | select(type == "object") | select(.name | type == "string") | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$raw_monitors" 2>/dev/null) || exit 1
   [[ -n $internal && $internal != *[!A-Za-z0-9_.:-]* ]] || exit 1
 
@@ -170,7 +408,21 @@ case $domain in
         keyboard_helper=$(resolve_helper brightness-keyboard) || exit 1
         run_command "$keyboard_helper" "$3"
         ;;
-      toggle-internal|toggle-mirror)
+      set-layout)
+        case ${3:-} in
+          headless|physical)
+            (($# == 3)) || usage
+            ;;
+          single)
+            (($# == 4)) || usage
+            ;;
+          *) usage ;;
+        esac
+        command -v jq >/dev/null 2>&1 || exit 1
+        hyprctl_command=$(resolve_command hyprctl) || exit 1
+        set_desktop_monitor_layout "$3" "$hyprctl_command" "${4:-}"
+        ;;
+      restore-layout|toggle-internal|toggle-mirror)
         (($# == 2)) || usage
         command -v jq >/dev/null 2>&1 || exit 1
         set_monitor_state "$action"

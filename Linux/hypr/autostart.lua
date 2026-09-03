@@ -20,7 +20,10 @@ hl.on("hyprland.start", function()
 	-- `hl.dsp.*` calls return dispatcher closures -- they only fire when wrapped in `hl.dispatch(...)`.
 	if hostname == "antoinews-linux" then
 		hl.exec_cmd(
-			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-1"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
+			[[hyprctl -j monitors all | jq -e '.[] | select(.name == "HEADLESS-1")' >/dev/null || hyprctl output create headless]]
+		)
+		hl.exec_cmd(
+			[[sleep 1 && desktop-hardware-action monitor restore-layout]]
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
 		hl.exec_cmd("hyprpm reload -n")
@@ -35,7 +38,7 @@ hl.on("hyprland.start", function()
 	-- `hyprctl keyword` is disabled under the Lua parser, so route the nudge through `hyprctl eval` instead.
 	if hostname == "antoinews-linux" then
 		hl.exec_cmd(
-			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })']]
+			[[sleep 2 && hyprctl -j monitors all | jq -e '.[] | select(.name == "DP-2" and .disabled != true)' >/dev/null && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })']]
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
 		hl.exec_cmd(
