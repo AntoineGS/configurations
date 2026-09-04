@@ -527,6 +527,31 @@ applications:
         run:
           linux: ~/.config/hypr/setup-rustdesk-focus-handoff --apply
         name: enable-service
+  - package:
+      managers:
+        yay: sunshine-bin
+    name: sunshine
+    description: Low-latency Moonlight host using a Hyprland headless output
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - targets:
+          linux: ~/.config/sunshine
+        name: config
+        backup: ./Linux/sunshine
+        files:
+          - sunshine.conf
+      - check:
+          linux: systemctl --user is-enabled --quiet app-dev.lizardbyte.app.Sunshine.service && systemctl --user is-active --quiet app-dev.lizardbyte.app.Sunshine.service
+        run:
+          linux: systemctl --user enable --now app-dev.lizardbyte.app.Sunshine.service
+        name: enable-service
+  - package:
+      managers:
+        pacman: rtkit
+    name: rtkit
+    description: Realtime scheduling service used by Sunshine
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries: []
   - name: rustdesk-drm-preview
     description: Install the temporary RustDesk DRM preview package
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
@@ -1103,7 +1128,10 @@ applications:
           linux: ~/.config/imv
         name: config
         backup: ./Linux/imv
-  - name: mise
+  - package:
+      managers:
+        pacman: mise
+    name: mise
     when: '{{ eq .OS "linux" }}'
     entries:
       - targets:
