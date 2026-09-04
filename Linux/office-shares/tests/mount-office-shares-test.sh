@@ -58,6 +58,12 @@ fi
 printf 'Ticket cache: FILE:%s\nDefault principal: %s\n' "$cache" "$principal"
 STUB
 
+cat >"$bin_dir/find" <<'STUB'
+#!/usr/bin/env bash
+printf 'find invoked during cache discovery\n' >&2
+exit 1
+STUB
+
 cat >"$bin_dir/mountpoint" <<'STUB'
 #!/usr/bin/env bash
 set -eu
@@ -109,7 +115,7 @@ printf '%s\n' "$mountpoint_path" >>"$OFFICE_TEST_MOUNTED"
 printf 'KRB5CCNAME=%s path=%s\n' "${KRB5CCNAME-}" "$mountpoint_path" >>"$OFFICE_TEST_STATE/mount.log"
 STUB
 
-chmod +x -- "$bin_dir/klist" "$bin_dir/mountpoint" "$bin_dir/timeout" "$bin_dir/mount"
+chmod +x -- "$bin_dir/klist" "$bin_dir/find" "$bin_dir/mountpoint" "$bin_dir/timeout" "$bin_dir/mount"
 
 run_helper() {
   mkdir -p -- "$test_state"
