@@ -81,6 +81,10 @@ attach_with_animation_cleanup() {
   trap 'exit 143' TERM
   trap cleanup EXIT
 
+  if command -v herdr-waypipe-env >/dev/null 2>&1; then
+    herdr-waypipe-env publish >/dev/null 2>&1 || true
+  fi
+
   animation_command_sent=0
   set_opencode_animations disable >/dev/null 2>&1 || true
   animations_changed=$animation_command_sent
