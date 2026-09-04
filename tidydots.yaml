@@ -49,7 +49,7 @@ applications:
           binary: claude
     name: claude code
     description: AI assistant CLI
-    when: '{{ ne .Distro "ubuntu" }}'
+    when: '{{ false }}'
     entries:
       - targets:
           linux: ~/.claude
@@ -58,6 +58,7 @@ applications:
         backup: ./Both/ClaudeCode
   - name: ccstatusline
     description: Claude Code status line (runs via npx, no install needed)
+    when: '{{ false }}'
     entries:
       - targets:
           linux: ~/.config/ccstatusline
@@ -1819,13 +1820,7 @@ applications:
       managers:
         pacman: signal-desktop
     name: signal
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries: []
-  - package:
-      managers:
-        pacman: obsidian
-    name: obsidian
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ or (eq .Hostname "omarchbook") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries: []
   - package:
       managers:
