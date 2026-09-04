@@ -447,15 +447,25 @@ Item {
       id: tooltipWindow
 
       property int elevationInset: Math.max(Style.popupOuterRadius, Style.space(24))
-      property int hoverSafeInset: 0
+      property int hoverSafeInset: Style.spacing.hairline
       property int shadowPadding: 24
       property int shadowBottomPadding: shadowPadding + 4
+      property real contentOffsetX: 0
+      readonly property real devicePixelRatio: barWindow.screen ? barWindow.screen.devicePixelRatio : 1
+
+      function snap(value) {
+        return Math.round(value * devicePixelRatio) / devicePixelRatio
+      }
+
+      function snapUp(value) {
+        return Math.ceil(value * devicePixelRatio) / devicePixelRatio
+      }
 
       visible: root.tooltipShown && root.tooltipTarget !== null
         && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, barWindow)
       color: "transparent"
-      implicitWidth: Math.ceil(tooltipBubble.implicitWidth) + elevationInset * 2
-      implicitHeight: Math.ceil(tooltipBubble.implicitHeight) + shadowBottomPadding
+      implicitWidth: tooltipBubble.implicitWidth + elevationInset * 2
+      implicitHeight: tooltipBubble.implicitHeight + shadowBottomPadding
       mask: Region { item: tooltipBubble }
 
       anchor {
@@ -472,13 +482,16 @@ Item {
           if (!root.targetBelongsToWindow(target, barWindow)) return
           var point = barWindow.contentItem.mapFromItem(target, target.width / 2 - tooltipWindow.implicitWidth / 2,
             target.height - tooltipWindow.hoverSafeInset)
-          tooltipAnchor.rect.x = Math.round(point.x)
+          var anchorX = Math.round(point.x)
+          tooltipWindow.contentOffsetX = tooltipWindow.snap(point.x) - anchorX
+          tooltipAnchor.rect.x = anchorX
           tooltipAnchor.rect.y = Math.round(point.y)
         }
       }
 
       Item {
         id: tooltipFrame
+        x: tooltipWindow.contentOffsetX
         width: tooltipWindow.implicitWidth
         height: tooltipWindow.implicitHeight
         clip: true
@@ -486,8 +499,8 @@ Item {
         ElevatedSurface {
           id: tooltipBubble
           x: tooltipWindow.elevationInset
-          implicitWidth: tooltipLabel.implicitWidth + 20
-          implicitHeight: tooltipLabel.implicitHeight + 14
+          implicitWidth: tooltipWindow.snapUp(tooltipLabel.implicitWidth + 20)
+          implicitHeight: tooltipWindow.snapUp(tooltipLabel.implicitHeight + 14)
           color: Color.barPanels.background
           borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, 1)
           radius: Style.popupOuterRadius
