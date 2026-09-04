@@ -8,6 +8,11 @@ assert.equal(Helper.sshDestination([
   "--", "waypipe", "server",
 ]), "Multidev\\a.simard@antoinews-linux")
 assert.equal(Helper.destinationHost("Multidev\\a.simard@antoinews-linux"), "antoinews-linux")
+assert.equal(Helper.isSshConnection(["ssh", "antoinews-linux"]), true)
+assert.equal(Helper.isSshConnection(["ssh", "-N", "antoinews-linux"]), true)
+assert.equal(Helper.isSshConnection(["ssh", "-G", "antoinews-linux"]), false)
+assert.equal(Helper.isSshConnection(["ssh", "-O", "check", "antoinews-linux"]), false)
+assert.equal(Helper.isSshConnection(["ssh", "-V"]), false)
 assert.equal(Helper.isTargetSsh({
   comm: "ssh",
   argv: ["ssh", "-t", "user@antoinews-linux", "command"],

@@ -284,10 +284,9 @@ QtObject {
   }
 
   property Timer detectTimer: Timer {
-    interval: 2000
+    interval: 30000
     running: root.sourceEnabled
     repeat: true
-    triggeredOnStart: true
     onTriggered: root.detectNow()
   }
 

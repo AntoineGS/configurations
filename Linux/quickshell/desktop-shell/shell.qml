@@ -1355,6 +1355,11 @@ ShellRoot {
       return "ok"
     }
 
+    function remoteSessionsChanged(): string {
+      shell.remoteBarService.detectNow()
+      return "ok"
+    }
+
     function rescanPlugins(): string {
       shell.reloadPlugins()
       return "ok"
