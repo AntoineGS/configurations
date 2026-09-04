@@ -29,8 +29,14 @@ require_commands() {
 
 has_valid_cache() {
   local candidate principal
+  local -a candidates
 
-  while IFS= read -r -d '' candidate; do
+  shopt -s nullglob
+  candidates=("$cache_dir"/"krb5cc_${UID}"*)
+  shopt -u nullglob
+
+  for candidate in "${candidates[@]}"; do
+    [[ -f "$candidate" && -O "$candidate" ]] || continue
     if ! LC_ALL=C KRB5CCNAME="FILE:$candidate" klist -s >/dev/null 2>&1; then
       continue
     fi
@@ -38,7 +44,7 @@ has_valid_cache() {
     if [[ "$principal" == "$expected_principal" ]]; then
       return 0
     fi
-  done < <(find "$cache_dir" -maxdepth 1 -type f -user "$UID" -name "krb5cc_${UID}*" -print0)
+  done
 
   return 1
 }

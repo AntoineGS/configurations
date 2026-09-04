@@ -56,6 +56,12 @@ esac
 printf 'Ticket cache: FILE:%s\nDefault principal: %s\n' "$cache" "$principal"
 STUB
 
+cat >"$bin_dir/find" <<'STUB'
+#!/usr/bin/env bash
+printf 'find invoked during cache discovery\n' >&2
+exit 1
+STUB
+
 cat >"$bin_dir/notify-send" <<'STUB'
 #!/usr/bin/env bash
 set -eu
