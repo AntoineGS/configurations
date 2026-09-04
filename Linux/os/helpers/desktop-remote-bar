@@ -7,6 +7,7 @@ const path = require("node:path")
 const { promisify } = require("node:util")
 
 const execFileAsync = promisify(execFile)
+const SESSION_DIRECTORY_NAME = "desktop-remote-bar-sessions"
 const TERMINAL_CLASSES = new Set([
   "alacritty",
   "com.raggesilver.blackbox",
@@ -34,6 +35,13 @@ function sshDestination(argv) {
     if (argument.length === 2 && SSH_OPTIONS_WITH_ARGUMENTS.has(option)) index += 1
   }
   return ""
+}
+
+function isSshConnection(argv) {
+  const args = Array.isArray(argv) ? argv.slice(1).map(value => String(value || "")) : []
+  if (args.some(argument => argument === "-G" || argument === "-Q" || argument === "-V")) return false
+  if (args.some(argument => argument === "-O" || argument.startsWith("-O"))) return false
+  return sshDestination(argv) !== ""
 }
 
 function destinationHost(destination) {
@@ -124,6 +132,7 @@ async function processTree(rootPid) {
       result.push({
         pid,
         ppid: before.ppid,
+        startTime: before.startTime,
         comm: String(comm).trim(),
         argv: cmdline.toString("utf8").split("\0").filter(Boolean),
       })
@@ -136,6 +145,97 @@ async function processTree(rootPid) {
   return result
 }
 
+function sessionDirectory() {
+  const runtimeDirectory = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`
+  return path.join(runtimeDirectory, SESSION_DIRECTORY_NAME)
+}
+
+function sessionPath(pid) {
+  return path.join(sessionDirectory(), `${pid}.json`)
+}
+
+async function notifySessionChange() {
+  try {
+    await execFileAsync("desktop-shell", ["remote-sessions-changed"], {
+      timeout: 2000,
+      maxBuffer: 64 * 1024,
+    })
+  } catch (_) {
+    // SSH must remain usable when the graphical shell is unavailable.
+  }
+}
+
+async function openSession(pidValue, sshArgs) {
+  const pid = Number(pidValue)
+  const argv = ["ssh", ...sshArgs]
+  if (!Number.isInteger(pid) || pid <= 0 || !isSshConnection(argv)) return false
+  const identity = await processIdentity(pid)
+  const record = {
+    pid,
+    startTime: identity.startTime,
+    sshTarget: sshDestination(argv),
+  }
+  await fs.mkdir(sessionDirectory(), { recursive: true, mode: 0o700 })
+  const temporaryPath = `${sessionPath(pid)}.${process.pid}.tmp`
+  await fs.writeFile(temporaryPath, `${JSON.stringify(record)}\n`, { mode: 0o600 })
+  await fs.rename(temporaryPath, sessionPath(pid))
+  await notifySessionChange()
+  return true
+}
+
+async function closeSession(pidValue) {
+  const pid = Number(pidValue)
+  if (!Number.isInteger(pid) || pid <= 0) return
+  await fs.rm(sessionPath(pid), { force: true })
+  await notifySessionChange()
+}
+
+async function readSessions() {
+  let names
+  try {
+    names = await fs.readdir(sessionDirectory())
+  } catch (error) {
+    if (error && error.code === "ENOENT") return []
+    throw error
+  }
+  const sessions = []
+  await Promise.all(names.filter(name => /^\d+\.json$/.test(name)).map(async name => {
+    const recordPath = path.join(sessionDirectory(), name)
+    try {
+      const record = JSON.parse(await fs.readFile(recordPath, "utf8"))
+      const identity = await processIdentity(Number(record.pid))
+      if (identity.startTime !== String(record.startTime || "")) throw new Error("stale session")
+      sessions.push(record)
+    } catch (_) {
+      await fs.rm(recordPath, { force: true })
+    }
+  }))
+  return sessions
+}
+
+async function sessionTerminalPid(session, terminalPids) {
+  let pid = Number(session && session.pid)
+  let first = true
+  const seen = new Set()
+  while (Number.isInteger(pid) && pid > 0 && !seen.has(pid)) {
+    seen.add(pid)
+    try {
+      const before = await processIdentity(pid)
+      const comm = String(await fs.readFile(`/proc/${pid}/comm`, "utf8")).trim()
+      const after = await processIdentity(pid)
+      if (!sameIdentity(before, after)) return null
+      if (first && before.startTime !== String(session.startTime || "")) return null
+      if (comm === "tmux" || comm === "screen") return null
+      if (terminalPids.has(pid)) return pid
+      first = false
+      pid = before.ppid
+    } catch (_) {
+      return null
+    }
+  }
+  return null
+}
+
 async function commandJson(command, args) {
   const { stdout } = await execFileAsync(command, args, {
     encoding: "utf8",
@@ -146,9 +246,10 @@ async function commandJson(command, args) {
 }
 
 async function detect(target) {
-  const [monitors, clients] = await Promise.all([
+  const [monitors, clients, sessions] = await Promise.all([
     commandJson("hyprctl", ["-j", "monitors", "all"]),
     commandJson("hyprctl", ["-j", "clients"]),
+    readSessions(),
   ])
   const visible = visibleWorkspaceScreens(monitors)
   const terminals = (Array.isArray(clients) ? clients : []).filter(client =>
@@ -157,11 +258,22 @@ async function detect(target) {
       && client.hidden !== true
       && TERMINAL_CLASSES.has(String(client && client.class || "").toLowerCase())
   )
-  const trees = await Promise.all(terminals.map(client => processTree(client.pid)))
+  const terminalPids = new Set(terminals.map(client => Number(client.pid)))
+  const sessionRoots = await Promise.all(sessions.map(session => sessionTerminalPid(session, terminalPids)))
+  const sessionTargets = new Map()
+  for (let index = 0; index < sessions.length; index += 1) {
+    const rootPid = sessionRoots[index]
+    if (rootPid && destinationHost(sessions[index].sshTarget) === String(target || "")) {
+      sessionTargets.set(rootPid, String(sessions[index].sshTarget || ""))
+    }
+  }
+  const trees = await Promise.all(terminals.map(client =>
+    sessionTargets.has(Number(client.pid)) ? null : processTree(client.pid)))
   const screens = new Set()
   let sshTarget = ""
   for (let index = 0; index < trees.length; index += 1) {
-    const detectedTarget = targetSshDestination(trees[index], target)
+    const detectedTarget = sessionTargets.get(Number(terminals[index].pid))
+      || targetSshDestination(trees[index], target)
     if (detectedTarget === "") continue
     if (sshTarget === "") sshTarget = detectedTarget
     const workspaceId = Number(terminals[index] && terminals[index].workspace && terminals[index].workspace.id)
@@ -183,7 +295,7 @@ async function readSnapshot() {
 }
 
 async function fetchSnapshot(target) {
-  const { stdout } = await execFileAsync("ssh", [
+  const { stdout } = await execFileAsync("/usr/bin/ssh", [
     "-o", "BatchMode=yes",
     "-o", "ConnectionAttempts=1",
     "-o", "ConnectTimeout=3",
@@ -201,7 +313,7 @@ async function fetchSnapshot(target) {
 }
 
 async function main(argv) {
-  const [command, target] = argv
+  const [command, target, ...args] = argv
   if (command === "detect" && target) {
     const result = await detect(target)
     process.stdout.write(`${JSON.stringify({
@@ -219,7 +331,15 @@ async function main(argv) {
     await readSnapshot()
     return
   }
-  throw new Error("usage: desktop-remote-bar <detect|fetch> <host> | read")
+  if (command === "session-open" && target) {
+    if (!await openSession(target, args)) process.exitCode = 1
+    return
+  }
+  if (command === "session-close" && target && args.length === 0) {
+    await closeSession(target)
+    return
+  }
+  throw new Error("usage: desktop-remote-bar <detect|fetch> <host> | read | session-<open|close> <pid> [ssh arguments]")
 }
 
 if (require.main === module) {
@@ -231,6 +351,7 @@ if (require.main === module) {
 
 module.exports = {
   destinationHost,
+  isSshConnection,
   isTargetSsh,
   sshDestination,
   targetSshDestination,

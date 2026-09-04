@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+readonly helper="${DESKTOP_REMOTE_BAR_HELPER:-$HOME/.local/share/helpers/desktop-remote-bar}"
+
+registered=false
+if [[ -x $helper ]] && "$helper" session-open "$$" "$@" >/dev/null 2>&1; then
+  registered=true
+fi
+
+cleanup() {
+  if [[ $registered == true ]]; then
+    "$helper" session-close "$$" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+/usr/bin/ssh "$@"
+exit $?
