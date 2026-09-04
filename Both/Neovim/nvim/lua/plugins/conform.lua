@@ -12,7 +12,7 @@ return {
         markdown = { "deno_fmt" },
         scss = { "prettierd" },
         typescript = { "deno_fmt" },
-        yaml = { "prettierd" },
+        yaml = { "yamlfmt" }, -- Preserve quotes emitted by tidydots' YAML encoder.
         vue = { "prettierd" },
         angular = { "prettierd" },
         flow = { "prettierd" },
