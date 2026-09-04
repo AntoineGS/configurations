@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Event-driven Hyprland workspace -> submap watcher using socat for automatic reconnects
-# Also moves 2nd+ RustDesk Remote Desktop windows to the rightmost monitor
+# Also moves 2nd+ RustDesk Remote Desktop windows to the rightmost physical monitor
 # Requirements: hyprctl, socat, jq
 set -Eeuo pipefail
 
@@ -54,6 +54,7 @@ rightmost_monitor_from_json() {
     [ .[]
       | select((.disabled // false) == false)
       | select((if has("dpmsStatus") then .dpmsStatus else true end) == true)
+      | select((.name // "") | test("^(Virtual-|HEADLESS-)") | not)
       | select((.x // null) != null and (.width // null) != null)
     ]
     | sort_by([(.x + .width), .x, .y, .name])
@@ -578,7 +579,7 @@ handle_hyprland_event() {
     fi
   fi
 
-  # Move 2nd+ RustDesk Remote Desktop windows to the rightmost monitor.
+  # Move 2nd+ RustDesk Remote Desktop windows to the rightmost physical monitor.
   if printf '%s\n' "$evline" | grep -qi "^openwindow>>" && is_rustdesk_remote "$evline"; then
     window_addr=$(printf '%s\n' "$evline" | sed 's/^openwindow>>//I' | cut -d',' -f1)
     if clients_json=$(hyprctl clients -j); then
