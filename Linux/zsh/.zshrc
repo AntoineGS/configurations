@@ -40,6 +40,7 @@ zvm_after_init() {
 # Carapace
 zstyle ':completion:*' format $'\e[2;37mCompleting %d\e[m'
 source <(carapace _carapace)
+compdef _files nvim
 
 # Transient prompt - must be loaded BEFORE starship
 [[ -f /usr/share/zsh/plugins/zsh-transient-prompt/transient-prompt.plugin.zsh ]] && \
@@ -167,6 +168,7 @@ if [[ "${HERDR_ENV:-}" == 1 ]]; then
             unset DISPLAY
         fi
     }
+    preexec_functions+=(_herdr_refresh_waypipe_env)
     precmd_functions+=(_herdr_refresh_waypipe_env)
 fi
 
