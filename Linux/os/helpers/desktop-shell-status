@@ -66,7 +66,7 @@ adapter_error() {
 
   if [[ -s $cache_file ]] && cached=$(validate_status <"$cache_file" 2>/dev/null); then
     if transformed=$(jq -ce --arg error "$message" '
-        .class = "stale"
+        .class = "muted"
         | .tooltip = ((.tooltip // "") + (if (.tooltip // "") == "" then "error: " else " · error: " end) + $error)
       ' <<<"$cached"); then
       printf '%s\n' "$transformed"
