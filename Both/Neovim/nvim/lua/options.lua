@@ -4,7 +4,6 @@ local opt = vim.opt
 
 o.icm = "split"
 o.cursorlineopt = "both"
-g.clipboard = "osc52"
 opt.relativenumber = true
 opt.foldmethod = "expr"
 opt.foldexpr = "nvim_treesitter#foldexpr()"
