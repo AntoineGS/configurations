@@ -63,6 +63,56 @@
   },
 {{ else if eq .OS "linux" }}
   "mcp": {
+    "interbase_nrf01": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5101/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "{file:/home/a.simard@multidev.local/gits/multidev/.opencode/interbase-mcp/view-token}"
+      },
+      "oauth": false,
+      "timeout": 30000
+    },
+    "interbase_reference": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5102/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "{file:/home/a.simard@multidev.local/gits/multidev/.opencode/interbase-mcp/view-token}"
+      },
+      "oauth": false,
+      "timeout": 30000
+    },
+    "interbase_centrale": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5103/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "{file:/home/a.simard@multidev.local/gits/multidev/.opencode/interbase-mcp/view-token}"
+      },
+      "oauth": false,
+      "timeout": 30000
+    },
+    "interbase_todos": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5104/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "{file:/home/a.simard@multidev.local/gits/multidev/.opencode/interbase-mcp/view-token}"
+      },
+      "oauth": false,
+      "timeout": 30000
+    },
+    "interbase_mdevapps": {
+      "type": "remote",
+      "url": "http://127.0.0.1:5105/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "{file:/home/a.simard@multidev.local/gits/multidev/.opencode/interbase-mcp/view-token}"
+      },
+      "oauth": false,
+      "timeout": 30000
+    },
     "freecad": {
       "type": "local",
       "command": [
