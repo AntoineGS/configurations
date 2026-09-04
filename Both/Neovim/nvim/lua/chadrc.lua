@@ -45,6 +45,7 @@ M.mason = {
   pkgs = {
     "eslint-lsp",
     "prettierd",
+    "yamlfmt",
     "powershell-editor-services",
     "pyright",
     "sqls",
