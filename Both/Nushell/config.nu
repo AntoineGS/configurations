@@ -767,6 +767,7 @@ def --env y [...args] {
 alias ll = ls -al
 alias :q = exit
 alias lg = lazygit
+alias td = tidydots
 alias ocv = opencode
 alias clauded = claude --dangerously-skip-permissions
 
