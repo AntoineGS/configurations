@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../../panels/vm/Model.js" as VmModel
 
 BarWidget {
   id: root
@@ -25,21 +26,13 @@ BarWidget {
   readonly property var vm: service ? service.vm : ({})
   readonly property var hostMemory: vm && vm.hostMemory ? vm.hostMemory : ({})
   readonly property var hostCpu: vm && vm.hostCpu ? vm.hostCpu : ({})
-
-  function vmTooltip() {
-    var lines = ["Running VMs: " + String(Number(vm.runningVmCount || 0))]
-    var guest = vm.vm || ({})
-    if (guest.visible) {
-      var details = []
-      if (guest.name) details.push(String(guest.name))
-      if (isFinite(Number(guest.cpuPercent))) details.push("CPU " + Math.round(Number(guest.cpuPercent)) + "%")
-      if (guest.showMemoryUsage && isFinite(Number(guest.memoryPercent)))
-        details.push("Memory " + Math.round(Number(guest.memoryPercent)) + "%")
-      if (details.length > 0) lines.push(details.join(" · "))
-      if (guest.stale && guest.error) lines.push(String(guest.error))
-    }
-    return lines.join("\n")
-  }
+  readonly property var guest: vm && vm.vm ? vm.vm : ({})
+  readonly property color statForeground: root.bar ? root.bar.barForeground : Color.foreground
+  readonly property color urgent: root.bar ? root.bar.urgent : Color.urgent
+  readonly property bool guestMemoryCritical: VmModel.memoryCritical(root.guest.memoryPercent)
+  readonly property string guestTooltip: root.guest.stale
+    ? String(root.guest.name || "VM") + " (stale): " + String(root.guest.error || "")
+    : String(root.guest.name || "VM")
 
   visible: !!service && screenEligible
   implicitWidth: visible ? content.implicitWidth : 0
@@ -111,11 +104,13 @@ BarWidget {
 
     WidgetButton {
       visible: root.remoteSelected && root.vm.available === true
+        && root.guest.visible === true && root.guest.showMemoryUsage === true
       bar: root.bar
-      text: "VM " + String(Number(root.vm.runningVmCount || 0))
-      tooltipText: root.vmTooltip()
-      dimmed: !root.remoteFresh
-      horizontalMargin: 4
+      text: VmModel.vmMetricText(root.guest.memoryPercent)
+      tooltipText: root.guestTooltip
+      foreground: root.guestMemoryCritical ? root.urgent : root.statForeground
+      dimmed: !root.remoteFresh || !root.guestMemoryCritical
+      horizontalMargin: 1
       pressable: false
     }
 
@@ -126,6 +121,17 @@ BarWidget {
       valueText: String(root.hostCpu.value || "")
       tooltipText: String(root.hostCpu.tooltip || "")
       dimmed: !root.remoteFresh || root.hostCpu.stale === true
+      pressable: false
+    }
+
+    WidgetButton {
+      visible: root.remoteSelected && root.vm.available === true && root.guest.visible === true
+      bar: root.bar
+      text: VmModel.vmMetricText(root.guest.cpuPercent)
+      tooltipText: root.guestTooltip
+      foreground: root.statForeground
+      dimmed: true
+      horizontalMargin: 1
       pressable: false
     }
   }
