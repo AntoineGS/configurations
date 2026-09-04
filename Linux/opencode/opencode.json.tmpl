@@ -63,6 +63,7 @@
   },
 {{ else if eq .OS "linux" }}
   "mcp": {
+{{ if eq .Hostname "antoinews-linux" }}
     "interbase_nrf01": {
       "type": "remote",
       "url": "http://127.0.0.1:5101/mcp",
@@ -113,6 +114,7 @@
       "oauth": false,
       "timeout": 30000
     },
+{{ end }}
     "freecad": {
       "type": "local",
       "command": [
