@@ -382,7 +382,6 @@ set_monitor_scale() {
   local hyprctl_command
   local raw_monitors
   local layout_axis
-  local applied_scale
   local eval_command=""
   local name x y
   local -a positions
@@ -393,6 +392,13 @@ set_monitor_scale() {
   raw_monitors=$("$hyprctl_command" -j monitors 2>/dev/null) || exit 1
   jq -e --arg monitor "$monitor" 'any(.[]; .name == $monitor and .disabled != true)' \
     <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+  jq -e --arg monitor "$monitor" --argjson scale "$scale" '
+    .[] | select(.name == $monitor and .disabled != true)
+    | (.width / $scale) as $logical_width
+    | (.height / $scale) as $logical_height
+    | (($logical_width - ($logical_width | round)) | fabs) < 0.001
+      and (($logical_height - ($logical_height | round)) | fabs) < 0.001
+  ' <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
 
   layout_axis=$(jq -r '
     def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
@@ -412,13 +418,9 @@ set_monitor_scale() {
       end
   ' <<<"$raw_monitors") || exit 1
 
-  run_command "$hyprctl_command" eval "hl.monitor({output=\"${monitor}\", scale=${scale}})"
-  applied_scale=$("$hyprctl_command" -j monitors 2>/dev/null \
-    | jq -er --arg monitor "$monitor" '.[] | select(.name == $monitor) | .scale') || exit 1
-
   case $layout_axis in
     horizontal)
-      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$applied_scale" '
+      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$scale" '
         def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
         def effective_scale: if .name == $target then $target_scale else .scale end;
         def logical_width: (if rotated then .height else .width end) / effective_scale;
@@ -434,7 +436,7 @@ set_monitor_scale() {
       ' <<<"$raw_monitors")
       ;;
     vertical)
-      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$applied_scale" '
+      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$scale" '
         def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
         def effective_scale: if .name == $target then $target_scale else .scale end;
         def logical_width: (if rotated then .height else .width end) / effective_scale;
@@ -450,6 +452,7 @@ set_monitor_scale() {
       ' <<<"$raw_monitors")
       ;;
     single|irregular)
+      run_command "$hyprctl_command" eval "hl.monitor({output=\"${monitor}\", scale=${scale}})"
       return
       ;;
     *) exit 1 ;;
@@ -460,7 +463,7 @@ set_monitor_scale() {
     valid_target "$name" || exit 1
     [[ $x =~ ^[0-9]+$ && $y =~ ^[0-9]+$ ]] || exit 1
     if [[ $name == "$monitor" ]]; then
-      eval_command+="hl.monitor({output=\"${name}\", position=\"${x}x${y}\", scale=${applied_scale}}); "
+      eval_command+="hl.monitor({output=\"${name}\", position=\"${x}x${y}\", scale=${scale}}); "
     else
       eval_command+="hl.monitor({output=\"${name}\", position=\"${x}x${y}\"}); "
     fi

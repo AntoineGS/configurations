@@ -104,6 +104,8 @@ Panel {
   }
 
   function open() {
+    Hyprland.refreshMonitors()
+    monitorRefreshTimer.restart()
     previewScale = scaleOptions[nearestScaleIndex(selectedScale)].value
     cursorActive = false
     controller.show()
@@ -120,12 +122,13 @@ Panel {
   }
 
   function applyScale(scale) {
-    if (selectedMonitor === "") return
+    if (selectedMonitor === "" || scaleProcess.running) return
     var option = scaleOptions[nearestScaleIndex(scale)]
     previewScale = option.value
-    Quickshell.execDetached([
+    scaleProcess.command = [
       "desktop-hardware-action", "monitor", "set-scale", selectedMonitor, option.command
-    ])
+    ]
+    scaleProcess.running = true
   }
 
   function applyLayout(mode) {
@@ -160,6 +163,23 @@ Panel {
       waitForEnd: true
       onStreamFinished: root.hostname = String(text || "").trim()
     }
+  }
+
+  Process {
+    id: scaleProcess
+    command: []
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0) return
+      Hyprland.refreshMonitors()
+      monitorRefreshTimer.restart()
+    }
+  }
+
+  Timer {
+    id: monitorRefreshTimer
+    interval: 150
+    repeat: false
+    onTriggered: Hyprland.refreshMonitors()
   }
 
   BarMetricButton {
