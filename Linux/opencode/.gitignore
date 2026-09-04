@@ -14,8 +14,6 @@
 !tests/**
 !agents/
 !agents/**
-!commands/
-!commands/**
 !skills/
 !skills/**
 !plugins/
