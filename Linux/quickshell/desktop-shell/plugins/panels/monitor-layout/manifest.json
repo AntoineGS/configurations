@@ -4,7 +4,7 @@
   "name": "Monitor Layout",
   "version": "1.0.0",
   "author": "Desktop Shell",
-  "description": "Switch between physical, headless, and single-monitor layouts",
+  "description": "Select and scale monitors, with workstation layout presets",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Monitor Layout",
-    "description": "Choose the active desktop monitor layout",
+    "description": "Select a monitor, change its scale, or apply a workstation layout",
     "category": "System",
     "allowMultiple": false
   }

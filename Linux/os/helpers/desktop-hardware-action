@@ -46,6 +46,10 @@ valid_target() {
   [[ $1 =~ ^[[:alnum:]_.:@+-]+$ ]]
 }
 
+valid_monitor_scale() {
+  [[ $1 =~ ^(1(\.[0-9]{1,7})?|2(\.0{1,7})?)$ ]]
+}
+
 valid_positive_integer() {
   local value=$1
 
@@ -372,6 +376,99 @@ set_monitor_state() {
   esac
 }
 
+set_monitor_scale() {
+  local monitor=$1
+  local scale=$2
+  local hyprctl_command
+  local raw_monitors
+  local layout_axis
+  local applied_scale
+  local eval_command=""
+  local name x y
+  local -a positions
+
+  valid_target "$monitor" || usage
+  valid_monitor_scale "$scale" || usage
+  hyprctl_command=$(resolve_command hyprctl) || exit 1
+  raw_monitors=$("$hyprctl_command" -j monitors 2>/dev/null) || exit 1
+  jq -e --arg monitor "$monitor" 'any(.[]; .name == $monitor and .disabled != true)' \
+    <<<"$raw_monitors" >/dev/null 2>&1 || exit 1
+
+  layout_axis=$(jq -r '
+    def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
+    def logical_width: (if rotated then .height else .width end) / .scale;
+    def logical_height: (if rotated then .width else .height end) / .scale;
+    [.[] | select(.disabled != true and (.mirrorOf // "none") == "none")] as $monitors
+    | ($monitors | sort_by(.x, .y)) as $horizontal
+    | ($monitors | sort_by(.y, .x)) as $vertical
+    | if ($monitors | length) < 2 then "single"
+      elif all(range(1; $horizontal | length);
+        (($horizontal[.].x - ($horizontal[. - 1].x + ($horizontal[. - 1] | logical_width))) | fabs) < 0.01)
+        then "horizontal"
+      elif all(range(1; $vertical | length);
+        (($vertical[.].y - ($vertical[. - 1].y + ($vertical[. - 1] | logical_height))) | fabs) < 0.01)
+        then "vertical"
+      else "irregular"
+      end
+  ' <<<"$raw_monitors") || exit 1
+
+  run_command "$hyprctl_command" eval "hl.monitor({output=\"${monitor}\", scale=${scale}})"
+  applied_scale=$("$hyprctl_command" -j monitors 2>/dev/null \
+    | jq -er --arg monitor "$monitor" '.[] | select(.name == $monitor) | .scale') || exit 1
+
+  case $layout_axis in
+    horizontal)
+      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$applied_scale" '
+        def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
+        def effective_scale: if .name == $target then $target_scale else .scale end;
+        def logical_width: (if rotated then .height else .width end) / effective_scale;
+        def logical_height: (if rotated then .width else .height end) / effective_scale;
+        [.[] | select(.disabled != true and (.mirrorOf // "none") == "none")] | sort_by(.x, .y)
+        | (map(.x) | min) as $left
+        | (map(.y) | min) as $top
+        | (map(logical_height) | max) as $height
+        | reduce .[] as $item ({ x: $left, rows: [] };
+            .rows += [[$item.name, (.x | round), ($top + (($height - ($item | logical_height)) / 2) | round)]]
+            | .x += ($item | logical_width))
+        | .rows[] | @tsv
+      ' <<<"$raw_monitors")
+      ;;
+    vertical)
+      mapfile -t positions < <(jq -r --arg target "$monitor" --argjson target_scale "$applied_scale" '
+        def rotated: .transform == 1 or .transform == 3 or .transform == 5 or .transform == 7;
+        def effective_scale: if .name == $target then $target_scale else .scale end;
+        def logical_width: (if rotated then .height else .width end) / effective_scale;
+        def logical_height: (if rotated then .width else .height end) / effective_scale;
+        [.[] | select(.disabled != true and (.mirrorOf // "none") == "none")] | sort_by(.y, .x)
+        | (map(.x) | min) as $left
+        | (map(.y) | min) as $top
+        | (map(logical_width) | max) as $width
+        | reduce .[] as $item ({ y: $top, rows: [] };
+            .rows += [[$item.name, ($left + (($width - ($item | logical_width)) / 2) | round), (.y | round)]]
+            | .y += ($item | logical_height))
+        | .rows[] | @tsv
+      ' <<<"$raw_monitors")
+      ;;
+    single|irregular)
+      return
+      ;;
+    *) exit 1 ;;
+  esac
+
+  for position in "${positions[@]}"; do
+    IFS=$'\t' read -r name x y <<<"$position"
+    valid_target "$name" || exit 1
+    [[ $x =~ ^[0-9]+$ && $y =~ ^[0-9]+$ ]] || exit 1
+    if [[ $name == "$monitor" ]]; then
+      eval_command+="hl.monitor({output=\"${name}\", position=\"${x}x${y}\", scale=${applied_scale}}); "
+    else
+      eval_command+="hl.monitor({output=\"${name}\", position=\"${x}x${y}\"}); "
+    fi
+  done
+  [[ -n $eval_command ]] || exit 1
+  run_command "$hyprctl_command" eval "$eval_command"
+}
+
 (( $# >= 2 )) || usage
 
 domain=$1
@@ -407,6 +504,11 @@ case $domain in
         esac
         keyboard_helper=$(resolve_helper brightness-keyboard) || exit 1
         run_command "$keyboard_helper" "$3"
+        ;;
+      set-scale)
+        (($# == 4)) || usage
+        command -v jq >/dev/null 2>&1 || exit 1
+        set_monitor_scale "$3" "$4"
         ;;
       set-layout)
         case ${3:-} in

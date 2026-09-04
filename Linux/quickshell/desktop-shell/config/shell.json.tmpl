@@ -38,15 +38,13 @@
         { "id": "desktop.tailscale" },
         { "id": "desktop.bluetooth" },
         { "id": "desktop.network" },
+        { "id": "desktop.monitor-layout" },
         { "id": "desktop.audio" },
 {{ if eq .Hostname "omarchbook" }}
         { "id": "desktop.monitor" },
         { "id": "desktop.power" },
 {{ end }}
         { "id": "disk", "type": "command", "exec": "desktop-shell-status disk", "interval": 300, "onClick": "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'" },
-{{ if eq .Hostname "antoinews-linux" }}
-        { "id": "desktop.monitor-layout" },
-{{ end }}
         { "id": "desktop.vm" }
       ]
     }
