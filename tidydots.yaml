@@ -569,7 +569,7 @@ applications:
         name: package
   - name: rustdesk-server-keepalive
     description: Suppress RustDesk's timed Linux server recycling
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) (ne .Hostname "omarchbook") }}'
     entries:
       - targets:
           linux: ~/.local/bin

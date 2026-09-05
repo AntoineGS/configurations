@@ -5,7 +5,6 @@ readonly PACKAGE_NAME=rustdesk-drm-preview-bin
 readonly PACKAGE_VERSION=1.4.9.drmfix3-1
 readonly PACKAGE_URL=https://github.com/AntoineGS/rustdesk/releases/download/temp-build/rustdesk-drm-preview-bin-1.4.9.drmfix3-1-x86_64.pkg.tar.zst
 readonly PACKAGE_SHA256=7762eb4c18b5e8349a0a509a4f4116100a83cb31d8e6f24361bba1da06dff913
-readonly SERVICE_NAME=rustdesk.service
 readonly SERVICE_EXECUTABLE=/usr/lib/rustdesk-drm-preview/rustdesk
 
 tmp_package=
@@ -22,14 +21,10 @@ die() {
 }
 
 check_installation() {
-  local installed exec_start expected_exec_start
+  local installed
   installed=$(pacman -Q "$PACKAGE_NAME" 2>/dev/null) || return 1
   [[ $installed == "$PACKAGE_NAME $PACKAGE_VERSION" ]] || return 1
-  systemctl is-enabled --quiet "$SERVICE_NAME" || return 1
-  systemctl is-active --quiet "$SERVICE_NAME" || return 1
-  exec_start=$(systemctl show "$SERVICE_NAME" --property=ExecStart --value) || return 1
-  expected_exec_start="{ path=$SERVICE_EXECUTABLE ; argv[]=$SERVICE_EXECUTABLE --service ;"
-  [[ $exec_start == "$expected_exec_start"* ]]
+  [[ -x $SERVICE_EXECUTABLE ]]
 }
 
 apply_installation() {
