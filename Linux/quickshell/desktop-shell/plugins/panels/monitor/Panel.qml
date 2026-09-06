@@ -19,6 +19,7 @@ Panel {
   property int lastConfirmedBrightnessPercent: 1
   property int keyboardBrightnessPercent: 0
   property var operationState: Model.monitorOperationState()
+  readonly property bool actionPending: operationState.actionRunning || operationState.actionQueue.length > 0
   property string actionName: ""
   property bool cursorActive: false
   property int selectedIndex: -1
@@ -161,8 +162,8 @@ Panel {
   function applyState(raw) {
     var parsed = Model.parseState(raw)
     if (!parsed) {
-      brightnessPercent = lastConfirmedBrightnessPercent
-      if (!keyboardBrightnessSlider.dragging) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
+      if (!brightnessSlider.dragging && !actionPending) brightnessPercent = lastConfirmedBrightnessPercent
+      if (!keyboardBrightnessSlider.dragging && !actionPending) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
       hardwareState = {
         available: false,
         stale: true,
@@ -180,7 +181,7 @@ Panel {
       keyboardBrightness: previousData.keyboardBrightness
     }, parsed.stale === true ? null : parsed.data.brightness,
     parsed.stale === true ? null : parsed.data.keyboardBrightness)
-    brightnessPercent = reconciled.brightnessPercent
+    if (!brightnessSlider.dragging && !actionPending) brightnessPercent = reconciled.brightnessPercent
     lastConfirmedBrightnessPercent = reconciled.lastConfirmedBrightnessPercent
     var nextData = {
       brightness: reconciled.brightness,
@@ -192,7 +193,7 @@ Panel {
       error: parsed.error || "",
       data: nextData
     }
-    if (!keyboardBrightnessSlider.dragging) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
+    if (!keyboardBrightnessSlider.dragging && !actionPending) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
     reportCapability()
     if (selectedIndex >= displays.length) selectedIndex = displays.length - 1
   }
@@ -588,8 +589,23 @@ Panel {
               step: 1
               integer: true
               value: root.brightnessPercent
-              onMoved: root.brightnessPercent = Math.round(liveValue)
-              onReleased: root.setBrightness(value)
+              onMoved: {
+                root.brightnessPercent = Math.round(liveValue)
+                if (!displayApplyTimer.running) displayApplyTimer.start()
+              }
+              onReleased: function(value) {
+                displayApplyTimer.stop()
+                root.setBrightness(value)
+              }
+
+              Timer {
+                id: displayApplyTimer
+                interval: 100
+                onTriggered: {
+                  if (root.operationState.actionRunning || root.operationState.reconciliationRunning) restart()
+                  else root.setBrightness(brightnessSlider.liveValue)
+                }
+              }
             }
           }
 
@@ -630,8 +646,23 @@ Panel {
                 step: 1
                 integer: true
                 value: root.keyboardBrightnessPercent
-                onMoved: root.keyboardBrightnessPercent = Math.round(liveValue)
-                onReleased: root.setKeyboardBrightness(value)
+                onMoved: {
+                  root.keyboardBrightnessPercent = Math.round(liveValue)
+                  if (!keyboardApplyTimer.running) keyboardApplyTimer.start()
+                }
+                onReleased: function(value) {
+                  keyboardApplyTimer.stop()
+                  root.setKeyboardBrightness(value)
+                }
+
+                Timer {
+                  id: keyboardApplyTimer
+                  interval: 100
+                  onTriggered: {
+                    if (root.operationState.actionRunning || root.operationState.reconciliationRunning) restart()
+                    else root.setKeyboardBrightness(keyboardBrightnessSlider.liveValue)
+                  }
+                }
               }
             }
             Text {
