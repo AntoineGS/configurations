@@ -1033,10 +1033,11 @@ applications:
         files:
           - setup-tidydots.sh
       - check:
-          linux: ~/.config/tidydots/setup-tidydots.sh --check
+          linux: 'TIDYDOTS_REPOSITORY="${TIDYDOTS_REPOSITORY:-git@github.com:AntoineGS/tidydots.git}" ~/.config/tidydots/setup-tidydots.sh --check'
         run:
-          linux: ~/.config/tidydots/setup-tidydots.sh --apply
+          linux: 'TIDYDOTS_REPOSITORY="${TIDYDOTS_REPOSITORY:-git@github.com:AntoineGS/tidydots.git}" ~/.config/tidydots/setup-tidydots.sh --apply'
         name: binary
+        check_mode: status
   - name: shell-picker
     description: Cross-platform fzf backend and shell adapters
     entries:
