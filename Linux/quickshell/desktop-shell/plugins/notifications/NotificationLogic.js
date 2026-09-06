@@ -36,16 +36,16 @@ function boundedSource(value, maxLength) {
 }
 
 var NOTIFICATION_IMAGE_SOURCE_RE =
-  /^image:\/\/notification\/[A-Za-z0-9_-][A-Za-z0-9._~-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9._~-]*)*$/
+  /^image:\/\/qsimage\/[0-9]+\/[0-9]+$/
 
 function normalizeImageSource(value) {
   var source = boundedSource(value, NOTIFICATION_LIMITS.maxImageLength)
-  return NOTIFICATION_IMAGE_SOURCE_RE.test(source) ? source : ""
+  var match = source.match(NOTIFICATION_IMAGE_SOURCE_RE)
+  return match && match[0] === source ? source : ""
 }
 
 function normalizeAppIconSource(value) {
   var source = boundedSource(value, NOTIFICATION_LIMITS.maxAppLength)
-  if (normalizeImageSource(source)) return source
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(source) ? source : ""
 }
 
@@ -685,10 +685,9 @@ function snapshotOf(notification, timestamp) {
   var n = notification || {}
   var id = n.id || 0
   var expireTimeout = normalizedExpireTimeout(n.expireTimeout)
+  // Only Quickshell's decoded image-data may supply an indexed handle, not raw hints or app icons.
   var image = normalizeImageSource(n.image)
-  var hintedImage = imagePathHint(n)
   var durableAction = durableActionMetadata(n)
-  if (!image && hintedImage) image = hintedImage
   var result = {
     // The timestamp-plus-originalId file stem distinguishes generations that reuse an id.
     id: id,
@@ -739,16 +738,6 @@ function popupRowChanged(row, updated) {
     if (current[role] !== next[role]) return true
   }
   return false
-}
-
-function imagePathHint(notification) {
-  try {
-    var hints = notification && notification.hints
-    var value = hints && hints["image-path"]
-    return normalizeImageSource(value)
-  } catch (e) {
-    return ""
-  }
 }
 
 function replacementSnapshot(notification, originalId, timestamp) {

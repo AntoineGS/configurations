@@ -35,7 +35,9 @@ Item {
   readonly property bool countdownShown: root.countdown.visible === true
     && String(root.countdown.identity || "") === root.renderedIdentity
   readonly property real countdownFraction: Math.max(0, Math.min(1, Number(root.countdown.fraction) || 0))
-  readonly property string smallIconSource: renderedImage.length > 0
+  readonly property string previewSource: safeSnapshot.durableActionKind === "edit-screenshot"
+    ? NotificationLogic.normalizeImageSource(renderedImage) : ""
+  readonly property string smallIconSource: renderedImage.length > 0 && root.previewSource.length === 0
     ? NotificationLogic.normalizeImageSource(renderedImage) : iconSource(renderedAppIcon)
   readonly property bool hasSmallIcon: smallIconSource.length > 0
   readonly property string sanitizedBody: sanitizeBody(renderedBody)
@@ -160,7 +162,7 @@ Item {
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
       Layout.topMargin: Style.space(10)
-      Layout.bottomMargin: root.sanitizedBody.length > 0 ? 0 : Style.space(10)
+      Layout.bottomMargin: root.sanitizedBody.length > 0 || screenshotPreview.visible ? 0 : Style.space(10)
       visible: root.renderedSummary.length > 0
       text: root.renderedSummary
       color: root.inkColor
@@ -191,6 +193,25 @@ Item {
       wrapMode: Text.WordWrap
       maximumLineCount: 3
       elide: Text.ElideRight
+    }
+
+    Image {
+      id: screenshotPreview
+      Layout.fillWidth: true
+      Layout.preferredHeight: Style.space(72)
+      Layout.leftMargin: Style.space(12)
+      Layout.rightMargin: Style.space(12)
+      Layout.topMargin: Style.space(8)
+      Layout.bottomMargin: Style.space(10)
+      source: root.previewSource
+      sourceSize.width: 128
+      sourceSize.height: 72
+      fillMode: Image.PreserveAspectFit
+      horizontalAlignment: Image.AlignHCenter
+      asynchronous: true
+      smooth: true
+      visible: root.previewSource.length > 0 && status === Image.Ready
+      opacity: root.contentOpacity
     }
 
     Rectangle {
