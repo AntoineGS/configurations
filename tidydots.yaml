@@ -1511,7 +1511,7 @@ applications:
         name: ssh-config
         backup: ./Linux/ssh-agent
         files:
-          - config
+          - config.tmpl
       - check:
           linux: systemctl --user is-enabled --quiet ssh-agent.socket
         run:
