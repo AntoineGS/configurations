@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+mode=$(tr -d '\r\n' < "${CONNECTIVITY_STATE_MODE:?}")
+hold_path=${CONNECTIVITY_STATE_HOLD:?}
+if [ "$(tr -d '\r\n' < "$hold_path")" = hold ]; then
+  while [ "$(tr -d '\r\n' < "$hold_path")" != release ]; do
+    sleep 0.01
+  done
+fi
+
+printf '%s\n' "$mode" >> "${CONNECTIVITY_STATE_LOG:?}"
+case "$mode" in
+  old)
+    printf '%s\n' '{"available":true,"device":"wlan0","stationPath":"/fixture/old","state":"connected","connectedSsid":"old-network","signal":44,"networks":[{"path":"/fixture/old","ssid":"old-network","signal":44,"connected":true,"known":true,"security":"psk"}]}'
+    ;;
+  replacement)
+    printf '%s\n' '{"available":true,"device":"wlan0","stationPath":"/fixture/replacement","state":"connected","connectedSsid":"replacement-network","signal":88,"networks":[{"path":"/fixture/replacement","ssid":"replacement-network","signal":88,"connected":true,"known":true,"security":"psk"},{"path":"/fixture/other","ssid":"fixture-network","signal":72,"connected":false,"known":false,"security":"psk"}]}'
+    ;;
+  *)
+    printf '%s\n' '{"available":true,"device":"wlan0","stationPath":"/fixture/default","state":"disconnected","connectedSsid":null,"signal":0,"networks":[{"path":"/fixture/network","ssid":"fixture-network","signal":72,"connected":false,"known":false,"security":"psk"}]}'
+    ;;
+esac

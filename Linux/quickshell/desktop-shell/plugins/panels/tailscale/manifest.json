@@ -6,10 +6,12 @@
   "author": "Desktop Shell",
   "description": "Tailscale status, peers, and exit-node controls",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Tailscale",

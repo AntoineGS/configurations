@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' hostname >>"${REGISTRY_INTEGRATION_HOSTNAME_LOG:?}"
+printf '%s\n' integration-host

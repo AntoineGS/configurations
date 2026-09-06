@@ -1,5 +1,13 @@
 #!/bin/sh
 mode=$(tr -d '\r\n' < "${VM_FIXTURE_STATE:?}")
+if [ -n "${VM_FIXTURE_STATE_HOLD:-}" ] && [ "$(tr -d '\r\n' < "$VM_FIXTURE_STATE_HOLD")" = hold ]; then
+  if [ -n "${VM_FIXTURE_STATE_ENTERED:-}" ]; then
+    printf '%s\n' held >"$VM_FIXTURE_STATE_ENTERED"
+  fi
+  while [ "$(tr -d '\r\n' < "$VM_FIXTURE_STATE_HOLD")" != release ]; do
+    sleep 0.01
+  done
+fi
 case "$mode" in
   running-missing)
     printf '%s\n' '{"available":true,"stale":false,"error":null,"data":{"name":"fixture","vcpus":2,"cpu":{"available":false},"memory":{"allocationAvailable":true,"usageAvailable":false,"currentKiB":1048576,"maximumKiB":2097152}}}' ;;

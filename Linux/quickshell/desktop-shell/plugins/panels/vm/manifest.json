@@ -5,8 +5,8 @@
   "version": "1.0.0",
   "author": "Desktop Shell",
   "description": "KVM guest resource monitor and memory allocation control",
-  "kinds": ["bar-widget"],
-  "entryPoints": {"barWidget": "Panel.qml"},
+  "kinds": ["bar-widget", "service"],
+  "entryPoints": {"barWidget": "Panel.qml", "service": "Service.qml"},
   "barWidget": {
     "displayName": "Virtual Machine",
     "description": "KVM guest resource monitor and memory allocation control",

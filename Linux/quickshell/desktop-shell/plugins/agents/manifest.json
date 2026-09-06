@@ -7,11 +7,13 @@
   "license": "MIT",
   "description": "Codex and Claude usage, limits, and local model history",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "activation": "on-demand",
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Agents",

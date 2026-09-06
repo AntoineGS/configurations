@@ -7,6 +7,7 @@ import Quickshell.Io
 import qs.Commons
 
 import "plugins/bar"
+import "plugins/bar/BarModel.js" as BarModel
 import "plugins/osd/OsdModel.js" as OsdModel
 import "services"
 import "services/PluginState.js" as PluginState
@@ -44,6 +45,8 @@ ShellRoot {
     && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_WIDGETS") === "1"
   readonly property bool testPluginBarLoadEnabled: testMutationEnabled
     && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_PLUGIN_BAR") === "1"
+  readonly property bool testServiceLoadEnabled: testMutationEnabled
+    && Quickshell.env("DESKTOP_SHELL_TEST_LOAD_SERVICES") === "1"
   readonly property string testPanelPlugin: String(Quickshell.env("DESKTOP_SHELL_TEST_PANEL_PLUGIN") || "")
   property bool barVisible: true
 
@@ -105,6 +108,7 @@ ShellRoot {
     pluginBarDestroyedCount: shell.pluginBarDestroyedCount,
     serviceCreateAttemptCount: shell.serviceCreateAttemptCount,
     thirdPartyServiceCreateAttemptCount: shell.thirdPartyServiceCreateAttemptCount,
+    thirdPartyServiceInstallCount: shell.thirdPartyServiceInstallCount,
     scanFinishedCount: pluginRegistry ? pluginRegistry.scanFinishedCount : 0,
     watchChangeCount: pluginRegistry ? pluginRegistry.watchChangeCount : 0,
     activeBarId: shell.activeBarId,
@@ -131,6 +135,9 @@ ShellRoot {
   property int pluginBarDestroyedCount: 0
   property int serviceCreateAttemptCount: 0
   property int thirdPartyServiceCreateAttemptCount: 0
+  property int thirdPartyServiceInstallCount: 0
+  property int testServiceObjectCreatedCount: 0
+  property int testServiceObjectDestroyedCount: 0
   property bool pluginBarReloadEnabled: true
   property var reloadComponentStates: ({})
   property int reloadTokenCounter: 0
@@ -333,6 +340,49 @@ ShellRoot {
     return shell.isBarOptionManifest(manifest) && shell.pluginRegistry.entryPointUrl(manifest, "bar") !== ""
   }
 
+  function firstWidgetLayoutEntry(pluginId) {
+    var key = Util.canonicalWidgetId(String(pluginId || ""))
+    if (!key || !Util.isPlainObject(shell.barConfig) || !Util.isPlainObject(shell.barConfig.layout)) return null
+    var sections = ["left", "center", "right"]
+    for (var sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      var entries = shell.barConfig.layout[sections[sectionIndex]]
+      if (!Array.isArray(entries)) continue
+      for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+        var entry = entries[entryIndex]
+        if (Util.canonicalWidgetId(BarModel.serviceWidgetId(entry)) !== key) continue
+        if (BarModel.customModuleType(entry) !== "" && !BarModel.isBundledDiskEntry(entry)) continue
+        return entry
+      }
+    }
+    return null
+  }
+
+  function widgetSettingsFor(pluginId) {
+    var registryRevision = shell.pluginRegistry ? shell.pluginRegistry.registryRevision : 0
+    var key = Util.canonicalWidgetId(String(pluginId || ""))
+    var manifest = shell.pluginRegistry && shell.pluginRegistry.installedPlugins
+      ? shell.pluginRegistry.installedPlugins[key] : null
+    var result = ({})
+    var defaults = manifest && Util.isPlainObject(manifest.barWidget)
+      && Util.isPlainObject(manifest.barWidget.defaults) ? manifest.barWidget.defaults : ({})
+    for (var defaultKey in defaults) result[defaultKey] = defaults[defaultKey]
+    var entry = shell.firstWidgetLayoutEntry(key)
+    if (entry && Util.isPlainObject(entry)) {
+      for (var entryKey in entry) if (entryKey !== "id") result[entryKey] = entry[entryKey]
+    }
+    return result
+  }
+
+  function serviceConfigured(pluginId) {
+    var registryRevision = shell.pluginRegistry ? shell.pluginRegistry.registryRevision : 0
+    var key = Util.canonicalWidgetId(String(pluginId || ""))
+    var manifest = shell.pluginRegistry && shell.pluginRegistry.installedPlugins
+      ? shell.pluginRegistry.installedPlugins[key] : null
+    return !!manifest && manifest.__isFirstParty === true
+      && Array.isArray(manifest.kinds) && manifest.kinds.indexOf("bar-widget") !== -1
+      && shell.pluginRegistry.isEnabled(key) && shell.firstWidgetLayoutEntry(key) !== null
+  }
+
   function isActiveBarOption(pluginId) {
     return String(pluginId || "") === shell.activeBarId
   }
@@ -442,6 +492,7 @@ ShellRoot {
   }
 
   property var _services: ({})
+  property var _serviceLoads: ({})
 
   function serviceFor(pluginId) {
     return _services[String(pluginId)] || null
@@ -451,10 +502,20 @@ ShellRoot {
     return serviceFor(pluginId)
   }
 
+  function forgetServiceLoad(key, entry) {
+    var id = String(key)
+    if (_serviceLoads[id] !== entry) return false
+    var next = ({})
+    for (var existingId in _serviceLoads) if (existingId !== id) next[existingId] = _serviceLoads[existingId]
+    _serviceLoads = next
+    return true
+  }
+
   function ensureService(pluginId) {
-    if (shell.previewMode) return null
+    if (shell.previewMode && !shell.testServiceLoadEnabled) return null
     var key = String(pluginId)
     if (_services[key]) return _services[key]
+    if (_serviceLoads[key]) return null
     var manifest = pluginRegistry && pluginRegistry.installedPlugins
       ? pluginRegistry.installedPlugins[key] : null
     if (!manifest) return null
@@ -467,35 +528,75 @@ ShellRoot {
     var loadGeneration = shell.pluginRegistry.pluginSourceGeneration
     var loadManifest = manifest
     var loadUrl = url
+    var loadEntry = { epoch: shell.pluginLoadEpoch, url: url }
+    var loads = ({})
+    for (var existingLoadId in _serviceLoads) loads[existingLoadId] = _serviceLoads[existingLoadId]
+    loads[key] = loadEntry
+    _serviceLoads = loads
     shell.serviceCreateAttemptCount++
     if (!manifest.__isFirstParty) shell.thirdPartyServiceCreateAttemptCount++
-    var comp = Qt.createComponent(url, Component.PreferSynchronous)
+    var comp
+    try {
+      var componentMode = shell.testMutationEnabled
+        && Quickshell.env("DESKTOP_SHELL_TEST_ASYNC_SERVICE_LOAD") === "1"
+        ? Component.Asynchronous : Component.PreferSynchronous
+      comp = Qt.createComponent(url, componentMode)
+    } catch (error) {
+      shell.forgetServiceLoad(key, loadEntry)
+      shell.pluginRegistry.pluginLoadFailed(key, String(error), loadGeneration, "service")
+      return null
+    }
     function finalize() {
       if (comp.status === Component.Loading) return
-      var currentManifest = shell.pluginRegistry.installedPlugins[key]
-      if (!shell.isPluginLoadCurrent(key, "service", loadEpoch, loadGeneration, loadUrl, loadManifest)
-          || !currentManifest || !shell.pluginRegistry.isEnabled(key)) return
+      if (shell._serviceLoads[key] !== loadEntry) return
+
+      function loadIsCurrent() {
+        if (shell._serviceLoads[key] !== loadEntry) return false
+        var currentManifest = shell.pluginRegistry.installedPlugins[key]
+        return !!currentManifest
+          && shell.pluginRegistry.isEnabled(key)
+          && shell.isPluginLoadCurrent(key, "service", loadEpoch, loadGeneration, loadUrl, loadManifest)
+      }
+
+      if (!loadIsCurrent()) {
+        shell.forgetServiceLoad(key, loadEntry)
+        return
+      }
       if (comp.status !== Component.Ready) {
         console.warn("service plugin load failed for " + key + ": " + comp.errorString())
         shell.pluginRegistry.pluginLoadFailed(key, comp.errorString(), loadGeneration, "service")
+        shell.forgetServiceLoad(key, loadEntry)
         return
       }
       var inst = comp.createObject(serviceHost)
       if (!inst) {
         console.warn("service plugin createObject returned null for", key)
         shell.pluginRegistry.pluginLoadFailed(key, "service createObject returned null", loadGeneration, "service")
+        shell.forgetServiceLoad(key, loadEntry)
+        return
+      }
+      if (!loadIsCurrent() || _services[key]) {
+        shell.forgetServiceLoad(key, loadEntry)
+        if (typeof inst.destroy === "function") inst.destroy()
         return
       }
       if ("shellPath" in inst) inst.shellPath = shell.shellPath
       if ("shell" in inst) inst.shell = shell
-       if ("manifest" in inst) inst.manifest = loadManifest
+      if ("manifest" in inst) inst.manifest = loadManifest
       if ("barWidgetRegistry" in inst) inst.barWidgetRegistry = shell.barWidgetRegistry
       if ("pluginRegistry" in inst) inst.pluginRegistry = shell.pluginRegistry
+      if (!loadIsCurrent() || _services[key]) {
+        shell.forgetServiceLoad(key, loadEntry)
+        if (typeof inst.destroy === "function") inst.destroy()
+        return
+      }
       var snext = ({})
       for (var sk in _services) snext[sk] = _services[sk]
-       snext[key] = inst
-       _services = snext
-        shell.pluginRegistry.clearPluginError(key, "service")
+      snext[key] = inst
+      _services = snext
+      if (!loadManifest.__isFirstParty) shell.thirdPartyServiceInstallCount++
+      shell.forgetServiceLoad(key, loadEntry)
+      shell.pluginRegistry.clearPluginError(key, "service")
     }
     if (comp.status === Component.Loading) {
       comp.statusChanged.connect(finalize)
@@ -507,11 +608,24 @@ ShellRoot {
 
   function _syncServices() {
     if (!pluginRegistry || !pluginRegistry.installedPlugins) return
-    if (shell.previewMode) {
+    if (shell.previewMode && !shell.testServiceLoadEnabled) {
+      _serviceLoads = ({})
       if (Object.keys(_services).length > 0) shell.unloadPluginServices()
       return
     }
     var plugins = pluginRegistry.installedPlugins
+    var staleLoads = []
+    for (var pendingId in _serviceLoads) {
+      var pendingManifest = plugins[pendingId]
+      var pendingService = pendingManifest && Array.isArray(pendingManifest.kinds)
+        && pendingManifest.kinds.indexOf("service") !== -1
+        && pendingManifest.entryPoints && pendingManifest.entryPoints.service
+        && pluginRegistry.isEnabled(pendingId)
+      if (!pendingService) staleLoads.push({ key: pendingId, entry: _serviceLoads[pendingId] })
+    }
+    for (var staleLoadIndex = 0; staleLoadIndex < staleLoads.length; staleLoadIndex++)
+      forgetServiceLoad(staleLoads[staleLoadIndex].key, staleLoads[staleLoadIndex].entry)
+
     for (var id in plugins) {
       var m = plugins[id]
       if (!m) continue
@@ -522,24 +636,40 @@ ShellRoot {
       ensureService(id)
     }
     // Drop services for plugins that have been disabled or removed.
+    var retainedServices = ({})
+    var staleServices = []
     for (var existingId in _services) {
       var stillThere = plugins[existingId]
       var stillEnabled = stillThere && pluginRegistry.isEnabled(existingId)
-      if (stillThere && stillEnabled) continue
-      var inst = _services[existingId]
-      if (inst && typeof inst.destroy === "function") inst.destroy()
-      var next = ({})
-      for (var k in _services) if (k !== existingId) next[k] = _services[k]
-      _services = next
+      var stillService = stillThere && Array.isArray(stillThere.kinds)
+        && stillThere.kinds.indexOf("service") !== -1
+        && stillThere.entryPoints && stillThere.entryPoints.service
+      if (stillThere && stillEnabled && stillService) retainedServices[existingId] = _services[existingId]
+      else staleServices.push(_services[existingId])
+    }
+    _services = retainedServices
+    for (var staleServiceIndex = 0; staleServiceIndex < staleServices.length; staleServiceIndex++) {
+      var staleService = staleServices[staleServiceIndex]
+      if (staleService && typeof staleService.destroy === "function") staleService.destroy()
     }
   }
 
   function unloadPluginServices() {
-    for (var existingId in _services) {
-      var inst = _services[existingId]
+    _serviceLoads = ({})
+    var services = _services
+    _services = ({})
+    for (var existingId in services) {
+      var inst = services[existingId]
       if (inst && typeof inst.destroy === "function") inst.destroy()
     }
-    _services = ({})
+  }
+
+  function recordTestServiceObjectCreated() {
+    if (shell.testMutationEnabled) shell.testServiceObjectCreatedCount++
+  }
+
+  function recordTestServiceObjectDestroyed() {
+    if (shell.testMutationEnabled) shell.testServiceObjectDestroyedCount++
   }
 
   Connections {
@@ -1330,6 +1460,20 @@ ShellRoot {
   BarWidgetIpc { pluginId: "desktop.tailscale" }
   BarWidgetIpc { pluginId: "desktop.agents" }
 
+  function testConfigWithOnlyServiceEnabled(id) {
+    var key = String(id || "")
+    var config = JSON.parse(JSON.stringify(shell.defaultShellConfig || shell.builtinShellConfig))
+    var disabled = []
+    var plugins = shell.pluginRegistry && shell.pluginRegistry.installedPlugins
+      ? shell.pluginRegistry.installedPlugins : ({})
+    for (var pluginId in plugins) {
+      var manifest = plugins[pluginId]
+      if (pluginId !== key && manifest && manifest.__isFirstParty !== true) disabled.push(pluginId)
+    }
+    config.disabledPlugins = disabled
+    return config
+  }
+
   // ---------------------------------------------------------- shell IPC
 
   IpcHandler {
@@ -1576,6 +1720,102 @@ ShellRoot {
 
     function pluginBarTestProbe(): string {
       return shell.pluginBarTestProbe()
+    }
+
+    function serviceLoadState(id: string): string {
+      var key = String(id || "")
+      if (shell._serviceLoads[key]) return "loading"
+      if (shell._services[key]) return "ready"
+      return "absent"
+    }
+
+    function serviceObjectProbeForTest(id: string): string {
+      var key = String(id || "")
+      return JSON.stringify({
+        created: shell.testServiceObjectCreatedCount,
+        destroyed: shell.testServiceObjectDestroyedCount,
+        installed: shell.thirdPartyServiceInstallCount,
+        pending: !!shell._serviceLoads[key],
+        service: !!shell._services[key]
+      })
+    }
+
+    function serviceRegistryProbeForTest(): string {
+      var bar = shell.bar
+      return JSON.stringify({
+        services: Object.keys(shell._services || {}).sort(),
+        installed: Object.keys(shell.pluginRegistry.installedPlugins || {}).sort(),
+        barLoaded: shell.testPluginBarLoadEnabled && shell.pluginBarLoadCount > 0 && !!bar,
+        allServiceConsumersAttached: !!bar && bar.allServiceConsumersAttached === true,
+        vmConsumerCount: bar && typeof bar.vmConsumerCount === "number" ? bar.vmConsumerCount : 0,
+        vmConsumersAttached: !!bar && bar.vmConsumersAttached === true,
+        vmConsumersShareSample: !!bar && bar.vmConsumersShareSample === true,
+        vmSampleAvailable: !!bar && bar.vmSampleAvailable === true,
+        vmCollecting: !!bar && bar.vmCollecting === true,
+        vmWatcherCount: bar && typeof bar.vmWatcherCount === "number" ? bar.vmWatcherCount : 0,
+        hotplugConsumerAttached: !!bar && bar.hotplugConsumerAttached === true,
+        hotplugCollecting: !!bar && bar.hotplugCollecting === true,
+        created: shell.testServiceObjectCreatedCount,
+        destroyed: shell.testServiceObjectDestroyedCount,
+        scanFinishedCount: shell.pluginRegistry.scanFinishedCount
+      })
+    }
+
+    function setIntegrationVmSecondaryConsumerActiveForTest(active: bool): string {
+      var bar = shell.bar
+      if (!bar || typeof bar.secondaryVmConsumerActive !== "boolean") return "unavailable"
+      bar.secondaryVmConsumerActive = active
+      return "ok"
+    }
+
+    function startServiceLoadForTest(id: string, repetitions: string): string {
+      shell.testServiceObjectCreatedCount = 0
+      shell.testServiceObjectDestroyedCount = 0
+      shell.thirdPartyServiceInstallCount = 0
+
+      var key = String(id || "")
+      var enabledConfig = shell.testConfigWithOnlyServiceEnabled(key)
+      if (typeof Qt.clearComponentCache === "function") Qt.clearComponentCache()
+      shell.applyShellConfig(JSON.stringify(enabledConfig))
+
+      var count = Math.max(1, Math.round(Number(repetitions) || 1))
+      var sawLoading = false
+      for (var i = 0; i < count; i++) {
+        shell._syncServices()
+        if (shell._serviceLoads[key]) sawLoading = true
+      }
+      return JSON.stringify({
+        sawLoading: sawLoading,
+        thirdPartyServiceCreateAttemptCount: shell.thirdPartyServiceCreateAttemptCount
+      })
+    }
+
+    function serviceLifecycleProbeForTest(id: string, repetitions: string): string {
+      var key = String(id || "")
+      var enabledConfig = shell.testConfigWithOnlyServiceEnabled(key)
+      if (typeof Qt.clearComponentCache === "function") Qt.clearComponentCache()
+      shell.applyShellConfig(JSON.stringify(enabledConfig))
+
+      var count = Math.max(1, Math.round(Number(repetitions) || 1))
+      var sawLoading = false
+      for (var i = 0; i < count; i++) {
+        shell._syncServices()
+        if (shell._serviceLoads[key]) sawLoading = true
+      }
+
+      var disabledConfig = JSON.parse(JSON.stringify(shell.defaultShellConfig || shell.builtinShellConfig))
+      var disabledPlugins = Array.isArray(disabledConfig.disabledPlugins) ? disabledConfig.disabledPlugins.slice() : []
+      if (disabledPlugins.indexOf(key) === -1) disabledPlugins.push(key)
+      disabledConfig.disabledPlugins = disabledPlugins
+      shell.applyShellConfig(JSON.stringify(disabledConfig))
+      shell.reloadPlugins()
+
+      return JSON.stringify({
+        sawLoading: sawLoading,
+        thirdPartyServiceCreateAttemptCount: shell.thirdPartyServiceCreateAttemptCount,
+        pending: !!shell._serviceLoads[key],
+        installed: !!shell._services[key]
+      })
     }
 
     function queuePluginChangeForTest(path: string): string {

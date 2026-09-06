@@ -6,10 +6,12 @@
   "author": "Desktop Shell",
   "description": "Wi-Fi scan and connection state",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Network",

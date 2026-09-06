@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+mode=$(tr -d '\r\n' < "${CONNECTIVITY_TAILSCALE_MODE:?}")
+if [ "$mode" = stopped ]; then
+  printf '%s\n' '{"available":true,"stale":false,"error":null,"data":{"backendState":"Stopped","running":false,"needsLogin":false,"self":{"name":"fixture-tail","dnsName":"fixture-tail.ts.net.","addresses":["100.64.0.10","fd7a:115c:a1e0::10"],"exitNode":false},"peers":[]}}'
+else
+  printf '%s\n' '{"available":true,"stale":false,"error":null,"data":{"backendState":"Running","running":true,"needsLogin":false,"self":{"name":"fixture-tail","dnsName":"fixture-tail.ts.net.","addresses":["100.64.0.10","fd7a:115c:a1e0::10"],"exitNode":false},"peers":[{"name":"fixture-peer","dnsName":"peer.ts.net.","addresses":["100.64.0.11"],"os":"linux","exitNode":false}]}}'
+fi

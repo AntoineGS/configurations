@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+count=0
+if [ -f "${BLUETOOTH_BATTERY_COUNT:?}" ]; then
+  count=$(tr -d '\r\n' < "${BLUETOOTH_BATTERY_COUNT}")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "${BLUETOOTH_BATTERY_COUNT}"
+printf '%s\n' "$*" >> "${BLUETOOTH_BATTERY_LOG:?}"
+
+if [ "$(tr -d '\r\n' < "${BLUETOOTH_BATTERY_HOLD:?}")" = hold ]; then
+  while [ "$(tr -d '\r\n' < "${BLUETOOTH_BATTERY_HOLD}")" = hold ]; do
+    sleep 0.01
+  done
+fi
+
+if [ "$count" -eq 1 ] || [ "$count" -eq 3 ]; then
+  cat "${BLUETOOTH_BATTERY_OLD_OUTPUT:?}"
+else
+  cat "${BLUETOOTH_BATTERY_NEW_OUTPUT:?}"
+fi

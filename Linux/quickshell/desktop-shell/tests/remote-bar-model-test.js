@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict")
 const Model = require("../services/RemoteBarModel.js")
+const AudioModel = require("../plugins/panels/audio/Model.js")
 
 const snapshot = {
   schemaVersion: 1,
@@ -18,3 +19,26 @@ const servedSnapshot = Object.assign({}, snapshot, { servedAt: 105 })
 assert.deepEqual(Model.freshness(servedSnapshot, 210, 200, 30, 60), { state: "fresh", ageSeconds: 15 })
 assert.deepEqual(Model.widget(snapshot, "audio"), { available: true })
 assert.deepEqual(Model.widget(snapshot, "missing"), {})
+
+const audioSink = {
+  ready: true,
+  audio: { volume: 0.5, muted: false },
+  description: "Built-in Audio USB Output",
+  properties: {},
+}
+assert.deepEqual(AudioModel.remoteSummary(audioSink), {
+  available: true,
+  icon: "",
+  volumePercent: 50,
+  muted: false,
+  deviceLabel: "USB",
+  tooltip: "Volume: 50%\nUSB",
+})
+assert.deepEqual(AudioModel.remoteSummary(null), {
+  available: false,
+  icon: "",
+  volumePercent: 0,
+  muted: false,
+  deviceLabel: "",
+  tooltip: "Audio unavailable",
+})

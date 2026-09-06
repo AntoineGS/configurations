@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
+import qs.Commons
 import "RemoteBarModel.js" as RemoteBarModel
 
 QtObject {
@@ -12,8 +13,14 @@ QtObject {
   readonly property string home: Quickshell.env("HOME") || ""
   // Keep the transport path stable between the graphical service and non-interactive SSH shells.
   readonly property string stateHome: home + "/.local/state"
-  readonly property string snapshotPath: stateHome + "/desktop-shell/remote-bar.json"
+  property string snapshotPath: stateHome + "/desktop-shell/remote-bar.json"
+  readonly property string snapshotDirectory: {
+    var path = String(root.snapshotPath || "")
+    var separator = path.lastIndexOf("/")
+    return separator > 0 ? path.slice(0, separator) : "."
+  }
   readonly property bool publisherEnabled: config && config.publish === true
+  readonly property bool publisherActive: publisherEnabled && !!shell && !shell.previewMode
   readonly property string publisherHost: publisherEnabled ? String(config.host || "") : ""
   readonly property string target: config ? String(config.target || "") : ""
   readonly property string sourceHost: config ? String(config.sourceHost || "") : ""
@@ -52,10 +59,37 @@ QtObject {
   readonly property var disk: RemoteBarModel.widget(snapshot, "disk")
   readonly property var vm: RemoteBarModel.widget(snapshot, "vm")
 
-  function firstWidget(moduleName) {
-    if (!shell.bar || typeof shell.bar.moduleWidgets !== "function") return null
-    var widgets = shell.bar.moduleWidgets(moduleName)
-    return widgets.length > 0 ? widgets[0] : null
+  readonly property var agentsService: shell ? shell.serviceFor("desktop.agents") : null
+  readonly property var audioService: shell ? shell.serviceFor("desktop.audio") : null
+  readonly property var diskService: shell ? shell.serviceFor("desktop.disk") : null
+  readonly property var vmService: shell ? shell.serviceFor("desktop.vm") : null
+
+  property ServiceConsumer agentsConsumer: ServiceConsumer {
+    service: root.agentsService
+    active: root.publisherEnabled && root.shell
+      && !root.shell.previewMode && root.shell.serviceConfigured("desktop.agents")
+    details: false
+  }
+
+  property ServiceConsumer audioConsumer: ServiceConsumer {
+    service: root.audioService
+    active: root.publisherEnabled && root.shell
+      && !root.shell.previewMode && root.shell.serviceConfigured("desktop.audio")
+    details: false
+  }
+
+  property ServiceConsumer diskConsumer: ServiceConsumer {
+    service: root.diskService
+    active: root.publisherEnabled && root.shell
+      && !root.shell.previewMode && root.shell.serviceConfigured("desktop.disk")
+    details: false
+  }
+
+  property ServiceConsumer vmConsumer: ServiceConsumer {
+    service: root.vmService
+    active: root.publisherEnabled && root.shell
+      && !root.shell.previewMode && root.shell.serviceConfigured("desktop.vm")
+    details: false
   }
 
   function plainCopy(value, fallback) {
@@ -67,31 +101,24 @@ QtObject {
   }
 
   function publishSnapshot() {
-    if (!publisherEnabled || !publishDirectoryReady || publisherHost === "") return
+    if (!publisherActive || !publishDirectoryReady || publisherHost === "") return
     if (snapshotWritePending) {
       snapshotWriteQueued = true
       return
     }
-    var agentsWidget = firstWidget("desktop.agents")
-    var audioWidget = firstWidget("desktop.audio")
-    var diskWidget = firstWidget("disk")
-    var vmWidget = firstWidget("desktop.vm")
     var payload = {
       schemaVersion: 1,
       host: publisherHost,
       publishedAt: Math.floor(Date.now() / 1000),
       widgets: {
-        agents: plainCopy(agentsWidget && agentsWidget.remoteSummary ? agentsWidget.remoteSummary : {}, {}),
-        audio: plainCopy(audioWidget && audioWidget.remoteSummary ? audioWidget.remoteSummary : {}, {}),
-        disk: diskWidget ? {
-          available: String(diskWidget.outputText || "") !== "",
-          text: String(diskWidget.outputText || ""),
-          icon: String(diskWidget.outputIcon || ""),
-          value: String(diskWidget.outputValue || ""),
-          tooltip: String(diskWidget.outputTooltip || ""),
-          muted: diskWidget.outputMuted === true
-        } : {},
-        vm: plainCopy(vmWidget && vmWidget.remoteSummary ? vmWidget.remoteSummary : {}, {})
+        agents: agentsConsumer.active && agentsService
+          ? plainCopy(agentsService.remoteSummary, {}) : {},
+        audio: audioConsumer.active && audioService
+          ? plainCopy(audioService.remoteSummary, {}) : {},
+        disk: diskConsumer.active && diskService
+          ? plainCopy(diskService.remoteSummary, {}) : {},
+        vm: vmConsumer.active && vmService
+          ? plainCopy(vmService.remoteSummary, {}) : {}
       }
     }
     snapshotWritePending = true
@@ -193,7 +220,10 @@ QtObject {
   }
 
   onPublisherEnabledChanged: {
-    if (publisherEnabled) publishDirectoryProcess.running = true
+    if (publisherActive) publishDirectoryProcess.running = true
+  }
+  onPublisherActiveChanged: {
+    if (publisherActive && !publishDirectoryReady) publishDirectoryProcess.running = true
   }
   onTargetChanged: {
     snapshot = null
@@ -210,7 +240,7 @@ QtObject {
   }
 
   Component.onCompleted: {
-    if (publisherEnabled) publishDirectoryProcess.running = true
+    if (publisherActive) publishDirectoryProcess.running = true
     detectNow()
   }
 
@@ -236,7 +266,7 @@ QtObject {
   }
 
   property Process publishDirectoryProcess: Process {
-    command: ["mkdir", "-p", root.stateHome + "/desktop-shell"]
+    command: ["mkdir", "-p", root.snapshotDirectory]
     onExited: function(exitCode) {
       root.publishDirectoryReady = Number(exitCode) === 0
       if (root.publishDirectoryReady) root.publishSnapshot()
@@ -245,7 +275,7 @@ QtObject {
 
   property Timer publishTimer: Timer {
     interval: 10000
-    running: root.publisherEnabled
+    running: root.publisherActive
     repeat: true
     onTriggered: {
       if (!root.publishDirectoryReady) {

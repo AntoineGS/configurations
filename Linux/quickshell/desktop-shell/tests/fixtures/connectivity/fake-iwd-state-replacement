@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+CONNECTIVITY_STATE_MODE="${CONNECTIVITY_REPLACEMENT_STATE_MODE:?}" \
+CONNECTIVITY_STATE_HOLD="${CONNECTIVITY_REPLACEMENT_STATE_HOLD:?}" \
+exec "$(dirname "$0")/fake-iwd-state" "$@"

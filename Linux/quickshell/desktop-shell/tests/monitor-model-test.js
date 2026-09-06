@@ -162,4 +162,11 @@ assert.equal(brightness.brightness.available, false)
 
 assert.equal(Model.shouldRefreshNativeMonitors("toggle-internal"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("toggle-mirror"), true)
+assert.equal(Model.shouldRefreshNativeMonitors("set-scale"), true)
+assert.equal(Model.shouldRefreshNativeMonitors("set-layout"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("set-display-brightness"), false)
+
+let targetedAction = ["monitor", "set-scale", "DP-1", "1.25"]
+let targetedTransition = Model.monitorOperationTransition(
+  Model.monitorOperationState(), "action-request", targetedAction)
+assert.deepEqual(targetedTransition.startAction, targetedAction)

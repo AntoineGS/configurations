@@ -25,6 +25,8 @@ Item {
     layout: { left: [], center: [], right: [] }
   })
   property var layoutConfig: fallbackBarConfig.layout
+  // Used by no-surface runtime fixtures to mount real slots without a monitor.
+  property var testEntries: []
   property string centerAnchor: "desktop.clock"
   readonly property string position: "top"
   readonly property bool vertical: false
@@ -362,6 +364,14 @@ Item {
     return BarModel.customModuleType(entry)
   }
 
+  function isBundledDiskEntry(entry) {
+    return BarModel.isBundledDiskEntry(entry)
+  }
+
+  function serviceWidgetId(entry) {
+    return BarModel.serviceWidgetId(entry)
+  }
+
   function customModuleSource(entry) {
     var source = BarModel.customModulePath(entry, home, configDir)
     return source ? Util.fileUrl(source) : ""
@@ -587,6 +597,11 @@ Item {
     }
   }
 
+  ModuleList {
+    entries: root.testEntries
+    region: "right"
+  }
+
   component ModuleList: Loader {
     id: moduleListRoot
 
@@ -627,11 +642,13 @@ Item {
     property string region: ""
     readonly property string moduleName: root.entryId(entry)
     readonly property var moduleSettings: root.entrySettings(entry)
-    readonly property string customType: root.customModuleType(entry)
+    readonly property bool bundledDisk: root.isBundledDiskEntry(entry)
+    readonly property string customType: bundledDisk ? "" : root.customModuleType(entry)
+    readonly property string registryWidgetId: root.serviceWidgetId(entry)
     readonly property var registryComponent: {
       var widgets = root.barWidgetRegistry ? root.barWidgetRegistry.widgets : ({})
       if (customType) return null
-      var key = root.canonicalWidgetId(moduleName)
+      var key = root.canonicalWidgetId(registryWidgetId)
       return widgets[key] ? widgets[key].component : null
     }
     readonly property bool registered: registryComponent !== null

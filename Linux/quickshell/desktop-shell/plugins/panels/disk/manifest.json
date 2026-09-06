@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.disk",
+  "name": "Disk",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Root filesystem usage status",
+  "kinds": ["bar-widget", "service"],
+  "entryPoints": {"barWidget": "BarWidget.qml", "service": "Service.qml"},
+  "barWidget": {
+    "displayName": "Disk",
+    "description": "Root filesystem usage status",
+    "category": "System",
+    "allowMultiple": true
+  }
+}

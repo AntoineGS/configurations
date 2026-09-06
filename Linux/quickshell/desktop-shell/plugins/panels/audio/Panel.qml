@@ -13,10 +13,11 @@ Panel {
   ipcTarget: "desktop.audio"
   property var pluginRegistry: null
 
-  readonly property bool capabilityAvailable: Pipewire.ready
+  readonly property var audioService: bar && bar.shell ? bar.shell.serviceFor("desktop.audio") : null
+  readonly property bool capabilityAvailable: audioService ? audioService.capabilityAvailable : Pipewire.ready
   readonly property var nodes: capabilityAvailable && Pipewire.nodes ? Pipewire.nodes.values : []
-  readonly property var sink: capabilityAvailable ? Pipewire.defaultAudioSink : null
-  readonly property var source: capabilityAvailable ? Pipewire.defaultAudioSource : null
+  readonly property var sink: audioService ? audioService.sink : null
+  readonly property var source: audioService ? audioService.source : null
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var candidateSinks: {
@@ -58,33 +59,16 @@ Panel {
   property string focusSection: "output"
   property int selectedIndex: -1
   property bool cursorActive: false
-  readonly property bool outputAvailable: !!(sink && sink.audio)
-  readonly property bool inputAvailable: !!(source && source.audio)
-  readonly property real outputVolume: outputAvailable ? sink.audio.volume : 0
-  readonly property real inputVolume: inputAvailable ? source.audio.volume : 0
-  readonly property bool outputMuted: outputAvailable ? sink.audio.muted : false
-  readonly property bool inputMuted: inputAvailable ? source.audio.muted : false
-  readonly property bool anyAudible: (outputAvailable && !outputMuted) || (inputAvailable && !inputMuted)
-  readonly property var remoteSummary: ({
-    available: root.outputAvailable,
-    icon: root.icon,
-    volumePercent: Math.round(root.outputVolume * 100),
-    muted: root.outputMuted,
-    deviceLabel: root.outputAvailable ? root.nodeLabel(root.sink) : "",
-    tooltip: root.outputAvailable
-      ? (root.outputMuted ? "Muted" : "Volume: " + Math.round(root.outputVolume * 100) + "%")
-        + (root.nodeLabel(root.sink) !== "" ? "\n" + root.nodeLabel(root.sink) : "")
-      : "Audio unavailable"
-  })
-  readonly property string icon: {
-    if (!sink || !sink.audio) return ""
-    if (Model.isHeadphones(sink)) return "󰋋"
-    if (outputMuted) return ""
-    if (outputVolume >= 0.67) return ""
-    if (outputVolume >= 0.34) return ""
-    if (outputVolume > 0) return ""
-    return ""
-  }
+  readonly property bool outputAvailable: audioService ? audioService.outputAvailable : false
+  readonly property bool inputAvailable: audioService ? audioService.inputAvailable : false
+  readonly property real outputVolume: audioService ? audioService.outputVolume : 0
+  readonly property real inputVolume: audioService ? audioService.inputVolume : 0
+  readonly property bool outputMuted: audioService ? audioService.outputMuted : false
+  readonly property bool inputMuted: audioService ? audioService.inputMuted : false
+  readonly property bool anyAudible: audioService ? audioService.anyAudible : false
+  readonly property var remoteSummary: audioService
+    ? audioService.remoteSummary : Model.remoteSummary(root.sink)
+  readonly property string icon: String(root.remoteSummary.icon || "")
 
   function refreshRows() {
     if (!opened) return
@@ -221,6 +205,12 @@ Panel {
   onBarChanged: reportCapability()
   onCapabilityAvailableChanged: reportCapability()
   Component.onCompleted: reportCapability()
+
+  ServiceConsumer {
+    id: audioConsumer
+    service: root.audioService
+    active: true
+  }
 
   visible: capabilityAvailable
   implicitWidth: visible ? button.implicitWidth : 0

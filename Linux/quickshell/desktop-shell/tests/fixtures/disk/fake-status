@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+case "${1-}" in
+  disk)
+    printf 'shared\n' >>"${DISK_FIXTURE_SHARED_LOG:?}"
+    printf '%s\n' '{"icon":"D","value":"42%","tooltip":"Disk fixture","class":"active"}'
+    ;;
+  disk-custom)
+    printf 'custom\n' >>"${DISK_FIXTURE_CUSTOM_LOG:?}"
+    printf '%s\n' '{"text":"custom disk","tooltip":"Custom disk fixture"}'
+    ;;
+  *)
+    exit 2
+    ;;
+esac
