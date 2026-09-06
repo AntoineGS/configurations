@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+printf '%s\n' "$*" >> "${CONNECTIVITY_ACTION_LOG:?}"
+password=""
+if [ "${2:-}" = connect ]; then
+  IFS= read -r password || true
+  printf '%s\n' "$password" > "${CONNECTIVITY_STDIN_LOG:?}"
+fi
+
+mutation_path=""
+mutation_value=""
+case "${1:-}" in
+  network)
+    mutation_path=${CONNECTIVITY_NETWORK_MUTATION:-}
+    mutation_value=${CONNECTIVITY_NETWORK_MUTATION_VALUE:-}
+    ;;
+  tailscale)
+    mutation_path=${CONNECTIVITY_TAILSCALE_MUTATION:-}
+    mutation_value=${CONNECTIVITY_TAILSCALE_MUTATION_VALUE:-}
+    ;;
+esac
+
+mode=$(tr -d '\r\n' < "${CONNECTIVITY_ACTION_MODE:?}")
+if [ "$mode" = require-stdin ] && [ -z "$password" ]; then
+  printf '%s\n' 'fixture action missing stdin' >&2
+  exit 8
+fi
+if [ "$mode" = hold ]; then
+  while [ "$(tr -d '\r\n' < "${CONNECTIVITY_ACTION_RELEASE:?}")" != release ]; do
+    sleep 0.01
+  done
+fi
+if [ "$mode" = fail-exit ]; then
+  if [ -n "$mutation_path" ]; then
+    printf '%s\n' "$mutation_value" > "$mutation_path"
+  fi
+  printf '%s\n' 'fixture action failed' >&2
+  exit 7
+fi

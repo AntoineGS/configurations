@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${MONITOR_FIXTURE_STATE_LOG:-}" ]; then
+  printf '%s\n' "${1-}" >> "$MONITOR_FIXTURE_STATE_LOG"
+fi
+
+if [ -n "${MONITOR_FIXTURE_STATE_HOLD:-}" ] \
+  && [ "$(tr -d '\r\n' < "$MONITOR_FIXTURE_STATE_HOLD")" = hold ]; then
+  if [ -n "${MONITOR_FIXTURE_STATE_ENTERED:-}" ]; then
+    printf '%s\n' held >"$MONITOR_FIXTURE_STATE_ENTERED"
+  fi
+  if [ -n "${MONITOR_FIXTURE_STATE_CANCEL_OUTPUT:-}" ]; then
+    trap 'cat "$MONITOR_FIXTURE_STATE_CANCEL_OUTPUT"; exit 0' TERM INT
+  fi
+  while [ ! -r "${MONITOR_FIXTURE_STATE_RELEASE:?}" ] \
+    || [ "$(tr -d '\r\n' < "$MONITOR_FIXTURE_STATE_RELEASE")" != release ]; do
+    sleep 0.01
+  done
+fi
+
+if [ -n "${MONITOR_FIXTURE_STATE_OUTPUT:-}" ]; then
+  cat "$MONITOR_FIXTURE_STATE_OUTPUT"
+else
+  printf '%s\n' '{"available":true,"stale":false,"data":{"brightness":{"available":true,"percent":40,"device":"fixture-backlight"},"keyboardBrightness":{"available":true,"percent":20}}}'
+fi

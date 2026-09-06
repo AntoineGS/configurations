@@ -143,6 +143,7 @@ function brightnessState(current, brightness, keyboardBrightness) {
 
 function shouldRefreshNativeMonitors(action) {
   return action === "toggle-internal" || action === "toggle-mirror"
+    || action === "set-scale" || action === "set-layout"
 }
 
 if (typeof module !== "undefined") {

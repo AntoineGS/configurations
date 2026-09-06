@@ -23,6 +23,12 @@ BarWidget {
     Quickshell.execDetached(["launch-tui-large", "desktop-shell-configuration-updates", "tidydots"])
   }
 
+  ServiceConsumer {
+    id: updatesConsumer
+    service: root.updates
+    active: true
+  }
+
   visible: updates && (updates.gitVisible || updates.tidydotsVisible)
   implicitWidth: visible ? icons.implicitWidth : 0
   implicitHeight: visible ? icons.implicitHeight : 0

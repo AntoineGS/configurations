@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell.Io
 import qs.Commons
 
-Item {
+SharedService {
   id: root
 
   property bool refreshPending: false
@@ -48,6 +48,7 @@ Item {
   }
 
   function refresh() {
+    if (!root.collecting) return false
     if (statusProcess.running) {
       refreshPending = true
       return
@@ -79,12 +80,21 @@ Item {
     }
   }
 
-  Component.onCompleted: refresh()
+  onCollectingChanged: {
+    if (!root.collecting) {
+      root.refreshPending = false
+      root.refreshInFlight = false
+      statusStartCheckTimer.stop()
+      statusProcess.running = false
+      return
+    }
+    root.refresh()
+  }
 
   Timer {
     interval: 1800000
     repeat: true
-    running: true
+    running: root.collecting
     onTriggered: root.refresh()
   }
 

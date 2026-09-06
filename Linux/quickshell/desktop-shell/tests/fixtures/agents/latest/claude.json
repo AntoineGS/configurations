@@ -1,0 +1,21 @@
+{
+  "id": "claude",
+  "name": "Claude",
+  "ready": true,
+  "stale": false,
+  "updatedAt": "latest-claude",
+  "retryAdvised": false,
+  "usageStatusText": "Updated",
+  "authHelpText": "",
+  "limits": [],
+  "tierLabel": "Pro",
+  "dailyUsage": [],
+  "todayPrompts": 4,
+  "todaySessions": 2,
+  "todayTotalTokens": 400,
+  "todayTokensByModel": {},
+  "totalPrompts": 4,
+  "totalSessions": 2,
+  "activeDays": 2,
+  "modelUsage": {}
+}

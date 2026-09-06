@@ -1,0 +1,4 @@
+#!/bin/sh
+VM_FIXTURE_STATE="${VM_FIXTURE_OLD_SERVICE_STATE:?}" \
+VM_FIXTURE_STATE_HOLD="${VM_FIXTURE_OLD_SERVICE_STATE_HOLD:?}" \
+exec "$(dirname "$0")/fake-state" "$@"

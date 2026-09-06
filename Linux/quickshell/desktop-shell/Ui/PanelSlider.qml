@@ -34,6 +34,12 @@ Item {
   // mute the channel the slider belongs to. Dragging stays left-button only.
   signal rightClicked()
 
+  function releaseCurrentValue() {
+    root.dragging = false
+    root.released(root.liveValue)
+    root.liveValue = root.value
+  }
+
   implicitWidth: Style.space(200)
   implicitHeight: Math.max(Style.space(22), knobSize + Style.spacing.md)
 
@@ -133,9 +139,7 @@ Item {
     }
     onReleased: function(mouse) {
       if (mouse.button !== Qt.LeftButton) return
-      root.dragging = false
-      root.released(root.liveValue)
-      root.liveValue = root.value
+      root.releaseCurrentValue()
     }
     onWheel: function(wheel) {
       var delta = wheel.angleDelta.y > 0 ? root.step : -root.step

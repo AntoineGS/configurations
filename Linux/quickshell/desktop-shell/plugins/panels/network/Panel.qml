@@ -1,9 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Io
-import qs.Ui
 import qs.Commons
+import qs.Ui
 import "Model.js" as Model
 
 Panel {
@@ -14,16 +13,14 @@ Panel {
   manageIpc: false
   property var pluginRegistry: null
 
-  property bool iwdAvailable: false
-  property string iwdDevice: ""
-  property string stationPath: ""
-  property string connectionState: ""
-  property string connectedSsid: ""
-  property int iwdSignal: 0
-  property var iwdNetworks: []
-  property bool initialProbeCompleted: false
-  property bool initialProbeHadStation: false
-  readonly property bool capabilityAvailable: iwdAvailable || stationPath !== ""
+  readonly property var network: bar && bar.shell ? bar.shell.serviceFor("desktop.network") : null
+  readonly property bool iwdAvailable: network ? network.iwdAvailable : false
+  readonly property string iwdDevice: network ? network.iwdDevice : ""
+  readonly property string stationPath: network ? network.stationPath : ""
+  readonly property string connectionState: network ? network.connectionState : ""
+  readonly property string connectedSsid: network ? network.connectedSsid : ""
+  readonly property int iwdSignal: network ? network.iwdSignal : 0
+  readonly property bool capabilityAvailable: !!network && (iwdAvailable || stationPath !== "")
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string kind: {
@@ -34,21 +31,9 @@ Panel {
   readonly property string icon: Model.connectionIcon(kind, signalStrength)
   readonly property bool hasConfiguredProfile: connectedSsid !== ""
 
-  property var wifiNetworks: []
-  property string dnsProvider: "DHCP"
-  property string pendingDnsProvider: ""
-  property string actionKind: ""
-  property string actionDevice: ""
-  property string actionProfile: ""
-  property string actionPassword: ""
-  property string queuedActionKind: ""
-  property string queuedActionDevice: ""
-  property string queuedActionProfile: ""
-  property string queuedActionPassword: ""
-  property string queuedDnsProvider: ""
-  property bool pendingStateRefresh: false
-  property bool pendingScan: false
-  property string healthError: ""
+  readonly property var wifiNetworks: network ? network.wifiNetworks : []
+  readonly property string dnsProvider: network ? network.dnsProvider : "DHCP"
+  readonly property bool actionReserved: network ? network.actionReserved : false
   property string passwordSsid: ""
   property string passwordText: ""
   property bool cursorActive: false
@@ -56,36 +41,10 @@ Panel {
   property int selectedIndex: 0
   property int dnsIndex: 0
 
-  readonly property bool actionReserved: actionKind !== "" || queuedActionKind !== ""
-  readonly property bool busy: actionReserved || stateProcess.running
   readonly property var dnsProviders: ["DHCP", "Cloudflare", "Google"]
 
-  function reportHealth() {
-    var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
-    if (!registry) return;
-    var scope = "capability:panel:" + moduleName
-    if (healthError === "") registry.clearPluginError(moduleName, scope)
-    else registry.recordPluginError(moduleName, healthError, scope)
-  }
-
-  function setHealthError(message) {
-    healthError = message
-    reportHealth()
-  }
-
-  function syncWifiNetworks() {
-    var rows = []
-    for (var i = 0; i < iwdNetworks.length; i++) {
-      var row = Model.wifiRow(iwdNetworks[i])
-      if (row && row.ssid !== "") rows.push(row)
-    }
-    wifiNetworks = Model.sortWifiRows(rows)
-    if (selectedIndex >= wifiNetworks.length) selectedIndex = Math.max(0, wifiNetworks.length - 1)
-  }
-
   function refresh() {
-    syncWifiNetworks()
-    requestRefresh(true)
+    if (network) network.requestRefresh(true)
   }
 
   function networkForSsid(ssid) {
@@ -110,62 +69,26 @@ Panel {
     passwordText = ""
   }
 
-  function startAction(kindName, device, profile, password, dnsProvider) {
-    actionKind = kindName
-    actionDevice = String(device || "")
-    actionProfile = String(profile || "")
-    actionPassword = String(password || "")
-    pendingDnsProvider = String(dnsProvider || "")
-    if (kindName === "connect")
-      actionProcess.command = ["desktop-connectivity-action", "network", "connect", actionDevice, actionProfile]
-    else if (kindName === "disconnect")
-      actionProcess.command = ["desktop-connectivity-action", "network", "disconnect", actionDevice]
-    else if (kindName === "forget")
-      actionProcess.command = ["desktop-connectivity-action", "network", "forget", actionProfile]
-    else if (kindName === "set-dns")
-      actionProcess.command = ["desktop-connectivity-action", "network", "set-dns", actionDevice, pendingDnsProvider]
-    else if (kindName === "scan")
-      actionProcess.command = ["desktop-connectivity-action", "network", "scan", actionDevice]
-    else return false
-    actionProcess.running = true
-    return true
-  }
-
-  function queueOrStartAction(kindName, device, profile, password, dnsProvider) {
-    if (actionReserved) return false
-    if (stateProcess.running) {
-      queuedActionKind = kindName
-      queuedActionDevice = String(device || "")
-      queuedActionProfile = String(profile || "")
-      queuedActionPassword = String(password || "")
-      queuedDnsProvider = String(dnsProvider || "")
-      return true
-    }
-    return startAction(kindName, device, profile, password, dnsProvider)
-  }
-
   function runConnect(ssid, password) {
-    if (!ssid) return false
-    return queueOrStartAction("connect", iwdDevice, ssid, password, "")
+    return network ? network.runConnect(ssid, password) : false
   }
 
   function runNetworkAction(kindName, profile) {
-    if (!profile) return false
-    return queueOrStartAction(kindName, iwdDevice, profile, "", "")
+    return network ? network.runNetworkAction(kindName, profile) : false
   }
 
   function connectWithPassword() {
     if (!passwordSsid || !passwordText) return
-    if (runConnect(passwordSsid, passwordText)) cancelPasswordPrompt()
+    if (network && network.runConnect(passwordSsid, passwordText)) cancelPasswordPrompt()
   }
 
   function connectRow(row) {
-    if (actionReserved || !row) return
-    var network = networkForSsid(row.ssid)
-    if (!network) return
+    if (actionReserved || !network || !row) return
+    var networkData = networkForSsid(row.ssid)
+    if (!networkData) return
     if (row.connected) {
       runNetworkAction("disconnect", row.ssid)
-    } else if (isProtected(network) && !row.known) {
+    } else if (isProtected(networkData) && !row.known) {
       openPasswordPrompt(row.ssid)
     } else {
       runConnect(row.ssid, "")
@@ -179,88 +102,8 @@ Panel {
   }
 
   function setDns(provider) {
-    if (!hasConfiguredProfile) return false
-    return queueOrStartAction("set-dns", iwdDevice, "", "", provider)
-  }
-
-  function requestRefresh(scan) {
-    pendingStateRefresh = true
-    if (scan) pendingScan = true
-    schedule()
-  }
-
-  function schedule() {
-    if (actionProcess.running || stateProcess.running) return
-    if (queuedActionKind !== "") {
-      var kindName = queuedActionKind
-      var device = queuedActionDevice
-      var profile = queuedActionProfile
-      var password = queuedActionPassword
-      var dnsProvider = queuedDnsProvider
-      startAction(kindName, device, profile, password, dnsProvider)
-      queuedActionKind = ""
-      queuedActionDevice = ""
-      queuedActionProfile = ""
-      queuedActionPassword = ""
-      queuedDnsProvider = ""
-      return
-    }
-    if (pendingScan && iwdDevice === "") {
-      if (pendingStateRefresh) {
-        pendingStateRefresh = false
-        stateProcess.running = true
-      }
-      return
-    }
-    if (pendingScan) {
-      pendingScan = false
-      startAction("scan", iwdDevice, "", "", "")
-      return
-    }
-    if (pendingStateRefresh) {
-      pendingStateRefresh = false
-      stateProcess.running = true
-    }
-  }
-
-  function applyState(raw) {
-    var parsed
-    try {
-      parsed = JSON.parse(raw)
-    } catch (error) {
-      setHealthError("iwd state query failed")
-      return
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
-        || typeof parsed.available !== "boolean" || !Array.isArray(parsed.networks)) {
-      setHealthError("iwd state query failed")
-      return
-    }
-    if (!parsed.available
-        && (parsed.device !== null || parsed.stationPath !== null || parsed.state !== "disconnected"
-            || parsed.connectedSsid !== null || parsed.signal !== 0 || parsed.networks.length !== 0)) {
-      setHealthError("iwd state query failed")
-      return
-    }
-    var previousSession = Model.connectionSessionKey(iwdDevice, connectionState, connectedSsid)
-    var nextDevice = parsed.device === null ? "" : String(parsed.device || "")
-    var nextState = String(parsed.state || "")
-    var nextSsid = parsed.connectedSsid === null ? "" : String(parsed.connectedSsid || "")
-    if (previousSession !== Model.connectionSessionKey(nextDevice, nextState, nextSsid)) dnsProvider = "DHCP"
-    iwdAvailable = parsed.available
-    iwdDevice = nextDevice
-    stationPath = parsed.stationPath === null ? "" : String(parsed.stationPath || "")
-    connectionState = nextState
-    connectedSsid = nextSsid
-    iwdSignal = Math.max(0, Math.min(100, Math.round(Number(parsed.signal || 0))))
-    iwdNetworks = parsed.networks
-    syncWifiNetworks()
-    if (!initialProbeCompleted) {
-      initialProbeCompleted = true
-      initialProbeHadStation = parsed.available
-    }
-    healthError = ""
-    reportHealth()
+    if (!hasConfiguredProfile || !network) return false
+    return network.setDns(provider)
   }
 
   function visibleSections() {
@@ -300,79 +143,25 @@ Panel {
 
   onOpenedChanged: {
     if (opened) {
-      syncWifiNetworks()
       focusSection = wifiNetworks.length > 0 ? "wifi" : "dns"
       selectedIndex = 0
       cursorActive = false
-      requestRefresh(true)
+      refresh()
     }
   }
 
-  onPluginRegistryChanged: reportHealth()
-  onBarChanged: reportHealth()
-  onCapabilityAvailableChanged: reportHealth()
-  Component.onCompleted: {
-    reportHealth()
-    requestRefresh(false)
+  onWifiNetworksChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, wifiNetworks.length - 1))
+
+  ServiceConsumer {
+    id: networkConsumer
+    service: root.network
+    active: true
+    details: root.opened
   }
 
   visible: capabilityAvailable
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0
-
-  Timer {
-    id: idleRefreshTimer
-    interval: 60000
-    repeat: true
-    running: !root.opened && (!root.initialProbeCompleted || root.initialProbeHadStation)
-    onTriggered: root.requestRefresh(false)
-  }
-
-  Timer {
-    id: openRefreshTimer
-    interval: 3000
-    repeat: true
-    running: root.opened && (!root.initialProbeCompleted || root.initialProbeHadStation)
-    onTriggered: root.requestRefresh(false)
-  }
-
-  Process {
-    id: stateProcess
-    command: ["desktop-iwd-state"]
-    stdout: StdioCollector {
-      id: stateStdout
-      waitForEnd: true
-    }
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: function(exitCode) {
-      if (Number(exitCode) === 0) {
-        root.applyState(stateStdout.text || "")
-      } else root.setHealthError("iwd state query failed")
-      root.schedule()
-    }
-  }
-
-  Process {
-    id: actionProcess
-    command: []
-    stdinEnabled: true
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector { waitForEnd: true }
-    onStarted: if (root.actionKind === "connect") write(root.actionPassword + "\n")
-    onExited: function(exitCode) {
-      var actionCompleted = root.actionKind !== ""
-      if ((root.actionKind === "connect" || root.actionKind === "disconnect") && exitCode === 0)
-        root.dnsProvider = "DHCP"
-      if (root.actionKind === "set-dns" && exitCode === 0) root.dnsProvider = root.pendingDnsProvider
-      root.pendingDnsProvider = ""
-      root.actionKind = ""
-      root.actionDevice = ""
-      root.actionProfile = ""
-      root.actionPassword = ""
-      if (actionCompleted) root.pendingStateRefresh = true
-      root.schedule()
-    }
-  }
 
   BarIconButton {
     id: button

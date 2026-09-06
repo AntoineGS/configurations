@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+mode=$(tr -d '\r\n' < "${MONITOR_FIXTURE_STATE_MODE:?}")
+case "$mode" in
+  initial)
+    output_path="${MONITOR_FIXTURE_INITIAL_STATE_OUTPUT:-}"
+    hold_path=""
+    release_path=""
+    entered_path=""
+    ;;
+  old)
+    output_path="${MONITOR_FIXTURE_SAME_STATE_OLD_OUTPUT:?}"
+    hold_path="${MONITOR_FIXTURE_SAME_STATE_OLD_HOLD:?}"
+    release_path="${MONITOR_FIXTURE_SAME_STATE_OLD_RELEASE:?}"
+    entered_path="${MONITOR_FIXTURE_SAME_STATE_OLD_ENTERED:-}"
+    ;;
+  new)
+    output_path="${MONITOR_FIXTURE_SAME_STATE_NEW_OUTPUT:?}"
+    hold_path="${MONITOR_FIXTURE_SAME_STATE_NEW_HOLD:?}"
+    release_path="${MONITOR_FIXTURE_SAME_STATE_NEW_RELEASE:?}"
+    entered_path="${MONITOR_FIXTURE_SAME_STATE_NEW_ENTERED:-}"
+    ;;
+  *)
+    printf '%s\n' "unknown monitor state mode: $mode" >&2
+    exit 2
+    ;;
+esac
+
+  MONITOR_FIXTURE_STATE_OUTPUT="$output_path" \
+  MONITOR_FIXTURE_STATE_CANCEL_OUTPUT="$output_path" \
+  MONITOR_FIXTURE_STATE_ENTERED="$entered_path" \
+  MONITOR_FIXTURE_STATE_HOLD="$hold_path" \
+MONITOR_FIXTURE_STATE_RELEASE="$release_path" \
+  exec "$(dirname "$0")/fake-state" "$@"

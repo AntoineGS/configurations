@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -13,19 +12,15 @@ Panel {
   ipcTarget: "desktop.monitor"
   manageIpc: false
   property var pluginRegistry: null
-  property var hardwareState: ({ available: false, stale: false, data: {} })
-  property bool loaded: true
-  property int brightnessPercent: 1
-  property int lastConfirmedBrightnessPercent: 1
-  property var operationState: Model.monitorOperationState()
-  property string actionName: ""
+  property int brightnessPreviewPercent: monitorService ? monitorService.brightnessPercent : 1
   property bool cursorActive: false
   property int selectedIndex: 0
   property int nativeTopologyGeneration: 0
-  property int reconciliationGeneration: 0
-  property int reconciliationFinalizedGeneration: 0
-  property int actionGeneration: 0
-  property int actionFinalizedGeneration: 0
+
+  readonly property var monitorService: bar && bar.shell ? bar.shell.serviceFor("desktop.monitor") : null
+  readonly property var hardwareState: monitorService
+    ? monitorService.hardwareState : ({ available: false, stale: false, data: {} })
+  readonly property int brightnessPercent: monitorService ? monitorService.brightnessPercent : 1
 
   function refreshNativeTopology() {
     nativeTopologyGeneration++
@@ -53,104 +48,39 @@ Panel {
     else registry.recordPluginError(moduleName, "Controllable display unavailable", scope)
   }
 
-  function applyState(raw) {
-    var parsed = Model.parseState(raw)
-    if (!parsed) {
-      brightnessPercent = lastConfirmedBrightnessPercent
-      hardwareState = {
-        available: false,
-        stale: true,
-        error: "Invalid hardware state",
-        data: hardwareState && hardwareState.data ? hardwareState.data : {}
-      }
-      reportCapability()
-      return
-    }
-    var previousData = hardwareState && hardwareState.data ? hardwareState.data : {}
-    var reconciled = Model.brightnessState({
-      brightnessPercent: brightnessPercent,
-      lastConfirmedBrightnessPercent: lastConfirmedBrightnessPercent,
-      brightness: previousData.brightness,
-      keyboardBrightness: previousData.keyboardBrightness
-    }, parsed.stale === true ? null : parsed.data.brightness,
-    parsed.stale === true ? null : parsed.data.keyboardBrightness)
-    brightnessPercent = reconciled.brightnessPercent
-    lastConfirmedBrightnessPercent = reconciled.lastConfirmedBrightnessPercent
-    var nextData = {
-      brightness: reconciled.brightness,
-      keyboardBrightness: reconciled.keyboardBrightness
-    }
-    hardwareState = {
-      available: parsed.available === true,
-      stale: parsed.stale === true,
-      error: parsed.error || "",
-      data: nextData
-    }
-    reportCapability()
-    if (selectedIndex >= displays.length) selectedIndex = Math.max(0, displays.length - 1)
-  }
-
   function refresh() {
-    var transition = Model.monitorOperationTransition(operationState, "reconcile-request")
-    operationState = transition.state
-    if (transition.startReconciliation && !stateProcess.running) startStateProcess()
-  }
-
-  function startStateProcess() {
-    reconciliationGeneration++
-    stateStartCheckTimer.generation = reconciliationGeneration
-    stateProcess.running = true
-  }
-
-  function startAction(args) {
-    actionProcess.command = ["desktop-hardware-action"].concat(args)
-    actionName = String(args[1] || "")
-    actionGeneration++
-    actionProcess.running = true
-  }
-
-  function finishAction(exitCode, failedStart) {
-    if (actionFinalizedGeneration === actionGeneration) return
-    actionFinalizedGeneration = actionGeneration
-    actionStartCheckTimer.stop()
-    if (failedStart) actionName = ""
-    operationState = Model.monitorOperationTransition(operationState, "action-finished").state
-    actionName = ""
-    Qt.callLater(root.refresh)
-  }
-
-  function runAction(args) {
-    if (!Array.isArray(args)) return
-    var transition = Model.monitorOperationTransition(operationState, "action-request", args)
-    operationState = transition.state
-    if (transition.startAction && !actionProcess.running) startAction(transition.startAction)
-  }
-
-  function finishReconciliation() {
-    if (reconciliationFinalizedGeneration === reconciliationGeneration) return
-    reconciliationFinalizedGeneration = reconciliationGeneration
-    var transition = Model.monitorOperationTransition(operationState, "reconcile-finished")
-    operationState = transition.state
-    if (transition.startAction) startAction(transition.startAction)
-    else if (transition.startReconciliation && !stateProcess.running) startStateProcess()
+    return monitorService ? monitorService.refresh() : false
   }
 
   function setBrightness(value) {
+    if (monitorService) monitorService.setBrightness(value)
+  }
+
+  function syncBrightnessPreview() {
+    if (!root.monitorService || brightnessSlider.dragging || root.monitorService.operationPending) return
+    root.brightnessPreviewPercent = root.monitorService.brightnessPercent
+  }
+
+  function handleBrightnessDraggingChanged(dragging) {
+    if (!dragging) Qt.callLater(root.syncBrightnessPreview)
+  }
+
+  function releaseBrightness(value) {
     var next = Model.clampBrightness(value)
-    brightnessPercent = next
-    runAction(["monitor", "set-display-brightness", String(next)])
+    root.brightnessPreviewPercent = next
+    root.setBrightness(next)
   }
 
   function setKeyboardBrightness(action) {
-    runAction(["monitor", "set-keyboard-brightness", String(action)])
+    if (monitorService) monitorService.setKeyboardBrightness(action)
   }
 
   function toggleInternal() {
-    runAction(["monitor", "toggle-internal"])
+    if (monitorService) monitorService.runAction(["monitor", "toggle-internal"])
   }
 
   function toggleMirror() {
-    runAction(["monitor", "toggle-mirror"])
+    if (monitorService) monitorService.runAction(["monitor", "toggle-mirror"])
   }
 
   function moveCursor(delta) {
@@ -172,69 +102,20 @@ Panel {
   onBarChanged: reportCapability()
   Component.onCompleted: {
     reportCapability()
-    Hyprland.refreshMonitors()
+    if (monitorService) monitorService.refreshNativeMonitors(false)
     refresh()
   }
-  Component.onDestruction: {
-    loaded = false
-    brightnessTimer.stop()
+
+  ServiceConsumer {
+    id: monitorConsumer
+    service: root.monitorService
+    active: true
   }
 
-  Timer {
-    id: brightnessTimer
-    property bool startupPhase: true
-    interval: startupPhase ? 30000 : 60000
-    running: root.loaded
-    repeat: true
-    onTriggered: {
-      root.refresh()
-      startupPhase = false
-    }
-  }
-
-  Process {
-    id: stateProcess
-    command: ["desktop-hardware-state", "monitor"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyState(text)
-    }
-    onStarted: stateStartCheckTimer.stop()
-    onRunningChanged: {
-      if (!stateProcess.running && root.reconciliationGeneration > root.reconciliationFinalizedGeneration) {
-        stateStartCheckTimer.generation = root.reconciliationGeneration
-        stateStartCheckTimer.start()
-      }
-    }
-  }
-
-  Timer {
-    id: stateStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: {
-      if (!stateProcess.running && generation === root.reconciliationGeneration)
-        root.finishReconciliation()
-    }
-  }
-
-  Process {
-    id: actionProcess
-    command: []
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: function(exitCode) {
-      if (Number(exitCode) === 0 && Model.shouldRefreshNativeMonitors(root.actionName)) Hyprland.refreshMonitors()
-      root.finishAction(exitCode, false)
-    }
-    onStarted: actionStartCheckTimer.stop()
-    onRunningChanged: {
-      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
-        actionStartCheckTimer.generation = actionGeneration
-        actionStartCheckTimer.start()
-      }
-    }
+  Connections {
+    target: root.monitorService
+    function onBrightnessPercentChanged() { root.syncBrightnessPreview() }
+    function onOperationPendingChanged() { root.syncBrightnessPreview() }
   }
 
   Connections {
@@ -245,20 +126,6 @@ Panel {
   Connections {
     target: Hyprland
     function onFocusedMonitorChanged() { root.refreshNativeTopology() }
-  }
-
-  Connections {
-    target: stateProcess
-    function onExited() { Qt.callLater(root.finishReconciliation) }
-  }
-
-  Timer {
-    id: actionStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: if (!actionProcess.running && generation === root.actionGeneration)
-      root.finishAction(1, true)
   }
 
   BarIconButton {
@@ -345,16 +212,17 @@ Panel {
               maximum: 100
               step: 1
               integer: true
-              value: root.brightnessPercent
-              onMoved: root.brightnessPercent = Math.round(liveValue)
-              onReleased: root.setBrightness(value)
+              value: root.brightnessPreviewPercent
+              onMoved: root.brightnessPreviewPercent = Math.round(liveValue)
+              onDraggingChanged: root.handleBrightnessDraggingChanged(dragging)
+              onReleased: root.releaseBrightness(value)
             }
           }
 
           Text {
             width: parent.width
             visible: root.brightness.available
-            text: root.brightnessPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
+            text: root.brightnessPreviewPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
             color: root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall

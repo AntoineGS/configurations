@@ -7,3 +7,5 @@ singleton PopupMotion 1.0 PopupMotion.qml
 singleton Style 1.0 Style.qml
 singleton Util 1.0 Util.qml
 singleton TopBarOverlayCoordinator 1.0 TopBarOverlayCoordinator.qml
+SharedService 1.0 SharedService.qml
+ServiceConsumer 1.0 ServiceConsumer.qml
