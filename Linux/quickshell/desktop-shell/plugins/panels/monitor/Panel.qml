@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -13,23 +12,21 @@ Panel {
   ipcTarget: "desktop.monitor"
   manageIpc: false
   property var pluginRegistry: null
-  property var hardwareState: ({ available: false, stale: false, data: {} })
-  property bool loaded: true
-  property int brightnessPercent: 1
-  property int lastConfirmedBrightnessPercent: 1
+  property int brightnessPreviewPercent: monitorService ? monitorService.brightnessPercent : 1
   property int keyboardBrightnessPercent: 0
-  property var operationState: Model.monitorOperationState()
-  readonly property bool actionPending: operationState.actionRunning || operationState.actionQueue.length > 0
-  property string actionName: ""
   property bool cursorActive: false
   property int selectedIndex: -1
   property real previewScale: 1
-  property string hostname: ""
   property int nativeTopologyGeneration: 0
-  property int reconciliationGeneration: 0
-  property int reconciliationFinalizedGeneration: 0
-  property int actionGeneration: 0
-  property int actionFinalizedGeneration: 0
+  readonly property alias displayBrightnessControl: brightnessSlider
+  readonly property alias keyboardBrightnessControl: keyboardBrightnessSlider
+
+  readonly property var monitorService: bar && bar.shell ? bar.shell.serviceFor("desktop.monitor") : null
+  readonly property string hostname: monitorService && monitorService.hostname
+    ? String(monitorService.hostname) : ""
+  readonly property var hardwareState: monitorService
+    ? monitorService.hardwareState : ({ available: false, stale: false, data: {} })
+  readonly property int brightnessPercent: monitorService ? monitorService.brightnessPercent : 1
 
   function refreshNativeTopology() {
     nativeTopologyGeneration++
@@ -124,27 +121,24 @@ Panel {
   }
 
   function applyScale(scale) {
-    if (barMonitor === "" || scaleProcess.running) return
+    if (!monitorService || barMonitor === "") return
     var option = scaleOptions[nearestScaleIndex(scale)]
     previewScale = option.value
-    scaleProcess.command = [
-      "desktop-hardware-action", "monitor", "set-scale", barMonitor, option.command
-    ]
-    scaleProcess.running = true
+    monitorService.setScale(barMonitor, option.command)
   }
 
   function applyLayout(mode) {
-    if (!presetLayoutsAvailable) return
+    if (!monitorService || !presetLayoutsAvailable) return
     if (mode === "single" && barMonitor === "") return
-    var command = ["desktop-hardware-action", "monitor", "set-layout", mode]
-    if (mode === "single") command.push(barMonitor)
     close()
-    Quickshell.execDetached(command)
+    monitorService.setLayout(mode, barMonitor)
   }
 
   function open() {
-    Hyprland.refreshMonitors()
-    monitorRefreshTimer.restart()
+    if (monitorService) {
+      monitorService.refreshNativeMonitors(true)
+      monitorService.refresh()
+    }
     syncPreviewScale()
     selectedIndex = -1
     cursorActive = false
@@ -159,109 +153,46 @@ Panel {
     else registry.recordPluginError(moduleName, "Controllable display unavailable", scope)
   }
 
-  function applyState(raw) {
-    var parsed = Model.parseState(raw)
-    if (!parsed) {
-      if (!brightnessSlider.dragging && !actionPending) brightnessPercent = lastConfirmedBrightnessPercent
-      if (!keyboardBrightnessSlider.dragging && !actionPending) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
-      hardwareState = {
-        available: false,
-        stale: true,
-        error: "Invalid hardware state",
-        data: hardwareState && hardwareState.data ? hardwareState.data : {}
-      }
-      reportCapability()
-      return
-    }
-    var previousData = hardwareState && hardwareState.data ? hardwareState.data : {}
-    var reconciled = Model.brightnessState({
-      brightnessPercent: brightnessPercent,
-      lastConfirmedBrightnessPercent: lastConfirmedBrightnessPercent,
-      brightness: previousData.brightness,
-      keyboardBrightness: previousData.keyboardBrightness
-    }, parsed.stale === true ? null : parsed.data.brightness,
-    parsed.stale === true ? null : parsed.data.keyboardBrightness)
-    if (!brightnessSlider.dragging && !actionPending) brightnessPercent = reconciled.brightnessPercent
-    lastConfirmedBrightnessPercent = reconciled.lastConfirmedBrightnessPercent
-    var nextData = {
-      brightness: reconciled.brightness,
-      keyboardBrightness: reconciled.keyboardBrightness
-    }
-    hardwareState = {
-      available: parsed.available === true,
-      stale: parsed.stale === true,
-      error: parsed.error || "",
-      data: nextData
-    }
-    if (!keyboardBrightnessSlider.dragging && !actionPending) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
-    reportCapability()
-    if (selectedIndex >= displays.length) selectedIndex = displays.length - 1
-  }
-
   function refresh() {
-    var transition = Model.monitorOperationTransition(operationState, "reconcile-request")
-    operationState = transition.state
-    if (transition.startReconciliation && !stateProcess.running) startStateProcess()
-  }
-
-  function startStateProcess() {
-    reconciliationGeneration++
-    stateStartCheckTimer.generation = reconciliationGeneration
-    stateProcess.running = true
-  }
-
-  function startAction(args) {
-    actionProcess.command = ["desktop-hardware-action"].concat(args)
-    actionName = String(args[1] || "")
-    actionGeneration++
-    actionProcess.running = true
-  }
-
-  function finishAction(exitCode, failedStart) {
-    if (actionFinalizedGeneration === actionGeneration) return
-    actionFinalizedGeneration = actionGeneration
-    actionStartCheckTimer.stop()
-    if (failedStart) actionName = ""
-    operationState = Model.monitorOperationTransition(operationState, "action-finished").state
-    actionName = ""
-    Qt.callLater(root.refresh)
-  }
-
-  function runAction(args) {
-    if (!Array.isArray(args)) return
-    var transition = Model.monitorOperationTransition(operationState, "action-request", args)
-    operationState = transition.state
-    if (transition.startAction && !actionProcess.running) startAction(transition.startAction)
-  }
-
-  function finishReconciliation() {
-    if (reconciliationFinalizedGeneration === reconciliationGeneration) return
-    reconciliationFinalizedGeneration = reconciliationGeneration
-    var transition = Model.monitorOperationTransition(operationState, "reconcile-finished")
-    operationState = transition.state
-    if (transition.startAction) startAction(transition.startAction)
-    else if (transition.startReconciliation && !stateProcess.running) startStateProcess()
+    return monitorService ? monitorService.refresh() : false
   }
 
   function setBrightness(value) {
-    var next = Model.clampBrightness(value)
-    brightnessPercent = next
-    runAction(["monitor", "set-display-brightness", String(next)])
+    if (monitorService) monitorService.setBrightness(value)
   }
 
-  function setKeyboardBrightness(value) {
-    if (!isFinite(value)) return
-    var next = Math.max(0, Math.min(100, Math.round(value)))
-    keyboardBrightnessPercent = next
-    runAction(["monitor", "set-keyboard-brightness", String(next)])
+  function syncBrightnessPreview() {
+    if (!root.monitorService || brightnessSlider.dragging || root.monitorService.operationPending) return
+    root.brightnessPreviewPercent = root.monitorService.brightnessPercent
+  }
+
+  function syncKeyboardBrightnessPreview() {
+    if (!root.monitorService || keyboardBrightnessSlider.dragging || root.monitorService.operationPending) return
+    root.keyboardBrightnessPercent = Number(root.keyboardBrightness.percent || 0)
+  }
+
+  function handleBrightnessDraggingChanged(dragging) {
+    if (!dragging) Qt.callLater(root.syncBrightnessPreview)
+  }
+
+  function releaseBrightness(value) {
+    var next = Model.clampBrightness(value)
+    root.brightnessPreviewPercent = next
+    root.setBrightness(next)
+  }
+
+  function setKeyboardBrightness(action) {
+    if (!monitorService) return
+    if (typeof action === "number" && !isFinite(action)) return
+    monitorService.setKeyboardBrightness(action)
   }
 
   function toggleInternal() {
-    runAction(["monitor", "toggle-internal"])
+    if (monitorService) monitorService.runAction(["monitor", "toggle-internal"])
   }
 
   function toggleMirror() {
-    runAction(["monitor", "toggle-mirror"])
+    if (monitorService) monitorService.runAction(["monitor", "toggle-mirror"])
   }
 
   function moveCursor(delta) {
@@ -283,68 +214,30 @@ Panel {
   onBarChanged: reportCapability()
   Component.onCompleted: {
     reportCapability()
-    Hyprland.refreshMonitors()
+    if (monitorService) {
+      monitorService.refreshNativeMonitors(false)
+      syncBrightnessPreview()
+      syncKeyboardBrightnessPreview()
+    }
     refresh()
   }
-  Component.onDestruction: {
-    loaded = false
-    brightnessTimer.stop()
+
+  ServiceConsumer {
+    id: monitorConsumer
+    service: root.monitorService
+    active: true
   }
 
-  Timer {
-    id: brightnessTimer
-    property bool startupPhase: true
-    interval: startupPhase ? 30000 : 60000
-    running: root.loaded
-    repeat: true
-    onTriggered: {
-      root.refresh()
-      startupPhase = false
+  Connections {
+    target: root.monitorService
+    function onBrightnessPercentChanged() { root.syncBrightnessPreview() }
+    function onHardwareStateChanged() {
+      root.syncBrightnessPreview()
+      root.syncKeyboardBrightnessPreview()
     }
-  }
-
-  Process {
-    id: stateProcess
-    command: ["desktop-hardware-state", "monitor"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyState(text)
-    }
-    onStarted: stateStartCheckTimer.stop()
-    onRunningChanged: {
-      if (!stateProcess.running && root.reconciliationGeneration > root.reconciliationFinalizedGeneration) {
-        stateStartCheckTimer.generation = root.reconciliationGeneration
-        stateStartCheckTimer.start()
-      }
-    }
-  }
-
-  Timer {
-    id: stateStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: {
-      if (!stateProcess.running && generation === root.reconciliationGeneration)
-        root.finishReconciliation()
-    }
-  }
-
-  Process {
-    id: actionProcess
-    command: []
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector { waitForEnd: true }
-    onExited: function(exitCode) {
-      if (Number(exitCode) === 0 && Model.shouldRefreshNativeMonitors(root.actionName)) Hyprland.refreshMonitors()
-      root.finishAction(exitCode, false)
-    }
-    onStarted: actionStartCheckTimer.stop()
-    onRunningChanged: {
-      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
-        actionStartCheckTimer.generation = actionGeneration
-        actionStartCheckTimer.start()
-      }
+    function onOperationPendingChanged() {
+      root.syncBrightnessPreview()
+      root.syncKeyboardBrightnessPreview()
     }
   }
 
@@ -361,46 +254,6 @@ Panel {
   Connections {
     target: Hyprland
     function onFocusedMonitorChanged() { root.refreshNativeTopology() }
-  }
-
-  Connections {
-    target: stateProcess
-    function onExited() { Qt.callLater(root.finishReconciliation) }
-  }
-
-  Timer {
-    id: actionStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: if (!actionProcess.running && generation === root.actionGeneration)
-      root.finishAction(1, true)
-  }
-
-  Process {
-    command: ["hostname"]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.hostname = String(text || "").trim()
-    }
-  }
-
-  Process {
-    id: scaleProcess
-    command: []
-    onExited: function(exitCode) {
-      if (Number(exitCode) !== 0) return
-      Hyprland.refreshMonitors()
-      monitorRefreshTimer.restart()
-    }
-  }
-
-  Timer {
-    id: monitorRefreshTimer
-    interval: 150
-    repeat: false
-    onTriggered: Hyprland.refreshMonitors()
   }
 
   BarMetricButton {
@@ -435,7 +288,7 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
         else if (dx !== 0 && root.selectedIndex === -1) root.moveScale(dx)
         else if (dx !== 0 && root.keyboardBrightness.available) {
-          root.runAction(["monitor", "set-keyboard-brightness", dx > 0 ? "up" : "down"])
+          root.setKeyboardBrightness(dx > 0 ? "up" : "down")
         }
       }
       onActivateRequested: root.activateCursor()
@@ -588,21 +441,23 @@ Panel {
               maximum: 100
               step: 1
               integer: true
-              value: root.brightnessPercent
+              value: root.brightnessPreviewPercent
               onMoved: {
-                root.brightnessPercent = Math.round(liveValue)
+                root.brightnessPreviewPercent = Math.round(liveValue)
                 if (!displayApplyTimer.running) displayApplyTimer.start()
               }
+              onDraggingChanged: root.handleBrightnessDraggingChanged(dragging)
               onReleased: function(value) {
                 displayApplyTimer.stop()
-                root.setBrightness(value)
+                root.releaseBrightness(value)
               }
 
               Timer {
                 id: displayApplyTimer
                 interval: 100
                 onTriggered: {
-                  if (root.operationState.actionRunning || root.operationState.reconciliationRunning) restart()
+                  if (!root.monitorService) return
+                  if (root.monitorService.operationPending) restart()
                   else root.setBrightness(brightnessSlider.liveValue)
                 }
               }
@@ -612,7 +467,7 @@ Panel {
           Text {
             width: parent.width
             visible: root.brightness.available
-            text: root.brightnessPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
+            text: root.brightnessPreviewPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
             color: root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -650,6 +505,7 @@ Panel {
                   root.keyboardBrightnessPercent = Math.round(liveValue)
                   if (!keyboardApplyTimer.running) keyboardApplyTimer.start()
                 }
+                onDraggingChanged: if (!dragging) Qt.callLater(root.syncKeyboardBrightnessPreview)
                 onReleased: function(value) {
                   keyboardApplyTimer.stop()
                   root.setKeyboardBrightness(value)
@@ -659,7 +515,8 @@ Panel {
                   id: keyboardApplyTimer
                   interval: 100
                   onTriggered: {
-                    if (root.operationState.actionRunning || root.operationState.reconciliationRunning) restart()
+                    if (!root.monitorService) return
+                    if (root.monitorService.operationPending) restart()
                     else root.setKeyboardBrightness(keyboardBrightnessSlider.liveValue)
                   }
                 }

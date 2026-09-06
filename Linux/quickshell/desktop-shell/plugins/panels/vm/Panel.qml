@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -11,15 +10,15 @@ Panel {
   moduleName: "desktop.vm"
   ipcTarget: "desktop.vm"
 
-  property var vmState: vmMonitor.state
-  property var hostMemoryState: Model.emptyHostStat()
-  property var hostCpuState: Model.emptyHostStat()
+  readonly property var stateService: bar && bar.shell ? bar.shell.serviceFor("desktop.vm") : null
+  readonly property var hostService: bar && bar.shell ? bar.shell.serviceFor("desktop.host-metrics") : null
+  readonly property var vmState: stateService ? stateService.state : Model.emptyState()
+  readonly property var hostMemoryState: hostService ? hostService.memoryState : Model.emptyHostStat()
+  readonly property var hostCpuState: hostService ? hostService.cpuState : Model.emptyHostStat()
   property var popupAnchorItem: vmCpuButton
   property int previewGiB: 1
-  property bool resizePending: false
-  property string actionError: ""
-  property int actionGeneration: 0
-  property int actionFinalizedGeneration: 0
+  readonly property bool resizePending: stateService ? stateService.resizePending : false
+  readonly property string actionError: stateService ? stateService.actionError : ""
   readonly property color foreground: panelForeground
   readonly property color statForeground: bar ? bar.barForeground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -58,27 +57,10 @@ Panel {
 
   function requestMemory(gib) {
     var value = Math.round(Number(gib))
-    if (!canResize || value < Model.minimumGiB() || value > Model.maximumGiB(vmState)) return
-    resizePending = true
-    actionError = ""
+    if (!stateService || !canResize || value < Model.minimumGiB() || value > Model.maximumGiB(vmState)) return false
+    if (!stateService.requestMemory(value)) return false
     previewGiB = value
-    actionProcess.command = ["desktop-hardware-action", "vm", "set-memory", String(value)]
-    actionGeneration++
-    actionProcess.running = true
-  }
-
-  function finishMemoryAction(exitCode, failedStart) {
-    if (actionFinalizedGeneration === actionGeneration) return
-    actionFinalizedGeneration = actionGeneration
-    actionStartCheckTimer.stop()
-    resizePending = false
-    if (failedStart || Number(exitCode) !== 0) {
-      previewGiB = Model.currentGiB(vmState)
-      actionError = failedStart ? "VM memory action failed to start" : String(actionStderr.text || "").trim()
-    } else {
-      actionError = ""
-      vmMonitor.refreshNow()
-    }
+    return true
   }
 
   function reportStateError() {
@@ -89,6 +71,13 @@ Panel {
     else registry.clearPluginError(moduleName, scope)
   }
 
+  function handleStateChanged() {
+    if (!vmState.malformed && !vmState.visible && root.opened) root.close()
+    root.reportStateError()
+    if (memorySlider && !memorySlider.dragging && !root.resizePending)
+      root.previewGiB = Model.currentGiB(vmState)
+  }
+
   visible: hostMemoryState.available || hostCpuState.available || vmState.visible
   implicitWidth: visible ? statRow.implicitWidth : 0
   implicitHeight: visible ? statRow.implicitHeight : 0
@@ -96,57 +85,27 @@ Panel {
   onOpenedChanged: {
     if (opened) {
       previewGiB = Model.currentGiB(vmState)
-      actionError = ""
     }
   }
   onBarChanged: reportStateError()
+  onVmStateChanged: root.handleStateChanged()
+  onActionErrorChanged: if (root.actionError !== "") root.previewGiB = Model.currentGiB(root.vmState)
+  onResizePendingChanged: if (!root.resizePending && memorySlider && !memorySlider.dragging)
+    root.previewGiB = Model.currentGiB(root.vmState)
 
-  HostMetrics {
-    id: hostMetrics
-    onCpuStateChanged: root.hostCpuState = cpuState
-    onMemoryStateChanged: {
-      root.hostMemoryState = memoryState
-      if (hostMemoryButton.hot && root.bar) root.bar.showTooltip(hostMemoryButton, memoryState.tooltip)
-    }
+  ServiceConsumer {
+    id: stateConsumer
+    service: root.stateService
+    active: true
+    details: root.opened
   }
 
-  VmMonitor {
-    id: vmMonitor
-    popupOpen: root.opened
-    onStateChanged: {
-      if (!state.malformed && !state.visible && root.opened) root.close()
-      root.reportStateError()
-      if (!memorySlider.dragging && !root.resizePending) root.previewGiB = Model.currentGiB(state)
+  Connections {
+    target: root.hostService
+    ignoreUnknownSignals: true
+    function onMemoryStateChanged() {
+      if (hostMemoryButton.hot && root.bar) root.bar.showTooltip(hostMemoryButton, root.hostMemoryState.tooltip)
     }
-  }
-
-  Process {
-    id: actionProcess
-    command: []
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector {
-      id: actionStderr
-      waitForEnd: true
-    }
-    onExited: function(exitCode) {
-      root.finishMemoryAction(exitCode, false)
-    }
-    onStarted: actionStartCheckTimer.stop()
-    onRunningChanged: {
-      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
-        actionStartCheckTimer.generation = actionGeneration
-        actionStartCheckTimer.start()
-      }
-    }
-  }
-
-  Timer {
-    id: actionStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: if (!actionProcess.running && generation === root.actionGeneration)
-      root.finishMemoryAction(1, true)
   }
 
   Row {
@@ -160,7 +119,7 @@ Panel {
       valueText: root.hostMemoryState.available ? root.hostMemoryState.value : ""
       tooltipText: root.hostMemoryState.tooltip
       foreground: root.hostMemoryCritical ? root.urgent : root.statForeground
-      onHotChanged: if (hot) hostMetrics.refreshTmp()
+      onHotChanged: if (hot && root.hostService) root.hostService.refreshTmp()
       onPressed: function(mouseButton) {
         if (mouseButton === Qt.LeftButton) root.openHostMonitor()
       }

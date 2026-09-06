@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -17,18 +16,19 @@ Panel {
   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  property string compactText: ""
-  property string compactTooltip: ""
-  property bool compactMuted: false
-  readonly property var remoteSummary: ({
-    available: root.displayText !== "",
-    text: root.displayText,
-    tooltip: root.compactTooltip,
-    muted: root.compactMuted
-  })
+  readonly property var agentService: bar && bar.shell ? bar.shell.serviceFor("desktop.agents") : null
 
-  readonly property var providers: usage.enabledProviders
-  readonly property string displayText: compactText !== "" ? compactText : (providers.length > 0 ? "󱚣" : "")
+  readonly property var providers: agentService ? agentService.enabledProviders : []
+  readonly property string compactText: agentService ? agentService.compactText : ""
+  readonly property string compactTooltip: agentService ? agentService.compactTooltip : ""
+  readonly property bool compactMuted: agentService ? agentService.compactMuted : false
+  readonly property string displayText: agentService ? agentService.displayText : ""
+  readonly property var remoteSummary: agentService ? agentService.remoteSummary : ({
+    available: false,
+    text: "",
+    tooltip: "",
+    muted: false
+  })
   // The selection follows the provider, not the slot it happens to sit in: a
   // provider whose first scan lands while the panel is open would otherwise
   // shift the list underneath you and swap out what you were reading.
@@ -61,25 +61,7 @@ Panel {
   }
 
   function refreshNow() {
-    usage.refreshAll(true)
-    refreshCompactStatus()
-  }
-
-  function compactClassHas(value, expected) {
-    if (Array.isArray(value)) return value.indexOf(expected) !== -1
-    return String(value || "") === expected
-  }
-
-  function applyCompactStatus(raw) {
-    var data = Util.parseModuleJson(raw)
-    if (!Util.isPlainObject(data) || typeof data.text !== "string" || typeof data.tooltip !== "string") return
-    compactText = data.text
-    compactTooltip = data.tooltip
-    compactMuted = compactClassHas(data.class !== undefined ? data.class : data.alt, "muted")
-  }
-
-  function refreshCompactStatus() {
-    if (!compactStatusProcess.running) compactStatusProcess.running = true
+    if (root.agentService) root.agentService.refresh()
   }
 
   function refresh() { refreshNow() }
@@ -206,7 +188,7 @@ Panel {
     var label = isNaN(parsed.getTime())
       ? String(day.date)
       : dayName(day.date) + " " + (parsed.getMonth() + 1) + "/" + parsed.getDate()
-    var text = label + " · " + usage.formatTokenCount(Number(day.messageCount || 0)) + " tokens"
+    var text = label + " · " + root.agentService.formatTokenCount(Number(day.messageCount || 0)) + " tokens"
     // Prompt and session counts only exist for today, so they ride along here
     // instead of taking a section of their own. Billing-API agents never
     // count prompts, and "0 prompts" would read as a quiet day, not a gap.
@@ -243,7 +225,7 @@ Panel {
       var cacheRead = Number(bucket.cacheReadInputTokens || 0)
       var cacheWrite = Number(bucket.cacheCreationInputTokens || 0)
       rows.push({
-        name: usage.friendlyModelName(id),
+        name: root.agentService.friendlyModelName(id),
         total: input + output + cacheRead + cacheWrite,
         input: input,
         output: output,
@@ -257,10 +239,10 @@ Panel {
 
   function modelTooltip(row) {
     if (!row) return ""
-    return "In " + usage.formatTokenCount(row.input)
-      + " · out " + usage.formatTokenCount(row.output)
-      + " · cache read " + usage.formatTokenCount(row.cacheRead)
-      + " · cache write " + usage.formatTokenCount(row.cacheWrite)
+    return "In " + root.agentService.formatTokenCount(row.input)
+      + " · out " + root.agentService.formatTokenCount(row.output)
+      + " · cache read " + root.agentService.formatTokenCount(row.cacheRead)
+      + " · cache write " + root.agentService.formatTokenCount(row.cacheWrite)
   }
 
   // Agents that ship a white mark carry an `assets/<id>-light.svg` twin for
@@ -301,32 +283,15 @@ Panel {
     cursorActive = false
     nowMs = Date.now()
     if (panelFlick) panelFlick.contentY = 0
-    usage.refreshLimits()
+    if (root.agentService) root.agentService.refreshLimits()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  Main {
-    id: usage
-    settings: root.settings
-    loaded: root.opened
-  }
-
-  Timer {
-    interval: 300000
-    repeat: true
-    running: true
-    triggeredOnStart: true
-    onTriggered: root.refreshCompactStatus()
-  }
-
-  Process {
-    id: compactStatusProcess
-    command: ["desktop-shell-status", "codex"]
-    stdout: StdioCollector {
-      id: compactStatusStdout
-      waitForEnd: true
-    }
-    onExited: if (Number(exitCode) === 0) root.applyCompactStatus(compactStatusStdout.text || "")
+  ServiceConsumer {
+    id: agentConsumer
+    service: root.agentService
+    active: true
+    details: root.opened
   }
 
   // Cheap enough to keep running: it only re-evaluates text bindings, and a
@@ -779,7 +744,8 @@ Panel {
 
     Text {
       id: dayValue
-      text: usage.formatTokenCount(dayRow.day ? Number(dayRow.day.messageCount || 0) : 0)
+      text: root.agentService ? root.agentService.formatTokenCount(
+        dayRow.day ? Number(dayRow.day.messageCount || 0) : 0) : "0"
       color: dayRow.today ? root.foreground : root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -848,7 +814,7 @@ Panel {
 
     Text {
       id: modelTokens
-      text: modelRow.row ? usage.formatTokenCount(modelRow.row.total) : ""
+      text: modelRow.row && root.agentService ? root.agentService.formatTokenCount(modelRow.row.total) : ""
       color: root.secondary
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall

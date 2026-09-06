@@ -1,4 +1,7 @@
 #!/bin/sh
+if [ -n "${VM_FIXTURE_WATCHER_LOG:-}" ]; then
+  printf '%s\n' watcher >>"$VM_FIXTURE_WATCHER_LOG"
+fi
 printf 'lifecycle\n'
 while :; do
   if [ -r "${VM_FIXTURE_WATCHER_MODE:?}" ] && [ "$(tr -d '\r\n' < "$VM_FIXTURE_WATCHER_MODE")" = flap ]; then

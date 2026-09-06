@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -14,10 +13,10 @@ Panel {
   property var pluginRegistry: null
   property bool cursorActive: false
   property int profileIndex: 0
-  property string actionError: ""
-  property int actionGeneration: 0
-  property int actionFinalizedGeneration: 0
-  property string batteryStatusOutput: ""
+
+  readonly property var powerService: bar && bar.shell ? bar.shell.serviceFor("desktop.power") : null
+  readonly property string actionError: powerService ? powerService.actionError : ""
+  readonly property string batteryStatusOutput: powerService ? powerService.batteryStatusOutput : ""
 
   readonly property bool capabilityAvailable: PowerState.capabilityAvailable
   readonly property var profiles: PowerState.profiles
@@ -33,7 +32,6 @@ Panel {
     return separator < 0 ? batteryStatus : batteryStatus.slice(separator + 1).trim()
   }
   readonly property bool batteryHintVisible: !!bar && bar.tooltipShown && bar.tooltipTarget === button
-  readonly property bool batteryStatusVisible: opened || batteryHintVisible
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -50,12 +48,7 @@ Panel {
   }
 
   function setProfile(profileName) {
-    var name = String(profileName || "")
-    if (name === "" || actionProcess.running) return
-    actionError = ""
-    actionGeneration++
-    actionProcess.command = ["desktop-hardware-action", "power", "set-profile", name]
-    actionProcess.running = true
+    if (powerService) powerService.setProfile(profileName)
   }
 
   function activateSelectedProfile() {
@@ -64,8 +57,7 @@ Panel {
   }
 
   function refreshBatteryStatus() {
-    if (!batteryStatusVisible || !batteryAvailable || batteryStatusProcess.running) return
-    batteryStatusProcess.running = true
+    if (powerService) powerService.refreshBatteryStatus()
   }
 
   visible: capabilityAvailable
@@ -76,10 +68,6 @@ Panel {
   onBatteryAvailableChanged: if (batteryAvailable) refreshBatteryStatus()
   onBatteryHintVisibleChanged: if (batteryHintVisible && bar) bar.tooltipText = batteryHint
   onBatteryHintChanged: if (batteryHintVisible && bar) bar.tooltipText = batteryHint
-  onBatteryStatusVisibleChanged: {
-    if (batteryStatusVisible) refreshBatteryStatus()
-    else if (batteryStatusProcess.running) batteryStatusProcess.signal(15)
-  }
   onPluginRegistryChanged: reportCapability()
   onBarChanged: reportCapability()
   Component.onCompleted: {
@@ -94,67 +82,11 @@ Panel {
     }
   }
 
-  Process {
-    id: actionProcess
-    command: []
-    stdout: StdioCollector { waitForEnd: true }
-    stderr: StdioCollector {
-      id: actionStderr
-      waitForEnd: true
-    }
-    onStarted: actionStartCheckTimer.stop()
-    onExited: function(exitCode) {
-      if (actionFinalizedGeneration === actionGeneration) return
-      actionFinalizedGeneration = actionGeneration
-      actionStartCheckTimer.stop()
-      if (Number(exitCode) === 0) {
-        actionError = ""
-        PowerState.reconcile()
-      } else {
-        actionError = String(actionStderr.text || "").trim() || "Power profile action failed"
-        PowerState.markProfileActionFailed(actionError)
-      }
-    }
-    onRunningChanged: {
-      if (!actionProcess.running && actionGeneration > actionFinalizedGeneration) {
-        actionStartCheckTimer.generation = actionGeneration
-        actionStartCheckTimer.start()
-      }
-    }
-  }
-
-  Timer {
-    id: actionStartCheckTimer
-    property int generation: 0
-    interval: 100
-    repeat: false
-    onTriggered: {
-      if (!actionProcess.running && generation === root.actionGeneration
-          && root.actionFinalizedGeneration !== generation) {
-        root.actionFinalizedGeneration = generation
-        root.actionError = "Power profile action failed to start"
-        PowerState.markProfileActionFailed(root.actionError)
-      }
-    }
-  }
-
-  Timer {
-    interval: 5000
-    running: root.batteryStatusVisible && root.batteryAvailable
-    repeat: true
-    onTriggered: root.refreshBatteryStatus()
-  }
-
-  Process {
-    id: batteryStatusProcess
-    command: ["battery-status"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var output = text.trim()
-        if (root.batteryStatusVisible && output !== "") root.batteryStatusOutput = output
-      }
-    }
+  ServiceConsumer {
+    id: powerConsumer
+    service: root.powerService
+    active: true
+    details: root.opened || root.batteryHintVisible
   }
 
   BarMetricButton {

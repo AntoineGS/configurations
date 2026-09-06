@@ -1,0 +1,3 @@
+#!/bin/sh
+unset VM_FIXTURE_STATE_HOLD
+VM_FIXTURE_STATE="${VM_FIXTURE_REPLACEMENT_STATE:-${VM_FIXTURE_STATE:?}}" exec "$(dirname "$0")/fake-state" "$@"

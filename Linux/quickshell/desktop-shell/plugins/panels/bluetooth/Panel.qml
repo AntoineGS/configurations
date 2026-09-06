@@ -1,6 +1,4 @@
 import QtQuick
-import Quickshell
-import Quickshell.Io
 import Quickshell.Bluetooth
 import qs.Ui
 import qs.Commons
@@ -13,15 +11,11 @@ Panel {
   ipcTarget: "desktop.bluetooth"
   manageIpc: false
   property var pluginRegistry: null
-  property var batteryDevices: ({})
-  property bool batteryCollectorLoaded: true
-  property bool batteryRefreshQueued: false
-  property int batteryRefreshGeneration: 0
-  property int batteryProcessGeneration: 0
-  property string batteryTopologyKey: ""
 
   readonly property bool capabilityAvailable: !!Bluetooth.defaultAdapter
   readonly property var adapter: capabilityAvailable ? Bluetooth.defaultAdapter : null
+  readonly property var bluetoothService: bar && bar.shell
+    ? bar.shell.serviceFor("desktop.bluetooth") : null
   readonly property var devices: Bluetooth.devices ? Bluetooth.devices.values : []
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -30,6 +24,8 @@ Panel {
   readonly property var knownDevices: deviceGroups.known || []
   readonly property var discoveredDevices: deviceGroups.discovered || []
   readonly property var visibleSections: Model.visibleSections(deviceGroups, adapter && adapter.discovering)
+  readonly property var batteryDevices: bluetoothService ? bluetoothService.batteryDevices : ({})
+  readonly property var pendingActions: bluetoothService ? bluetoothService.pendingActions : ({})
   readonly property color warningColor: "#fab387"
   readonly property bool lowBattery: Model.hasLowBattery(connectedDevices, batteryDevices)
   readonly property string batteryTooltip: Model.batteryTooltip(connectedDevices, batteryDevices, warningColor)
@@ -54,70 +50,24 @@ Panel {
   }
 
   function refreshBatteries() {
-    if (!batteryCollectorLoaded) return
-    batteryRefreshGeneration++
-    if (batteryProcess.running) {
-      batteryRefreshQueued = true
-      return
-    }
-    batteryProcessGeneration = batteryRefreshGeneration
-    batteryProcess.running = true
+    if (bluetoothService) bluetoothService.refreshBatteries()
   }
 
-  function syncBatteryTopology() {
-    var nextKey = Model.deviceTopologyKey(connectedDevices)
-    if (nextKey === batteryTopologyKey) return
-    batteryTopologyKey = nextKey
-    refreshBatteries()
-  }
-
-  function applyBatteryState(raw) {
-    batteryDevices = Model.parseBatteryState(raw)
-  }
-
-  property var pendingActions: ({})
   property string focusSection: "header"
   property int selectedIndex: 0
   property bool cursorActive: false
   readonly property bool busy: Object.keys(pendingActions).length > 0
 
-  function helper(args) {
-    Quickshell.execDetached(["desktop-connectivity-action"].concat(args))
-  }
-
   function toggleBluetooth() {
-    if (!adapter) return
-    helper(["bluetooth", "power", adapter.enabled ? "off" : "on"])
-  }
-
-  function scan(enabled) {
-    if (!adapter) return
-    helper(["bluetooth", "scan", enabled ? "on" : "off"])
-  }
-
-  function deviceFor(row) {
-    if (!row || !row.address) return null
-    for (var i = 0; i < devices.length; i++) {
-      if (devices[i] && String(devices[i].address || "") === row.address) return devices[i]
-    }
-    return null
+    if (bluetoothService) bluetoothService.toggleBluetooth()
   }
 
   function pendingAction(address) {
-    return Model.pendingAction(pendingActions, address)
-  }
-
-  function setPendingAction(address, action) {
-    if (!address) return
-    pendingActions = Model.withPendingAction(pendingActions, address, action)
+    return bluetoothService ? bluetoothService.pendingAction(address) : ""
   }
 
   function runDeviceAction(row, action, pending) {
-    if (!row || !row.address || root.pendingAction(row.address) !== "") return
-    setPendingAction(row.address, pending)
-    helper(["bluetooth", action, row.address])
-    pendingTimer.restart()
-    pendingTimeout.restart()
+    return bluetoothService ? bluetoothService.runDeviceAction(row, action, pending) : false
   }
 
   function activateDevice(row) {
@@ -194,30 +144,6 @@ Panel {
     removeDevice(deviceAt(focusSection, selectedIndex))
   }
 
-  function syncPendingActions() {
-    var next = Model.cloneMap(pendingActions)
-    var changed = false
-    for (var address in next) {
-      var row = null
-      for (var i = 0; i < devices.length; i++) {
-        if (devices[i] && String(devices[i].address || "") === address) {
-          row = devices[i]
-          break
-        }
-      }
-      var action = next[address]
-      var finished = (action === "connecting" && row && row.connected)
-        || (action === "disconnecting" && row && !row.connected)
-        || (action === "pairing" && row && (row.paired || row.bonded || row.trusted))
-        || (action === "removing" && (!row || (!row.paired && !row.bonded && !row.trusted)))
-      if (finished) {
-        delete next[address]
-        changed = true
-      }
-    }
-    if (changed) pendingActions = next
-  }
-
   onOpenedChanged: {
     if (opened) {
       cursorActive = false
@@ -225,9 +151,6 @@ Panel {
       else if (knownDevices.length > 0) { focusSection = "known"; selectedIndex = 0 }
       else { focusSection = "header"; selectedIndex = 0 }
       refreshBatteries()
-      scan(true)
-    } else {
-      scan(false)
     }
   }
 
@@ -238,67 +161,22 @@ Panel {
   onPluginRegistryChanged: reportCapability()
   onBarChanged: reportCapability()
   onCapabilityAvailableChanged: reportCapability()
-  onConnectedDevicesChanged: syncBatteryTopology()
+  onBluetoothServiceChanged: refreshBatteries()
   Component.onCompleted: {
     reportCapability()
-    batteryTopologyKey = Model.deviceTopologyKey(connectedDevices)
     refreshBatteries()
   }
-  Component.onDestruction: {
-    batteryCollectorLoaded = false
-    batteryRefreshQueued = false
-    batteryRefreshTimer.stop()
+
+  ServiceConsumer {
+    id: bluetoothConsumer
+    service: root.bluetoothService
+    active: true
+    details: root.opened
   }
 
   visible: adapter !== null
   implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: visible ? button.implicitHeight : 0
-
-  Timer {
-    id: pendingTimer
-    interval: 500
-    repeat: true
-    running: root.opened && Object.keys(root.pendingActions).length > 0
-    onTriggered: root.syncPendingActions()
-  }
-
-  Timer {
-    id: pendingTimeout
-    interval: 20000
-    repeat: false
-    onTriggered: root.pendingActions = ({})
-  }
-
-  Timer {
-    id: batteryRefreshTimer
-    interval: 300000
-    repeat: true
-    running: root.batteryCollectorLoaded
-    onTriggered: root.refreshBatteries()
-  }
-
-  Process {
-    id: batteryProcess
-    command: ["desktop-hardware-state", "bluetooth"]
-    stdout: StdioCollector {
-      id: batteryStdout
-      waitForEnd: true
-    }
-    stderr: StdioCollector {
-      id: batteryStderr
-      waitForEnd: true
-    }
-    onExited: {
-      var completedGeneration = root.batteryProcessGeneration
-      root.batteryProcessGeneration = 0
-      if (!root.batteryCollectorLoaded) return
-      if (completedGeneration === root.batteryRefreshGeneration)
-        root.applyBatteryState(batteryStdout.text || "")
-      if (!root.batteryRefreshQueued) return
-      root.batteryRefreshQueued = false
-      root.refreshBatteries()
-    }
-  }
 
   BarIconButton {
     id: button

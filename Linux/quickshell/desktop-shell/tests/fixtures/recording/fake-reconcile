@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+count_file=${RECORDING_FIXTURE_COUNT:?}
+log_file=${RECORDING_FIXTURE_RECONCILE_LOG:-$count_file.reconcile.log}
+active_file=${RECORDING_FIXTURE_RECONCILE_ACTIVE:-$count_file.reconcile-active}
+overlap_file=${RECORDING_FIXTURE_RECONCILE_OVERLAP:-$count_file.reconcile-overlap}
+
+if [ -e "$active_file" ]; then
+  : >"$overlap_file"
+  exit 2
+fi
+
+: >"$active_file"
+trap 'rm -f "$active_file"' EXIT INT TERM
+printf 'reconcile %s\n' "$*" >>"$log_file"
+sleep 0.05

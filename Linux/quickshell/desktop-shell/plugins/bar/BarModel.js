@@ -82,6 +82,19 @@ function customModuleType(entry) {
   return ""
 }
 
+function isBundledDiskEntry(entry) {
+  if (!isPlainObject(entry) || entryId(entry) !== "disk") return false
+  var settings = entrySettings(entry)
+  return customModuleType(entry) === "command"
+    && settings.exec === "desktop-shell-status disk"
+    && !settings.source
+    && Number(settings.interval === undefined ? 5 : settings.interval) === 300
+}
+
+function serviceWidgetId(entry) {
+  return isBundledDiskEntry(entry) ? "desktop.disk" : entryId(entry)
+}
+
 function commandClassHas(value, expected) {
   if (Array.isArray(value)) return value.indexOf(expected) !== -1
   return String(value || "") === expected
@@ -188,6 +201,8 @@ if (typeof module !== "undefined") {
     expandPath: expandPath,
     customModuleSafeName: customModuleSafeName,
     customModuleType: customModuleType,
+    isBundledDiskEntry: isBundledDiskEntry,
+    serviceWidgetId: serviceWidgetId,
     customModulePath: customModulePath,
     commandModuleState: commandModuleState,
     tooltipDisplayText: tooltipDisplayText

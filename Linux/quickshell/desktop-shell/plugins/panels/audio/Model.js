@@ -35,6 +35,32 @@ function outputVolumeName(volume, muted) {
   return "Whisper"
 }
 
+function remoteSummary(sink) {
+  var available = !!(sink && sink.audio)
+  var volume = available ? sink.audio.volume : 0
+  var muted = available ? !!sink.audio.muted : false
+  var icon = ""
+  if (available) {
+    if (isHeadphones(sink)) icon = "󰋋"
+    else if (muted) icon = ""
+    else if (volume >= 0.67) icon = ""
+    else if (volume >= 0.34) icon = ""
+    else if (volume > 0) icon = ""
+  }
+  var label = available ? nodeLabel(sink) : ""
+  return {
+    available: available,
+    icon: icon,
+    volumePercent: Math.round(volume * 100),
+    muted: muted,
+    deviceLabel: label,
+    tooltip: available
+      ? (muted ? "Muted" : "Volume: " + Math.round(volume * 100) + "%")
+        + (label !== "" ? "\n" + label : "")
+      : "Audio unavailable"
+  }
+}
+
 function nodeProps(node) {
   return node && node.ready && node.properties ? node.properties : {}
 }
@@ -122,6 +148,7 @@ if (typeof module !== "undefined") {
     isAudioSource: isAudioSource,
     listSnapshot: listSnapshot,
     outputVolumeName: outputVolumeName,
+    remoteSummary: remoteSummary,
     nodeProps: nodeProps,
     friendlyDeviceLabel: friendlyDeviceLabel,
     nodeLabel: nodeLabel,

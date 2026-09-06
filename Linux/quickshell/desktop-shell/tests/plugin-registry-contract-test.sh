@@ -80,6 +80,7 @@ mkdir -p -- "$config/firstparty"
 cp -R -- "$shell_dir/plugins/." "$config/firstparty/"
 ln -s -- "$shell_dir/services" "$config/services"
 ln -s -- "$shell_dir/Commons" "$config/Commons"
+ln -s -- "$shell_dir/plugins" "$config/plugins"
 
 env \
     HOME="$tmp_dir/home" \
