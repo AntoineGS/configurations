@@ -4,7 +4,7 @@
   "name": "Display",
   "version": "1.0.0",
   "author": "Desktop Shell",
-  "description": "Display brightness and monitor controls",
+  "description": "Display scaling, brightness, and monitor layout controls",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Display",
-    "description": "Display brightness and monitor controls",
+    "description": "Display scaling, brightness, and monitor layout controls",
     "category": "System",
     "allowMultiple": false
   }

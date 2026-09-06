@@ -20,7 +20,9 @@ Panel {
   property var operationState: Model.monitorOperationState()
   property string actionName: ""
   property bool cursorActive: false
-  property int selectedIndex: 0
+  property int selectedIndex: -1
+  property real previewScale: 1
+  property string hostname: ""
   property int nativeTopologyGeneration: 0
   property int reconciliationGeneration: 0
   property int reconciliationFinalizedGeneration: 0
@@ -44,6 +46,108 @@ Panel {
   readonly property int enabledDisplayCount: Model.enabledDisplayCount(displays)
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property var barWindow: button.QsWindow.window
+  readonly property string barMonitor: barWindow && barWindow.screen ? String(barWindow.screen.name || "") : ""
+  readonly property var selectedDisplay: displayForMonitor(barMonitor)
+  readonly property real selectedScale: selectedDisplay ? selectedDisplay.scale : 1
+  readonly property var scaleOptions: validScaleOptions(selectedDisplay)
+  readonly property var activeMonitors: displays.map(function(display) { return display.name })
+  readonly property bool presetLayoutsAvailable: hostname === "antoinews-linux"
+  readonly property string layoutMode: {
+    if (activeMonitors.length === 1) return "single"
+    var right = activeMonitors.indexOf("DP-1") !== -1
+    var left = activeMonitors.indexOf("DP-2") !== -1
+    var headless = activeMonitors.indexOf("HEADLESS-1") !== -1
+    if (right && left && !headless && activeMonitors.length === 2) return "physical"
+    if (right && !left && headless && activeMonitors.length === 2) return "headless"
+    return "mixed"
+  }
+  readonly property string modeLetter: layoutMode === "physical" ? "P"
+    : layoutMode === "headless" ? "H"
+    : layoutMode === "single" ? "S" : "?"
+  readonly property string modeLabel: layoutMode === "physical" ? "Both physical monitors"
+    : layoutMode === "headless" ? "Headless + right physical"
+    : layoutMode === "single" ? "Single monitor: " + (activeMonitors[0] || barMonitor)
+    : "Mixed monitor layout"
+  readonly property var layoutOptions: [
+    { mode: "physical", letter: "P", label: "Both physical monitors" },
+    { mode: "headless", letter: "H", label: "Headless + right physical" },
+    { mode: "single", letter: "S", label: "Single monitor: " + (barMonitor || "current") }
+  ]
+
+  function displayForMonitor(name) {
+    for (var i = 0; i < displays.length; i++)
+      if (displays[i].name === name) return displays[i]
+    return null
+  }
+
+  function validScaleOptions(display) {
+    if (!display || display.width <= 0 || display.height <= 0)
+      return [{ value: 1, command: "1" }, { value: 2, command: "2" }]
+    var result = []
+    for (var numerator = 120; numerator <= 240; numerator++) {
+      if ((display.width * 120) % numerator !== 0 || (display.height * 120) % numerator !== 0) continue
+      var value = numerator / 120
+      var command = Math.floor(value * 10000000 + 0.01) / 10000000
+      result.push({ value: value, command: String(command) })
+    }
+    return result
+  }
+
+  function nearestScaleIndex(scale) {
+    var nearest = 0
+    var distance = Infinity
+    for (var i = 0; i < scaleOptions.length; i++) {
+      var candidateDistance = Math.abs(scaleOptions[i].value - Number(scale))
+      if (candidateDistance < distance) {
+        nearest = i
+        distance = candidateDistance
+      }
+    }
+    return nearest
+  }
+
+  function syncPreviewScale() {
+    previewScale = scaleOptions[nearestScaleIndex(selectedScale)].value
+  }
+
+  function formatScale(scale) {
+    return Number(scale).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")
+  }
+
+  function moveScale(delta) {
+    cursorActive = true
+    var index = Math.max(0, Math.min(scaleOptions.length - 1, nearestScaleIndex(previewScale) + delta))
+    previewScale = scaleOptions[index].value
+  }
+
+  function applyScale(scale) {
+    if (barMonitor === "" || scaleProcess.running) return
+    var option = scaleOptions[nearestScaleIndex(scale)]
+    previewScale = option.value
+    scaleProcess.command = [
+      "desktop-hardware-action", "monitor", "set-scale", barMonitor, option.command
+    ]
+    scaleProcess.running = true
+  }
+
+  function applyLayout(mode) {
+    if (!presetLayoutsAvailable) return
+    if (mode === "single" && barMonitor === "") return
+    var command = ["desktop-hardware-action", "monitor", "set-layout", mode]
+    if (mode === "single") command.push(barMonitor)
+    close()
+    Quickshell.execDetached(command)
+  }
+
+  function open() {
+    Hyprland.refreshMonitors()
+    monitorRefreshTimer.restart()
+    syncPreviewScale()
+    selectedIndex = -1
+    cursorActive = false
+    controller.show()
+  }
 
   function reportCapability() {
     var registry = pluginRegistry || (bar && bar.shell ? bar.shell.pluginRegistry : null)
@@ -87,7 +191,7 @@ Panel {
       data: nextData
     }
     reportCapability()
-    if (selectedIndex >= displays.length) selectedIndex = Math.max(0, displays.length - 1)
+    if (selectedIndex >= displays.length) selectedIndex = displays.length - 1
   }
 
   function refresh() {
@@ -154,13 +258,13 @@ Panel {
   }
 
   function moveCursor(delta) {
-    if (displays.length === 0) return
-    selectedIndex = Math.max(0, Math.min(displays.length - 1, selectedIndex + delta))
+    selectedIndex = Math.max(-1, Math.min(displays.length - 1, selectedIndex + delta))
     cursorActive = true
   }
 
   function activateCursor() {
-    if (selectedIndex >= 0 && selectedIndex < displays.length) toggleInternal()
+    if (selectedIndex === -1) applyScale(previewScale)
+    else if (selectedIndex < displays.length) toggleInternal()
   }
 
   visible: capabilityAvailable
@@ -239,7 +343,12 @@ Panel {
 
   Connections {
     target: Hyprland.monitors
-    function onValuesChanged() { root.refreshNativeTopology() }
+    function onValuesChanged() {
+      root.refreshNativeTopology()
+      if (root.selectedIndex >= root.displays.length) root.selectedIndex = root.displays.length - 1
+      if (root.opened && !scaleSlider.dragging)
+        Qt.callLater(root.syncPreviewScale)
+    }
   }
 
   Connections {
@@ -261,12 +370,45 @@ Panel {
       root.finishAction(1, true)
   }
 
-  BarIconButton {
+  Process {
+    command: ["hostname"]
+    running: true
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.hostname = String(text || "").trim()
+    }
+  }
+
+  Process {
+    id: scaleProcess
+    command: []
+    onExited: function(exitCode) {
+      if (Number(exitCode) !== 0) return
+      Hyprland.refreshMonitors()
+      monitorRefreshTimer.restart()
+    }
+  }
+
+  Timer {
+    id: monitorRefreshTimer
+    interval: 150
+    repeat: false
+    onTriggered: Hyprland.refreshMonitors()
+  }
+
+  BarMetricButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: Model.displayIcon(root.displays.length)
-    onPressed: root.toggle()
+    iconText: Model.displayIcon(root.displays.length)
+    valueText: root.presetLayoutsAvailable ? root.modeLetter : ""
+    active: root.presetLayoutsAvailable && (root.layoutMode === "headless" || root.layoutMode === "single")
+    tooltipText: root.presetLayoutsAvailable
+      ? root.modeLabel + "; click to configure " + (root.barMonitor || "this monitor")
+      : "Configure " + (root.barMonitor || "this monitor")
+    onPressed: function(mouseButton) {
+      if (mouseButton === Qt.LeftButton) root.toggle()
+    }
   }
 
   KeyboardPanel {
@@ -277,13 +419,14 @@ Panel {
     open: root.opened && root.capabilityAvailable
     focusTarget: keyCatcher
     contentWidth: popup.fittedContentWidth(Style.space(380))
-    contentHeight: popup.fittedContentHeight(column.implicitHeight, Style.space(560))
+    contentHeight: popup.fittedContentHeight(column.implicitHeight, Style.space(620))
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (dy !== 0) root.moveCursor(dy)
+        else if (dx !== 0 && root.selectedIndex === -1) root.moveScale(dx)
         else if (dx !== 0 && root.keyboardBrightness.available) {
           root.setKeyboardBrightness(dx > 0 ? "up" : "down")
         }
@@ -291,6 +434,11 @@ Panel {
       onActivateRequested: root.activateCursor()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onTextKey: function(text) {
+        if (text === "p" || text === "P") root.applyLayout("physical")
+        else if (text === "H") root.applyLayout("headless")
+        else if (text === "s" || text === "S") root.applyLayout("single")
+      }
 
       Flickable {
         anchors.fill: parent
@@ -307,7 +455,8 @@ Panel {
           PanelHero {
             width: parent.width
             title: "Display"
-            meta: root.focusedMonitor || "No focused display"
+            meta: root.barMonitor || "No active monitor"
+            detail: root.formatScale(root.previewScale) + "x"
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
@@ -321,6 +470,94 @@ Panel {
           }
 
           PanelSectionHeader {
+            text: "SCALE"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          CursorSurface {
+            width: parent.width
+            implicitHeight: scaleSlider.implicitHeight + Style.spacing.controlGap
+            foreground: root.foreground
+            outline: true
+            hasCursor: root.cursorActive && root.selectedIndex === -1
+
+            PanelSlider {
+              id: scaleSlider
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(6)
+              anchors.rightMargin: Style.space(6)
+              bar: root.bar
+              minimum: 0
+              maximum: Math.max(0, root.scaleOptions.length - 1)
+              step: 1
+              integer: true
+              tickCount: root.scaleOptions.length
+              value: root.nearestScaleIndex(root.previewScale)
+              onMoved: function(value) {
+                root.selectedIndex = -1
+                root.previewScale = root.scaleOptions[Math.round(value)].value
+              }
+              onReleased: function(value) { root.applyScale(root.scaleOptions[Math.round(value)].value) }
+            }
+          }
+
+          Item {
+            width: parent.width
+            implicitHeight: Math.max(minimumScaleLabel.implicitHeight, maximumScaleLabel.implicitHeight)
+
+            Text {
+              id: minimumScaleLabel
+              anchors.left: parent.left
+              text: root.formatScale(root.scaleOptions[0].value) + "x"
+              color: root.panelSecondary
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              id: maximumScaleLabel
+              anchors.right: parent.right
+              text: root.formatScale(root.scaleOptions[root.scaleOptions.length - 1].value) + "x"
+              color: root.panelSecondary
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Column {
+            visible: root.presetLayoutsAvailable
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSeparator { foreground: root.foreground }
+            PanelSectionHeader {
+              text: "WORKSTATION LAYOUT"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Repeater {
+              model: root.layoutOptions
+              Button {
+                required property var modelData
+                width: column.width
+                iconText: modelData.letter
+                text: modelData.label
+                leftAlign: true
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                active: root.layoutMode === modelData.mode
+                onClicked: root.applyLayout(modelData.mode)
+              }
+            }
+          }
+
+          PanelSeparator {
+            visible: root.brightness.available
+            foreground: root.foreground
+          }
+          PanelSectionHeader {
             text: "BRIGHTNESS"
             visible: root.brightness.available
             foreground: root.foreground
@@ -333,7 +570,6 @@ Panel {
             implicitHeight: brightnessSlider.implicitHeight + Style.spacing.controlGap
             foreground: root.foreground
             outline: true
-            hasCursor: root.cursorActive && root.selectedIndex < 0
 
             PanelSlider {
               id: brightnessSlider
