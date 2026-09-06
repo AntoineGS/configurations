@@ -40,12 +40,14 @@ Item {
   readonly property bool hasSmallIcon: smallIconSource.length > 0
   readonly property string sanitizedBody: sanitizeBody(renderedBody)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
-  readonly property color surfaceColor: renderedUrgency === 0
+  readonly property color surfaceColor: Color.notifications.background
+  readonly property color urgencyColor: renderedUrgency === 0
     ? Color.notifications.low : renderedUrgency === 2
-      ? Color.notifications.critical : Color.notifications.background
+      ? Color.notifications.critical : Color.notifications.normal
   readonly property real contentTopInset: attachedMode
     ? Math.max(0, attachedContentTopInset) : 0
   readonly property color inkColor: Color.notifications.text
+  readonly property color secondaryInkColor: Color.notifications.secondaryText
   readonly property string sourceLabel: String(renderedApp || "SYSTEM").toUpperCase()
   readonly property string timeLabel: formatTime(renderedTimestamp)
 
@@ -125,7 +127,7 @@ Item {
       Text {
         Layout.fillWidth: true
         text: root.sourceLabel
-        color: root.inkColor
+        color: root.secondaryInkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -135,7 +137,7 @@ Item {
 
       Text {
         text: root.timeLabel
-        color: root.inkColor
+        color: root.secondaryInkColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -148,7 +150,7 @@ Item {
       Layout.leftMargin: Style.space(12)
       Layout.rightMargin: Style.space(12)
       height: Style.space(2)
-      color: root.inkColor
+      color: root.urgencyColor
       opacity: root.contentOpacity
     }
 
@@ -180,7 +182,7 @@ Item {
       visible: root.sanitizedBody.length > 0
       text: root.styledBody
       textFormat: Text.StyledText
-      color: root.inkColor
+      color: root.secondaryInkColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       font.bold: true
@@ -198,7 +200,7 @@ Item {
       Layout.rightMargin: Style.space(12)
       visible: !root.historyMode && !!root.renderedActions && root.renderedActions.length > 0
       height: Math.max(1, Style.space(1))
-      color: root.inkColor
+      color: Util.alpha(root.secondaryInkColor, 0.2)
       opacity: root.contentOpacity
     }
 
@@ -223,14 +225,13 @@ Item {
           model: root.renderedActions || []
 
           Button {
-            required property int index
             required property var modelData
             text: modelData.text
-            foreground: index === 0 ? root.surfaceColor : root.inkColor
-            background: index === 0 ? root.inkColor : "transparent"
-            accent: root.inkColor
-            borderSpec: Border.flat(root.inkColor, Math.max(1, Style.space(1)))
-            radius: 0
+            foreground: root.inkColor
+            accent: Color.notifications.action
+            color: "transparent"
+            bordered: true
+            borderSpec: Border.flat(Util.alpha(accent, hot ? 1 : 0.5), Math.max(1, Style.space(1)))
             maximumWidth: Style.space(140)
             fontFamily: root.fontFamily
             fontSize: Style.font.caption
@@ -251,7 +252,7 @@ Item {
       Layout.bottomMargin: Style.space(10)
       visible: root.historyMode && root.actionExpired
       text: "ACTION EXPIRED"
-      color: root.inkColor
+      color: root.secondaryInkColor
       opacity: 0.62 * root.contentOpacity
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -270,12 +271,12 @@ Item {
     anchors.bottomMargin: Style.space(5)
     height: Math.max(1, Style.space(2))
     visible: root.countdownShown
-    color: Util.alpha(root.inkColor, 0.2)
+    color: Util.alpha(root.secondaryInkColor, 0.2)
 
     Rectangle {
       width: parent.width * root.countdownFraction
       height: parent.height
-      color: Color.notifications.countdown
+      color: root.urgencyColor
     }
   }
 

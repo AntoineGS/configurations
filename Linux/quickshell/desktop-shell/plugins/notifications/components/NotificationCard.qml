@@ -26,8 +26,6 @@ ElevatedSurface {
   property bool actionExpired: false
   property bool attachedMode: false
   property real attachedContentTopInset: 0
-  property color gradientStartColor: root.surfaceColor
-  property real gradientExtent: Style.space(60)
   property real metadataOpacity: 1
   property real contentOpacity: 1
 
@@ -43,8 +41,6 @@ ElevatedSurface {
   readonly property var renderedActions: content.renderedActions
   readonly property bool countdownShown: content.countdownShown
   readonly property real countdownFraction: content.countdownFraction
-  readonly property real gradientStop: Math.min(1,
-    root.gradientExtent / Math.max(1, root.height))
   readonly property string smallIconSource: content.smallIconSource
   readonly property bool hasSmallIcon: content.hasSmallIcon
   readonly property string sanitizedBody: content.sanitizedBody
@@ -67,12 +63,6 @@ ElevatedSurface {
   topRightRadius: root.attachedMode ? 0 : radius
   bottomLeftRadius: radius
   bottomRightRadius: radius
-  gradient: Gradient {
-    orientation: Gradient.Vertical
-    GradientStop { position: 0; color: root.gradientStartColor }
-    GradientStop { position: root.gradientStop; color: root.surfaceColor }
-    GradientStop { position: 1; color: root.surfaceColor }
-  }
   color: surfaceColor
   borderSpec: root.keyboardSelected
     ? Border.flat(root.inkColor, Math.max(2, Style.space(2)))
