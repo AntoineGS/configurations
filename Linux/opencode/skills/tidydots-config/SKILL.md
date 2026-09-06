@@ -63,7 +63,20 @@ non-trivial. Quick recipes:
   package name (`pacman: neovim`, `brew: neovim`, ...). Git repos and custom
   installers are also packages — see schema.
 - **Add a template:** name the repo file `*.tmpl` (e.g. `.zshrc.tmpl`); it
-  renders on restore using platform context (`.OS`, `.Distro`, ...).
+  renders on restore using platform context (`.OS`, `.Distro`, ...). For an
+  explicit entry, list that source name including `.tmpl`; symlink entries
+  deploy through the rendered repository alias, while copy entries render
+  directly to a real suffix-free target and merge using render history.
+  Ordinary non-template copy files remain literal copies. Copy-template backup
+  skips the selected template source, and status/diff inspect the live target
+  without requesting sudo. The source-hash fast path covers source bytes only;
+  use `--force-render` when template context changes without a source edit.
+  Matching content is a no-op only when required type and sudo ownership also
+  match. Existing regular modes are retained; native-created files use
+  source permissions, while new or symlink-replacement sudo Linux files and
+  recovery artifacts use 0600. A no-history target backup is skipped by
+  `--force-render`.
+  Legacy `.tmpl` targets are not removed implicitly.
 - **Add a setup entry:** an entry with optional `when:`, `check:` and `run:`
   (both OS→command maps) runs a command instead of deploying files. `check`
   must be read-only and fast — it runs on every restore and dry-run when the
@@ -81,8 +94,8 @@ hosts generate `{{ or (eq .Hostname "desktop") (eq .Hostname "laptop") }}`. Pres
 `enter` to apply the expression or `ctrl+s` to apply it and save the form.
 
 The global `--dir` flag overrides which repository is selected for an operation;
-the TUI loads hostname choices from that repository. For compatibility, it falls
-back to local app-config hostnames when the repository does not define them.
+the TUI loads hostname choices from that repository. For compatibility, it
+falls back to local app-config hostnames when the repository does not define them.
 
 An entry must match both its own condition and its application's condition.
 Packages are application-level only and use the application's condition.
