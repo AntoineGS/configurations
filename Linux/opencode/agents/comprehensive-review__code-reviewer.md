@@ -2,7 +2,7 @@
 name: comprehensive-review__code-reviewer
 description: Elite code review expert specializing in modern AI-powered code analysis, security vulnerabilities, performance optimization, and production reliability. Masters static analysis tools, security scanning, and configuration review with 2024/2025 best practices. Use PROACTIVELY for code quality assurance.
 mode: subagent
-model: openai/gpt-5.6-sol
+model: openai/gpt-6-astra
 variant: high
 ---
 

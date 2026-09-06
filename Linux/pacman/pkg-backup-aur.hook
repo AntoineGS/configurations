@@ -6,4 +6,5 @@ Target = *
 
 [Action]
 When = PostTransaction
-Exec = /bin/bash -c 'pacman -Qqemt > /home/antoinegs/gits/configurations/Linux/pacman/pkglist-aur-$(hostname).txt'
+# Tidydots symlinks this hook into the repo; resolve it instead of root's home.
+Exec = /bin/bash -ec 'test -L /usr/share/libalpm/hooks/pkg-backup-aur.hook; hook=$(readlink -e /usr/share/libalpm/hooks/pkg-backup-aur.hook); pacman -Qqemt > "$(dirname "$hook")/pkglist-aur-$(hostname).txt"'

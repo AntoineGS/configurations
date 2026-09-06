@@ -52,6 +52,8 @@ Item {
   property bool actionChecked: false
   property bool brightnessReleaseChecked: false
   property bool brightnessReleaseDeferredChecked: false
+  property bool liveSlidersChecked: false
+  property int liveSliderPhase: 0
   property bool brightnessConfirmationChecked: false
   property bool nativeRefreshChecked: false
   property bool sameServiceStaleIgnored: false
@@ -76,15 +78,101 @@ Item {
   }
 
   function checkBrightnessReleaseOrdering() {
+    var displaySlider = releasePanel.displayBrightnessControl
+    if (!displaySlider) return false
     releaseService.lastBrightness = -1
     releaseService.operationPending = false
     releasePanel.brightnessPreviewPercent = releasePanel.brightnessPercent
-    releaseSlider.dragging = true
-    releaseSlider.liveValue = 75
-    releaseSlider.moved(releaseSlider.liveValue)
-    releaseSlider.releaseCurrentValue()
+    displaySlider.dragging = true
+    displaySlider.liveValue = 75
+    displaySlider.moved(displaySlider.liveValue)
+    displaySlider.releaseCurrentValue()
     return releaseService.lastBrightness === 75
       && releasePanel.brightnessPreviewPercent === 75
+  }
+
+  function sameValues(actual, expected) {
+    return JSON.stringify(actual) === JSON.stringify(expected)
+  }
+
+  function advanceLiveSliderCoverage() {
+    var displaySlider = releasePanel.displayBrightnessControl
+    var keyboardSlider = releasePanel.keyboardBrightnessControl
+    if (!displaySlider || !keyboardSlider) {
+      root.fail("merged monitor panel sliders are not accessible")
+      return true
+    }
+
+    if (root.liveSliderPhase === 0) {
+      releaseService.resetLiveActions()
+      releaseService.publishState(40, 20, false)
+      displaySlider.dragging = true
+      displaySlider.liveValue = 60
+      displaySlider.moved(displaySlider.liveValue)
+      root.liveSliderPhase = 1
+      return false
+    }
+
+    if (root.liveSliderPhase === 1) {
+      if (releaseService.brightnessActions.length < 1) return false
+      if (!sameValues(releaseService.brightnessActions, [60])
+          || releasePanel.brightnessPreviewPercent !== 60
+          || !releaseService.operationPending)
+        root.fail("display live throttle did not submit the first value")
+      releaseService.publishState(40, 20, true)
+      if (releasePanel.brightnessPreviewPercent !== 60 || displaySlider.liveValue !== 60)
+        root.fail("confirmed display state overwrote the drag preview")
+      displaySlider.liveValue = 75
+      displaySlider.moved(displaySlider.liveValue)
+      displaySlider.releaseCurrentValue()
+      root.liveSliderPhase = 2
+      return false
+    }
+
+    if (root.liveSliderPhase === 2) {
+      if (releaseService.brightnessActions.length < 2) return false
+      if (!sameValues(releaseService.brightnessActions, [60, 75])
+          || releasePanel.brightnessPreviewPercent !== 75)
+        root.fail("display release did not submit the latest value after the live value")
+      releaseService.publishState(40, 20, true)
+      if (releasePanel.brightnessPreviewPercent !== 75)
+        root.fail("pending display confirmation overwrote the release preview")
+      releaseService.publishState(75, 20, false)
+      if (releasePanel.brightnessPreviewPercent !== 75)
+        root.fail("display preview did not reconcile after confirmation")
+      releaseService.resetLiveActions()
+      keyboardSlider.dragging = true
+      keyboardSlider.liveValue = 30
+      keyboardSlider.moved(keyboardSlider.liveValue)
+      root.liveSliderPhase = 3
+      return false
+    }
+
+    if (root.liveSliderPhase === 3) {
+      if (releaseService.keyboardActions.length < 1) return false
+      if (!sameValues(releaseService.keyboardActions, [30])
+          || releasePanel.keyboardBrightnessPercent !== 30
+          || !releaseService.operationPending)
+        root.fail("keyboard live throttle did not submit the first value")
+      releaseService.publishState(75, 20, true)
+      if (releasePanel.keyboardBrightnessPercent !== 30 || keyboardSlider.liveValue !== 30)
+        root.fail("confirmed keyboard state overwrote the drag preview")
+      keyboardSlider.liveValue = 45
+      keyboardSlider.moved(keyboardSlider.liveValue)
+      keyboardSlider.releaseCurrentValue()
+      root.liveSliderPhase = 4
+      return false
+    }
+
+    if (releaseService.keyboardActions.length < 2) return false
+    if (!sameValues(releaseService.keyboardActions, [30, 45])
+        || releasePanel.keyboardBrightnessPercent !== 45)
+      root.fail("keyboard release did not submit the latest value after the live value")
+    releaseService.publishState(75, 45, false)
+    if (releasePanel.keyboardBrightnessPercent !== 45)
+      root.fail("keyboard preview did not reconcile after confirmation")
+    root.liveSlidersChecked = true
+    return true
   }
 
   function fail(message) {
@@ -143,6 +231,7 @@ Item {
           }
           return
         }
+        if (!root.liveSlidersChecked && !root.advanceLiveSliderCoverage()) return
         var previousMap = JSON.stringify(workspaceService.activeWorkspaceIds)
         root.workspaceIncompleteChecked = !workspaceService.applySnapshot("{}")
           && JSON.stringify(workspaceService.activeWorkspaceIds) === previousMap
@@ -266,6 +355,7 @@ Item {
           && root.workspaceStateChecked && root.workspaceIncompleteChecked && root.replacementStateChecked
           && root.replacementCallbackChecked && root.sameServiceRestartChecked
           && root.brightnessReleaseChecked && root.brightnessReleaseDeferredChecked
+          && root.liveSlidersChecked
           && root.brightnessConfirmationChecked
           && root.actionRetainedDemand && root.actionChecked
         if (!success) root.fail("one or more shared ownership assertions failed")
@@ -317,16 +407,39 @@ Item {
     property bool operationPending: false
     property int consumerCount: 0
     property int lastBrightness: -1
+    property var brightnessActions: []
+    property var keyboardActions: []
     signal invalidated()
     function setConsumer(owner, details) { consumerCount++ }
     function removeConsumer(owner) { consumerCount = Math.max(0, consumerCount - 1) }
     function refresh() { return true }
     function refreshNativeMonitors(delayed) { return true }
+    function resetLiveActions() {
+      brightnessActions = []
+      keyboardActions = []
+    }
+    function publishState(displayValue, keyboardValue, pending) {
+      if (pending) operationPending = true
+      brightnessPercent = Math.round(Number(displayValue))
+      hardwareState = {
+        available: true,
+        stale: false,
+        data: {
+          brightness: { available: true, percent: brightnessPercent, device: "release-fixture" },
+          keyboardBrightness: { available: true, percent: Math.round(Number(keyboardValue)) }
+        }
+      }
+      operationPending = pending
+    }
     function setBrightness(value) {
       lastBrightness = Math.round(Number(value))
+      brightnessActions = brightnessActions.concat([lastBrightness])
       operationPending = true
     }
-    function setKeyboardBrightness(action) {}
+    function setKeyboardBrightness(action) {
+      keyboardActions = keyboardActions.concat([Math.round(Number(action))])
+      operationPending = true
+    }
     function runAction(args) {}
   }
 
@@ -353,20 +466,6 @@ Item {
     function showTooltip(target, text) {}
     function hideTooltip(target) {}
     function switchPanelFrom(panel, direction) { return false }
-  }
-
-  PanelSlider {
-    id: releaseSlider
-    bar: releaseBar
-    visible: false
-    minimum: 1
-    maximum: 100
-    step: 1
-    integer: true
-    value: releasePanel.brightnessPreviewPercent
-    onMoved: releasePanel.brightnessPreviewPercent = Math.round(liveValue)
-    onDraggingChanged: releasePanel.handleBrightnessDraggingChanged(dragging)
-    onReleased: function(value) { releasePanel.releaseBrightness(value) }
   }
 
   Monitor.Panel {

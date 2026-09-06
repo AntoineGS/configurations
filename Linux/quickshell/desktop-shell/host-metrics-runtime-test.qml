@@ -7,22 +7,22 @@ Item {
   id: root
 
   property bool sawInitialUnavailable: false
-  property bool sawAvailable: false
-  property bool fixtureAdvanced: false
-  property bool initialCpuConfirmed: false
-  property bool cpuInterruptionStarted: false
+  property int samplesChecked: 0
+  property bool lifecycleStarted: false
   property bool sawCpuStop: false
   property bool sawCpuRestart: false
   property bool sawLateCpuIgnored: false
-  property bool sawLateCpuAfterRestart: false
+  property bool sawLateTmpIgnored: false
   property bool restartBaselineReached: false
-  property int stoppedCpuGeneration: 0
+  property bool sawLateCpuAfterRestart: false
+  property bool sawCpuIdentityBarrier: false
+  property var restartCpuWorker: null
+  property bool restartSampleRequested: false
   property int stoppedCollectionGeneration: 0
   property var stoppedCpuWorker: null
   property var stoppedMemoryWorker: null
   property var stoppedTmpWorker: null
   property var confirmedTmpSnapshot: null
-  property bool sawLateTmpIgnored: false
   property var confirmedCpuState: null
   property var confirmedMemoryState: null
   readonly property string cpuFixturePath: Quickshell.env("HOST_METRICS_CPU_PATH")
@@ -40,10 +40,10 @@ Item {
   function finish(success) {
     cpuFixture.setText("cpu 100 20 30 400 10 5 15 2 0 0\n")
     if (resultPath !== "") resultFile.setText(success ? "PASS\n" : "FAIL\n")
-    if (!success) console.error("HostMetrics transition failed", root.sawInitialUnavailable, root.sawAvailable,
-      metrics.cpuPhase, metrics.cpuState.available, metrics.memoryState.available,
-      root.sawCpuStop, root.sawCpuRestart, root.sawLateCpuIgnored, root.sawLateCpuAfterRestart,
-      root.sawLateTmpIgnored)
+    if (!success) console.error("HostMetrics transition failed", root.sawInitialUnavailable,
+      root.samplesChecked, root.sawCpuStop, root.sawCpuRestart, root.sawLateCpuIgnored,
+      root.sawLateTmpIgnored, root.restartBaselineReached, root.sawLateCpuAfterRestart,
+      metrics.cpuState.percent, metrics.memoryState.available)
     else console.log("HostMetrics fixture transition passed")
     Qt.callLater(function() { Qt.exit(success ? 0 : 1) })
   }
@@ -74,88 +74,114 @@ Item {
 
   Component.onCompleted: root.sawInitialUnavailable = !metrics.cpuState.available && !metrics.memoryState.available
 
-  Connections {
-    target: metrics
-    function onCpuStateChanged() {
-      if (metrics.cpuState.available && !root.initialCpuConfirmed) {
-        root.initialCpuConfirmed = true
-        root.confirmedCpuState = metrics.cpuState
-        root.confirmedMemoryState = metrics.memoryState
-        Qt.callLater(function() { metrics.beginCpuSample() })
-      }
-    }
-
-    function onCpuPhaseChanged() {
-      if (metrics.cpuPhase === "sample-wait" && !root.fixtureAdvanced) {
-        root.fixtureAdvanced = true
-        cpuFixture.setText("cpu 140 25 35 440 10 5 15 2 0 0\n")
-        return
-      }
-
-      if (metrics.cpuPhase !== "sample-wait" || !root.fixtureAdvanced || !root.initialCpuConfirmed) return
-      if (!root.cpuInterruptionStarted) {
-        root.cpuInterruptionStarted = true
-        root.stoppedCpuGeneration = metrics.cpuGeneration
-        root.stoppedCollectionGeneration = metrics.collectionGeneration
-        root.stoppedCpuWorker = metrics.cpuFile
-        root.stoppedMemoryWorker = metrics.memoryFile
-        metrics.refreshTmp()
-        root.stoppedTmpWorker = metrics.tmpProcess
-        root.confirmedTmpSnapshot = metrics.tmpSnapshot
-        root.confirmedCpuState = metrics.cpuState
-        root.confirmedMemoryState = metrics.memoryState
-        metrics.collecting = false
-        metrics.applyCpuText("cpu 240 40 60 500 10 5 15 2 0 0\n")
-        metrics.applyMemoryText("not a memory snapshot\n")
-        root.sawCpuStop = !metrics.cpuInFlight && metrics.cpuPhase === ""
-          && metrics.cpuGeneration > root.stoppedCpuGeneration
-        root.sawLateCpuIgnored = root.sameState(metrics.cpuState, root.confirmedCpuState)
-          && root.sameState(metrics.memoryState, root.confirmedMemoryState)
-        cpuFixture.setText("cpu 300 50 70 600 10 5 15 2 0 0\n")
-        metrics.collecting = true
-        metrics.applyTmpText("Filesystem 1024-blocks Used Available Capacity Mounted on\nfixture 900 800 100 88% /tmp\n",
-          metrics.activeCollectionGeneration, root.stoppedTmpWorker)
-        root.sawLateTmpIgnored = root.stoppedTmpWorker
-          && root.sameState(metrics.tmpSnapshot, root.confirmedTmpSnapshot)
-        root.sawCpuRestart = metrics.cpuGeneration > root.stoppedCpuGeneration
-        return
-      }
-
-      if (!root.restartBaselineReached) {
-        root.restartBaselineReached = true
-        metrics.applyCpuText("cpu 240 40 60 500 10 5 15 2 0 0\n",
-          metrics.activeCpuGeneration, root.stoppedCpuWorker)
-        metrics.applyMemoryText("not a memory snapshot\n",
-          metrics.activeCollectionGeneration, root.stoppedMemoryWorker)
-        root.sawLateCpuAfterRestart = root.sameState(metrics.cpuState, root.confirmedCpuState)
-          && root.sameState(metrics.memoryState, root.confirmedMemoryState)
-        cpuFixture.setText("cpu 360 60 80 680 10 5 15 2 0 0\n")
-        checkTimer.start()
-      }
-    }
-  }
-
   Timer {
     id: checkTimer
     property int checks: 0
     interval: 50
-    repeat: false
+    repeat: true
+    running: true
     onTriggered: {
       checks++
-      root.sawAvailable = metrics.cpuState.available && metrics.memoryState.available
-      if (!root.sawInitialUnavailable || !root.fixtureAdvanced || !root.initialCpuConfirmed
-          || !root.cpuInterruptionStarted || !root.sawCpuStop || !root.sawCpuRestart
-          || !root.sawLateCpuIgnored || !root.sawLateCpuAfterRestart || !root.sawLateTmpIgnored
-          || !root.restartBaselineReached
-          || !root.sawAvailable) {
-        if (checks < 100) {
-          start()
-          return
-        }
+      if (checks >= 160) {
         root.finish(false)
         return
       }
-      root.finish(true)
+      if (!root.sawInitialUnavailable || metrics.cpuInFlight || !metrics.cpuSnapshot
+          || !metrics.memoryState.available)
+        return
+
+      if (root.samplesChecked < 2) {
+        if (root.samplesChecked === 0) {
+          if (metrics.cpuState.available) {
+            root.finish(false)
+            return
+          }
+          cpuFixture.setText("cpu 140 25 35 440 10 5 15 2 0 0\n")
+        } else {
+          if (!metrics.cpuState.available || metrics.cpuState.percent !== 55) {
+            root.finish(false)
+            return
+          }
+          cpuFixture.setText("cpu 160 25 35 520 10 5 15 2 0 0\n")
+        }
+        root.samplesChecked++
+        metrics.beginCpuSample()
+        return
+      }
+
+      if (!root.lifecycleStarted) {
+        if (!metrics.cpuState.available || metrics.cpuState.percent !== 20) {
+          root.finish(false)
+          return
+        }
+        root.confirmedCpuState = metrics.cpuState
+        root.confirmedMemoryState = metrics.memoryState
+        root.confirmedTmpSnapshot = metrics.tmpSnapshot
+        root.stoppedCollectionGeneration = metrics.activeCollectionGeneration
+        metrics.beginCpuSample()
+        root.stoppedCpuWorker = metrics.cpuFile
+        metrics.refreshMemory()
+        root.stoppedMemoryWorker = metrics.memoryFile
+        metrics.refreshTmp()
+        root.stoppedTmpWorker = metrics.tmpProcess
+        if (!root.stoppedCpuWorker || !root.stoppedMemoryWorker || !root.stoppedTmpWorker) {
+          root.finish(false)
+          return
+        }
+
+        metrics.collecting = false
+        root.sawCpuStop = !metrics.cpuInFlight && metrics.activeCollectionGeneration === 0
+          && metrics.cpuSnapshot === null && metrics.collectionGeneration > root.stoppedCollectionGeneration
+        metrics.applyCpuText("cpu 240 40 60 500 10 5 15 2 0 0\n",
+          root.stoppedCollectionGeneration, root.stoppedCpuWorker)
+        metrics.applyMemoryText("not a memory snapshot\n",
+          root.stoppedCollectionGeneration, root.stoppedMemoryWorker)
+        metrics.applyTmpText("Filesystem 1024-blocks Used Available Capacity Mounted on\n"
+          + "fixture 900 800 100 88% /tmp\n", root.stoppedCollectionGeneration, root.stoppedTmpWorker)
+        root.sawLateCpuIgnored = root.sameState(metrics.cpuState, root.confirmedCpuState)
+          && root.sameState(metrics.memoryState, root.confirmedMemoryState)
+        root.sawLateTmpIgnored = root.sameState(metrics.tmpSnapshot, root.confirmedTmpSnapshot)
+
+        cpuFixture.setText("cpu 300 50 70 600 10 5 15 2 0 0\n")
+        metrics.collecting = true
+        root.sawCpuRestart = metrics.activeCollectionGeneration > root.stoppedCollectionGeneration
+        metrics.applyTmpText("Filesystem 1024-blocks Used Available Capacity Mounted on\n"
+          + "fixture 900 800 100 88% /tmp\n", metrics.activeCollectionGeneration, root.stoppedTmpWorker)
+        root.sawLateTmpIgnored = root.sawLateTmpIgnored
+          && root.sameState(metrics.tmpSnapshot, root.confirmedTmpSnapshot)
+        root.lifecycleStarted = true
+        return
+      }
+
+      if (!root.restartBaselineReached) {
+        if (metrics.cpuInFlight || !metrics.cpuSnapshot || metrics.cpuFile === root.stoppedCpuWorker)
+          return
+        root.restartBaselineReached = true
+        metrics.refreshMemory()
+        var beforeCpu = metrics.cpuState
+        var beforeMemory = metrics.memoryState
+        metrics.applyMemoryText("not a memory snapshot\n",
+          metrics.activeCollectionGeneration, root.stoppedMemoryWorker)
+        root.sawLateCpuAfterRestart = root.sameState(metrics.memoryState, beforeMemory)
+        cpuFixture.setText("cpu 360 60 80 680 10 5 15 2 0 0\n")
+        metrics.beginCpuSample()
+        root.restartCpuWorker = metrics.cpuFile
+        root.sawCpuIdentityBarrier = metrics.cpuInFlight
+          && root.restartCpuWorker !== root.stoppedCpuWorker
+        metrics.applyCpuText("cpu 240 40 60 500 10 5 15 2 0 0\n",
+          metrics.activeCollectionGeneration, root.stoppedCpuWorker)
+        root.sawLateCpuAfterRestart = root.sawLateCpuAfterRestart
+          && root.sameState(metrics.cpuState, beforeCpu)
+          && metrics.cpuInFlight && metrics.cpuFile === root.restartCpuWorker
+        root.restartSampleRequested = true
+        return
+      }
+
+      if (!root.restartSampleRequested) return
+      root.finish(root.sawCpuStop && root.sawCpuRestart && root.sawLateCpuIgnored
+        && root.sawLateTmpIgnored && root.restartBaselineReached && root.sawCpuIdentityBarrier
+        && root.sawLateCpuAfterRestart
+        && metrics.cpuState.available && metrics.cpuState.percent === 50)
     }
   }
 }

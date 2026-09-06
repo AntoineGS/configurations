@@ -13,9 +13,6 @@ Item {
   property string memoryPath: "/proc/meminfo"
   property string tmpExecutable: "df"
   property var cpuSnapshot: null
-  property string cpuPhase: ""
-  property int cpuGeneration: 0
-  property int activeCpuGeneration: 0
   property bool cpuInFlight: false
   property bool collecting: false
   property int collectionGeneration: 0
@@ -38,16 +35,12 @@ Item {
 
   function beginCpuSample() {
     if (!collecting || cpuInFlight) return
-    cpuGeneration += 1
-    activeCpuGeneration = cpuGeneration
     cpuInFlight = true
-    cpuPhase = "baseline"
-    cpuSampleTimer.stop()
-    startCpuRead(activeCpuGeneration)
+    startCpuRead(activeCollectionGeneration)
   }
 
   function startCpuRead(generation) {
-    if (!collecting || generation !== activeCpuGeneration) return
+    if (!collecting || generation !== activeCollectionGeneration) return
     if (cpuFile) {
       var previous = cpuFile
       cpuFile = null
@@ -56,42 +49,33 @@ Item {
     cpuFile = cpuFileComponent.createObject(root, { readGeneration: generation })
     if (!cpuFile) {
       cpuState = Model.emptyHostStat()
-      cpuPhase = ""
       cpuInFlight = false
     }
   }
 
   function applyCpuText(raw, generation, reader) {
     if (!collecting || !cpuInFlight) return
-    if (generation !== undefined && generation !== activeCpuGeneration) return
+    if (generation !== undefined && generation !== activeCollectionGeneration) return
     if (reader !== undefined && reader !== cpuFile) return
     var snapshot = Model.parseCpuSnapshot(raw)
     if (!snapshot) {
       cpuState = Model.emptyHostStat()
-      cpuPhase = ""
+      cpuSnapshot = null
       cpuInFlight = false
       return
     }
-    if (cpuPhase === "baseline") {
-      cpuSnapshot = snapshot
-      cpuPhase = "sample-wait"
-      cpuSampleTimer.start()
-      return
-    }
-    if (cpuPhase !== "sample-load") return
     var percent = Model.cpuUsage(cpuSnapshot, snapshot)
     cpuState = percent === null
       ? Model.emptyHostStat()
       : metric("", percent + "%", "CPU usage: " + percent + "%", percent)
     cpuSnapshot = snapshot
-    cpuPhase = ""
     cpuInFlight = false
   }
 
   function applyCpuLoadFailed(generation, reader) {
-    if (!collecting || generation !== activeCpuGeneration || reader !== cpuFile) return
+    if (!collecting || generation !== activeCollectionGeneration || reader !== cpuFile) return
     cpuState = Model.emptyHostStat()
-    cpuPhase = ""
+    cpuSnapshot = null
     cpuInFlight = false
   }
 
@@ -167,7 +151,6 @@ Item {
     activeCollectionGeneration = 0
     cpuRefreshTimer.stop()
     memoryRefreshTimer.stop()
-    cpuSampleTimer.stop()
     var oldCpuFile = cpuFile
     cpuFile = null
     destroyLater(oldCpuFile)
@@ -180,10 +163,7 @@ Item {
       oldTmpProcess.running = false
       destroyLater(oldTmpProcess)
     }
-    cpuGeneration += 1
-    activeCpuGeneration = cpuGeneration
     cpuSnapshot = null
-    cpuPhase = ""
     cpuInFlight = false
   }
 
@@ -238,19 +218,6 @@ Item {
     running: root.collecting
     triggeredOnStart: true
     onTriggered: if (root.collecting) root.beginCpuSample()
-  }
-
-  Timer {
-    id: cpuSampleTimer
-    interval: 1000
-    repeat: false
-    onTriggered: {
-      if (root.collecting && root.cpuInFlight && root.cpuPhase === "sample-wait"
-          && root.activeCpuGeneration === root.cpuGeneration) {
-        root.cpuPhase = "sample-load"
-        if (cpuFile) cpuFile.reload()
-      }
-    }
   }
 
   Timer {
