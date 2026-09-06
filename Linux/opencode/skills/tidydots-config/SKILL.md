@@ -67,7 +67,11 @@ non-trivial. Quick recipes:
 - **Add a setup entry:** an entry with optional `when:`, `check:` and `run:`
   (both OS→command maps) runs a command instead of deploying files. `check`
   must be read-only and fast — it runs on every restore and dry-run when the
-  entry's condition matches.
+  entry's condition matches. Omit `check_mode` for legacy exit-code behavior;
+  set `check_mode: status` to distinguish Set up (0), Needs setup (1),
+  Outdated (2), and Check failed (3 or higher). A Check failed result blocks
+  setup rather than authorizing `run`. Status diagnostics come from stderr,
+  are sanitized and bounded, and do not change the meaning of exits 1 or 2.
 - **Gate by platform/host:** add a `when:` Go-template expression, e.g.
   `when: '{{ eq .OS "linux" }}'`.
 

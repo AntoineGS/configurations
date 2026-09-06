@@ -93,10 +93,12 @@ render `.tmpl` files.
 
 ### 3. Setup entry (`check` + `run`)
 
-Runs a command instead of deploying files. On restore, `check` runs; if it
-exits non-zero, `run` executes, then `check` runs again to confirm. Stateless
-and self-healing (no DB). `check` must be read-only and fast — it runs on
-every restore, dry-run, and TUI refresh.
+Runs a command instead of deploying files. In the default `exit-code` mode, on
+restore `check` runs; if it exits non-zero, `run` executes, then `check` runs
+again to confirm. Stateless and self-healing (no DB). `check` must be
+read-only and fast — it runs on every restore, dry-run, and TUI refresh. In
+`status` mode, only exit codes `1` and `2` authorize `run`; a `3` or higher
+status is a failed check and blocks it.
 
 ```yaml
 - name: claude-plugin
@@ -106,6 +108,42 @@ every restore, dry-run, and TUI refresh.
   run:
     linux: npm install -g opencode-with-claude
 ```
+
+#### `check_mode`
+
+`check_mode` is setup-entry-only. Omit it, or set it to `exit-code`, to retain
+legacy behavior: exit `0` means **Set up** and every nonzero exit means
+**Needs setup**. Set it to `status` when the check can distinguish these
+states:
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Set up |
+| `1` | Needs setup |
+| `2` | Outdated |
+| `3` or higher | Check failed (indeterminate or error) |
+
+Negative process exits, launch failures, and cancellation are **Check failed**.
+A failed status check is actionable attention, but it blocks `run`, including
+in a dry-run, until a safe check reports **Needs setup** or **Outdated**. Status
+reporting and TUI refreshes never execute `run`; `run` itself always uses
+ordinary success/failure semantics.
+
+Use `status` only with a check command that deliberately implements this
+protocol. For example, a status-aware updater can expose `--check` and return
+these states (after its coordinated migration has been activated):
+
+```yaml
+- name: tidydots-binary
+  check:
+    linux: ~/.config/tidydots/setup-tidydots.sh --check
+  run:
+    linux: ~/.config/tidydots/setup-tidydots.sh --apply
+  check_mode: status
+```
+
+The generic `npm ls` example above remains in legacy `exit-code` mode; do not
+add `check_mode: status` unless the command returns the distinct status codes.
 
 ### Entry conditions
 
