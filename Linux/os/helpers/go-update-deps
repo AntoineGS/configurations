@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Update dependencies of the Go module in the current directory.
+go list -m -u all | awk '{print $1}' | xargs -r -n 1 go get -u

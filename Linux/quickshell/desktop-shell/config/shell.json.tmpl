@@ -38,10 +38,9 @@
         { "id": "desktop.tailscale" },
         { "id": "desktop.bluetooth" },
         { "id": "desktop.network" },
-        { "id": "desktop.monitor-layout" },
+        { "id": "desktop.monitor" },
         { "id": "desktop.audio" },
 {{ if eq .Hostname "omarchbook" }}
-        { "id": "desktop.monitor" },
         { "id": "desktop.power" },
 {{ end }}
         { "id": "desktop.disk", "onClick": "launch-or-focus org.float.ncdu 'uwsm-app -- xdg-terminal-exec --app-id=org.float.ncdu --title=System -e sudo ncdu /'" },

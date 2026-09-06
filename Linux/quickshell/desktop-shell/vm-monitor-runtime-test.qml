@@ -472,7 +472,8 @@ Item {
         actionModeFile.setText("hold\n")
         actionReleaseFile.setText("wait\n")
         var accepted = vmService.requestMemory(1)
-        root.actionBusyChecked = accepted && !vmService.requestMemory(1)
+        if (!accepted) return
+        root.actionBusyChecked = !vmService.requestMemory(1)
         vmLeft.active = false
         vmRight.active = false
         root.actionConsumersRemoved = vmService.consumerCount === 0 && vmService.collecting
