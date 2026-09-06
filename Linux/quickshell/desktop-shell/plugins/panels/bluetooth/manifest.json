@@ -6,10 +6,12 @@
   "author": "Desktop Shell",
   "description": "Bluetooth device list with connect and pairing actions",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
   },
   "barWidget": {
     "displayName": "Bluetooth",

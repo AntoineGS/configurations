@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "desktop.host-metrics",
+  "name": "Host Metrics",
+  "version": "1.0.0",
+  "author": "Desktop Shell",
+  "description": "Shared host CPU, memory, and temporary filesystem metrics",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+log_file=${AGENTS_FIXTURE_STATUS_LOG:?}
+mode_file=${AGENTS_FIXTURE_STATUS_MODE:?}
+old_release_file=${AGENTS_FIXTURE_STATUS_OLD_RELEASE:?}
+new_release_file=${AGENTS_FIXTURE_STATUS_NEW_RELEASE:?}
+old_entered_file=${AGENTS_FIXTURE_STATUS_OLD_ENTERED:?}
+new_read_file=${AGENTS_FIXTURE_STATUS_NEW_READ:?}
+
+printf 'status=%s\n' "$*" >>"$log_file"
+
+mode=$(tr -d '\r\n' <"$mode_file")
+release_file=
+case "$mode" in
+  valid)
+    payload='{"text":"AI","tooltip":"Fake compact status","class":[]}'
+    ;;
+  hold-old)
+    payload='{"text":"OLD","tooltip":"Stale compact status","class":[]}'
+    printf '%s\n' old-blocked >"$old_entered_file"
+    release_file=$old_release_file
+    ;;
+  hold-new)
+    payload='{"text":"AI","tooltip":"Fake compact status","class":[]}'
+    release_file=$new_release_file
+    ;;
+  *)
+    payload=not-json
+    ;;
+esac
+
+if [ -n "$release_file" ]; then
+  trap 'printf "%s\n" "$payload"; exit 0' TERM INT
+  while [ ! -r "$release_file" ] || [ "$(tr -d '\r\n' <"$release_file")" != release ]; do
+    sleep 0.01
+  done
+fi
+
+if [ "$mode" = hold-new ]; then
+  printf '%s\n' "$payload"
+  printf '%s\n' new-read >"$new_read_file"
+else
+  printf '%s\n' "$payload"
+fi

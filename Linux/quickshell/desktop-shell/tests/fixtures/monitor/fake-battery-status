@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${POWER_FIXTURE_BATTERY_LOG:-}" ]; then
+  printf '%s\n' battery-status >> "$POWER_FIXTURE_BATTERY_LOG"
+fi
+
+mode=""
+if [ -n "${POWER_FIXTURE_BATTERY_MODE:-}" ]; then
+  mode=$(tr -d '\r\n' < "$POWER_FIXTURE_BATTERY_MODE")
+fi
+case "$mode" in
+  hold)
+    while [ ! -r "${POWER_FIXTURE_BATTERY_RELEASE:?}" ] \
+      || [ "$(tr -d '\r\n' < "$POWER_FIXTURE_BATTERY_RELEASE")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+esac
+
+if [ -n "${POWER_FIXTURE_BATTERY_OUTPUT:-}" ]; then
+  cat "$POWER_FIXTURE_BATTERY_OUTPUT"
+else
+  printf '%s\n' 'fixture battery detail'
+fi

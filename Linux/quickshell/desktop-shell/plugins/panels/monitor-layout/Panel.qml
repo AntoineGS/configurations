@@ -1,7 +1,5 @@
 import QtQuick
-import Quickshell
 import Quickshell.Hyprland
-import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
@@ -15,7 +13,9 @@ Panel {
   property int topologyGeneration: 0
   property bool cursorActive: false
   property real previewScale: 1
-  property string hostname: ""
+
+  readonly property var monitorService: bar && bar.shell ? bar.shell.serviceFor("desktop.monitor") : null
+  readonly property string hostname: monitorService ? monitorService.hostname : ""
 
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -104,8 +104,10 @@ Panel {
   }
 
   function open() {
-    Hyprland.refreshMonitors()
-    monitorRefreshTimer.restart()
+    if (monitorService) {
+      monitorService.refreshNativeMonitors(true)
+      monitorService.refresh()
+    }
     previewScale = scaleOptions[nearestScaleIndex(selectedScale)].value
     cursorActive = false
     controller.show()
@@ -122,22 +124,17 @@ Panel {
   }
 
   function applyScale(scale) {
-    if (selectedMonitor === "" || scaleProcess.running) return
+    if (!monitorService || selectedMonitor === "") return
     var option = scaleOptions[nearestScaleIndex(scale)]
     previewScale = option.value
-    scaleProcess.command = [
-      "desktop-hardware-action", "monitor", "set-scale", selectedMonitor, option.command
-    ]
-    scaleProcess.running = true
+    monitorService.setScale(selectedMonitor, option.command)
   }
 
   function applyLayout(mode) {
-    if (!presetLayoutsAvailable) return
+    if (!monitorService || !presetLayoutsAvailable) return
     if (mode === "single" && selectedMonitor === "") return
-    var command = ["desktop-hardware-action", "monitor", "set-layout", mode]
-    if (mode === "single") command.push(selectedMonitor)
     close()
-    Quickshell.execDetached(command)
+    monitorService.setLayout(mode, selectedMonitor)
   }
 
   implicitWidth: button.implicitWidth
@@ -156,30 +153,10 @@ Panel {
     previewScale = scaleOptions[nearestScaleIndex(selectedScale)].value
   }
 
-  Process {
-    command: ["hostname"]
-    running: true
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.hostname = String(text || "").trim()
-    }
-  }
-
-  Process {
-    id: scaleProcess
-    command: []
-    onExited: function(exitCode) {
-      if (Number(exitCode) !== 0) return
-      Hyprland.refreshMonitors()
-      monitorRefreshTimer.restart()
-    }
-  }
-
-  Timer {
-    id: monitorRefreshTimer
-    interval: 150
-    repeat: false
-    onTriggered: Hyprland.refreshMonitors()
+  ServiceConsumer {
+    id: monitorConsumer
+    service: root.monitorService
+    active: true
   }
 
   BarMetricButton {

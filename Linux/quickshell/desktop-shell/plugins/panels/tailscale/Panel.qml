@@ -16,10 +16,20 @@ Panel {
   property bool cursorActive: false
   property int selectedIndex: 0
 
+  readonly property var tailscale: bar && bar.shell ? bar.shell.serviceFor("desktop.tailscale") : null
+  readonly property bool tailscaleActive: tailscale ? tailscale.active : false
+  readonly property bool tailscaleBusy: tailscale ? tailscale.busy : false
+  readonly property bool tailscaleNeedsLogin: tailscale ? tailscale.needsLogin : false
+  readonly property string tailscaleStatus: tailscale ? tailscale.statusText : "Unavailable"
+  readonly property string tailscaleSelfName: tailscale ? tailscale.selfName : ""
+  readonly property var tailscaleAddresses: tailscale ? tailscale.selfAddresses : []
+  readonly property var tailscalePeers: tailscale ? tailscale.peers : []
+  readonly property string tailscaleActionStatus: tailscale ? tailscale.actionStatus : ""
+  readonly property string tailscaleLastError: tailscale ? tailscale.lastError : ""
   readonly property color foreground: panelForeground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool capabilityAvailable: tailscale.available
+  readonly property bool capabilityAvailable: !!tailscale && tailscale.available
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property color barIconForeground: bar ? bar.foreground : Color.foreground
   readonly property color barIconDim: Qt.darker(barIconForeground, 1.5)
@@ -33,30 +43,35 @@ Panel {
   }
 
   function moveCursor(delta) {
-    if (tailscale.peers.length === 0) return
+    if (tailscalePeers.length === 0) return
     cursorActive = true
-    selectedIndex = Math.max(0, Math.min(tailscale.peers.length - 1, selectedIndex + delta))
+    selectedIndex = Math.max(0, Math.min(tailscalePeers.length - 1, selectedIndex + delta))
   }
 
   function selectedPeer() {
-    if (tailscale.peers.length === 0) return null
-    return tailscale.peers[Math.max(0, Math.min(selectedIndex, tailscale.peers.length - 1))]
+    if (tailscalePeers.length === 0) return null
+    return tailscalePeers[Math.max(0, Math.min(selectedIndex, tailscalePeers.length - 1))]
   }
 
   function activateCursor() {
     var peer = selectedPeer()
-    if (peer) tailscale.copyPeerAddress(peer)
+    if (peer && tailscale) tailscale.copyPeerAddress(peer)
   }
 
-  function refresh() { tailscale.refresh() }
-  function up() { tailscale.up() }
-  function down() { tailscale.down() }
-  function logout() { tailscale.logout() }
+  function refresh() { return tailscale ? tailscale.refresh() : false }
+  function up() { return tailscale ? tailscale.up() : false }
+  function down() { return tailscale ? tailscale.down() : false }
+  function logout() { return tailscale ? tailscale.logout() : false }
+  function toggleTailscale() { return tailscale ? tailscale.toggleTailscale() : false }
+  function copyPeerName(peer) { if (tailscale) tailscale.copyPeerName(peer) }
+  function copyPeerAddress(peer) { if (tailscale) tailscale.copyPeerAddress(peer) }
+  function setExitNode(peer) { return tailscale ? tailscale.setExitNode(peer) : false }
 
-  Service {
-    id: tailscale
-    pluginRegistry: root.pluginRegistry
-    panelOpen: root.opened
+  ServiceConsumer {
+    id: tailscaleConsumer
+    service: root.tailscale
+    active: true
+    details: root.opened
   }
 
   visible: capabilityAvailable
@@ -72,7 +87,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    foreground: tailscale.active ? root.barIconForeground : root.barIconDim
+    foreground: root.tailscaleActive ? root.barIconForeground : root.barIconDim
     iconComponent: Component {
       TailscaleIcon {
         anchors.centerIn: parent
@@ -82,12 +97,12 @@ Panel {
         color: button.contentColor
         badgeColor: root.urgent
         badgeBackground: Color.bar.background
-        crossed: !tailscale.active
-        warning: tailscale.needsLogin
+        crossed: !root.tailscaleActive
+        warning: root.tailscaleNeedsLogin
       }
     }
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.RightButton) tailscale.toggleTailscale()
+      if (buttonCode === Qt.RightButton) root.toggleTailscale()
       else root.toggle()
     }
   }
@@ -107,15 +122,15 @@ Panel {
       anchors.fill: parent
       onMoveRequested: function(dx, dy) {
         if (dy !== 0) root.moveCursor(dy)
-        else if (dx !== 0) tailscale.toggleTailscale()
+        else if (dx !== 0) root.toggleTailscale()
       }
       onActivateRequested: root.activateCursor()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
-        if (text === "t" || text === "T") tailscale.toggleTailscale()
-        else if (text === "c" || text === "C") tailscale.copyPeerAddress(root.selectedPeer())
-        else if (text === "n" || text === "N") tailscale.copyPeerName(root.selectedPeer())
+        if (text === "t" || text === "T") root.toggleTailscale()
+        else if (text === "c" || text === "C") root.copyPeerAddress(root.selectedPeer())
+        else if (text === "n" || text === "N") root.copyPeerName(root.selectedPeer())
       }
 
       Flickable {
@@ -132,34 +147,35 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: tailscale.selfName || "Tailscale"
-            meta: tailscale.statusText
+            title: root.tailscaleSelfName || "Tailscale"
+            meta: root.tailscaleStatus
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
               TailscaleIcon {
                 iconSize: Style.font.display
-                color: tailscale.active ? root.panelSecondary : root.dim
+                color: root.tailscaleActive ? root.panelSecondary : root.dim
                 badgeBackground: Color.barPanels.background
-                crossed: !tailscale.active
-                warning: tailscale.needsLogin
+                crossed: !root.tailscaleActive
+                warning: root.tailscaleNeedsLogin
               }
             }
             trailingControl: Component {
               ToggleSwitch {
-                checked: tailscale.active
-                busy: tailscale.busy
+                checked: root.tailscaleActive
+                busy: root.tailscaleBusy
                 foreground: root.foreground
-                onToggled: tailscale.toggleTailscale()
+                onToggled: root.toggleTailscale()
               }
             }
           }
 
           Text {
-            visible: tailscale.actionStatus !== "" || tailscale.lastError !== ""
+            visible: root.tailscaleActionStatus !== "" || root.tailscaleLastError !== ""
             width: parent.width
-            text: tailscale.actionStatus !== "" ? tailscale.actionStatus : tailscale.lastError
-            color: tailscale.lastError !== "" && tailscale.actionStatus === "" ? root.urgent : root.panelSecondary
+            text: root.tailscaleActionStatus !== "" ? root.tailscaleActionStatus : root.tailscaleLastError
+            color: root.tailscaleLastError !== "" && root.tailscaleActionStatus === ""
+              ? root.urgent : root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
@@ -175,7 +191,8 @@ Panel {
             }
             Text {
               width: parent.width
-              text: tailscale.selfAddresses.length > 0 ? tailscale.selfAddresses.join(" · ") : "No Tailscale address"
+              text: root.tailscaleAddresses.length > 0
+                ? root.tailscaleAddresses.join(" · ") : "No Tailscale address"
               color: root.panelSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -184,7 +201,7 @@ Panel {
           }
 
           Column {
-            visible: tailscale.peers.length > 0
+            visible: root.tailscalePeers.length > 0
             width: parent.width
             spacing: Style.space(6)
             PanelSeparator { foreground: root.foreground }
@@ -194,7 +211,7 @@ Panel {
               fontFamily: root.fontFamily
             }
             Repeater {
-              model: tailscale.peers
+              model: root.tailscalePeers
               CursorSurface {
                 required property var modelData
                 required property int index
@@ -212,8 +229,8 @@ Panel {
                     root.selectedIndex = index
                   }
                   onClicked: function(mouse) {
-                    if (mouse.button === Qt.RightButton) tailscale.setExitNode(modelData)
-                    else tailscale.copyPeerAddress(modelData)
+                    if (mouse.button === Qt.RightButton) root.setExitNode(modelData)
+                    else root.copyPeerAddress(modelData)
                   }
                 }
 
@@ -258,14 +275,14 @@ Panel {
                     text: "N"
                     tooltipText: "Copy name"
                     foreground: root.foreground
-                    onClicked: tailscale.copyPeerName(modelData)
+                    onClicked: root.copyPeerName(modelData)
                   }
                   Button {
                     id: copyAddress
                     text: "C"
                     tooltipText: "Copy address"
                     foreground: root.foreground
-                    onClicked: tailscale.copyPeerAddress(modelData)
+                    onClicked: root.copyPeerAddress(modelData)
                   }
                 }
 
@@ -274,7 +291,7 @@ Panel {
           }
 
           Text {
-            visible: tailscale.peers.length === 0
+            visible: root.tailscalePeers.length === 0
             text: "No peers found on this tailnet"
             color: root.dim
             font.family: root.fontFamily

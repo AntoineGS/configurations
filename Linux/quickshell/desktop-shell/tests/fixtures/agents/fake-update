@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+log_file=${AGENTS_FIXTURE_UPDATE_LOG:?}
+active_file=${AGENTS_FIXTURE_UPDATE_ACTIVE:?}
+overlap_file=${AGENTS_FIXTURE_UPDATE_OVERLAP:?}
+normal_release=${AGENTS_FIXTURE_NORMAL_RELEASE:?}
+force_release=${AGENTS_FIXTURE_FORCE_RELEASE:?}
+latest_dir=${AGENTS_FIXTURE_LATEST_DIR:?}
+record_dir=${AGENTS_FIXTURE_RECORD_DIR:?}
+
+if ! mkdir "$active_file" 2>/dev/null; then
+  : >"$overlap_file"
+  exit 2
+fi
+trap 'rm -rf "$active_file"' EXIT INT TERM
+
+printf 'request=%s\n' "$*" >>"$log_file"
+
+case " $* " in
+  *" --force "*)
+    while [ ! -r "$force_release" ] || [ "$(tr -d '\r\n' <"$force_release")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+  *)
+    while [ ! -r "$normal_release" ] || [ "$(tr -d '\r\n' <"$normal_release")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+esac
+
+providers=0
+for argument in "$@"; do
+  case "$argument" in
+    codex|claude)
+      cp "$latest_dir/$argument.json" "$record_dir/$argument.json"
+      providers=$((providers + 1))
+      ;;
+  esac
+done
+if [ "$providers" -eq 0 ]; then
+  cp "$latest_dir/codex.json" "$record_dir/codex.json"
+  cp "$latest_dir/claude.json" "$record_dir/claude.json"
+fi
+sleep 0.05

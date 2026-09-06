@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ ${1-} == status ]]; then
+  printf '%s\n' status >>"${REGISTRY_INTEGRATION_UPDATES_LOG:?}"
+  printf '%s\n' '{"git":{"state":"clean","visible":false,"tooltip":""},"tidydots":{"state":"clean","visible":false,"tooltip":""}}'
+  exit 0
+fi
+exit 2

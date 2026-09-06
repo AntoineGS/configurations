@@ -170,3 +170,5 @@ const failedStateProcess = Model.vmMonitorTransition(followed.state, "reconcile-
   generation: 2
 })
 assert.equal(failedStateProcess.state.reconciliationRunning, false)
+
+console.log("PASS: vm model")

@@ -1,0 +1,21 @@
+{
+  "id": "codex",
+  "name": "Codex",
+  "ready": true,
+  "stale": false,
+  "updatedAt": "initial-codex",
+  "retryAdvised": true,
+  "usageStatusText": "Ready",
+  "authHelpText": "",
+  "limits": [],
+  "tierLabel": "Plus",
+  "dailyUsage": [],
+  "todayPrompts": 1,
+  "todaySessions": 1,
+  "todayTotalTokens": 100,
+  "todayTokensByModel": {},
+  "totalPrompts": 1,
+  "totalSessions": 1,
+  "activeDays": 1,
+  "modelUsage": {}
+}

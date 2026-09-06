@@ -4,15 +4,27 @@ set -eu
 count_file=${RECORDING_FIXTURE_COUNT:?}
 active_file=${RECORDING_FIXTURE_ACTIVE:?}
 mode_file=${RECORDING_FIXTURE_MODE:?}
+release_file=${RECORDING_FIXTURE_PREPARE_RELEASE:-$count_file.prepare-release}
+overlap_file=${RECORDING_FIXTURE_PREPARE_OVERLAP:-$count_file.prepare-overlap}
+
+if ! mkdir "$active_file" 2>/dev/null; then
+  : >"$overlap_file"
+  exit 2
+fi
 
 count=0
 [ -f "$count_file" ] && count=$(cat "$count_file")
 count=$((count + 1))
 printf '%s\n' "$count" >"$count_file"
-: >"$active_file"
-trap 'rm -f "$active_file"' EXIT INT TERM
+trap 'rm -rf "$active_file"' EXIT INT TERM
 
-if [ "$(tr -d '\r\n' < "$mode_file")" != success ]; then
-  exit 1
-fi
+case "$(tr -d '\r\n' < "$mode_file")" in
+  success) ;;
+  hold)
+    while [ ! -r "$release_file" ] || [ "$(tr -d '\r\n' < "$release_file")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+  *) exit 1 ;;
+esac
 sleep 0.05

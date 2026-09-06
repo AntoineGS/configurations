@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${WORKSPACE_FIXTURE_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$WORKSPACE_FIXTURE_LOG"
+fi
+
+if [ -n "${WORKSPACE_FIXTURE_OUTPUT:-}" ]; then
+  cat "$WORKSPACE_FIXTURE_OUTPUT"
+else
+  printf '%s\n' '[{"name":"eDP-1","activeWorkspace":{"id":4}},{"name":"DP-1","activeWorkspace":{"id":7}}]'
+fi

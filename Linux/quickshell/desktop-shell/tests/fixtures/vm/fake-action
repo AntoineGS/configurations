@@ -1,0 +1,21 @@
+#!/bin/sh
+mode=$(tr -d '\r\n' < "${VM_FIXTURE_ACTION_MODE:?}")
+if [ -n "${VM_FIXTURE_ACTION_LOG:-}" ]; then
+  printf '%s\n' "$mode" >> "$VM_FIXTURE_ACTION_LOG"
+fi
+case "$mode" in
+  hold)
+    if [ -n "${VM_FIXTURE_ACTION_ENTERED:-}" ]; then
+      printf '%s\n' held >"$VM_FIXTURE_ACTION_ENTERED"
+    fi
+    while [ ! -r "${VM_FIXTURE_ACTION_RELEASE:?}" ] \
+      || [ "$(tr -d '\r\n' < "$VM_FIXTURE_ACTION_RELEASE")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+  fail-exit)
+    printf '%s\n' 'fixture action failed' >&2
+    exit 7
+    ;;
+esac
+exit 0

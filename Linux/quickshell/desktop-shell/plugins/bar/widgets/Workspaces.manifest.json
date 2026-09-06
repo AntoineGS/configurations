@@ -6,10 +6,12 @@
   "author": "Desktop Shell",
   "description": "Workspace number indicators",
   "kinds": [
-    "bar-widget"
+    "bar-widget",
+    "service"
   ],
   "entryPoints": {
-    "barWidget": "Workspaces.qml"
+    "barWidget": "Workspaces.qml",
+    "service": "WorkspaceService.qml"
   },
   "barWidget": {
     "displayName": "Workspaces",

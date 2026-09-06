@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${POWER_FIXTURE_ACTION_LOG:-}" ]; then
+  printf '%s\n' "$*" >> "$POWER_FIXTURE_ACTION_LOG"
+fi
+
+mode=""
+if [ -n "${POWER_FIXTURE_ACTION_MODE:-}" ]; then
+  mode=$(tr -d '\r\n' < "$POWER_FIXTURE_ACTION_MODE")
+fi
+case "$mode" in
+  hold)
+    while [ ! -r "${POWER_FIXTURE_ACTION_RELEASE:?}" ] \
+      || [ "$(tr -d '\r\n' < "$POWER_FIXTURE_ACTION_RELEASE")" != release ]; do
+      sleep 0.01
+    done
+    ;;
+  fail-exit)
+    printf '%s\n' 'fixture power action failed' >&2
+    exit 7
+    ;;
+esac
+exit 0
