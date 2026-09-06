@@ -17,6 +17,7 @@ Panel {
   property bool loaded: true
   property int brightnessPercent: 1
   property int lastConfirmedBrightnessPercent: 1
+  property int keyboardBrightnessPercent: 0
   property var operationState: Model.monitorOperationState()
   property string actionName: ""
   property bool cursorActive: false
@@ -161,6 +162,7 @@ Panel {
     var parsed = Model.parseState(raw)
     if (!parsed) {
       brightnessPercent = lastConfirmedBrightnessPercent
+      if (!keyboardBrightnessSlider.dragging) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
       hardwareState = {
         available: false,
         stale: true,
@@ -190,6 +192,7 @@ Panel {
       error: parsed.error || "",
       data: nextData
     }
+    if (!keyboardBrightnessSlider.dragging) keyboardBrightnessPercent = Number(keyboardBrightness.percent || 0)
     reportCapability()
     if (selectedIndex >= displays.length) selectedIndex = displays.length - 1
   }
@@ -245,8 +248,11 @@ Panel {
     runAction(["monitor", "set-display-brightness", String(next)])
   }
 
-  function setKeyboardBrightness(action) {
-    runAction(["monitor", "set-keyboard-brightness", String(action)])
+  function setKeyboardBrightness(value) {
+    if (!isFinite(value)) return
+    var next = Math.max(0, Math.min(100, Math.round(value)))
+    keyboardBrightnessPercent = next
+    runAction(["monitor", "set-keyboard-brightness", String(next)])
   }
 
   function toggleInternal() {
@@ -428,7 +434,7 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
         else if (dx !== 0 && root.selectedIndex === -1) root.moveScale(dx)
         else if (dx !== 0 && root.keyboardBrightness.available) {
-          root.setKeyboardBrightness(dx > 0 ? "up" : "down")
+          root.runAction(["monitor", "set-keyboard-brightness", dx > 0 ? "up" : "down"])
         }
       }
       onActivateRequested: root.activateCursor()
@@ -607,30 +613,33 @@ Panel {
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
-            Row {
-              spacing: Style.space(6)
-              Button {
-                text: "Down"
-                foreground: root.foreground
-                onClicked: root.setKeyboardBrightness("down")
+            CursorSurface {
+              width: parent.width
+              implicitHeight: keyboardBrightnessSlider.implicitHeight + Style.spacing.controlGap
+              foreground: root.foreground
+              outline: true
+
+              PanelSlider {
+                id: keyboardBrightnessSlider
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                bar: root.bar
+                minimum: 0
+                maximum: 100
+                step: 1
+                integer: true
+                value: root.keyboardBrightnessPercent
+                onMoved: root.keyboardBrightnessPercent = Math.round(liveValue)
+                onReleased: root.setKeyboardBrightness(value)
               }
-              Button {
-                text: "Cycle"
-                foreground: root.foreground
-                onClicked: root.setKeyboardBrightness("cycle")
-              }
-              Button {
-                text: "Up"
-                foreground: root.foreground
-                onClicked: root.setKeyboardBrightness("up")
-              }
-              Text {
-                text: root.keyboardBrightness.percent + "%"
-                color: root.panelSecondary
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                anchors.verticalCenter: parent.verticalCenter
-              }
+            }
+            Text {
+              width: parent.width
+              text: root.keyboardBrightnessPercent + "%"
+              color: root.panelSecondary
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
             }
           }
 

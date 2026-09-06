@@ -43,6 +43,7 @@ usage() {
   printf 'operations: volume-up volume-down volume-toggle mic-toggle\n' >&2
   printf '            brightness-up brightness-down keyboard-up keyboard-down\n' >&2
   printf '            keyboard-cycle media-next media-previous media-play-pause\n' >&2
+  printf '            keyboard-set <percent 0-100>\n' >&2
   exit 2
 }
 
@@ -191,7 +192,7 @@ read_brightness_state() {
   fi
   [[ $raw != *$'\n'* ]] || return 1
   line=${raw//$'\r'/}
-  IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$line"
+  IFS=, read -r reported_device device_class value reported_percent maximum extra <<<"$line"
   [[ -n $reported_device && -n $device_class && -z $extra ]] || return 1
   [[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ ]] || return 1
   [[ $reported_percent == *% ]] || return 1
@@ -319,6 +320,7 @@ keyboard_operation() {
       if (( next_value < 0 )); then next_value=0; fi
       ;;
     keyboard-cycle) next_value=$(((brightness_value + 1) % (brightness_max + 1))) ;;
+    keyboard-set) next_value="${2}%" ;;
     *) return 1 ;;
   esac
   command=(brightnessctl -d "$device" set "$next_value")
@@ -409,6 +411,11 @@ main() {
     volume-toggle|mic-toggle|keyboard-up|keyboard-down|keyboard-cycle|media-next|media-previous|media-play-pause)
       (( $# == 1 )) || usage
       ;;
+    keyboard-set)
+      (( $# == 2 )) || usage
+      [[ $2 =~ ^(0|[1-9][0-9]?|100)$ ]] || usage
+      step=$2
+      ;;
     *) usage ;;
   esac
 
@@ -424,7 +431,7 @@ main() {
       show_microphone
       ;;
     brightness-up|brightness-down) brightness_operation "$operation" "$step" ;;
-    keyboard-up|keyboard-down|keyboard-cycle) keyboard_operation "$operation" ;;
+    keyboard-up|keyboard-down|keyboard-cycle|keyboard-set) keyboard_operation "$operation" "$step" ;;
     media-next|media-previous|media-play-pause) media_operation "$operation" ;;
     *) return 2 ;;
   esac
