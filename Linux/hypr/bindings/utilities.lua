@@ -46,11 +46,6 @@ hl.bind(
 	{ description = "Toggle silencing notifications" }
 )
 hl.bind(
-	"SUPER + ALT + COMMA",
-	hl.dsp.exec_cmd("desktop-shell call desktop.notifications invokeLast"),
-	{ description = "Invoke last notification" }
-)
-hl.bind(
 	"SUPER + SHIFT + ALT + COMMA",
 	hl.dsp.exec_cmd("desktop-shell call desktop.notifications restoreLast"),
 	{ description = "Restore last notification" }
