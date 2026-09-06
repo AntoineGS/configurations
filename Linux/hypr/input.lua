@@ -36,7 +36,7 @@ hl.window_rule({
 hl.config({
     misc = {
         key_press_enables_dpms  = true, -- key press will trigger wake
-        mouse_move_enables_dpms = true, -- mouse move will trigger wake
+        mouse_move_enables_dpms = false, -- avoid unintended pointer-triggered wake
     },
 })
 
@@ -46,6 +46,6 @@ hl.bind("switch:on:Lid Switch", function()
     hl.dispatch(hl.dsp.dpms({ action = "off", monitor = "eDP-1" }))
 end, { locked = true })
 hl.bind("switch:off:Lid Switch", function()
-    hl.config({ misc = { key_press_enables_dpms = true, mouse_move_enables_dpms = true } })
+    hl.config({ misc = { key_press_enables_dpms = true, mouse_move_enables_dpms = false } })
     hl.dispatch(hl.dsp.dpms({ action = "on", monitor = "eDP-1" }))
 end, { locked = true })
