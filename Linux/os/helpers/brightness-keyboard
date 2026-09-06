@@ -6,8 +6,16 @@ case "$direction" in
   up) operation=keyboard-up ;;
   down) operation=keyboard-down ;;
   cycle) operation=keyboard-cycle ;;
+  *%)
+    percent=${direction%\%}
+    if [[ $percent =~ ^(0|[1-9][0-9]?|100)$ ]]; then
+      exec desktop-osd keyboard-set "$percent"
+    fi
+    printf 'brightness-keyboard: percentage must be between 0%% and 100%%\n' >&2
+    exit 2
+    ;;
   *)
-    printf 'usage: brightness-keyboard <up|down|cycle>\n' >&2
+    printf 'usage: brightness-keyboard <up|down|cycle|0-100%%>\n' >&2
     exit 2
     ;;
 esac
