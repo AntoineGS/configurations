@@ -385,7 +385,7 @@ stop_screenrecording() {
     fi
 
     (
-      ACTION=$(notify-send "Screen recording saved" "Open with Super + Alt + , (or click this)" -t 10000 -i "$notification_image" -A "default=open")
+      ACTION=$(notify-send "Screen recording saved" -t 10000 -i "$notification_image" -A "default=open")
       [[ $ACTION == "default" ]] && mpv "$filename"
       rm -f "$preview"
     ) &

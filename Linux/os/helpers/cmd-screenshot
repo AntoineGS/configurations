@@ -134,12 +134,40 @@ if [[ $PROCESSING == "slurp" ]]; then
   wl-copy <"$FILEPATH"
 
   (
+    # Send bounded pixel data instead of asking the notification server to read a file.
+    # Compact RGB at 128x72 keeps the variant below Linux's per-argument size limit.
+    preview_hint=$(python3 - "$FILEPATH" <<'PY'
+import sys
+
+try:
+    import gi
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+
+    image = GdkPixbuf.Pixbuf.new_from_file_at_scale(sys.argv[1], 128, 72, True)
+    width, height = image.get_width(), image.get_height()
+    if image.get_has_alpha():
+        opaque = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, width, height)
+        opaque.fill(0x303143ff)
+        image.composite(opaque, 0, 0, width, height, 0, 0, 1, 1, GdkPixbuf.InterpType.NEAREST, 255)
+        image = opaque
+    pixels = ",".join(str(value) for value in image.get_pixels())
+    print(f"variant:image-data:({width},{height},{image.get_rowstride()},false,8,3,[byte {pixels}])")
+except Exception as error:
+    print(f"Screenshot preview unavailable: {error}", file=sys.stderr)
+PY
+    ) || preview_hint=""
+    preview_args=()
+    [[ -z $preview_hint ]] || preview_args+=(--hint="$preview_hint")
+
     ACTION=$(notify-send \
       "Screenshot saved to clipboard and file" \
-      "Edit with Super + Alt + , (or click this)" \
+      --app-name=Screenshot \
+      --app-icon=camera-photo \
       -t 10000 \
       -i "$FILEPATH" \
-      -A "default=edit" \
+      "${preview_args[@]}" \
+      -A "default=Edit" \
       --hint=string:x-desktop-shell-history-action:edit-screenshot \
       --hint="string:x-desktop-shell-history-action-target:$FILEPATH")
     [[ $ACTION == "default" ]] && open_editor "$FILEPATH"

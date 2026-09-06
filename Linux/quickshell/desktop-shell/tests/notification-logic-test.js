@@ -562,14 +562,24 @@ assert.equal(logic.restoredRemainingLifetime({ deadline: 9000 }, 10000, 5000), 4
   "legacy absolute deadlines migrate once")
 assert.equal(logic.restoredRemainingLifetime({}, 10000, 5000), 10000)
 
-const hintedImage = logic.snapshotOf({
+const screenshotImage = logic.snapshotOf({
   id: 43,
-  appName: "build",
-  hints: { "image-path": "image://notification/build" },
-  image: "",
+  appName: "Screenshot",
+  appIcon: "camera-photo",
+  image: "image://qsimage/1/1",
+  hints: {
+    "image-path": "/tmp/screenshot.png",
+    "x-desktop-shell-history-action": "edit-screenshot",
+    "x-desktop-shell-history-action-target": "/tmp/screenshot.png",
+  },
 }, 1786930001000)
-assert.equal(hintedImage.image, "image://notification/build",
-  "safe image hints remain usable when the server image property is empty")
+assert.equal(screenshotImage.image, "image://qsimage/1/1",
+  "Quickshell's image-data handle survives snapshot normalization for the screenshot preview")
+assert.equal(screenshotImage.durableActionKind, "edit-screenshot")
+for (const hint of ["image-path", "image_path"]) {
+  assert.equal(logic.snapshotOf({ image: "", hints: { [hint]: "image://qsimage/1/1" } }).image, "",
+    "raw image hints cannot forge another notification's indexed image handle")
+}
 const hintedImageUri = logic.snapshotOf({
   id: 44,
   hints: { "image-path": "/tmp/build-uri.png" },
@@ -587,27 +597,34 @@ for (const source of [
   "/tmp/icon.png",
   "relative/icon.png",
   "icon://provider/icon",
-  "image://notification",
-  "image://notification/",
+  "image://notification/build",
+  "image://qsimage",
+  "image://qsimage/",
+  "image://qsimage/1",
+  "image://qsimage/1/",
+  "image://qsimage/icon/1",
+  "image://qsimage/1/revision",
   "image://icon/build",
   "image://other/build",
-  "image://notification/../build",
-  "image://notification/build/../../secret",
-  "image://notification/build%2Fsecret",
-  "image://notification/build%5Csecret",
-  "image://notification/build?size=large",
-  "image://notification/build#fragment",
-  "image://notification/build with-space",
-  "image://notification//build",
-  "image://notification/./build",
-  "image://notification/build/./icon",
-  "image://notification/build/../icon",
-  "image://notification/" + "x".repeat(logic.limits().maxImageLength),
+  "image://qsimage/1/../2",
+  "image://qsimage/1/1/../../secret",
+  "image://qsimage/1%2F1",
+  "image://qsimage/1%5C1",
+  "image://qsimage/1/1?size=large",
+  "image://qsimage/1/1#fragment",
+  "image://qsimage/1/1 with-space",
+  "image://qsimage//1/1",
+  "image://qsimage/1/1/",
+  "image://qsimage/1/1/2",
+  "image://qsimage/1/1\n",
+  "image://qsimage/1/1\r",
+  "image://qsimage/1/1\u2028",
+  "image://qsimage/" + "1".repeat(logic.limits().maxImageLength) + "/1",
 ]) {
   assert.equal(logic.normalizeImageSource(source), "", `unsafe or oversized image source rejected: ${source}`)
 }
-assert.equal(logic.normalizeImageSource("image://notification/icon"), "image://notification/icon")
-assert.equal(logic.normalizeImageSource("image://notification/icon/path"), "image://notification/icon/path")
+assert.equal(logic.normalizeImageSource("image://qsimage/1/1"), "image://qsimage/1/1")
+assert.equal(logic.normalizeImageSource("image://qsimage/42/2"), "image://qsimage/42/2")
 
 for (const source of [
   "http://example.test/icon.png",
@@ -619,6 +636,8 @@ for (const source of [
   "relative/icon.png",
   "icon name",
   "image://notification",
+  "image://notification/build",
+  "image://qsimage/1/1",
   "image://icon/build",
   "image://other/build",
   "image://notification/../build",
@@ -630,7 +649,7 @@ for (const source of [
   assert.equal(logic.normalizeAppIconSource(source), "", `unsafe or oversized app icon rejected: ${source}`)
 }
 assert.equal(logic.normalizeAppIconSource("build-icon"), "build-icon")
-assert.equal(logic.normalizeAppIconSource("image://notification/build"), "image://notification/build")
+assert.equal(logic.normalizeAppIconSource("camera-photo"), "camera-photo")
 
 const notification = {
   id: 42,
@@ -638,7 +657,7 @@ const notification = {
   appIcon: "build-icon",
   summary: "Build finished",
   body: "The build passed",
-  image: "image://notification/build",
+  image: "image://qsimage/42/1",
   urgency: 1,
   expireTimeout: 3000,
   hints: { transient: false },
@@ -652,7 +671,7 @@ assert.deepEqual(snapshot, {
   appIcon: "build-icon",
   summary: "Build finished",
   body: "The build passed",
-  image: "image://notification/build",
+  image: "image://qsimage/42/1",
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
@@ -766,7 +785,7 @@ assert.deepEqual(persisted, {
   appIcon: "build-icon",
   summary: "Build finished",
   body: "The build passed",
-  image: "image://notification/build",
+  image: "image://qsimage/42/1",
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
@@ -815,7 +834,7 @@ assert.equal(logic.serializePopup(snapshot, 1), JSON.stringify({
   appIcon: "build-icon",
   summary: "Build finished",
   body: "The build passed",
-  image: "image://notification/build",
+  image: "image://qsimage/42/1",
   urgency: 1,
   expireTimeout: 3000,
   timestamp: 1786930001000,
@@ -892,7 +911,7 @@ const imageEntry = {
 }
 assert.equal(logic.imageStem(imageEntry), "1786930001000-42")
 assert.equal(logic.localImageFile("file:///tmp/icon%20one.png"), "")
-assert.equal(logic.localImageFile("image://notification/42"), "")
+assert.equal(logic.localImageFile("image://qsimage/42/1"), "")
 assert.deepEqual(logic.persistablePopup(imageEntry, "/state/images/"), {
   entry: {
     ...imageEntry,
@@ -902,7 +921,7 @@ assert.deepEqual(logic.persistablePopup(imageEntry, "/state/images/"), {
   },
   copies: [],
 })
-assert.deepEqual(logic.persistablePopup({ ...snapshot, image: "image://notification/42" }, "/state/images/").entry.image, "")
+assert.deepEqual(logic.persistablePopup({ ...snapshot, image: "image://qsimage/42/1" }, "/state/images/").entry.image, "")
 assert.equal(logic.historyEntry({
   ...snapshot,
   appIcon: "https://example.com/icon.png",
@@ -910,8 +929,8 @@ assert.equal(logic.historyEntry({
 }, 1).appIcon, "")
 assert.equal(logic.historyEntry({
   ...snapshot,
-  image: "image://notification/history",
-}, 1).image, "image://notification/history")
+  image: "image://qsimage/43/1",
+}, 1).image, "image://qsimage/43/1")
 assert.equal(logic.popupEntry({
   ...snapshot,
   appIcon: "/tmp/icon.png",
@@ -919,8 +938,8 @@ assert.equal(logic.popupEntry({
 }, 1).appIcon, "")
 assert.equal(logic.popupEntry({
   ...snapshot,
-  image: "image://notification/restore",
-}, 1).image, "image://notification/restore")
+  image: "image://qsimage/44/1",
+}, 1).image, "image://qsimage/44/1")
 assert.deepEqual(logic.persistablePopup(snapshot, "/state/images/").entry.actions, [],
   "persisted popup entries do not retain stale live action objects")
 assert.deepEqual(JSON.parse(logic.serializePopup(snapshot, 1)).actions, [],
