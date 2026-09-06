@@ -1,0 +1,27 @@
+{{ if eq .Hostname "antoinews-linux" -}}
+Host multidev-win
+  HostName 192.168.122.53
+  User a.simard@multidev.local
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+Host ubuntu-server
+  HostName 10.0.0.18
+  User a.simard@multidev.local
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+Host ubuntu-small
+  HostName 10.0.0.6
+  User multidev
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+{{ end -}}
+Host *
+	AddKeysToAgent yes
+
+Host antoinews-linux
+	ControlMaster auto
+	ControlPath ~/.ssh/cm-%C
+	ControlPersist 60
