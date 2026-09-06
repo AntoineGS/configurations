@@ -24,6 +24,39 @@ Resolve by editing the rendered file to the desired content, removing the
 markers, then re-running restore. Use `--force-render` only to deliberately
 discard local edits and overwrite from the template.
 
+## Versions with repository-scoped template history
+
+Older entry-relative history keys can collide when different templates have
+the same selected filename. Patched versions use `./`-prefixed repository-relative
+source keys (for example, `./git/config.tmpl`) for symlink history, scoped by OS
+and hostname. Copy keys additionally include the expanded, cleaned absolute
+suffix-free target, for example `copy:"./git/config.tmpl":"/home/user/.gitconfig"`.
+Different copy targets and the symlink output do not share baselines. This
+behavior requires the patched binary; do not assume the installed older binary
+supports it or upgrade it without approval.
+
+Legacy records are reused only for the current source's SHA-256 hash, OS, and
+hostname, and only when all matching records agree on the pure rendered
+baseline. The first normal restore with unchanged sources copies verified
+history into the new keys while preserving output and local edits. Old records
+remain; unrelated history is not merged or moved. Status, diff, and dry runs do
+not migrate state. After an approved upgrade, preview the narrow normal restore
+and confirm before applying, preferably before editing template sources.
+
+If the source changed before its first restore with the patched version, or
+matching legacy baselines disagree, status reports `Outdated` and normal restore
+blocks overwriting existing output rather than guessing a merge base. Preserve
+local edits in the template source or a separate recovery file, then preview
+`tidydots restore <app> <entry> --force-render -n`. Review the plan and obtain
+confirmation before running the same command without `-n`: `--force-render`
+discards output edits and bypasses the no-history target backup. Missing outputs
+can render normally; templates without legacy history retain first-render behavior.
+
+Copy migration never borrows another deployment's copy history or a source-only
+scoped baseline. With only source-only scoped history, an existing target can
+initialize copy history if it exactly matches a fresh render; differing output
+remains blocked and requires the same preserve-edits recovery workflow.
+
 ## An app or entry is unexpectedly skipped
 
 Its `when:` expression evaluated false for this machine, or (for an entry) its
