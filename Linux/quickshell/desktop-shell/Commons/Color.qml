@@ -118,15 +118,15 @@ QtObject {
       "cards", "border", "border-alpha", root.accent, 1.0)
   }
   readonly property QtObject notifications: QtObject {
-    property color background: root.inheritedComposed("notifications",
-      "cards", "background", "background-alpha", root.background, 1.0)
-    property color text: root.inheritedPick("notifications", "text", "cards", root.foreground)
-    property color secondaryText: root.inheritedPick("notifications", "text-secondary", "cards", root.foreground)
+    property color background: root.barPanels.background
+    property color text: root.barPanels.text
+    property color secondaryText: root.barPanels.secondaryText
     property color border: root.inheritedComposed("notifications",
       "cards", "border", "border-alpha", root.accent, 1.0)
-    property color countdown: root.pick("notifications.countdown", root.accent)
-    property color low: root.pick("notifications.low", "#89dceb")
+    property color low: root.pick("notifications.low", "#9399b2")
+    property color normal: root.pick("notifications.normal", "#f9e2af")
     property color critical: root.pick("notifications.critical", root.urgent)
+    property color action: root.pick("notifications.action", "#b4befe")
   }
   readonly property QtObject menu: QtObject {
     property color background: root.composed("menu.background", "menu.background-alpha", root.background, 1.0)

@@ -33,16 +33,14 @@ scrim = "#1e1e2e"
 scrim-alpha = 0.5
 
 [notifications]
-background = "#b4befe"
-background-alpha = 1.0
-text = "#11111b"
-text-secondary = "#11111b"
 border = "transparent"
 border-alpha = 0.0
 border-width = 0
-countdown = "#11111b"
-low = "#89dceb"
+# Urgency accents; the surface and text follow the shared bar panel palette.
+low = "#9399b2"
+normal = "#f9e2af"
 critical = "#f38ba8"
+action = "#b4befe"
 
 [polkit]
 text-error = "#f38ba8"

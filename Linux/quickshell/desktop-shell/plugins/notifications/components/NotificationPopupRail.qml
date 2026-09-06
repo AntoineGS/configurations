@@ -29,7 +29,6 @@ PanelWindow {
   readonly property real bodyWidth: Math.min(Style.space(380),
     Math.max(1, width - Style.gapsOut * (barAttached ? 2 : 1)
       - Style.popupOuterRadius * (barAttached ? 2 : 0)))
-  readonly property real collarExtent: Style.space(36)
   readonly property real attachedContentTopInset: Style.space(32)
 
   signal dismissRequested(string identity)
@@ -65,11 +64,6 @@ PanelWindow {
   mask: Region { item: null }
 
   function identity(snapshot) { return snapshot ? String(snapshot.identity || "") : "" }
-  function urgencyColor(snapshot) {
-    if (!snapshot) return "transparent"
-    return Number(snapshot.urgency) === 0 ? Color.notifications.low
-      : Number(snapshot.urgency) === 2 ? Color.notifications.critical : Color.notifications.background
-  }
   function frameKey(frame) {
     var v = frame.visual || {}
     return String(frame.phase || "") + ":" + String(v.token || 0) + ":" + String(v.kind || "")
@@ -262,19 +256,6 @@ PanelWindow {
     contentWidth: root.bodyWidth
     contentHeight: popupContentLoader.item ? popupContentLoader.item.implicitHeight : 1
     borderSpec: Border.none()
-    surfaceColor: root.urgencyColor(root._paintedSnapshot)
-    shoulderGradientStartColor: Color.barPanels.background
-    shoulderGradientEndColor: root.urgencyColor(root._paintedSnapshot)
-    shoulderGradientExtent: root.collarExtent
-    surfaceGradient: Gradient {
-      orientation: Gradient.Vertical
-      GradientStop { position: 0; color: Color.barPanels.background }
-      GradientStop {
-        position: Math.min(1, root.collarExtent / Math.max(1, notificationPopup.contentHeight))
-        color: root.urgencyColor(root._paintedSnapshot)
-      }
-      GradientStop { position: 1; color: root.urgencyColor(root._paintedSnapshot) }
-    }
     onRevealFinished: root.handleRevealed()
     onConcealFinished: root.handleConcealed()
     onContainsMouseChanged: {
