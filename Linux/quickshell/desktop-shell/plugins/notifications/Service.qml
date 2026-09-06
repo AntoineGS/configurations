@@ -2241,6 +2241,12 @@ Item {
     return "ok"
   }
 
+  function clickLast() {
+    if (popupModel.count > 0) service.clickPopupIdentity(
+      NotificationLogic.popupIdentity(popupModel.get(0)))
+    return "ok"
+  }
+
   function invokeAction(identifier) {
     if (popupModel.count > 0) service.invokePopupActionIdentity(
       NotificationLogic.popupIdentity(popupModel.get(0)), identifier)
@@ -2256,6 +2262,7 @@ Item {
     function dismissLast(): string { return service.dismissLast() }
     function restoreLast(): string { return service.restoreLast() }
     function invokeLast(): string { return service.invokeLast() }
+    function clickLast(): string { return service.clickLast() }
     function invokeAction(identifier: string): string { return service.invokeAction(identifier) }
     function toggleHistory(): string { return service.toggleHistory() }
     function toggleDnd(): string { return service.toggleDnd() }
