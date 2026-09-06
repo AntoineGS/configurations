@@ -145,6 +145,19 @@
       "timeout": 30000
     },
 {{ end }}
+{{ if eq .Hostname "DESKTOP-E07VTRN" }}
+    "home-assistant": {
+      "type": "local",
+      "command": [
+        "sh",
+        "-c",
+        "HOMEASSISTANT_TOKEN=$(jq -er '.mcpServers[\"home-assistant\"].env.HOMEASSISTANT_TOKEN // empty' \"$HOME/.claude.json\") || exit 1; export HOMEASSISTANT_TOKEN; exec uvx --python 3.13 --refresh ha-mcp@latest"
+      ],
+      "environment": {
+        "HOMEASSISTANT_URL": "https://ha.antoinedev.io"
+      },
+      "enabled": true
+    },
     "freecad": {
       "type": "local",
       "command": [
@@ -153,6 +166,7 @@
       ],
       "enabled": true
     }
+{{ end }}
   },
 {{ end }}
   "permission": "allow"
