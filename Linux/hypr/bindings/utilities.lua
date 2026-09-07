@@ -14,7 +14,7 @@ hl.bind("XF86PowerOff", function()
 end, { description = "Power menu" })
 hl.bind("SUPER + CTRL + K", hl.dsp.exec_cmd("menu-keybindings"), { description = "Show key bindings" })
 hl.bind("XF86Calculator", hl.dsp.exec_cmd("menu --calculator"), { description = "Calculator" })
-hl.bind("SUPER + CTRL + W", hl.dsp.exec_cmd("desktop-shell-activate"), { description = "Reload top bar" })
+hl.bind("SUPER + CTRL + Q", hl.dsp.exec_cmd("desktop-shell-activate"), { description = "Reload top bar" })
 hl.bind("SUPER + CTRL + H", hl.dsp.exec_cmd("restart-hyprctl"), { description = "Reload Hyprland" })
 
 -- Aesthetics
