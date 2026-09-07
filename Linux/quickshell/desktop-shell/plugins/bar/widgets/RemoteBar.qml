@@ -10,6 +10,10 @@ BarWidget {
   readonly property var service: bar && bar.shell ? bar.shell.remoteBarService : null
   property string screenName: ""
   readonly property int modeRevision: service ? service.modeRevision : 0
+  readonly property var source: {
+    var revision = root.modeRevision
+    return service ? service.sourceForScreen(screenName) : null
+  }
   readonly property bool screenEligible: {
     var revision = root.modeRevision
     return !!service && service.screenEligible(screenName)
@@ -18,12 +22,12 @@ BarWidget {
     var revision = root.modeRevision
     return !!service && service.screenRemoteSelected(screenName)
   }
-  readonly property bool remoteFresh: !!service && service.health === "fresh"
+  readonly property bool remoteFresh: !!source && source.health === "fresh"
   readonly property color remoteColor: "#fab387"
-  readonly property var agents: service ? service.agents : ({})
-  readonly property var audio: service ? service.audio : ({})
-  readonly property var disk: service ? service.disk : ({})
-  readonly property var vm: service ? service.vm : ({})
+  readonly property var agents: source ? source.agents : ({})
+  readonly property var audio: source ? source.audio : ({})
+  readonly property var disk: source ? source.disk : ({})
+  readonly property var vm: source ? source.vm : ({})
   readonly property var hostMemory: vm && vm.hostMemory ? vm.hostMemory : ({})
   readonly property var hostCpu: vm && vm.hostCpu ? vm.hostCpu : ({})
   readonly property var guest: vm && vm.vm ? vm.vm : ({})
@@ -55,7 +59,7 @@ BarWidget {
     }
 
     WidgetButton {
-      visible: root.remoteSelected && root.service && root.service.warning
+      visible: root.remoteSelected && root.source && root.source.warning
       bar: root.bar
       text: "!"
       tooltipText: root.service ? root.service.modeTooltip(root.screenName) : ""

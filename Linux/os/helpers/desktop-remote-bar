@@ -51,7 +51,8 @@ function destinationHost(destination) {
 }
 
 function isTargetSsh(process, target) {
-  return process && process.comm === "ssh" && destinationHost(sshDestination(process.argv)) === String(target || "")
+  return process && process.comm === "ssh"
+    && destinationHost(sshDestination(process.argv)).toLowerCase() === destinationHost(target).toLowerCase()
 }
 
 function targetSshDestination(tree, target) {
@@ -245,42 +246,69 @@ async function commandJson(command, args) {
   return JSON.parse(stdout)
 }
 
-async function detect(target) {
-  const [monitors, clients, sessions] = await Promise.all([
+/** Select one visible remote terminal per screen, newest focus first.
+ * @returns {Array<{screen: string, host: string, pid: number}>}
+ */
+function selectRemoteWindows(monitors, clients, targets) {
+  const visible = visibleWorkspaceScreens(monitors)
+  const enabledMonitors = new Map((Array.isArray(monitors) ? monitors : [])
+    .filter(monitor => monitor && monitor.disabled !== true && monitor.dpmsStatus !== false)
+    .map(monitor => [Number(monitor.id), String(monitor.name || "")]))
+  const hosts = new Map()
+  for (const target of targets) {
+    const key = String(target).toLowerCase()
+    if (!hosts.has(key)) hosts.set(key, String(target))
+  }
+  const candidates = []
+  for (const client of Array.isArray(clients) ? clients : []) {
+    if (!client || client.mapped === false || client.hidden === true || client.visible === false
+      || !TERMINAL_CLASSES.has(String(client.class || "").toLowerCase())) continue
+    const title = String(client.title || "")
+    const colon = title.indexOf(":")
+    const host = colon >= 0 ? hosts.get(title.slice(0, colon).toLowerCase()) : undefined
+    if (!host) continue
+    const screen = client.pinned === true
+      ? enabledMonitors.get(Number(client.monitor))
+      : visible.get(Number(client.workspace && client.workspace.id))
+    if (!screen) continue
+    const rank = Number.isInteger(client.focusHistoryID) && client.focusHistoryID >= 0
+      ? client.focusHistoryID : Infinity
+    candidates.push({ screen, host, pid: Number(client.pid), rank, address: String(client.address || "") })
+  }
+  const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0
+  candidates.sort((left, right) => left.rank - right.rank
+    || compareText(left.screen, right.screen) || left.pid - right.pid
+    || compareText(left.address, right.address) || compareText(left.host, right.host))
+  const selected = new Map()
+  for (const { screen, host, pid } of candidates) {
+    if (!selected.has(screen)) selected.set(screen, { screen, host, pid })
+  }
+  return Array.from(selected.values())
+}
+
+async function detect(targets) {
+  const [monitors, clients] = await Promise.all([
     commandJson("hyprctl", ["-j", "monitors", "all"]),
     commandJson("hyprctl", ["-j", "clients"]),
-    readSessions(),
   ])
-  const visible = visibleWorkspaceScreens(monitors)
-  const terminals = (Array.isArray(clients) ? clients : []).filter(client =>
-    visible.has(Number(client && client.workspace && client.workspace.id))
-      && client.mapped !== false
-      && client.hidden !== true
-      && TERMINAL_CLASSES.has(String(client && client.class || "").toLowerCase())
-  )
-  const terminalPids = new Set(terminals.map(client => Number(client.pid)))
-  const sessionRoots = await Promise.all(sessions.map(session => sessionTerminalPid(session, terminalPids)))
-  const sessionTargets = new Map()
-  for (let index = 0; index < sessions.length; index += 1) {
-    const rootPid = sessionRoots[index]
-    if (rootPid && destinationHost(sessions[index].sshTarget) === String(target || "")) {
-      sessionTargets.set(rootPid, String(sessions[index].sshTarget || ""))
+  const selected = selectRemoteWindows(monitors, clients, targets)
+  if (selected.length === 0) return { screens: [] }
+  const sessions = await readSessions()
+  sessions.sort((left, right) => Number(left.pid) - Number(right.pid))
+  const terminalPids = new Set(selected.map(terminal => terminal.pid))
+  const roots = await Promise.all(sessions.map(session => sessionTerminalPid(session, terminalPids)))
+  const screens = await Promise.all(selected.map(async ({ screen, host, pid }) => {
+    // Visibility comes only from the title; credentials belong to this selected terminal.
+    for (let index = 0; index < sessions.length; index += 1) {
+      if (roots[index] === pid
+        && destinationHost(sessions[index].sshTarget).toLowerCase() === host.toLowerCase()) {
+        return { screen, host, sshTarget: sessions[index].sshTarget }
+      }
     }
-  }
-  const trees = await Promise.all(terminals.map(client =>
-    sessionTargets.has(Number(client.pid)) ? null : processTree(client.pid)))
-  const screens = new Set()
-  let sshTarget = ""
-  for (let index = 0; index < trees.length; index += 1) {
-    const detectedTarget = sessionTargets.get(Number(terminals[index].pid))
-      || targetSshDestination(trees[index], target)
-    if (detectedTarget === "") continue
-    if (sshTarget === "") sshTarget = detectedTarget
-    const workspaceId = Number(terminals[index] && terminals[index].workspace && terminals[index].workspace.id)
-    const screen = visible.get(workspaceId)
-    if (screen) screens.add(screen)
-  }
-  return { sshTarget, screens: Array.from(screens).sort() }
+    const sshTarget = targetSshDestination(await processTree(pid), host) || host
+    return { screen, host, sshTarget }
+  }))
+  return { screens }
 }
 
 function snapshotPath() {
@@ -315,12 +343,8 @@ async function fetchSnapshot(target) {
 async function main(argv) {
   const [command, target, ...args] = argv
   if (command === "detect" && target) {
-    const result = await detect(target)
-    process.stdout.write(`${JSON.stringify({
-      eligible: result.screens.length > 0,
-      sshTarget: result.sshTarget,
-      screens: result.screens,
-    })}\n`)
+    const result = await detect([target, ...args])
+    process.stdout.write(`${JSON.stringify(result)}\n`)
     return
   }
   if (command === "fetch" && target) {
@@ -339,7 +363,7 @@ async function main(argv) {
     await closeSession(target)
     return
   }
-  throw new Error("usage: desktop-remote-bar <detect|fetch> <host> | read | session-<open|close> <pid> [ssh arguments]")
+  throw new Error("usage: desktop-remote-bar detect <host> [host...] | fetch <host> | read | session-<open|close> <pid> [ssh arguments]")
 }
 
 if (require.main === module) {
@@ -350,6 +374,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  selectRemoteWindows,
   destinationHost,
   isSshConnection,
   isTargetSsh,

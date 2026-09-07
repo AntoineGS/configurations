@@ -1,9 +1,9 @@
 import QtQuick
+import QtQml.Models
 import Quickshell
 import Quickshell.Hyprland
 import Quickshell.Io
 import qs.Commons
-import "RemoteBarModel.js" as RemoteBarModel
 
 QtObject {
   id: root
@@ -22,42 +22,35 @@ QtObject {
   readonly property bool publisherEnabled: config && config.publish === true
   readonly property bool publisherActive: publisherEnabled && !!shell && !shell.previewMode
   readonly property string publisherHost: publisherEnabled ? String(config.host || "") : ""
-  readonly property string target: config ? String(config.target || "") : ""
   readonly property string sourceHost: config ? String(config.sourceHost || "") : ""
-  readonly property bool sourceEnabled: target !== ""
-  readonly property int staleAfterSeconds: 30
-  readonly property int offlineAfterSeconds: 60
+  readonly property var targets: {
+    var configured = config && Array.isArray(config.targets) ? config.targets
+      : (config && config.target ? [config.target] : [])
+    var result = []
+    var seen = ({})
+    for (var i = 0; i < configured.length; i++) {
+      var host = String(configured[i] || "")
+      var key = host.toLowerCase()
+      if (key !== "" && key !== sourceHost.toLowerCase() && !seen[key]) {
+        seen[key] = true
+        result.push(host)
+      }
+    }
+    return result
+  }
+  readonly property string targetsKey: JSON.stringify(targets)
+  readonly property bool sourceEnabled: targets.length > 0 && !!shell && !shell.previewMode
 
-  property var eligibleScreens: []
+  property var detectedScreens: []
+  property var sourcesByHost: ({})
   property var localOverrides: ({})
   property int modeRevision: 0
-  property var snapshot: null
-  property double snapshotReceivedAt: 0
-  property string connectionTarget: ""
-  property string lastError: ""
   property string publishError: ""
-  property double nowSeconds: Math.floor(Date.now() / 1000)
   property bool publishDirectoryReady: false
   property bool snapshotWritePending: false
   property bool snapshotWriteQueued: false
   property bool detectQueued: false
-
-  readonly property var freshness: RemoteBarModel.freshness(
-    snapshot, nowSeconds, snapshotReceivedAt, staleAfterSeconds, offlineAfterSeconds)
-  readonly property string health: freshness.state
-  readonly property int snapshotAgeSeconds: freshness.ageSeconds
-  readonly property bool eligible: eligibleScreens.length > 0
-  readonly property bool anyRemoteSelected: {
-    var revision = modeRevision
-    for (var i = 0; i < eligibleScreens.length; i++)
-      if (localOverrides[String(eligibleScreens[i])] !== true) return true
-    return false
-  }
-  readonly property bool warning: anyRemoteSelected && health !== "fresh"
-  readonly property var agents: RemoteBarModel.widget(snapshot, "agents")
-  readonly property var audio: RemoteBarModel.widget(snapshot, "audio")
-  readonly property var disk: RemoteBarModel.widget(snapshot, "disk")
-  readonly property var vm: RemoteBarModel.widget(snapshot, "vm")
+  property int detectionGeneration: 0
 
   readonly property var agentsService: shell ? shell.serviceFor("desktop.agents") : null
   readonly property var audioService: shell ? shell.serviceFor("desktop.audio") : null
@@ -125,54 +118,41 @@ QtObject {
     snapshotFile.setText(JSON.stringify(payload) + "\n")
   }
 
-  function applyDetection(raw, success, requestTarget) {
-    if (!sourceEnabled || requestTarget !== target) return
-    var detectedTarget = ""
-    var detectedScreens = []
+  function applyDetection(raw, success, requestGeneration) {
+    if (!sourceEnabled || requestGeneration !== detectionGeneration) return
+    var nextScreens = []
     if (success) {
       try {
         var result = JSON.parse(String(raw || ""))
-        if (result.eligible === true && Array.isArray(result.screens)) {
-          detectedTarget = String(result.sshTarget || "")
-          detectedScreens = result.screens.map(function(screen) { return String(screen || "") }).filter(Boolean)
+        if (Array.isArray(result.screens)) {
+          nextScreens = result.screens.filter(function(entry) {
+            return entry && typeof entry.screen === "string" && entry.screen !== ""
+              && root.targets.indexOf(entry.host) !== -1
+              && typeof entry.sshTarget === "string" && entry.sshTarget !== ""
+          })
         }
       } catch (_) {
-        detectedTarget = ""
-        detectedScreens = []
+        nextScreens = []
       }
     }
-    var connectionChanged = connectionTarget !== detectedTarget
-    connectionTarget = detectedTarget
-    var screensChanged = detectedScreens.length !== eligibleScreens.length
-    if (!screensChanged) {
-      for (var i = 0; i < detectedScreens.length; i++) {
-        if (detectedScreens[i] !== eligibleScreens[i]) {
-          screensChanged = true
-          break
-        }
-      }
+    if (JSON.stringify(nextScreens) === JSON.stringify(detectedScreens)) return
+    var nextOverrides = ({})
+    for (var i = 0; i < nextScreens.length; i++) {
+      var screen = nextScreens[i].screen
+      if (localOverrides[screen] === true) nextOverrides[screen] = true
     }
-    if (screensChanged) {
-      var nextOverrides = ({})
-      for (var j = 0; j < detectedScreens.length; j++) {
-        var screen = detectedScreens[j]
-        if (localOverrides[screen] === true) nextOverrides[screen] = true
-      }
-      eligibleScreens = detectedScreens
-      localOverrides = nextOverrides
-      modeRevision++
-    }
-    if (anyRemoteSelected && (screensChanged || connectionChanged)) fetchNow()
-    if (!eligible) lastError = ""
+    detectedScreens = nextScreens
+    localOverrides = nextOverrides
+    modeRevision++
   }
 
-  function fetchNow() {
-    if (!sourceEnabled || !anyRemoteSelected || fetchProcess.running) return
-    if (connectionTarget === "") return
-    fetchProcess.requestTarget = connectionTarget
-    fetchProcess.requestHost = target
-    fetchProcess.command = ["desktop-remote-bar", "fetch", connectionTarget]
-    fetchProcess.running = true
+  function connectionForHost(host) {
+    // Detection is focus-ranked; one publisher account per host is shared across monitors.
+    for (var i = 0; i < detectedScreens.length; i++) {
+      var entry = detectedScreens[i]
+      if (entry.host === host && localOverrides[entry.screen] !== true) return entry.sshTarget
+    }
+    return ""
   }
 
   function detectNow() {
@@ -181,14 +161,23 @@ QtObject {
       detectQueued = true
       return
     }
-    detectProcess.requestTarget = target
-    detectProcess.command = ["desktop-remote-bar", "detect", target]
+    detectProcess.requestGeneration = detectionGeneration
+    detectProcess.command = ["desktop-remote-bar", "detect"].concat(targets)
     detectProcess.running = true
   }
 
   function screenEligible(screenName) {
     var revision = modeRevision
-    return eligibleScreens.indexOf(String(screenName || "")) !== -1
+    return detectedScreens.some(function(entry) { return entry.screen === String(screenName || "") })
+  }
+
+  function sourceForScreen(screenName) {
+    var revision = modeRevision
+    for (var i = 0; i < detectedScreens.length; i++) {
+      if (detectedScreens[i].screen === String(screenName || ""))
+        return sourcesByHost[detectedScreens[i].host] || null
+    }
+    return null
   }
 
   function screenRemoteSelected(screenName) {
@@ -204,17 +193,17 @@ QtObject {
     else next[screen] = true
     localOverrides = next
     modeRevision++
-    if (selected === true) fetchNow()
   }
 
   function modeTooltip(screenName) {
     var selected = screenRemoteSelected(screenName)
-    var host = selected ? target : (sourceHost !== "" ? sourceHost : "local computer")
+    var source = sourceForScreen(screenName)
+    var host = selected && source ? source.host : (sourceHost !== "" ? sourceHost : "local computer")
     var lines = [host]
-    if (selected && health !== "fresh") {
-      lines.push(health === "stale" ? "Remote data is stale" : "Remote data is offline")
-      if (snapshotAgeSeconds >= 0) lines.push("Snapshot age: " + snapshotAgeSeconds + "s")
-      if (lastError !== "") lines.push(lastError)
+    if (selected && source && source.health !== "fresh") {
+      lines.push(source.health === "stale" ? "Remote data is stale" : "Remote data is offline")
+      if (source.snapshotAgeSeconds >= 0) lines.push("Snapshot age: " + source.snapshotAgeSeconds + "s")
+      if (source.lastError !== "") lines.push(source.lastError)
     }
     return lines.join("\n")
   }
@@ -225,23 +214,50 @@ QtObject {
   onPublisherActiveChanged: {
     if (publisherActive && !publishDirectoryReady) publishDirectoryProcess.running = true
   }
-  onTargetChanged: {
-    snapshot = null
-    snapshotReceivedAt = 0
-    connectionTarget = ""
+  onTargetsKeyChanged: {
+    detectionGeneration++
     detectQueued = false
-    lastError = ""
-    eligibleScreens = []
+    detectedScreens = []
     localOverrides = ({})
     modeRevision++
-    if (!sourceEnabled) {
-      return
-    } else detectNow()
+    Qt.callLater(root.detectNow)
+  }
+  onSourceEnabledChanged: {
+    detectionGeneration++
+    if (sourceEnabled) Qt.callLater(root.detectNow)
+    else {
+      detectedScreens = []
+      localOverrides = ({})
+      modeRevision++
+    }
   }
 
   Component.onCompleted: {
     if (publisherActive) publishDirectoryProcess.running = true
     detectNow()
+  }
+
+  property Instantiator sources: Instantiator {
+    model: root.targets
+    delegate: RemoteBarSource {
+      required property var modelData
+      host: String(modelData)
+      connectionTarget: root.connectionForHost(host)
+      active: root.sourceEnabled && connectionTarget !== ""
+    }
+    onObjectAdded: function(index, object) {
+      var next = Object.assign({}, root.sourcesByHost)
+      next[object.host] = object
+      root.sourcesByHost = next
+      root.modeRevision++
+    }
+    onObjectRemoved: function(index, object) {
+      if (root.sourcesByHost[object.host] !== object) return
+      var next = Object.assign({}, root.sourcesByHost)
+      delete next[object.host]
+      root.sourcesByHost = next
+      root.modeRevision++
+    }
   }
 
   property FileView snapshotFile: FileView {
@@ -287,13 +303,13 @@ QtObject {
   }
 
   property Process detectProcess: Process {
-    property string requestTarget: ""
+    property int requestGeneration: -1
     stdout: StdioCollector {
       id: detectStdout
       waitForEnd: true
     }
     onExited: function(exitCode) {
-      root.applyDetection(detectStdout.text, Number(exitCode) === 0, requestTarget)
+      root.applyDetection(detectStdout.text, Number(exitCode) === 0, requestGeneration)
       if (root.detectQueued) {
         root.detectQueued = false
         Qt.callLater(root.detectNow)
@@ -306,9 +322,12 @@ QtObject {
     function onRawEvent(event) {
       var name = String(event.name || "")
       if (name === "workspace" || name === "workspacev2"
+          || name === "activespecial" || name === "activespecialv2"
           || name === "focusedmon" || name === "focusedmonv2"
           || name === "moveworkspace" || name === "moveworkspacev2"
           || name === "openwindow" || name === "closewindow"
+          || name === "windowtitle" || name === "windowtitlev2"
+          || name === "activewindow" || name === "activewindowv2" || name === "fullscreen"
           || name === "movewindow" || name === "movewindowv2") root.detectNow()
     }
   }
@@ -318,48 +337,5 @@ QtObject {
     running: root.sourceEnabled
     repeat: true
     onTriggered: root.detectNow()
-  }
-
-  property Process fetchProcess: Process {
-    property string requestTarget: ""
-    property string requestHost: ""
-    stdout: StdioCollector {
-      id: fetchStdout
-      waitForEnd: true
-    }
-    stderr: StdioCollector {
-      id: fetchStderr
-      waitForEnd: true
-    }
-    onExited: function(exitCode) {
-      if (!root.sourceEnabled || requestTarget !== root.connectionTarget || requestHost !== root.target) return
-      if (Number(exitCode) !== 0) {
-        root.lastError = String(fetchStderr.text || "Remote snapshot read failed").trim().slice(0, 240)
-        return
-      }
-      var parsed = RemoteBarModel.parseSnapshot(fetchStdout.text, requestHost)
-      if (!parsed) {
-        root.lastError = "Remote snapshot is invalid"
-        return
-      }
-      root.snapshot = parsed
-      root.snapshotReceivedAt = Math.floor(Date.now() / 1000)
-      root.lastError = ""
-      root.nowSeconds = Math.floor(Date.now() / 1000)
-    }
-  }
-
-  property Timer fetchTimer: Timer {
-    interval: 10000
-    running: root.sourceEnabled && root.anyRemoteSelected
-    repeat: true
-    onTriggered: root.fetchNow()
-  }
-
-  property Timer clockTimer: Timer {
-    interval: 1000
-    running: root.sourceEnabled && root.eligible
-    repeat: true
-    onTriggered: root.nowSeconds = Math.floor(Date.now() / 1000)
   }
 }
