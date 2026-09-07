@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# == 2 && $1 == fetch ]]
+target=$2
+count_file="$HOME/$target.count"
+count=0
+[[ ! -f $count_file ]] || read -r count <"$count_file"
+count=$((count + 1))
+printf '%s\n' "$count" >"$count_file"
+sleep 0.3
+case "$target" in
+  error) printf 'transport failed\n' >&2; exit 1 ;;
+  invalid) printf 'not json\n'; exit 0 ;;
+  wrong) host=OTHER ;;
+  *) host=DESKTOP-E07VTRN ;;
+esac
+printf '{"schemaVersion":1,"host":"%s","publishedAt":%s,"widgets":{"disk":{"target":"%s","serial":%s}}}\n' \
+  "$host" "$(date +%s)" "$target" "$count"

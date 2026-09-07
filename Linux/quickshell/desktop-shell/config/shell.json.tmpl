@@ -1,11 +1,12 @@
 {
   "version": 1,
   "remoteBar": {
-{{ if eq .Hostname "antoinews-linux" }}
+{{ if or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
+{{ if or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}
     "publish": true,
-    "host": "antoinews-linux"
-{{ else if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
-    "target": "antoinews-linux",
+    "host": "{{ .Hostname }}",
+{{ end }}
+    "targets": ["antoinews-linux", "DESKTOP-E07VTRN"],
     "sourceHost": "{{ .Hostname }}"
 {{ else }}
     "enabled": false

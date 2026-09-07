@@ -33,7 +33,7 @@ Item {
   property var publisherConfig: ({
     publish: true,
     host: "fixture-host",
-    target: ""
+    targets: []
   })
   property var agentsService: null
   property var audioService: null
@@ -430,7 +430,7 @@ Item {
         check(publisher.snapshotWritePending, "stop test starts an in-flight write")
         publisher.publishSnapshot()
         check(publisher.snapshotWriteQueued, "stop test queues a second write while pending")
-        root.publisherConfig = ({ publish: false, host: "fixture-host", target: "" })
+        root.publisherConfig = ({ publish: false, host: "fixture-host", targets: [] })
         root.stopSettlementObserved = false
         root.phase = 12
         return
