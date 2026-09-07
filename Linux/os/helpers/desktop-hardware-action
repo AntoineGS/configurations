@@ -493,6 +493,23 @@ case $domain in
     ;;
   monitor)
     case $action in
+      set-enabled)
+        (($# == 4 || $# == 5)) || usage
+        valid_target "$3" || usage
+        case $4 in
+          true|false) ;;
+          *) usage ;;
+        esac
+        if (($# == 5)); then
+          valid_target "$5" || usage
+        fi
+        monitor_layout_helper=$(resolve_helper desktop-monitor-layout) || exit 1
+        if (($# == 5)); then
+          "$monitor_layout_helper" set-enabled "$3" "$4" "$5"
+        else
+          "$monitor_layout_helper" set-enabled "$3" "$4"
+        fi
+        ;;
       set-display-brightness)
         (($# == 3)) || usage
         valid_percent "$3" || usage
@@ -518,6 +535,19 @@ case $domain in
         ;;
       set-layout)
         case ${3:-} in
+          only)
+            (($# == 4)) || usage
+            valid_target "$4" || usage
+            monitor_layout_helper=$(resolve_helper desktop-monitor-layout) || exit 1
+            "$monitor_layout_helper" only "$4"
+            exit 0
+            ;;
+          all)
+            (($# == 3)) || usage
+            monitor_layout_helper=$(resolve_helper desktop-monitor-layout) || exit 1
+            "$monitor_layout_helper" all
+            exit 0
+            ;;
           headless|physical)
             (($# == 3)) || usage
             ;;

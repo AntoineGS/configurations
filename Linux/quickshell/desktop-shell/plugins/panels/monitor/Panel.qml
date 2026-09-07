@@ -27,6 +27,8 @@ Panel {
   readonly property var hardwareState: monitorService
     ? monitorService.hardwareState : ({ available: false, stale: false, data: {} })
   readonly property int brightnessPercent: monitorService ? monitorService.brightnessPercent : 1
+  readonly property string actionError: monitorService && monitorService.actionError
+    ? String(monitorService.actionError) : ""
 
   function refreshNativeTopology() {
     nativeTopologyGeneration++
@@ -34,23 +36,31 @@ Panel {
 
   readonly property var nativeTopology: Model.normalizeMonitors(
     nativeTopologyGeneration >= 0 && Hyprland.monitors ? Hyprland.monitors.values : [], Hyprland.focusedMonitor)
-  readonly property bool capabilityAvailable: nativeTopology.monitors.length > 0
+  readonly property var monitorInventory: monitorService && Array.isArray(monitorService.monitorInventory)
+    ? monitorService.monitorInventory : []
+  readonly property var displayRows: Model.mergeMonitorInventory(
+    monitorInventory, nativeTopology.monitors, Hyprland.focusedMonitor)
+  readonly property bool capabilityAvailable: nativeTopology.monitors.length > 0 || displayRows.length > 0
   readonly property var stateData: hardwareState && hardwareState.data ? hardwareState.data : ({})
-  readonly property var displays: nativeTopology.monitors
+  readonly property var displays: displayRows
   readonly property var brightness: stateData.brightness || ({ available: false, percent: 1 })
   readonly property var keyboardBrightness: stateData.keyboardBrightness || ({ available: false, percent: 0 })
   readonly property string internalMonitor: nativeTopology.internalMonitor
   readonly property bool internalEnabled: nativeTopology.internalEnabled
   readonly property string focusedMonitor: nativeTopology.focusedMonitor
-  readonly property int enabledDisplayCount: Model.enabledDisplayCount(displays)
+  readonly property int enabledDisplayCount: Model.enabledDisplayCount(displayRows)
+  readonly property bool monitorInventoryFresh: monitorService
+    && monitorService.monitorInventoryFresh === true
+  readonly property bool monitorActionsAvailable: monitorService
+    && monitorService.monitorActionAvailable === true
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var barWindow: button.QsWindow.window
   readonly property string barMonitor: barWindow && barWindow.screen ? String(barWindow.screen.name || "") : ""
-  readonly property var selectedDisplay: displayForMonitor(barMonitor)
+  readonly property var selectedDisplay: activeDisplayForMonitor(barMonitor)
   readonly property real selectedScale: selectedDisplay ? selectedDisplay.scale : 1
   readonly property var scaleOptions: validScaleOptions(selectedDisplay)
-  readonly property var activeMonitors: displays.map(function(display) { return display.name })
+  readonly property var activeMonitors: nativeTopology.monitors.map(function(display) { return display.name })
   readonly property bool presetLayoutsAvailable: hostname === "antoinews-linux"
   readonly property string layoutMode: {
     if (activeMonitors.length === 1) return "single"
@@ -77,6 +87,12 @@ Panel {
   function displayForMonitor(name) {
     for (var i = 0; i < displays.length; i++)
       if (displays[i].name === name) return displays[i]
+    return null
+  }
+
+  function activeDisplayForMonitor(name) {
+    for (var i = 0; i < nativeTopology.monitors.length; i++)
+      if (nativeTopology.monitors[i].name === name) return nativeTopology.monitors[i]
     return null
   }
 
@@ -128,10 +144,22 @@ Panel {
   }
 
   function applyLayout(mode) {
-    if (!monitorService || !presetLayoutsAvailable) return
+    if (!monitorService || !presetLayoutsAvailable || !monitorActionsAvailable) return
     if (mode === "single" && barMonitor === "") return
     close()
     monitorService.setLayout(mode, barMonitor)
+  }
+
+  function applyGenericLayout(mode) {
+    if (!monitorService || !monitorActionsAvailable) return
+    if (mode === "only") {
+      if (!activeDisplayForMonitor(barMonitor)) return
+      close()
+      monitorService.setLayout("only", barMonitor)
+    } else if (mode === "all") {
+      close()
+      monitorService.setLayout("all")
+    }
   }
 
   function open() {
@@ -188,11 +216,28 @@ Panel {
   }
 
   function toggleInternal() {
-    if (monitorService) monitorService.runAction(["monitor", "toggle-internal"])
+    if (monitorService && monitorActionsAvailable) monitorService.runAction(["monitor", "toggle-internal"])
   }
 
   function toggleMirror() {
-    if (monitorService) monitorService.runAction(["monitor", "toggle-mirror"])
+    if (monitorService && monitorActionsAvailable) monitorService.runAction(["monitor", "toggle-mirror"])
+  }
+
+  function canToggleMonitor(display) {
+    if (!display || !monitorActionsAvailable) return false
+    if (!display.enabled) return true
+    if (!display.active) return false
+    var activeEnabledCount = 0
+    for (var i = 0; i < displays.length; i++)
+      if (displays[i].enabled && displays[i].active) activeEnabledCount++
+    return activeEnabledCount > 1
+  }
+
+  function toggleMonitor(display) {
+    if (!canToggleMonitor(display)) return false
+    var fallback = display.enabled
+      ? Model.preferredFallbackMonitor(nativeTopology.monitors, display.name, barMonitor) : ""
+    return monitorService.setMonitorEnabled(display.name, !display.enabled, fallback)
   }
 
   function moveCursor(delta) {
@@ -202,7 +247,7 @@ Panel {
 
   function activateCursor() {
     if (selectedIndex === -1) applyScale(previewScale)
-    else if (selectedIndex < displays.length) toggleInternal()
+    else if (selectedIndex < displays.length) toggleMonitor(displays[selectedIndex])
   }
 
   visible: capabilityAvailable
@@ -234,6 +279,7 @@ Panel {
     function onHardwareStateChanged() {
       root.syncBrightnessPreview()
       root.syncKeyboardBrightnessPreview()
+      if (root.selectedIndex >= root.displays.length) root.selectedIndex = root.displays.length - 1
     }
     function onOperationPendingChanged() {
       root.syncBrightnessPreview()
@@ -385,6 +431,58 @@ Panel {
           }
 
           Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSeparator { foreground: root.foreground }
+            PanelSectionHeader {
+              text: "MONITOR ACTIONS"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+            Button {
+              width: parent.width
+              iconText: "1"
+              text: "Only this monitor"
+              leftAlign: true
+              bordered: true
+              foreground: root.foreground
+              enabled: root.monitorActionsAvailable && root.activeDisplayForMonitor(root.barMonitor) !== null
+              onClicked: root.applyGenericLayout("only")
+            }
+            Button {
+              width: parent.width
+              iconText: "󰍺"
+              text: "Enable all physical monitors"
+              leftAlign: true
+              bordered: true
+              foreground: root.foreground
+              enabled: root.monitorActionsAvailable
+              onClicked: root.applyGenericLayout("all")
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: root.actionError !== ""
+            text: root.actionError
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            visible: root.monitorInventoryFresh === false && root.actionError === ""
+            text: "Display inventory is unavailable; controls are paused."
+            color: root.panelSecondary
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Column {
             visible: root.presetLayoutsAvailable
             width: parent.width
             spacing: Style.space(8)
@@ -408,6 +506,7 @@ Panel {
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 active: root.layoutMode === modelData.mode
+                enabled: root.monitorActionsAvailable
                 onClicked: root.applyLayout(modelData.mode)
               }
             }
@@ -547,7 +646,7 @@ Panel {
               foreground: root.foreground
               current: modelData.focused
               hasCursor: root.cursorActive && root.selectedIndex === index
-              implicitHeight: Style.space(42)
+              implicitHeight: Style.space(50)
 
               Row {
                 anchors.fill: parent
@@ -555,33 +654,56 @@ Panel {
                 anchors.rightMargin: Style.space(8)
                 spacing: Style.space(8)
 
-                Text {
-                  text: modelData.name || "Display"
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  elide: Text.ElideRight
-                  width: parent.width - scaleLabel.implicitWidth - Style.space(8)
+                Column {
+                  id: monitorLabels
+                  width: Math.max(0, parent.width - scaleLabel.implicitWidth
+                    - monitorToggle.implicitWidth - Style.space(24))
                   anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(1)
+
+                  Text {
+                    width: parent.width
+                    text: modelData.name || "Display"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: modelData.enabled ? (modelData.active ? "Enabled" : "Waiting for compositor") : "Disabled"
+                    color: root.panelSecondary
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
                 }
                 Text {
                   id: scaleLabel
-                  text: (modelData.scale || 1) + "x"
+                  text: root.formatScale(modelData.scale || 1) + "x"
                   color: root.panelSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   anchors.verticalCenter: parent.verticalCenter
                 }
+                ToggleSwitch {
+                  id: monitorToggle
+                  checked: modelData.enabled
+                  enabled: root.canToggleMonitor(modelData)
+                  interactive: enabled
+                  busy: root.monitorService && root.monitorService.operationPending
+                  cursorRing: false
+                  anchors.verticalCenter: parent.verticalCenter
+                  opacity: enabled ? 1 : 0.55
+                  onToggled: root.toggleMonitor(modelData)
+                }
               }
 
-              MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onContainsMouseChanged: if (containsMouse) {
+              HoverHandler {
+                onHoveredChanged: if (hovered) {
                   root.cursorActive = true
                   root.selectedIndex = index
                 }
-                onClicked: root.toggleInternal()
               }
             }
           }
@@ -592,11 +714,13 @@ Panel {
             Button {
               text: "Toggle internal"
               foreground: root.foreground
+              enabled: root.monitorActionsAvailable
               onClicked: root.toggleInternal()
             }
             Button {
               text: root.nativeTopology.mirrorEnabled === true ? "Unmirror" : "Mirror"
               foreground: root.foreground
+              enabled: root.monitorActionsAvailable
               onClicked: root.toggleMirror()
             }
           }
