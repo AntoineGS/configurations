@@ -39,19 +39,12 @@ Item {
     .toString().replace("file://", "")
   readonly property string fakeRestartState: Qt.resolvedUrl("tests/fixtures/monitor/fake-state-restart")
     .toString().replace("file://", "")
-  readonly property bool windowSmokeEnabled: Quickshell.env("MONITOR_NATIVE_WINDOW_SMOKE") === "1"
-  readonly property string releaseTopology: "4c05fc30acaebba57ab4c39415d88198f02eaacc232fc25b6b5e17bd8316ec90"
-  readonly property string releaseEdidA: "00ffffffffffff000421111104030201011e0104801009780a0000000000000000000000000000000000000000000000000000000000010101010101010101010101010101010101000000fc004163657220583234335720200a000000ff000403020100000000000000000a3d4e5f708192a3b4c5d6e7f8091a2b3c4d5e00b5"
-  readonly property string releaseEdidB: "00ffffffffffff000842222208070605011e0104801009780a0000000000000000000000000000000000000000000000000000000000010101010101010101010101010101010101000000fc00444953504c41592d422020200a000000ff000807060500000000000000000a5f708192a3b4c5d6e7f8091a2b3c4d5e6f800028"
-  readonly property string releaseIdentityA: "015ccccd35030ddfd6877a55e25abf43378d3daf4f161a45be1afb1e75374b39"
-  readonly property string releaseIdentityB: "13b3c77907272de8206d3701924fa98425edb5769afaf3f01d665592d62e588f"
   property string stateLogText: ""
   property string actionLogText: ""
   property string workspaceLogText: ""
   property int phase: 0
   property bool sharedStateChecked: false
   property bool workspaceStateChecked: false
-  property bool workspaceWindowChecked: false
   property bool workspaceIncompleteChecked: false
   property bool replacementStateChecked: false
   property bool replacementCallbackChecked: false
@@ -68,7 +61,6 @@ Item {
   property var replacementService: null
   property var replacementStateBeforeCallback: null
   property var stoppedStateWorker: null
-  property var workspaceSmokeWidgets: []
   property bool initialLogsReloaded: false
 
   readonly property var nativeTopology: Model.normalizeMonitors(
@@ -76,29 +68,6 @@ Item {
   property int topologyGeneration: 0
 
   function refreshTopology() { topologyGeneration++ }
-
-  function registerWorkspaceSmokeWidget(widget) {
-    if (!widget || root.workspaceSmokeWidgets.indexOf(widget) !== -1) return
-    root.workspaceSmokeWidgets = root.workspaceSmokeWidgets.concat([widget])
-  }
-
-  function unregisterWorkspaceSmokeWidget(widget) {
-    root.workspaceSmokeWidgets = root.workspaceSmokeWidgets.filter(function(item) { return item !== widget })
-  }
-
-  function workspaceWindowContext() {
-    for (var i = 0; i < root.workspaceSmokeWidgets.length; i++) {
-      var widget = root.workspaceSmokeWidgets[i]
-      var window = widget ? widget.window : null
-      if (!window || !window.screen) return { ready: false, error: "" }
-      if (widget.screenName !== String(window.screen.name || ""))
-        return { ready: false, error: "workspace widget lost its QsWindow screen association" }
-      var ids = widget.workspaceIds()
-      if (ids.length === 0)
-        return { ready: false, error: "real workspace widget has no workspace buttons" }
-    }
-    return { ready: root.workspaceSmokeWidgets.length > 0, error: "" }
-  }
 
   function lines(text) {
     return String(text || "").split("\n").filter(function(line) { return line !== "" })
@@ -108,29 +77,12 @@ Item {
     return JSON.stringify(left) === JSON.stringify(right)
   }
 
-  function releaseRecord(connector, percent, edid, identity, bus) {
-    return {
-      connector: connector,
-      backend: "ddc",
-      available: true,
-      stale: false,
-      error: "",
-      current: percent,
-      maximum: 100,
-      percent: percent,
-      identity: identity,
-      topology: root.releaseTopology,
-      edid: edid,
-      selector: { kind: "bus", value: bus }
-    }
-  }
-
   function checkBrightnessReleaseOrdering() {
     var displaySlider = releasePanel.displayBrightnessControl
     if (!displaySlider) return false
     releaseService.lastBrightness = -1
     releaseService.operationPending = false
-    releasePanel.brightnessPreviewPercent = releasePanel.brightness.percent
+    releasePanel.brightnessPreviewPercent = releasePanel.brightnessPercent
     displaySlider.dragging = true
     displaySlider.liveValue = 75
     displaySlider.moved(displaySlider.liveValue)
@@ -141,10 +93,6 @@ Item {
 
   function sameValues(actual, expected) {
     return JSON.stringify(actual) === JSON.stringify(expected)
-  }
-
-  function brightnessValues() {
-    return releaseService.brightnessActions.map(function(action) { return action.percent })
   }
 
   function advanceLiveSliderCoverage() {
@@ -167,9 +115,7 @@ Item {
 
     if (root.liveSliderPhase === 1) {
       if (releaseService.brightnessActions.length < 1) return false
-      if (!sameValues(root.brightnessValues(), [60])
-          || releaseService.brightnessActions[0].connector !== "DP-1"
-          || releaseService.brightnessActions[0].identity !== root.releaseIdentityA
+      if (!sameValues(releaseService.brightnessActions, [60])
           || releasePanel.brightnessPreviewPercent !== 60
           || !releaseService.operationPending)
         root.fail("display live throttle did not submit the first value")
@@ -185,9 +131,7 @@ Item {
 
     if (root.liveSliderPhase === 2) {
       if (releaseService.brightnessActions.length < 2) return false
-      if (!sameValues(root.brightnessValues(), [60, 75])
-          || releaseService.brightnessActions[1].connector !== "DP-1"
-          || releaseService.brightnessActions[1].identity !== root.releaseIdentityA
+      if (!sameValues(releaseService.brightnessActions, [60, 75])
           || releasePanel.brightnessPreviewPercent !== 75)
         root.fail("display release did not submit the latest value after the live value")
       releaseService.publishState(40, 20, true)
@@ -233,9 +177,7 @@ Item {
 
   function fail(message) {
     console.error("Monitor shared fixture failed: " + String(message), root.phase,
-      root.stateLogText, root.workspaceLogText, root.actionLogText,
-      JSON.stringify(monitorService.hardwareState),
-      JSON.stringify(workspaceService.activeWorkspaceIds))
+      root.stateLogText, root.workspaceLogText, root.actionLogText)
     Qt.exit(1)
   }
 
@@ -254,19 +196,13 @@ Item {
         workspaceLog.reload()
         if (root.lines(root.stateLogText).length === 0 || root.lines(root.workspaceLogText).length === 0)
           return
-        if (!root.windowSmokeEnabled)
-          return root.fail("window-context smoke was not enabled")
-        var workspaceContext = root.workspaceWindowContext()
-        if (workspaceContext.error !== "") return root.fail(workspaceContext.error)
-        if (!workspaceContext.ready) return
-        root.workspaceWindowChecked = true
         root.sharedStateChecked = monitorService.consumerCount === 2
           && monitorLeft.service === monitorRight.service
-          && monitorService.brightnessFor("DP-1").percent === 40
+          && monitorService.brightnessPercent === 40
           && monitorService.hostname === "antoinews-linux"
           && monitorService.reconciliationGeneration === 1
           && root.lines(root.stateLogText).length === 1
-        root.workspaceStateChecked = workspaceService.consumerCount === 2 + root.workspaceSmokeWidgets.length
+        root.workspaceStateChecked = workspaceService.consumerCount === 2
           && workspaceService.activeWorkspaceIds["eDP-1"] === 4
           && workspaceService.activeWorkspaceIds["DP-1"] === 7
           && workspaceService.activeRefreshGeneration === 1
@@ -326,7 +262,7 @@ Item {
 
       if (root.phase === 2) {
         if (!root.replacementService.hardwareState.available) return
-        root.replacementStateChecked = root.replacementService.brightnessFor("DP-1").percent === 80
+        root.replacementStateChecked = root.replacementService.brightnessPercent === 80
         root.replacementStateBeforeCallback = root.replacementService.hardwareState
         oldStateReleaseFile.setText("release\n")
         replacementConsumer.active = false
@@ -374,21 +310,20 @@ Item {
         if (!root.sameServiceStaleIgnored) {
           if (!monitorService.stateWorker || !monitorService.stateWorker.running) return
           root.sameServiceStaleIgnored = monitorService.stateWorker !== root.stoppedStateWorker
-            && monitorService.brightnessFor("DP-1").percent === 40
-            && monitorService.brightnessFor("HDMI-1").percent === 60
+            && monitorService.brightnessPercent === 40
+            && monitorService.hardwareState.data.brightness.percent === 40
           if (!root.sameServiceStaleIgnored) return
           sameStateNewReleaseFile.setText("release\n")
           return
         }
-        root.sameServiceRestartChecked = monitorService.brightnessFor("DP-1").available === true
-          && monitorService.brightnessFor("DP-1").percent === 90
+        root.sameServiceRestartChecked = monitorService.hardwareState.data.brightness
+          && monitorService.hardwareState.data.brightness.percent === 90
         if (!root.sameServiceRestartChecked) return
         if (!monitorService.collecting || monitorService.consumerCount !== 2) return
         actionModeFile.setText("hold\n")
         actionReleaseFile.setText("wait\n")
-        if (monitorService.setBrightness("DP-1", 75) !== true)
-          return root.fail("targeted brightness action was rejected")
-        root.brightnessConfirmationChecked = monitorService.brightnessFor("DP-1").percent === 90
+        monitorService.setBrightness(75)
+        root.brightnessConfirmationChecked = monitorService.brightnessPercent === 90
         actionModeFile.setText("hold\n")
         actionReleaseFile.setText("wait\n")
         monitorService.setScale("DP-1", "1.25")
@@ -417,13 +352,12 @@ Item {
           && actions.indexOf("monitor set-layout single DP-1") !== -1
         if (!root.actionChecked || monitorService.operationPending || monitorService.collecting) return
         var success = root.nativeTopology.monitors.length > 0 && root.sharedStateChecked
-           && root.workspaceStateChecked && root.workspaceIncompleteChecked && root.replacementStateChecked
-           && root.replacementCallbackChecked && root.sameServiceRestartChecked
-           && root.workspaceWindowChecked
-           && root.brightnessReleaseChecked && root.brightnessReleaseDeferredChecked
-           && root.liveSlidersChecked
-           && root.brightnessConfirmationChecked
-           && root.actionRetainedDemand && root.actionChecked
+          && root.workspaceStateChecked && root.workspaceIncompleteChecked && root.replacementStateChecked
+          && root.replacementCallbackChecked && root.sameServiceRestartChecked
+          && root.brightnessReleaseChecked && root.brightnessReleaseDeferredChecked
+          && root.liveSlidersChecked
+          && root.brightnessConfirmationChecked
+          && root.actionRetainedDemand && root.actionChecked
         if (!success) root.fail("one or more shared ownership assertions failed")
         else {
           console.log("Monitor native topology fixture passed", root.nativeTopology.monitors.length,
@@ -456,24 +390,23 @@ Item {
     id: fakeShell
     property bool previewMode: false
     function widgetSettingsFor(pluginId) { return ({}) }
-    function serviceFor(pluginId) {
-      if (pluginId === "desktop.monitor") return releaseService
-      if (pluginId === "desktop.workspaces") return workspaceService
-      return null
-    }
+    function serviceFor(pluginId) { return pluginId === "desktop.monitor" ? releaseService : null }
   }
 
   QtObject {
     id: releaseService
-    property int keyboardPercent: 0
+    property int brightnessPercent: 40
+    property var hardwareState: ({
+      available: true,
+      stale: false,
+      data: {
+        brightness: { available: true, percent: 40, device: "release-fixture" },
+        keyboardBrightness: { available: false, percent: 0 }
+      }
+    })
     property bool operationPending: false
     property int consumerCount: 0
     property int lastBrightness: -1
-    property var targetRecords: ({})
-    property var pendingTargets: ({})
-    property var errorTargets: ({})
-    property var brightnessSnapshot: ({ version: 1, topology: root.releaseTopology, monitors: ({}) })
-    property var hardwareState: ({ available: true, stale: false, data: ({}) })
     property var brightnessActions: []
     property var keyboardActions: []
     signal invalidated()
@@ -481,79 +414,33 @@ Item {
     function removeConsumer(owner) { consumerCount = Math.max(0, consumerCount - 1) }
     function refresh() { return true }
     function refreshNativeMonitors(delayed) { return true }
-    function notify() {
-      brightnessSnapshot = { version: 1, topology: root.releaseTopology, monitors: targetRecords }
-      var display = targetRecords["DP-1"]
+    function resetLiveActions() {
+      brightnessActions = []
+      keyboardActions = []
+    }
+    function publishState(displayValue, keyboardValue, pending) {
+      if (pending) operationPending = true
+      brightnessPercent = Math.round(Number(displayValue))
       hardwareState = {
         available: true,
         stale: false,
         data: {
-          brightness: display || { available: false, percent: null },
-          keyboardBrightness: { available: keyboardPercent !== null, percent: keyboardPercent }
+          brightness: { available: true, percent: brightnessPercent, device: "release-fixture" },
+          keyboardBrightness: { available: true, percent: Math.round(Number(keyboardValue)) }
         }
       }
-      operationPending = Object.keys(pendingTargets).length > 0
-    }
-    function resetTargets() {
-      targetRecords = ({
-        "DP-1": root.releaseRecord("DP-1", 40, root.releaseEdidA, root.releaseIdentityA, "3"),
-        "HDMI-1": root.releaseRecord("HDMI-1", 60, root.releaseEdidB, root.releaseIdentityB, "4")
-      })
-      pendingTargets = ({})
-      errorTargets = ({})
-      keyboardPercent = 0
-      notify()
-    }
-    function brightnessFor(connector) {
-      return targetRecords[connector] || { connector: connector, available: false, stale: false,
-        error: "Brightness unavailable", current: null, maximum: null, percent: null }
-    }
-    function brightnessPending(connector) { return pendingTargets[connector] === true }
-    function brightnessError(connector) {
-      return errorTargets[connector] || (brightnessFor(connector).error || "Brightness unavailable")
-    }
-    function resetLiveActions() {
-      brightnessActions = []
-      keyboardActions = []
-      pendingTargets = ({})
-      notify()
-    }
-    function publishState(displayValue, keyboardValue, pending) {
-      var nextRecords = Object.assign({}, targetRecords)
-      nextRecords["DP-1"] = Object.assign({}, brightnessFor("DP-1"), {
-        available: true, stale: false, error: "", current: Math.round(Number(displayValue)),
-        percent: Math.round(Number(displayValue))
-      })
-      targetRecords = nextRecords
-      keyboardPercent = Math.round(Number(keyboardValue))
-      var nextPending = Object.assign({}, pendingTargets)
-      if (pending) nextPending["DP-1"] = true
-      else delete nextPending["DP-1"]
-      pendingTargets = nextPending
-      notify()
       operationPending = pending
     }
-    function setBrightness(connector, value) {
-      var target = brightnessFor(connector)
-      if (typeof connector !== "string" || typeof value !== "number" || !target.available) return false
+    function setBrightness(value) {
       lastBrightness = Math.round(Number(value))
-      brightnessActions = brightnessActions.concat([{
-        connector: connector,
-        percent: lastBrightness,
-        identity: target.identity
-      }])
-      var nextPending = Object.assign({}, pendingTargets)
-      nextPending[connector] = true
-      pendingTargets = nextPending
-      notify()
-      return true
+      brightnessActions = brightnessActions.concat([lastBrightness])
+      operationPending = true
     }
     function setKeyboardBrightness(action) {
       keyboardActions = keyboardActions.concat([Math.round(Number(action))])
       operationPending = true
     }
     function runAction(args) {}
-    Component.onCompleted: resetTargets()
   }
 
   QtObject {
@@ -584,7 +471,6 @@ Item {
   Monitor.Panel {
     id: releasePanel
     bar: releaseBar
-    testBarMonitor: "DP-1"
     visible: false
   }
 
@@ -604,31 +490,6 @@ Item {
     manifest: ({ id: "desktop.workspaces" })
     queryExecutable: root.fakeWorkspaces
     processStartGraceInterval: 50
-  }
-
-  Variants {
-    model: root.windowSmokeEnabled ? Quickshell.screens : []
-
-    delegate: Component {
-      PanelWindow {
-        id: workspaceSmokeWindow
-        required property var modelData
-
-        screen: modelData
-        visible: root.windowSmokeEnabled
-        color: "transparent"
-        implicitWidth: Math.max(1, workspaceSmokeWidget.implicitWidth)
-        implicitHeight: Math.max(1, workspaceSmokeWidget.implicitHeight)
-
-        Workspace.Workspaces {
-          id: workspaceSmokeWidget
-          anchors.fill: parent
-          bar: releaseBar
-          Component.onCompleted: root.registerWorkspaceSmokeWidget(workspaceSmokeWidget)
-          Component.onDestruction: root.unregisterWorkspaceSmokeWidget(workspaceSmokeWidget)
-        }
-      }
-    }
   }
 
   Monitor.Service {

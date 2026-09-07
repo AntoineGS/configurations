@@ -92,7 +92,7 @@ Item {
         console.error("Monitor service lifecycle fixture timed out", root.phase,
           service.consumerCount, service.collecting, service.operationPending,
           service.reconciliationRunning, service.stateWorker, service.actionWorker,
-          JSON.stringify(service.brightnessFor("DP-1")), root.oldStateEnteredText, root.newStateEnteredText)
+          service.brightnessPercent, root.oldStateEnteredText, root.newStateEnteredText)
         Qt.exit(1)
       }
     }
@@ -101,14 +101,14 @@ Item {
   function fail(message) {
     console.error("Monitor service lifecycle fixture failed: " + String(message), root.phase,
       service.consumerCount, service.collecting, service.operationPending,
-      JSON.stringify(service.brightnessFor("DP-1")))
+      service.brightnessPercent)
     Qt.exit(1)
   }
 
   function advance() {
     try {
       if (root.phase === 0) {
-        if (service.brightnessFor("DP-1").available !== true) return
+        if (!service.hardwareState.available) return
         stateModeFile.setText("old\n")
         oldStateHoldFile.setText("hold\n")
         oldStateReleaseFile.setText("wait\n")
@@ -140,7 +140,7 @@ Item {
       if (root.phase === 3) {
         if (!service.stateWorker || !service.stateWorker.running || service.stateWorker === root.oldWorker)
           return
-        if (service.brightnessFor("DP-1").percent !== 40)
+        if (service.brightnessPercent !== 40)
           return root.fail("restarted query published stale state before the new result")
         oldStateReleaseFile.setText("release\n")
         root.phase = 4
@@ -148,8 +148,7 @@ Item {
       }
 
       if (root.phase === 4) {
-        if (service.brightnessFor("DP-1").percent !== 40)
-          return root.fail("stale canceled callback replaced state")
+        if (service.brightnessPercent !== 40) return root.fail("stale canceled callback replaced state")
         if (String(root.newStateEnteredText).trim() !== "held") return
         newStateReleaseFile.setText("release\n")
         root.phase = 5
@@ -157,14 +156,13 @@ Item {
       }
 
       if (root.phase === 5) {
-        if (service.brightnessFor("DP-1").percent !== 90) return
+        if (service.brightnessPercent !== 90) return
         root.postActionGeneration = service.reconciliationGeneration
         actionModeFile.setText("hold\n")
         actionReleaseFile.setText("wait\n")
         newStateHoldFile.setText("hold\n")
         newStateReleaseFile.setText("wait\n")
-        if (service.setBrightness("DP-1", 75) !== true)
-          return root.fail("targeted brightness action was rejected")
+        service.setBrightness(75)
         root.phase = 6
         return
       }
