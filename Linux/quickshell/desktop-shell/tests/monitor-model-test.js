@@ -103,6 +103,71 @@ const refreshed = Model.normalizeMonitors([
 ], null)
 assert.equal(refreshed.mirrorEnabled, false)
 
+const inventory = Model.normalizeMonitorInventory([
+  {
+    name: "eDP-1",
+    description: "Internal display",
+    width: 1920,
+    height: 1080,
+    scale: 1.25,
+    enabled: true,
+    mirrorOf: "none"
+  },
+  {
+    name: "HDMI-A-1",
+    description: "Disconnected output",
+    width: 2560,
+    height: 1440,
+    scale: 1,
+    enabled: false,
+    mirrorOf: "none"
+  },
+  { name: "DP-1", enabled: true }
+])
+assert.equal(inventory.length, 3)
+assert.equal(inventory[1].enabled, false)
+assert.equal(inventory[1].description, "Disconnected output")
+assert.equal(inventory[2].enabled, true)
+
+const reconciled = Model.mergeMonitorInventory(inventory, [
+  {
+    name: "eDP-1",
+    width: 1920,
+    height: 1080,
+    scale: 1.25,
+    lastIpcObject: { mirrorOf: "none" }
+  },
+  {
+    name: "DP-1",
+    width: 3840,
+    height: 2160,
+    scale: 2,
+    lastIpcObject: { mirrorOf: "none" }
+  },
+  { name: "UNPLUGGED-1", width: 800, height: 600 }
+], { name: "eDP-1" })
+assert.deepEqual(reconciled.map(function(display) { return display.name }), ["eDP-1", "HDMI-A-1", "DP-1"])
+assert.equal(reconciled[0].active, true)
+assert.equal(reconciled[0].focused, true)
+assert.equal(reconciled[1].enabled, false)
+assert.equal(reconciled[1].active, false)
+assert.equal(reconciled[2].active, true)
+assert.equal(reconciled[2].width, 3840)
+
+const activeDisplays = [
+  { name: "eDP-1", mirrorOf: "none" },
+  { name: "DP-1", mirrorOf: "none" },
+  { name: "DP-2", mirrorOf: "eDP-1" }
+]
+assert.equal(Model.preferredFallbackMonitor(activeDisplays, "eDP-1", "DP-1"), "DP-1")
+assert.equal(Model.preferredFallbackMonitor(activeDisplays, "DP-1", "DP-1"), "")
+assert.equal(Model.preferredFallbackMonitor(activeDisplays, "eDP-1", "DP-2"), "")
+assert.equal(Model.boundedText("  first\nsecond  ", 12), "first second")
+assert.equal(Model.boundedText("1234567890", 7), "1234...")
+assert.equal(Model.monitorSnapshotIsCurrent(4, 4), true)
+assert.equal(Model.monitorSnapshotIsCurrent(3, 4), false)
+assert.equal(Model.monitorSnapshotIsCurrent("4", 4), true)
+
 let operation = Model.monitorOperationState()
 let transition = Model.monitorOperationTransition(operation, "reconcile-request")
 operation = transition.state
@@ -163,6 +228,7 @@ assert.equal(brightness.brightness.available, false)
 assert.equal(Model.shouldRefreshNativeMonitors("toggle-internal"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("toggle-mirror"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("set-scale"), true)
+assert.equal(Model.shouldRefreshNativeMonitors("set-enabled"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("set-layout"), true)
 assert.equal(Model.shouldRefreshNativeMonitors("set-display-brightness"), false)
 

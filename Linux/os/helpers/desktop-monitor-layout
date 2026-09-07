@@ -1,0 +1,893 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq filters intentionally use jq variables, not shell expansion.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+IFS=$'\n\t'
+umask 077
+
+readonly SCRIPT_NAME=${0##*/}
+readonly VERIFY_ATTEMPTS=20
+readonly WORKSPACE_DRAIN_ATTEMPTS=20
+readonly VERIFY_DELAY_SECONDS=0.05
+readonly DEFAULT_IPC_TIMEOUT_SECONDS=2
+if [[ -n ${DESKTOP_MONITOR_LAYOUT_STATE_DIR:-} ]]; then
+  state_root=$DESKTOP_MONITOR_LAYOUT_STATE_DIR
+elif [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
+  state_root="$XDG_RUNTIME_DIR/desktop-shell/monitor-layout"
+else
+  state_root="${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/desktop-shell/monitor-layout-generic"
+fi
+readonly STATE_ROOT="$state_root"
+readonly SESSION_SIGNATURE=${HYPRLAND_INSTANCE_SIGNATURE:-}
+readonly STATE_FILE="$STATE_ROOT/$SESSION_SIGNATURE.json"
+readonly LOCK_FILE="$STATE_ROOT/$SESSION_SIGNATURE.lock"
+
+ipc_timeout_seconds=${DESKTOP_MONITOR_LAYOUT_IPC_TIMEOUT_SECONDS:-$DEFAULT_IPC_TIMEOUT_SECONDS}
+jq_command=''
+flock_command=''
+timeout_command=''
+hyprctl_command=''
+lock_fd=''
+
+report_unexpected_error() {
+  local status=$?
+  printf '%s: unexpected failure at line %s (status %s)\n' "$SCRIPT_NAME" "${BASH_LINENO[0]}" "$status" >&2
+  return "$status"
+}
+
+trap report_unexpected_error ERR
+
+usage() {
+  printf 'usage: %s <set-enabled CONNECTOR true|false [PREFERRED_FALLBACK]|only CONNECTOR|all>\n' \
+    "$SCRIPT_NAME" >&2
+  exit 2
+}
+
+die() {
+  printf '%s: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+resolve_command() {
+  command -v "$1" 2>/dev/null
+}
+
+valid_connector() {
+  [[ ${1:-} =~ ^[[:alnum:]_.:@+-]+$ ]]
+}
+
+require_runtime() {
+  [[ $SESSION_SIGNATURE =~ ^[[:alnum:]_.-]+$ ]] || die 'HYPRLAND_INSTANCE_SIGNATURE is missing or unsafe'
+  [[ $ipc_timeout_seconds =~ ^[1-9][0-9]*$ ]] || die 'IPC timeout must be a positive integer'
+
+  jq_command=$(resolve_command jq) || die 'jq is required'
+  flock_command=$(resolve_command flock) || die 'flock is required'
+  timeout_command=$(resolve_command timeout) || die 'timeout is required'
+  hyprctl_command=$(resolve_command hyprctl) || die 'hyprctl is required'
+}
+
+prepare_state_root() {
+  [[ -n $STATE_ROOT && $STATE_ROOT != / ]] || die 'monitor state directory is unsafe'
+  mkdir -p -- "$STATE_ROOT" || die 'unable to create monitor state directory'
+  chmod 700 -- "$STATE_ROOT" || die 'unable to protect monitor state directory'
+}
+
+acquire_lock() {
+  if ! exec {lock_fd}>"$LOCK_FILE"; then
+    die 'unable to open monitor action lock'
+  fi
+  "$flock_command" -n "$lock_fd" || die 'another generic monitor action is running'
+}
+
+run_ipc() {
+  "$timeout_command" --signal=TERM --kill-after=1s "${ipc_timeout_seconds}s" \
+    "$hyprctl_command" "$@"
+}
+
+validate_monitors() {
+  "$jq_command" -e '
+    type == "array"
+    and all(.[];
+      type == "object"
+      and ((.name | type) == "string")
+      and (.name | test("^[A-Za-z0-9_.:@+-]+$"))
+      and ((.disabled | type) == "boolean")
+    )
+    and ((map(.name) | length) == (map(.name) | unique | length))
+  ' <<<"$1" >/dev/null 2>&1
+}
+
+query_monitors() {
+  local raw
+
+  if ! raw=$(run_ipc -j monitors all 2>/dev/null); then
+    return 1
+  fi
+  validate_monitors "$raw" || return 1
+  printf '%s\n' "$raw"
+}
+
+validate_workspaces() {
+  "$jq_command" -e '
+    type == "array"
+    and all(.[];
+      type == "object"
+      and ((.id | type) == "number")
+      and ((.monitor | type) == "string")
+      and (.windows | (type == "number" and isfinite and floor == . and . >= 0))
+      and ((.ispersistent | type) == "boolean")
+    )
+  ' <<<"$1" >/dev/null 2>&1
+}
+
+query_workspaces() {
+  local raw
+
+  if ! raw=$(run_ipc -j workspaces 2>/dev/null); then
+    return 1
+  fi
+  validate_workspaces "$raw" || return 1
+  printf '%s\n' "$raw"
+}
+
+monitor_exists() {
+  "$jq_command" -e --arg name "$2" 'any(.[]; .name == $name)' <<<"$1" >/dev/null 2>&1
+}
+
+monitor_is_enabled() {
+  "$jq_command" -e --arg name "$2" 'any(.[]; .name == $name and .disabled == false)' <<<"$1" >/dev/null 2>&1
+}
+
+monitor_is_independent() {
+  "$jq_command" -e --arg name "$2" \
+    'any(.[]; .name == $name and .disabled == false and .mirrorOf == "none")' <<<"$1" >/dev/null 2>&1
+}
+
+enabled_monitor_count() {
+  "$jq_command" -r '[.[] | select(.disabled == false)] | length' <<<"$1"
+}
+
+focused_enabled_monitor() {
+  "$jq_command" -r \
+    '[.[] | select(.disabled == false and .focused == true and .mirrorOf == "none") | .name][0] // ""' <<<"$1"
+}
+
+choose_fallback_monitor() {
+  local monitors=$1
+  local target=$2
+  local preferred=${3:-}
+  local candidate
+
+  if [[ -n $preferred ]]; then
+    monitor_is_independent "$monitors" "$preferred" || return 1
+    [[ $preferred != "$target" ]] || return 1
+    printf '%s\n' "$preferred"
+    return 0
+  fi
+
+  candidate=$(focused_enabled_monitor "$monitors")
+  if [[ -n $candidate && $candidate != "$target" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate=$("$jq_command" -r --arg target "$target" \
+    '[.[] | select(.disabled == false and .name != $target and .mirrorOf == "none") | .name][0] // ""' \
+    <<<"$monitors")
+  [[ -n $candidate ]] || return 1
+  printf '%s\n' "$candidate"
+}
+
+validate_cached_record() {
+  "$jq_command" -e '
+    def safe_connector:
+      if type == "string" then test("^[A-Za-z0-9_.:@+-]+$") else false end;
+    def finite_number:
+      if type == "number" then isfinite else false end;
+    def integer_number:
+      if finite_number then floor == . else false end;
+    def dimension:
+      if integer_number then . > 0 and . <= 32768 else false end;
+    def refresh_rate:
+      if finite_number then . > 0 and . <= 1000 else false end;
+    def coordinate:
+      if integer_number then fabs <= 2147483647 else false end;
+    def scale_value:
+      if finite_number then . > 0 and . <= 10 else false end;
+    def mode_value:
+      if type == "string" then test("^[0-9]+x[0-9]+@[0-9]+(\\.[0-9]+)?$") else false end;
+    type == "object"
+    and (.name | safe_connector)
+    and ((.description | type) == "string")
+    and ((.make | type) == "string")
+    and ((.model | type) == "string")
+    and ((.serial | type) == "string")
+    and (.width | dimension)
+    and (.height | dimension)
+    and (.refreshRate | refresh_rate)
+    and (.mode | mode_value)
+    and (.x | coordinate)
+    and (.y | coordinate)
+    and (.scale | scale_value)
+    and (.transform | (integer_number and . >= 0 and . <= 7))
+    and (.mirrorOf | safe_connector)
+    and (.mirrorOf != .name)
+  ' <<<"$1" >/dev/null 2>&1
+}
+
+read_valid_cache() {
+  local cached
+
+  [[ -r $STATE_FILE ]] || return 1
+  if ! cached=$(<"$STATE_FILE"); then
+    return 1
+  fi
+  "$jq_command" -e --arg session "$SESSION_SIGNATURE" '
+    type == "object"
+    and .version == 1
+    and .session == $session
+    and (.monitors | type) == "object"
+  ' <<<"$cached" >/dev/null 2>&1 || return 1
+  printf '%s\n' "$cached"
+}
+
+current_identity() {
+  "$jq_command" -ce --arg name "$2" '
+    .[] | select(.name == $name) |
+    {
+      description: (if (.description | type) == "string" then .description else "" end),
+      make: (if (.make | type) == "string" then .make else "" end),
+      model: (if (.model | type) == "string" then .model else "" end),
+      serial: (if (.serial | type) == "string" then .serial else "" end)
+    }
+  ' <<<"$1"
+}
+
+cached_identity_matches() {
+  local record=$1
+  local monitors=$2
+  local name=$3
+  local identity
+  local serial
+
+  identity=$(current_identity "$monitors" "$name") || return 1
+  if ! "$jq_command" -e --argjson record "$record" --argjson identity "$identity" '
+    def credible_serial:
+      type == "string"
+      and test("[^[:space:]]")
+      and ((ascii_downcase | gsub("[[:space:]_-]"; "")) as $normalized
+        | ($normalized | test("^0+$") | not)
+        and ($normalized | test("^0x0+$") | not)
+        and ([
+          "0", "00", "000", "00000000", "none", "null", "unknown", "na", "n/a",
+          "notspecified", "notavailable", "unavailable", "unspecified", "noserial",
+          "noserialnumber", "serialunavailable"
+        ] | index($normalized) | not));
+    ($record.serial | credible_serial)
+    and ($identity.serial | credible_serial)
+    and $record.description == $identity.description
+    and $record.make == $identity.make
+    and $record.model == $identity.model
+    and $record.serial == $identity.serial
+  ' <<<"null" >/dev/null 2>&1; then
+    return 1
+  fi
+  serial=$("$jq_command" -er '.serial' <<<"$identity") || return 1
+  "$jq_command" -e --arg serial "$serial" \
+    '[.[] | select((.serial | type) == "string" and .serial == $serial)] | length == 1' \
+    <<<"$monitors" >/dev/null 2>&1
+}
+
+load_cached_record() {
+  local monitors=$1
+  local name=$2
+  local cache
+  local record
+
+  cache=$(read_valid_cache) || return 1
+  record=$("$jq_command" -ce --arg name "$name" '.monitors[$name] // empty' <<<"$cache") || return 1
+  validate_cached_record "$record" || return 1
+  [[ $("$jq_command" -r '.name' <<<"$record") == "$name" ]] || return 1
+  cached_identity_matches "$record" "$monitors" "$name" || return 1
+  printf '%s\n' "$record"
+}
+
+build_geometry_record() {
+  "$jq_command" -ce --arg name "$2" '
+    def finite_number:
+      if type == "number" then isfinite else false end;
+    def integer_number:
+      if finite_number then floor == . else false end;
+    def dimension:
+      if integer_number then . > 0 and . <= 32768 else false end;
+    def refresh_rate:
+      if finite_number then . > 0 and . <= 1000 else false end;
+    def coordinate:
+      if integer_number then fabs <= 2147483647 else false end;
+    def scale_value:
+      if finite_number then . > 0 and . <= 10 else false end;
+    def safe_connector:
+      if type == "string" then test("^[A-Za-z0-9_.:@+-]+$") else false end;
+    .[]
+    | select(.name == $name)
+    | select(
+        (.width | dimension)
+        and (.height | dimension)
+        and (.refreshRate | refresh_rate)
+        and (.x | coordinate)
+        and (.y | coordinate)
+        and (.scale | scale_value)
+        and (.transform | (integer_number and . >= 0 and . <= 7))
+      )
+    | {
+        name: .name,
+        description: (if (.description | type) == "string" then .description else "" end),
+        make: (if (.make | type) == "string" then .make else "" end),
+        model: (if (.model | type) == "string" then .model else "" end),
+        serial: (if (.serial | type) == "string" then .serial else "" end),
+        width: .width,
+        height: .height,
+        refreshRate: .refreshRate,
+        mode: ((.width | tostring) + "x" + (.height | tostring) + "@" + (.refreshRate | tostring)),
+        x: .x,
+        y: .y,
+        scale: .scale,
+        transform: .transform,
+        mirrorOf: (if ((.mirrorOf | type) == "string") and .mirrorOf != "" then .mirrorOf else "none" end)
+      }
+    | select((.mirrorOf == "none" or (.mirrorOf | safe_connector)) and .mirrorOf != .name)
+  ' <<<"$1"
+}
+
+write_cache() {
+  local payload=$1
+  local temporary
+
+  temporary=$(mktemp "$STATE_ROOT/.monitor-layout.XXXXXX") || return 1
+  if ! printf '%s\n' "$payload" >"$temporary"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+  chmod 600 -- "$temporary" || {
+    rm -f -- "$temporary"
+    return 1
+  }
+  if ! mv -f -- "$temporary" "$STATE_FILE"; then
+    rm -f -- "$temporary"
+    return 1
+  fi
+}
+
+save_geometry() {
+  local monitors=$1
+  local name=$2
+  local record
+  local cache
+  local empty_cache
+  local next_cache
+
+  record=$(build_geometry_record "$monitors" "$name") || return 1
+  validate_cached_record "$record" || return 1
+  if ! cache=$(read_valid_cache); then
+    empty_cache=$("$jq_command" -cn --arg session "$SESSION_SIGNATURE" \
+      '{version: 1, session: $session, monitors: {}}') || return 1
+    cache=$empty_cache
+  fi
+  next_cache=$("$jq_command" -ce --arg name "$name" --argjson record "$record" \
+    '.monitors[$name] = $record' <<<"$cache") || return 1
+  write_cache "$next_cache"
+}
+
+make_monitor_spec() {
+  local name=$1
+  local record=$2
+  local allow_mirror=$3
+  local mode
+  local x
+  local y
+  local scale
+  local transform
+  local mirror
+  local spec
+
+  mode=$("$jq_command" -er '.mode' <<<"$record") || return 1
+  x=$("$jq_command" -er '.x' <<<"$record") || return 1
+  y=$("$jq_command" -er '.y' <<<"$record") || return 1
+  scale=$("$jq_command" -er '.scale | tostring' <<<"$record") || return 1
+  transform=$("$jq_command" -er '.transform' <<<"$record") || return 1
+  mirror=$("$jq_command" -er '.mirrorOf' <<<"$record") || return 1
+  spec="$name,$mode,${x}x${y},$scale,transform,$transform"
+  if [[ $allow_mirror == true && $mirror != none ]]; then
+    valid_connector "$mirror" || return 1
+    spec+=",mirror,$mirror"
+  else
+    spec+=",unmirror"
+  fi
+  printf '%s\n' "$spec"
+}
+
+monitor_matches_record() {
+  "$jq_command" -e --arg name "$2" --argjson record "$3" '
+    any(.[];
+      .name == $name
+      and .disabled == false
+      and .width == $record.width
+      and .height == $record.height
+      and .x == $record.x
+      and .y == $record.y
+      and .scale == $record.scale
+      and .transform == $record.transform
+      and .mirrorOf == $record.mirrorOf
+      and ((.refreshRate - $record.refreshRate) | fabs) < 0.01
+    )
+  ' <<<"$1" >/dev/null 2>&1
+}
+
+wait_for_monitor_state() {
+  local name=$1
+  local expected_enabled=$2
+  local expected_record=${3:-}
+  local monitors
+  local attempt
+
+  for ((attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++)); do
+    monitors=$(query_monitors) || return 1
+    if [[ $expected_enabled == true ]]; then
+      if [[ -n $expected_record ]]; then
+        monitor_matches_record "$monitors" "$name" "$expected_record" && return 0
+      elif monitor_is_enabled "$monitors" "$name"; then
+        return 0
+      fi
+    elif "$jq_command" -e --arg name "$name" \
+      'any(.[]; .name == $name and .disabled == true)' <<<"$monitors" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$VERIFY_DELAY_SECONDS"
+  done
+  return 1
+}
+
+monitor_spec_to_lua() {
+  # Lua config providers reject legacy keyword mutations; all values here have
+  # already passed the connector/geometry validators before reaching this parser.
+  local spec=$1
+  local -a fields=()
+  local name
+  local mode
+  local position
+  local scale
+  local transform=''
+  local mirror=''
+  local clear_mirror=false
+  local index
+  local code
+
+  IFS=',' read -r -a fields <<<"$spec"
+  name=${fields[0]:-}
+  valid_connector "$name" || return 1
+
+  if [[ ${fields[1]:-} == disable ]]; then
+    ((${#fields[@]} == 2)) || return 1
+    printf 'hl.monitor({output="%s",disabled=true})\n' "$name"
+    return 0
+  fi
+
+  mode=${fields[1]:-}
+  position=${fields[2]:-}
+  scale=${fields[3]:-}
+  if [[ $mode == preferred ]]; then
+    [[ ${#fields[@]} == 5 && $position == auto && $scale == auto && ${fields[4]:-} == unmirror ]] || return 1
+    printf 'hl.monitor({output="%s",mode="preferred",position="auto",scale="auto",disabled=false,mirror=""})\n' "$name"
+    return 0
+  fi
+
+  [[ $mode =~ ^[0-9]+x[0-9]+@[0-9]+([.][0-9]+)?$ ]] || return 1
+  [[ $position =~ ^-?[0-9]+x-?[0-9]+$ ]] || return 1
+  [[ $scale =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  code="hl.monitor({output=\"$name\",disabled=false,mode=\"$mode\",position=\"$position\",scale=$scale"
+  index=4
+  while ((index < ${#fields[@]})); do
+    case ${fields[index]} in
+      transform)
+        [[ -z $transform && $((index + 1)) -lt ${#fields[@]} ]] || return 1
+        transform=${fields[index + 1]}
+        [[ $transform =~ ^[0-7]$ ]] || return 1
+        index=$((index + 2))
+        ;;
+      mirror)
+        [[ -z $mirror && $((index + 1)) -lt ${#fields[@]} ]] || return 1
+        mirror=${fields[index + 1]}
+        valid_connector "$mirror" || return 1
+        index=$((index + 2))
+        ;;
+      unmirror)
+        [[ $clear_mirror == false ]] || return 1
+        ((index + 1 == ${#fields[@]})) || return 1
+        clear_mirror=true
+        index=$((index + 1))
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+  [[ -n $transform ]] || return 1
+  code+=",transform=$transform"
+  if [[ $clear_mirror == true ]]; then
+    code+=',mirror=""'
+  elif [[ -n $mirror ]]; then
+    code+=",mirror=\"$mirror\""
+  fi
+  code+='})'
+  printf '%s\n' "$code"
+}
+
+send_monitor_spec() {
+  local lua_code
+
+  lua_code=$(monitor_spec_to_lua "$1") || return 1
+  run_ipc eval "$lua_code" >/dev/null 2>&1
+}
+
+enable_monitor() {
+  local monitors=$1
+  local name=$2
+  local allow_mirror=$3
+  local record=''
+  local spec
+  local expected_record
+  local mirror
+  local restore_mirror=false
+
+  monitor_exists "$monitors" "$name" || return 1
+  monitor_is_enabled "$monitors" "$name" && return 0
+
+  if record=$(load_cached_record "$monitors" "$name"); then
+    mirror=$("$jq_command" -r '.mirrorOf' <<<"$record")
+    if [[ $allow_mirror == true && $mirror != none ]] && monitor_is_independent "$monitors" "$mirror"; then
+      restore_mirror=true
+    fi
+  fi
+
+  if [[ -n $record ]]; then
+    spec=$(make_monitor_spec "$name" "$record" "$restore_mirror") || return 1
+    expected_record=$record
+    if [[ $restore_mirror != true ]]; then
+      expected_record=$("$jq_command" -ce '.mirrorOf = "none"' <<<"$record") || return 1
+    fi
+  else
+    spec="$name,preferred,auto,auto,unmirror"
+    expected_record=''
+  fi
+
+  send_monitor_spec "$spec" || return 1
+  wait_for_monitor_state "$name" true "$expected_record"
+}
+
+unmirror_monitor() {
+  local monitors=$1
+  local name=$2
+  local record
+  local spec
+  local expected_record
+
+  record=$(build_geometry_record "$monitors" "$name") || return 1
+  spec=$(make_monitor_spec "$name" "$record" false) || return 1
+  expected_record=$("$jq_command" -ce '.mirrorOf = "none"' <<<"$record") || return 1
+  send_monitor_spec "$spec" || return 1
+  wait_for_monitor_state "$name" true "$expected_record"
+}
+
+restore_monitor_mirror() {
+  local monitors=$1
+  local name=$2
+  local record
+  local mirror
+  local current_mirror
+  local spec
+
+  if ! record=$(load_cached_record "$monitors" "$name"); then
+    return 0
+  fi
+  mirror=$("$jq_command" -r '.mirrorOf' <<<"$record")
+  [[ $mirror != none ]] || return 0
+  monitor_is_independent "$monitors" "$mirror" || return 0
+  monitor_is_enabled "$monitors" "$name" || return 1
+  current_mirror=$("$jq_command" -r --arg name "$name" \
+    '[.[] | select(.name == $name) | .mirrorOf][0] // "none"' <<<"$monitors")
+  [[ $current_mirror != "$mirror" ]] || return 0
+
+  spec=$(make_monitor_spec "$name" "$record" true) || return 1
+  send_monitor_spec "$spec" || return 1
+  wait_for_monitor_state "$name" true "$record"
+}
+
+restore_deferred_mirror() {
+  local monitors=$1
+  local name=$2
+  local record
+  local mirror
+  local current_mirror
+  local current_record
+  local expected_record
+  local spec
+
+  if ! record=$(load_cached_record "$monitors" "$name"); then
+    return 0
+  fi
+  mirror=$("$jq_command" -r '.mirrorOf' <<<"$record")
+  [[ $mirror != none ]] || return 0
+  monitor_is_independent "$monitors" "$mirror" || return 0
+  monitor_is_enabled "$monitors" "$name" || return 0
+  current_mirror=$("$jq_command" -r --arg name "$name" \
+    '[.[] | select(.name == $name) | .mirrorOf][0] // "none"' <<<"$monitors")
+  [[ $current_mirror != "$mirror" ]] || return 0
+
+  current_record=$(build_geometry_record "$monitors" "$name") || return 1
+  expected_record=$("$jq_command" -ce --arg mirror "$mirror" \
+    '.mirrorOf = $mirror' <<<"$current_record") || return 1
+  spec=$(make_monitor_spec "$name" "$expected_record" true) || return 1
+  send_monitor_spec "$spec" || return 1
+  wait_for_monitor_state "$name" true "$expected_record"
+}
+
+move_workspace() {
+  local workspace=$1
+  local source=$2
+  local fallback=$3
+  local monitors
+  local workspaces
+  local attempt
+  local lua_code
+
+  monitors=$(query_monitors) || return 1
+  monitor_is_enabled "$monitors" "$source" || return 1
+  monitor_is_independent "$monitors" "$fallback" || return 1
+  printf -v lua_code 'hl.dispatch(hl.dsp.workspace.move({workspace=%s,monitor="%s"}))' "$workspace" "$fallback"
+  run_ipc eval "$lua_code" >/dev/null 2>&1 || return 1
+
+  for ((attempt = 0; attempt < VERIFY_ATTEMPTS; attempt++)); do
+    monitors=$(query_monitors) || return 1
+    monitor_is_enabled "$monitors" "$fallback" || return 1
+    workspaces=$(query_workspaces) || return 1
+    if "$jq_command" -e --argjson id "$workspace" --arg monitor "$fallback" \
+      'any(.[]; .id == $id and .monitor == $monitor)' <<<"$workspaces" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$VERIFY_DELAY_SECONDS"
+  done
+  return 1
+}
+
+drain_monitor_workspaces() {
+  local target=$1
+  local fallback=$2
+  local workspaces
+  local workspace
+  local workspace_id
+  local workspace_windows
+  local workspace_persistent
+  local workspace_records
+  local attempt
+  local -A initial_workspace_ids=()
+  local -a workspace_ids=()
+
+  workspaces=$(query_workspaces) || return 1
+  while IFS=$'\t' read -r workspace_id workspace_windows workspace_persistent; do
+    [[ -n $workspace_id ]] || continue
+    [[ $workspace_id =~ ^[1-9][0-9]*$ ]] || return 1
+    initial_workspace_ids["$workspace_id"]=1
+  done < <("$jq_command" -r --arg monitor "$target" '
+    .[]
+    | select((.id | type) == "number" and .id > 0 and (.id | floor) == .id)
+    | select(.monitor == $monitor)
+    | [(.id | tostring), (.windows | tostring), (.ispersistent | tostring)]
+    | @tsv
+  ' <<<"$workspaces")
+
+  for ((attempt = 0; attempt < WORKSPACE_DRAIN_ATTEMPTS; attempt++)); do
+    workspaces=$(query_workspaces) || return 1
+    workspace_records=$("$jq_command" -r --arg monitor "$target" '
+      .[]
+      | select((.id | type) == "number" and .id > 0 and (.id | floor) == .id)
+      | select(.monitor == $monitor)
+      | [(.id | tostring), (.windows | tostring), (.ispersistent | tostring)]
+      | @tsv
+    ' <<<"$workspaces") || return 1
+    workspace_ids=()
+    while IFS=$'\t' read -r workspace_id workspace_windows workspace_persistent; do
+      [[ -n $workspace_id ]] || continue
+      [[ $workspace_id =~ ^[1-9][0-9]*$ ]] || return 1
+      [[ $workspace_windows =~ ^[0-9]+$ ]] || return 1
+      case $workspace_persistent in
+        true|false) ;;
+        *) return 1 ;;
+      esac
+
+      if [[ ${initial_workspace_ids[$workspace_id]+present} == present || $workspace_windows != 0 || $workspace_persistent == true ]]; then
+        workspace_ids+=("$workspace_id")
+      fi
+    done <<<"$workspace_records"
+
+    if ((${#workspace_ids[@]} == 0)); then
+      return 0
+    fi
+
+    for workspace in "${workspace_ids[@]}"; do
+      [[ $workspace =~ ^[1-9][0-9]*$ ]] || return 1
+      move_workspace "$workspace" "$target" "$fallback" || return 1
+    done
+  done
+
+  return 1
+}
+
+disable_monitor() {
+  local target=$1
+  local preferred_fallback=${2:-}
+  local monitors
+  local fallback
+  local count
+
+  monitors=$(query_monitors) || return 1
+  monitor_is_enabled "$monitors" "$target" || return 1
+  count=$(enabled_monitor_count "$monitors") || return 1
+  ((count > 1)) || return 1
+  fallback=$(choose_fallback_monitor "$monitors" "$target" "$preferred_fallback") || return 1
+  monitor_is_independent "$monitors" "$fallback" || return 1
+  save_geometry "$monitors" "$target" || return 1
+
+  drain_monitor_workspaces "$target" "$fallback" || return 1
+
+  # Re-read the topology after every move; a hot-unplugged fallback is never
+  # allowed to turn the final command into a dark screen.
+  monitors=$(query_monitors) || return 1
+  monitor_is_enabled "$monitors" "$target" || return 1
+  monitor_is_independent "$monitors" "$fallback" || return 1
+  count=$(enabled_monitor_count "$monitors") || return 1
+  ((count > 1)) || return 1
+  send_monitor_spec "$target,disable" || return 1
+  wait_for_monitor_state "$target" false || return 1
+
+  monitors=$(query_monitors) || return 1
+  "$jq_command" -e --arg name "$target" \
+    'any(.[]; .name == $name and .disabled == true)' <<<"$monitors" >/dev/null 2>&1 || return 1
+  monitor_is_independent "$monitors" "$fallback" || return 1
+}
+
+set_monitor_enabled() {
+  local name=$1
+  local desired=$2
+  local preferred_fallback=${3:-}
+  local monitors
+
+  monitors=$(query_monitors) || return 1
+  monitor_exists "$monitors" "$name" || return 1
+  if [[ $desired == true ]]; then
+    enable_monitor "$monitors" "$name" true
+  else
+    disable_monitor "$name" "$preferred_fallback"
+  fi
+}
+
+set_layout_only() {
+  local target=$1
+  local monitors
+  local mirror
+  local monitor
+  local -a other_monitors=()
+
+  monitors=$(query_monitors) || return 1
+  monitor_exists "$monitors" "$target" || return 1
+  if ! monitor_is_enabled "$monitors" "$target"; then
+    enable_monitor "$monitors" "$target" false || return 1
+    monitors=$(query_monitors) || return 1
+  fi
+
+  mirror=$("$jq_command" -r --arg name "$target" \
+    '[.[] | select(.name == $name) | .mirrorOf][0] // "none"' <<<"$monitors")
+  if [[ $mirror != none ]]; then
+    unmirror_monitor "$monitors" "$target" || return 1
+    monitors=$(query_monitors) || return 1
+  fi
+
+  mapfile -t other_monitors < <("$jq_command" -r --arg target "$target" \
+    '.[] | select(.disabled == false and .name != $target) | .name' <<<"$monitors")
+  for monitor in "${other_monitors[@]}"; do
+    valid_connector "$monitor" || return 1
+    disable_monitor "$monitor" "$target" || return 1
+  done
+
+  monitors=$(query_monitors) || return 1
+  "$jq_command" -e --arg target "$target" '
+    ([.[] | select(.disabled == false)] | length) == 1
+    and any(.[]; .name == $target and .disabled == false)
+  ' <<<"$monitors" >/dev/null 2>&1
+}
+
+set_layout_all() {
+  local monitors
+  local monitor
+  local -a physical_disabled=()
+  local -a physical_initially_enabled=()
+
+  monitors=$(query_monitors) || return 1
+  mapfile -t physical_disabled < <("$jq_command" -r '
+    def headless:
+      ((.name | test("^headless([_.:-].*)?$"; "i"))
+       or ((.description | type) == "string" and (.description | test("headless"; "i"))));
+    .[] | select(.disabled == true and (headless | not)) | .name
+  ' <<<"$monitors")
+  mapfile -t physical_initially_enabled < <("$jq_command" -r '
+    def headless:
+      ((.name | test("^headless([_.:-].*)?$"; "i"))
+       or ((.description | type) == "string" and (.description | test("headless"; "i"))));
+    .[] | select(.disabled == false and (headless | not)) | .name
+  ' <<<"$monitors")
+
+  for monitor in "${physical_disabled[@]}"; do
+    valid_connector "$monitor" || return 1
+    monitors=$(query_monitors) || return 1
+    monitor_exists "$monitors" "$monitor" || return 1
+    enable_monitor "$monitors" "$monitor" false || return 1
+  done
+
+  for monitor in "${physical_disabled[@]}"; do
+    monitors=$(query_monitors) || return 1
+    restore_monitor_mirror "$monitors" "$monitor" || return 1
+  done
+
+  for monitor in "${physical_initially_enabled[@]}"; do
+    monitors=$(query_monitors) || return 1
+    restore_deferred_mirror "$monitors" "$monitor" || return 1
+  done
+}
+
+main() {
+  local action=${1:-}
+  local name=${2:-}
+  local desired=${3:-}
+  local preferred_fallback=${4:-}
+
+  case $action in
+    set-enabled)
+      (($# == 3 || $# == 4)) || usage
+      valid_connector "$name" || usage
+      case $desired in
+        true|false) ;;
+        *) usage ;;
+      esac
+      if (($# == 4)); then
+        valid_connector "$preferred_fallback" || usage
+      fi
+      ;;
+    only)
+      (($# == 2)) || usage
+      valid_connector "$name" || usage
+      ;;
+    all)
+      (($# == 1)) || usage
+      ;;
+    *)
+      usage
+      ;;
+  esac
+
+  require_runtime
+  prepare_state_root
+  acquire_lock
+
+  case $action in
+    set-enabled)
+      set_monitor_enabled "$name" "$desired" "$preferred_fallback" || die 'monitor enable state change failed'
+      ;;
+    only)
+      set_layout_only "$name" || die 'monitor only-layout change failed'
+      ;;
+    all)
+      set_layout_all || die 'monitor physical-layout change failed'
+      ;;
+  esac
+}
+
+main "$@"

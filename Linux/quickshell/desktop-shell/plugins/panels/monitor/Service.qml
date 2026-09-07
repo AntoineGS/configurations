@@ -13,6 +13,9 @@ SharedService {
   property int lastConfirmedBrightnessPercent: 1
   property string hostname: ""
   property string actionName: ""
+  property string actionError: ""
+  property int monitorInventoryGeneration: 0
+  property int monitorInventoryAppliedGeneration: -1
   property var operationState: Model.monitorOperationState()
   property int collectionGeneration: 0
   property int reconciliationGeneration: 0
@@ -32,11 +35,38 @@ SharedService {
   readonly property var stateData: hardwareState && hardwareState.data ? hardwareState.data : ({})
   readonly property var brightness: stateData.brightness || ({ available: false, percent: 1 })
   readonly property var keyboardBrightness: stateData.keyboardBrightness || ({ available: false, percent: 0 })
+  readonly property var rawMonitorInventory: Array.isArray(stateData.monitors) ? stateData.monitors : []
+  readonly property var monitorInventory: Model.normalizeMonitorInventory(rawMonitorInventory)
+  readonly property bool monitorInventoryFresh: hardwareState && hardwareState.available === true
+    && hardwareState.stale !== true && Array.isArray(stateData.monitors)
+    && rawMonitorInventory.length > 0
+    && Model.monitorSnapshotIsCurrent(monitorInventoryAppliedGeneration, monitorInventoryGeneration)
+  readonly property bool monitorActionAvailable: root.collecting && root.monitorInventoryFresh
+    && !root.operationPending && !root.operationState.reconciliationRunning
+    && !root.operationState.reconciliationQueued
 
   function syncOperationPending() {
     var state = root.operationState
     root.operationPending = root.postActionPending || !!state.actionRunning
       || (Array.isArray(state.actionQueue) && state.actionQueue.length > 0)
+  }
+
+  function invalidateMonitorInventory() {
+    root.monitorInventoryGeneration++
+    root.monitorInventoryAppliedGeneration = -1
+  }
+
+  function isMonitorTopologyEvent(name) {
+    return name === "monitoradded" || name === "monitoraddedv2"
+      || name === "monitorremoved" || name === "monitorremovedv2"
+  }
+
+  function handleRawEvent(event) {
+    var eventName = String(event && event.name || "")
+    if (!root.isMonitorTopologyEvent(eventName)) return false
+    root.invalidateMonitorInventory()
+    root.refresh()
+    return true
   }
 
   function applyState(raw) {
@@ -62,23 +92,26 @@ SharedService {
     parsed.stale === true ? null : parsed.data.keyboardBrightness)
     root.brightnessPercent = reconciled.brightnessPercent
     root.lastConfirmedBrightnessPercent = reconciled.lastConfirmedBrightnessPercent
+    var nextData = parsed.stale === true
+      ? Object.assign({}, previousData, parsed.data) : Object.assign({}, parsed.data)
+    nextData.brightness = reconciled.brightness
+    nextData.keyboardBrightness = reconciled.keyboardBrightness
     root.hardwareState = {
       available: parsed.available === true,
       stale: parsed.stale === true,
       error: parsed.error || "",
-      data: {
-        brightness: reconciled.brightness,
-        keyboardBrightness: reconciled.keyboardBrightness
-      }
+      data: nextData
     }
   }
 
   function applyStateFromWorker(worker, raw) {
     if (!worker || worker !== root.stateWorker || !root.collecting
         || worker.generation !== root.reconciliationGeneration
-        || worker.collectionGeneration !== root.collectionGeneration) return
+        || worker.collectionGeneration !== root.collectionGeneration
+        || !Model.monitorSnapshotIsCurrent(worker.inventoryGeneration, root.monitorInventoryGeneration)) return
     worker.stateApplied = true
     root.applyState(raw)
+    root.monitorInventoryAppliedGeneration = worker.inventoryGeneration
   }
 
   function refresh() {
@@ -101,7 +134,8 @@ SharedService {
     root.reconciliationGeneration++
     var worker = stateComponent.createObject(root, {
       generation: root.reconciliationGeneration,
-      collectionGeneration: root.collectionGeneration
+      collectionGeneration: root.collectionGeneration,
+      inventoryGeneration: root.monitorInventoryGeneration
     })
     if (!worker) {
       root.finishReconciliation(null, 1, true)
@@ -131,8 +165,13 @@ SharedService {
     stateStartCheckTimer.stop()
     stateStartCheckTimer.worker = null
     if (worker && root.stateWorker === worker) root.stateWorker = null
-    if (worker && !failedStart && Number(exitCode) === 0 && !worker.stateApplied)
+    if (worker && !failedStart && Number(exitCode) === 0 && !worker.stateApplied
+        && Model.monitorSnapshotIsCurrent(worker.inventoryGeneration, root.monitorInventoryGeneration)) {
       root.applyState(worker.stdoutOutput.text || "")
+      root.monitorInventoryAppliedGeneration = worker.inventoryGeneration
+    }
+    else if ((failedStart || Number(exitCode) !== 0) && (!worker || !worker.stateApplied))
+      root.applyState("")
     root.destroyWorker(worker)
 
     var transition = Model.monitorOperationTransition(root.operationState, "reconcile-finished")
@@ -186,7 +225,12 @@ SharedService {
     actionStartCheckTimer.worker = null
     if (worker && root.actionWorker === worker) root.actionWorker = null
     var action = root.actionName
-    if (!failedStart && Number(exitCode) === 0 && Model.shouldRefreshNativeMonitors(action))
+    if (failedStart || Number(exitCode) !== 0) {
+      var detail = failedStart ? "Monitor action failed to start"
+        : Model.boundedText(worker && worker.stderrOutput ? worker.stderrOutput.text : "", 240)
+      root.actionError = detail || "Monitor action failed"
+    } else root.actionError = ""
+    if (Model.shouldRefreshNativeMonitors(action))
       root.refreshNativeMonitors(action === "set-scale")
     root.destroyWorker(worker)
     root.actionName = ""
@@ -203,6 +247,7 @@ SharedService {
     if (!Array.isArray(args)) return false
     var transition = Model.monitorOperationTransition(root.operationState, "action-request", args)
     root.operationState = transition.state
+    root.actionError = ""
     root.postActionPending = true
     root.syncOperationPending()
     if (transition.startAction && !root.actionWorker) root.startAction(transition.startAction)
@@ -223,13 +268,34 @@ SharedService {
     root.runAction(["monitor", "set-scale", monitorName, String(scale)])
   }
 
+  function hasMonitor(name) {
+    for (var i = 0; i < root.monitorInventory.length; i++)
+      if (root.monitorInventory[i].name === name) return true
+    return false
+  }
+
+  function setMonitorEnabled(name, enabled, fallbackMonitor) {
+    var target = String(name || "")
+    if ((enabled !== true && enabled !== false) || !root.monitorActionAvailable || !root.hasMonitor(target)) return false
+    var args = ["monitor", "set-enabled", target, String(enabled)]
+    var fallback = String(fallbackMonitor || "")
+    if (enabled === false && fallback !== "" && fallback !== target) args.push(fallback)
+    return root.runAction(args)
+  }
+
   function setLayout(mode, monitorName) {
     var args = ["monitor", "set-layout", mode]
-    if (mode === "single") {
-      if (!monitorName) return
+    if (mode === "only") {
+      var target = String(monitorName || "")
+      if (!root.monitorActionAvailable || !root.hasMonitor(target)) return false
+      args.push(target)
+    } else if (mode === "all") {
+      if (!root.monitorActionAvailable) return false
+    } else if (mode === "single") {
+      if (!monitorName) return false
       args.push(monitorName)
-    }
-    root.runAction(args)
+    } else if (mode !== "physical" && mode !== "headless") return false
+    return root.runAction(args)
   }
 
   function destroyWorker(worker) {
@@ -263,8 +329,21 @@ SharedService {
       root.stopCollection()
       return
     }
+    root.invalidateMonitorInventory()
     startupTimer.start()
     root.refresh()
+  }
+
+  Connections {
+    target: Hyprland.monitors
+    function onValuesChanged() {
+      if (root.collecting) root.refresh()
+    }
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) { root.handleRawEvent(event) }
   }
 
   Timer {
@@ -322,6 +401,7 @@ SharedService {
       id: process
       property int generation: 0
       property int collectionGeneration: 0
+      property int inventoryGeneration: 0
       property bool stateApplied: false
       command: [root.stateExecutable, "monitor"]
       stdout: StdioCollector {
@@ -344,7 +424,11 @@ SharedService {
       property int collectionGeneration: 0
       command: []
       stdout: StdioCollector { waitForEnd: true }
-      stderr: StdioCollector { waitForEnd: true }
+      stderr: StdioCollector {
+        id: stderrCollector
+        waitForEnd: true
+      }
+      property alias stderrOutput: stderrCollector
       onExited: function(exitCode) { root.finishAction(process, Number(exitCode), false) }
       onRunningChanged: root.handleActionRunningChanged(process)
     }
