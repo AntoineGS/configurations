@@ -5,14 +5,16 @@ shopt -s nullglob
 readonly VM_LIBVIRT_URI=qemu:///system
 
 usage() {
-  printf 'usage: %s <monitor|tailscale|vm|bluetooth>\n' "${0##*/}" >&2
+  printf 'usage: %s monitor [previous-snapshot-json [connector]]\n' "${0##*/}" >&2
+  printf '       %s <tailscale|vm|bluetooth>\n' "${0##*/}" >&2
   exit 2
 }
 
-(( $# == 1 )) || usage
+(( $# >= 1 )) || usage
 domain=$1
 case $domain in
-  monitor|tailscale|vm|bluetooth) ;;
+  monitor) (( $# >= 1 && $# <= 3 )) || usage ;;
+  tailscale|vm|bluetooth) (( $# == 1 )) || usage ;;
   *) usage ;;
 esac
 
@@ -24,6 +26,7 @@ command -v jq >/dev/null 2>&1 || {
 sysfs_root=${DESKTOP_HARDWARE_SYSFS_ROOT:-/sys}
 state_dir=${DESKTOP_HARDWARE_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state}/desktop-shell/hardware}
 cache_file="$state_dir/$domain.json"
+cache_write_allowed=true
 
 current_time() {
   date +%s
@@ -61,6 +64,21 @@ resolve_command() {
   command -v "$1" 2>/dev/null
 }
 
+resolve_helper() {
+  local name=$1
+  local helper_dir=${DESKTOP_HARDWARE_HELPER_DIR:-}
+  local candidate
+
+  if [[ -n $helper_dir ]]; then
+    candidate="$helper_dir/$name"
+    [[ -x $candidate ]] || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  resolve_command "$name"
+}
+
 emit_payload() {
   local available=$1
   local stale=$2
@@ -89,6 +107,8 @@ emit_payload() {
 write_cache() {
   local payload=$1
   local temporary=''
+
+  [[ $cache_write_allowed == true ]] || return 0
 
   if [[ -r $cache_file ]] && jq -e --argjson next "$payload" '
       (.available == $next.available) and
@@ -269,12 +289,86 @@ read_keyboard_backlight() {
   printf '%s\n' '{"available":false,"device":"","percent":0}'
 }
 
+unavailable_brightness_snapshot() {
+  local monitors=$1
+  local message=$2
+
+  jq -cn --argjson monitors "$monitors" --arg error "$message" '
+    {
+      version: 1,
+      topology: "",
+      monitors: (
+        reduce ($monitors[] | select(.enabled == true)) as $monitor
+          ({};
+           .[$monitor.name] = {
+             connector: $monitor.name,
+             backend: (if ($monitor.name | test("^(eDP|LVDS|DSI)-"; "i")) then "backlight" else "ddc" end),
+             available: false,
+             stale: false,
+             error: $error,
+             current: null,
+             maximum: null,
+             percent: null,
+             identity: "",
+             topology: "",
+             edid: "",
+             selector: null
+           })
+      )
+    }
+  '
+}
+
+# Validate only the snapshot envelope here; Model.js normalizes every record
+# before it can be used for UI or action targeting.
+valid_brightness_snapshot_envelope() {
+  local snapshot=$1
+
+  jq -e '
+    type == "object"
+    and .version == 1
+    and (.topology | type) == "string"
+    and (.monitors | type) == "object"
+  ' <<<"$snapshot" >/dev/null 2>&1
+}
+
+collect_brightness_snapshot() {
+  local previous_snapshot=$1
+  local raw_monitors=$2
+  local monitors=$3
+  local requested_connector=$4
+  local brightness_helper=''
+  local brightness_snapshot=''
+  local error='desktop-monitor-brightness is unavailable'
+
+  if brightness_helper=$(resolve_helper desktop-monitor-brightness); then
+    if [[ -n $requested_connector ]]; then
+      if brightness_snapshot=$(
+        "$brightness_helper" snapshot "$previous_snapshot" "$raw_monitors" "$requested_connector" 2>/dev/null
+      ) && valid_brightness_snapshot_envelope "$brightness_snapshot"; then
+        printf '%s\n' "$brightness_snapshot"
+        return 0
+      fi
+    elif brightness_snapshot=$("$brightness_helper" snapshot "$previous_snapshot" "$raw_monitors" 2>/dev/null) \
+      && valid_brightness_snapshot_envelope "$brightness_snapshot"; then
+      printf '%s\n' "$brightness_snapshot"
+      return 0
+    fi
+    error='desktop-monitor-brightness returned an invalid snapshot'
+  fi
+
+  unavailable_brightness_snapshot "$monitors" "$error"
+}
+
 state_monitor() {
+  local previous_snapshot='{}'
+  local requested_connector=''
   local hyprctl_command
   local raw_monitors
   local monitors
   local brightness
   local keyboard_brightness
+  local brightness_snapshot
   local focused_monitor
   local internal_monitor
   local internal_enabled
@@ -282,8 +376,14 @@ state_monitor() {
   local data
   local available
 
+  if (( $# >= 1 )); then previous_snapshot=$1; fi
+  if (( $# == 2 )); then requested_connector=$2; fi
+  jq -e 'type == "object"' <<<"$previous_snapshot" >/dev/null 2>&1 || usage
+  [[ -z $requested_connector || $requested_connector =~ ^[[:alnum:]_.:-]+$ ]] || usage
+  if [[ -n $requested_connector ]]; then cache_write_allowed=false; fi
+
   if ! hyprctl_command=$(resolve_command hyprctl); then
-    emit_unavailable '{"monitors":[],"brightness":{"available":false,"device":"","percent":0},"keyboardBrightness":{"available":false,"device":"","percent":0}}'
+    emit_unavailable '{"monitors":[],"brightness":{"available":false,"device":"","percent":0},"keyboardBrightness":{"available":false,"device":"","percent":0},"brightnessSnapshot":{"version":1,"topology":"","monitors":{}}}'
   fi
   if ! raw_monitors=$("$hyprctl_command" -j monitors all 2>/dev/null); then
     emit_stale 'hyprctl monitor query failed'
@@ -308,6 +408,7 @@ state_monitor() {
 
   brightness=$(read_backlight)
   keyboard_brightness=$(read_keyboard_backlight)
+  brightness_snapshot=$(collect_brightness_snapshot "$previous_snapshot" "$raw_monitors" "$monitors" "$requested_connector")
   focused_monitor=$(jq -r '[.[] | select(.focused == true) | .name][0] // ""' <<<"$monitors")
   internal_monitor=$(jq -r '[.[] | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$monitors")
   internal_enabled=$(jq -r --arg name "$internal_monitor" 'any(.[]; .name == $name and .enabled)' <<<"$monitors")
@@ -321,7 +422,8 @@ state_monitor() {
     --arg internalMonitor "$internal_monitor" \
     --argjson internalEnabled "$internal_enabled" \
     --argjson mirrorEnabled "$mirror_enabled" \
-    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness}')
+    --argjson brightnessSnapshot "$brightness_snapshot" \
+    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness, brightnessSnapshot: $brightnessSnapshot}')
 
   if [[ $available == true ]]; then
     emit_available "$data"
@@ -779,7 +881,7 @@ state_tailscale() {
 }
 
 case $domain in
-  monitor) state_monitor ;;
+  monitor) state_monitor "${@:2}" ;;
   tailscale) state_tailscale ;;
   vm) state_vm ;;
   bluetooth) state_bluetooth ;;

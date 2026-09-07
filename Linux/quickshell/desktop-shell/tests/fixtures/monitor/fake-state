@@ -22,5 +22,72 @@ fi
 if [ -n "${MONITOR_FIXTURE_STATE_OUTPUT:-}" ]; then
   cat "$MONITOR_FIXTURE_STATE_OUTPUT"
 else
-  printf '%s\n' '{"available":true,"stale":false,"data":{"brightness":{"available":true,"percent":40,"device":"fixture-backlight"},"keyboardBrightness":{"available":true,"percent":20}}}'
+  mode=initial
+  if [ -n "${MONITOR_FIXTURE_STATE_MODE:-}" ]; then
+    mode=$(tr -d '\r\n' <"$MONITOR_FIXTURE_STATE_MODE")
+  fi
+  requested_connector=${3:-}
+  fixture_root=$(cd -- "$(dirname "$0")/../../../../../os/tests/fixtures/monitor-brightness" && pwd -P)
+  edid_a=$(tr -d '\r\n[:space:]' <"$fixture_root/display-a.edid.hex")
+  edid_b=$(tr -d '\r\n[:space:]' <"$fixture_root/display-b.edid.hex")
+
+  hash_text() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+  identity() {
+    hash_text "$(printf '%s\n%s\n%s\n%s\n%s\n%s' "$1" "$2" "$3" "$4" "$5" "$6")"
+  }
+
+  topology=$(hash_text "$(printf 'card0-DP-1\tDP-1\t%s\t3\tnone\ncard0-HDMI-1\tHDMI-1\t%s\t4\tnone' "$edid_a" "$edid_b")")
+  identity_a=$(identity DP-1 ddc "$edid_a" "$topology" bus 3)
+  identity_b=$(identity HDMI-1 ddc "$edid_b" "$topology" bus 4)
+  percent_a=40
+  percent_b=60
+  case "$mode" in
+    initial|old) ;;
+    new) percent_a=90 ;;
+    *) printf '%s\n' "unknown monitor state mode: $mode" >&2; exit 2 ;;
+  esac
+
+  record() {
+    connector=$1
+    record_identity=$2
+    record_percent=$3
+    record_edid=$4
+    selector=$5
+    jq -cn \
+      --arg connector "$connector" \
+      --arg identity "$record_identity" \
+      --arg topology "$topology" \
+      --arg edid "$record_edid" \
+      --arg selector "$selector" \
+      --argjson percent "$record_percent" \
+      '{connector:$connector,backend:"ddc",available:true,stale:false,error:"",current:$percent,maximum:100,
+        percent:$percent,identity:$identity,topology:$topology,edid:$edid,selector:{kind:"bus",value:$selector}}'
+  }
+
+  record_a=$(record DP-1 "$identity_a" "$percent_a" "$edid_a" 3)
+  record_b=$(record HDMI-1 "$identity_b" "$percent_b" "$edid_b" 4)
+  if [ -n "$requested_connector" ]; then
+    case "$requested_connector" in
+      DP-1) requested_record=$record_a; requested_percent=$percent_a ;;
+      HDMI-1) requested_record=$record_b; requested_percent=$percent_b ;;
+      *) printf '%s\n' "unknown requested connector: $requested_connector" >&2; exit 3 ;;
+    esac
+    jq -cn \
+      --arg topology "$topology" \
+      --arg connector "$requested_connector" \
+      --argjson record "$requested_record" \
+      --argjson percent "$requested_percent" \
+      '{available:true,stale:false,error:null,data:{monitors:[{name:"DP-1",enabled:true},{name:"HDMI-1",enabled:true}],
+        focusedMonitor:"DP-1",internalMonitor:"",internalEnabled:false,brightness:{available:true,percent:$percent,device:"fixture-backlight"},
+        keyboardBrightness:{available:true,percent:20},brightnessSnapshot:{version:1,topology:$topology,monitors:{($connector):$record}}}}'
+  else
+    jq -cn \
+      --arg topology "$topology" \
+      --argjson recordA "$record_a" \
+      --argjson recordB "$record_b" \
+      --argjson percentA "$percent_a" \
+      '{available:true,stale:false,error:null,data:{monitors:[{name:"DP-1",enabled:true},{name:"HDMI-1",enabled:true}],
+        focusedMonitor:"DP-1",internalMonitor:"",internalEnabled:false,brightness:{available:true,percent:$percentA,device:"fixture-backlight"},
+        keyboardBrightness:{available:true,percent:20},brightnessSnapshot:{version:1,topology:$topology,monitors:{"DP-1":$recordA,"HDMI-1":$recordB}}}}'
+  fi
 fi
