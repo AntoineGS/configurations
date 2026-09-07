@@ -12,21 +12,28 @@ Panel {
   ipcTarget: "desktop.monitor"
   manageIpc: false
   property var pluginRegistry: null
-  property int brightnessPreviewPercent: monitorService ? monitorService.brightnessPercent : 1
+  property string testBarMonitor: ""
+  property int brightnessPreviewPercent: root.previewBrightnessValue(root.brightness)
   property int keyboardBrightnessPercent: 0
   property bool cursorActive: false
   property int selectedIndex: -1
   property real previewScale: 1
   property int nativeTopologyGeneration: 0
+  property string brightnessDragConnector: ""
+  property string brightnessDragIdentity: ""
+  property string brightnessDragTopology: ""
+  property bool brightnessDragInvalidated: false
   readonly property alias displayBrightnessControl: brightnessSlider
   readonly property alias keyboardBrightnessControl: keyboardBrightnessSlider
+  readonly property alias brightnessPopup: popup
+  readonly property alias brightnessUnavailableMessage: brightnessUnavailableText
+  readonly property alias brightnessValueLabel: brightnessValueText
 
   readonly property var monitorService: bar && bar.shell ? bar.shell.serviceFor("desktop.monitor") : null
   readonly property string hostname: monitorService && monitorService.hostname
     ? String(monitorService.hostname) : ""
   readonly property var hardwareState: monitorService
     ? monitorService.hardwareState : ({ available: false, stale: false, data: {} })
-  readonly property int brightnessPercent: monitorService ? monitorService.brightnessPercent : 1
 
   function refreshNativeTopology() {
     nativeTopologyGeneration++
@@ -37,7 +44,6 @@ Panel {
   readonly property bool capabilityAvailable: nativeTopology.monitors.length > 0
   readonly property var stateData: hardwareState && hardwareState.data ? hardwareState.data : ({})
   readonly property var displays: nativeTopology.monitors
-  readonly property var brightness: stateData.brightness || ({ available: false, percent: 1 })
   readonly property var keyboardBrightness: stateData.keyboardBrightness || ({ available: false, percent: 0 })
   readonly property string internalMonitor: nativeTopology.internalMonitor
   readonly property bool internalEnabled: nativeTopology.internalEnabled
@@ -46,7 +52,8 @@ Panel {
   readonly property color foreground: panelForeground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var barWindow: button.QsWindow.window
-  readonly property string barMonitor: barWindow && barWindow.screen ? String(barWindow.screen.name || "") : ""
+  readonly property string barMonitor: root.testBarMonitor !== ""
+    ? root.testBarMonitor : (barWindow && barWindow.screen ? String(barWindow.screen.name || "") : "")
   readonly property var selectedDisplay: displayForMonitor(barMonitor)
   readonly property real selectedScale: selectedDisplay ? selectedDisplay.scale : 1
   readonly property var scaleOptions: validScaleOptions(selectedDisplay)
@@ -73,6 +80,28 @@ Panel {
     { mode: "headless", letter: "H", label: "Headless + right physical" },
     { mode: "single", letter: "S", label: "Single monitor: " + (barMonitor || "current") }
   ]
+
+  readonly property var brightness: {
+    if (!root.monitorService || !root.monitorService.brightnessSnapshot)
+      return { available: false, stale: false, percent: null, error: "Brightness service unavailable" }
+    return root.monitorService.brightnessFor(root.barMonitor)
+  }
+  readonly property bool brightnessPending: {
+    if (!root.monitorService) return false
+    root.monitorService.operationPending
+    return root.monitorService.brightnessPending(root.barMonitor)
+  }
+  readonly property string brightnessError: {
+    if (!root.monitorService) return "Brightness service unavailable"
+    root.monitorService.brightnessSnapshot
+    var error = root.monitorService.brightnessError(root.barMonitor)
+    return error === undefined || error === null ? "Brightness unavailable" : String(error)
+  }
+  readonly property bool brightnessActionable: root.brightness && root.brightness.available === true
+    && root.brightness.stale !== true && root.brightness.error === ""
+    && root.brightness.percent !== null && root.brightness.percent !== undefined
+  readonly property bool brightnessMeasurementKnown: root.brightness && typeof root.brightness.percent === "number"
+    && isFinite(root.brightness.percent)
 
   function displayForMonitor(name) {
     for (var i = 0; i < displays.length; i++)
@@ -134,6 +163,11 @@ Panel {
     monitorService.setLayout(mode, barMonitor)
   }
 
+  function previewBrightnessValue(record) {
+    if (!record || typeof record.percent !== "number" || !isFinite(record.percent)) return 1
+    return Math.max(0, Math.min(100, Math.round(record.percent)))
+  }
+
   function open() {
     if (monitorService) {
       monitorService.refreshNativeMonitors(true)
@@ -143,6 +177,11 @@ Panel {
     selectedIndex = -1
     cursorActive = false
     controller.show()
+  }
+
+  function close() {
+    root.clearBrightnessDrag()
+    controller.hide()
   }
 
   function reportCapability() {
@@ -157,13 +196,56 @@ Panel {
     return monitorService ? monitorService.refresh() : false
   }
 
-  function setBrightness(value) {
-    if (monitorService) monitorService.setBrightness(value)
+  function captureBrightnessTarget() {
+    if (root.brightnessDragConnector !== "") return
+    root.brightnessDragConnector = root.barMonitor
+    root.brightnessDragIdentity = root.brightness && root.brightness.identity
+      ? String(root.brightness.identity) : ""
+    root.brightnessDragTopology = root.brightness && root.brightness.topology
+      ? String(root.brightness.topology) : ""
+    root.brightnessDragInvalidated = root.brightnessDragConnector === ""
+      || root.brightnessDragIdentity === ""
+  }
+
+  function clearBrightnessDrag() {
+    if (displayApplyTimer) displayApplyTimer.stop()
+    root.brightnessDragConnector = ""
+    root.brightnessDragIdentity = ""
+    root.brightnessDragTopology = ""
+    root.brightnessDragInvalidated = false
+  }
+
+  function brightnessDragMatchesCurrent() {
+    var current = root.brightness
+    return !root.brightnessDragInvalidated
+      && root.brightnessDragConnector !== ""
+      && root.barMonitor === root.brightnessDragConnector
+      && current && current.available === true
+      && String(current.identity || "") === root.brightnessDragIdentity
+      && String(current.topology || "") === root.brightnessDragTopology
+  }
+
+  function invalidateBrightnessDragIfNeeded() {
+    if (root.brightnessDragConnector === "") return
+    if (root.brightnessDragInvalidated || !root.brightnessDragMatchesCurrent()) {
+      root.brightnessDragInvalidated = true
+      if (displayApplyTimer) displayApplyTimer.stop()
+    }
+  }
+
+  function submitBrightness(value) {
+    if (!root.monitorService) return false
+    root.captureBrightnessTarget()
+    if (!root.brightnessDragMatchesCurrent()) {
+      root.invalidateBrightnessDragIfNeeded()
+      return false
+    }
+    return root.monitorService.setBrightness(root.brightnessDragConnector, Model.clampBrightness(value))
   }
 
   function syncBrightnessPreview() {
-    if (!root.monitorService || brightnessSlider.dragging || root.monitorService.operationPending) return
-    root.brightnessPreviewPercent = root.monitorService.brightnessPercent
+    if (!root.monitorService || brightnessSlider.dragging || root.brightnessPending) return
+    root.brightnessPreviewPercent = root.previewBrightnessValue(root.brightness)
   }
 
   function syncKeyboardBrightnessPreview() {
@@ -172,13 +254,21 @@ Panel {
   }
 
   function handleBrightnessDraggingChanged(dragging) {
+    if (dragging) root.captureBrightnessTarget()
     if (!dragging) Qt.callLater(root.syncBrightnessPreview)
   }
 
   function releaseBrightness(value) {
+    root.captureBrightnessTarget()
     var next = Model.clampBrightness(value)
+    if (!root.brightnessDragMatchesCurrent()) {
+      root.clearBrightnessDrag()
+      Qt.callLater(root.syncBrightnessPreview)
+      return
+    }
     root.brightnessPreviewPercent = next
-    root.setBrightness(next)
+    root.submitBrightness(next)
+    root.clearBrightnessDrag()
   }
 
   function setKeyboardBrightness(action) {
@@ -230,8 +320,13 @@ Panel {
 
   Connections {
     target: root.monitorService
-    function onBrightnessPercentChanged() { root.syncBrightnessPreview() }
+    ignoreUnknownSignals: true
+    function onBrightnessSnapshotChanged() {
+      root.invalidateBrightnessDragIfNeeded()
+      root.syncBrightnessPreview()
+    }
     function onHardwareStateChanged() {
+      root.invalidateBrightnessDragIfNeeded()
       root.syncBrightnessPreview()
       root.syncKeyboardBrightnessPreview()
     }
@@ -239,7 +334,11 @@ Panel {
       root.syncBrightnessPreview()
       root.syncKeyboardBrightnessPreview()
     }
+    function onOperationStateChanged() { root.syncBrightnessPreview() }
   }
+
+  onBarMonitorChanged: root.invalidateBrightnessDragIfNeeded()
+  Component.onDestruction: root.clearBrightnessDrag()
 
   Connections {
     target: Hyprland.monitors
@@ -414,19 +513,17 @@ Panel {
           }
 
           PanelSeparator {
-            visible: root.brightness.available
             foreground: root.foreground
           }
           PanelSectionHeader {
             text: "BRIGHTNESS"
-            visible: root.brightness.available
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
 
           CursorSurface {
             width: parent.width
-            visible: root.brightness.available
+            visible: root.brightnessActionable
             implicitHeight: brightnessSlider.implicitHeight + Style.spacing.controlGap
             foreground: root.foreground
             outline: true
@@ -443,6 +540,7 @@ Panel {
               integer: true
               value: root.brightnessPreviewPercent
               onMoved: {
+                root.captureBrightnessTarget()
                 root.brightnessPreviewPercent = Math.round(liveValue)
                 if (!displayApplyTimer.running) displayApplyTimer.start()
               }
@@ -456,17 +554,27 @@ Panel {
                 id: displayApplyTimer
                 interval: 100
                 onTriggered: {
-                  if (!root.monitorService) return
-                  if (root.monitorService.operationPending) restart()
-                  else root.setBrightness(brightnessSlider.liveValue)
+                  root.submitBrightness(brightnessSlider.liveValue)
                 }
               }
             }
           }
 
           Text {
+            id: brightnessUnavailableText
             width: parent.width
-            visible: root.brightness.available
+            visible: !root.brightnessActionable
+            text: root.brightnessError
+            color: root.panelSecondary
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.Wrap
+          }
+
+          Text {
+            id: brightnessValueText
+            width: parent.width
+            visible: root.brightnessActionable && root.brightnessMeasurementKnown
             text: root.brightnessPreviewPercent + "%" + (root.brightness.device ? " · " + root.brightness.device : "")
             color: root.panelSecondary
             font.family: root.fontFamily

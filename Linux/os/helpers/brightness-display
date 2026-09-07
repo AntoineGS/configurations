@@ -4,10 +4,243 @@ shopt -s nullglob
 
 export LC_ALL=C
 
-step="${1:-+5%}"
-sysfs_root=${BRIGHTNESS_DISPLAY_SYSFS_ROOT:-/sys}
-device=''
+usage() {
+  printf 'usage: %s [step]\n' "${0##*/}" >&2
+  printf '       %s <step> --target-json <target-record-json>\n' "${0##*/}" >&2
+  exit 2
+}
 
+resolve_helper() {
+  local name=$1
+  local helper_dir=${DESKTOP_HARDWARE_HELPER_DIR:-}
+  local candidate
+
+  if [[ -n $helper_dir ]]; then
+    candidate="$helper_dir/$name"
+    [[ -x $candidate ]] || return 1
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  command -v "$name" 2>/dev/null
+}
+
+valid_target_record() {
+  local target=$1
+
+  jq -e '
+    type == "object"
+    and (.connector | type) == "string" and (.connector | test("^[[:alnum:]_.:-]+$"))
+    and (.backend == "backlight" or .backend == "ddc")
+    and .available == true and .stale == false
+    and (.error | type) == "string"
+    and (.current | type) == "number" and (.current | floor) == .current and .current >= 0
+    and (.maximum | type) == "number" and (.maximum | floor) == .maximum and .maximum > 0
+    and .current <= .maximum
+    and (.percent | type) == "number" and (.percent | floor) == .percent and .percent >= 0 and .percent <= 100
+    and (.identity | type) == "string" and (.identity | test("^[0-9a-f]{64}$"))
+    and (.topology | type) == "string" and (.topology | test("^[0-9a-f]{64}$"))
+    and (.edid | type) == "string" and (.edid | test("^[0-9a-f]{256}$"))
+    and (.selector | type) == "object"
+    and (.selector.kind | type) == "string" and (.selector.value | type) == "string"
+    and ((.backend == "backlight" and .selector.kind == "backlight")
+      or (.backend == "ddc" and (.selector.kind == "bus" or .selector.kind == "edid")))
+  ' <<<"$target" >/dev/null 2>&1
+}
+
+send_osd() {
+  local payload=$1
+  local response
+
+  if ! response=$(desktop-shell call desktop.osd show "$payload"); then
+    printf '%s: OSD delivery failed\n' "${0##*/}" >&2
+    exit 3
+  fi
+  if [[ $response != ok ]]; then
+    printf '%s: OSD returned an invalid response\n' "${0##*/}" >&2
+    exit 3
+  fi
+}
+
+focused_external_target() {
+  local state_helper
+  local state
+  local connector
+  local target
+
+  state_helper=$(resolve_helper desktop-hardware-state) || return 1
+  if ! state=$("$state_helper" monitor 2>/dev/null); then
+    return 1
+  fi
+  connector=$(jq -er '
+    select(.available == true and .stale == false
+      and (.data.focusedMonitor | type) == "string"
+      and (.data.focusedMonitor | length > 0))
+    | .data.focusedMonitor
+  ' <<<"$state" 2>/dev/null) || return 1
+  if ! target=$(jq -ce --arg connector "$connector" '
+    select(.available == true and .stale == false
+      and (.data.brightnessSnapshot | type) == "object"
+      and .data.brightnessSnapshot.version == 1
+      and (.data.brightnessSnapshot.monitors | type) == "object")
+    | .data.brightnessSnapshot.monitors[$connector]
+    | select(type == "object" and .connector == $connector and .available == true and .stale == false)
+  ' <<<"$state" 2>/dev/null); then
+    return 1
+  fi
+  valid_target_record "$target" || return 1
+  printf '%s\n' "$target"
+}
+
+run_targeted() {
+  local target_json=$1
+  local emit_confirmation=$2
+  local brightness_helper
+  local confirmed
+  local payload
+  local status
+
+  brightness_helper=$(resolve_helper desktop-monitor-brightness) || {
+    printf '%s: desktop-monitor-brightness is unavailable\n' "${0##*/}" >&2
+    exit 1
+  }
+  if confirmed=$("$brightness_helper" set "$step" "$target_json"); then
+    :
+  else
+    status=$?
+    printf '%s: targeted brightness mutation failed\n' "${0##*/}" >&2
+    exit "$status"
+  fi
+  if [[ $confirmed == *$'\n'* ]] || ! jq -e '
+    type == "object"
+    and .available == true and .stale == false
+    and (.current | type) == "number" and (.current | floor) == .current and .current >= 0
+    and (.maximum | type) == "number" and (.maximum | floor) == .maximum and .maximum > 0
+    and .current <= .maximum
+    and (.percent | type) == "number" and (.percent | floor) == .percent and .percent >= 0 and .percent <= 100
+  ' <<<"$confirmed" >/dev/null 2>&1; then
+    printf '%s: targeted helper returned an invalid confirmed record\n' "${0##*/}" >&2
+    exit 1
+  fi
+  payload=$(jq -cn --argjson record "$confirmed" \
+    '{icon:"brightness", message:"", value:$record.current, max:$record.maximum,
+      progressText:(($record.percent | tostring) + "%")}')
+  if [[ $emit_confirmation == true ]]; then
+    printf '%s\n' "$confirmed"
+  fi
+  send_osd "$payload"
+}
+
+run_legacy() {
+  local device=$1
+  local step_value=$2
+  local raw
+  local reported_device
+  local device_class
+  local value
+  local maximum
+  local reported_percent
+  local extra
+  local payload
+  local -a mutation=()
+
+  mutation=(brightnessctl -d "$device" set "$step_value")
+  if ! "${mutation[@]}" >/dev/null; then
+    printf '%s: brightness mutation failed\n' "${0##*/}" >&2
+    exit 1
+  fi
+
+  if ! raw=$(brightnessctl -d "$device" -m 2>/dev/null); then
+    printf '%s: failed to read brightness state\n' "${0##*/}" >&2
+    exit 1
+  fi
+  [[ $raw != *$'\n'* ]] || {
+    printf '%s: malformed brightness state\n' "${0##*/}" >&2
+    exit 1
+  }
+
+  IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$raw"
+  [[ -n $reported_device && -n $device_class && -z $extra ]] || {
+    printf '%s: malformed brightness state\n' "${0##*/}" >&2
+    exit 1
+  }
+  [[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ ]] || {
+    printf '%s: malformed brightness values\n' "${0##*/}" >&2
+    exit 1
+  }
+  [[ $reported_percent == *% ]] || {
+    printf '%s: malformed brightness percentage\n' "${0##*/}" >&2
+    exit 1
+  }
+  reported_percent=${reported_percent%\%}
+  [[ $reported_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+    printf '%s: malformed brightness percentage\n' "${0##*/}" >&2
+    exit 1
+  }
+
+  if ! jq -n -e \
+    --argjson value "$value" \
+    --argjson maximum "$maximum" \
+    --arg percent "$reported_percent" \
+    '($percent | tonumber) as $reported
+     | ($value * 100 / $maximum) as $expected
+     | ($maximum > 0)
+       and ($value <= $maximum)
+       and ($reported >= 0 and $reported <= 100)
+       and (($reported == ($expected | floor)) or ($reported == ($expected | round)))' \
+    >/dev/null 2>&1; then
+    printf '%s: inconsistent brightness state\n' "${0##*/}" >&2
+    exit 1
+  fi
+
+  payload=$(jq -cn \
+    --arg icon brightness \
+    --arg message '' \
+    --argjson value "$value" \
+    --argjson max "$maximum" \
+    --arg progressText "${reported_percent}%" \
+    '{icon: $icon, message: $message, value: $value, max: $max, progressText: $progressText}')
+  send_osd "$payload"
+}
+
+sysfs_root=${BRIGHTNESS_DISPLAY_SYSFS_ROOT:-/sys}
+step='+5%'
+target_json=''
+explicit_target=false
+
+case $# in
+  0)
+    ;;
+  1)
+    step=${1:-+5%}
+    ;;
+  3)
+    step=$1
+    [[ $2 == --target-json ]] || usage
+    target_json=$3
+    explicit_target=true
+    ;;
+  *)
+    usage
+    ;;
+esac
+
+command -v jq >/dev/null 2>&1 || {
+  printf '%s: jq is required\n' "${0##*/}" >&2
+  exit 1
+}
+
+if [[ $explicit_target == true ]]; then
+  valid_target_record "$target_json" || {
+    printf '%s: target record is malformed or unavailable\n' "${0##*/}" >&2
+    exit 2
+  }
+  run_targeted "$target_json" true
+  exit 0
+fi
+
+device=''
+declare -a candidates=()
 for candidate in "$sysfs_root"/class/backlight/*; do
   [[ -e $candidate ]] || continue
   device=${candidate##*/}
@@ -25,76 +258,12 @@ for pattern in 'amdgpu_bl*' 'intel_backlight' 'acpi_video*'; do
 done
 
 if [[ -z $device ]]; then
-  printf 'brightness-display: no display backlight device found\n' >&2
-  exit 1
-fi
-command -v jq >/dev/null 2>&1 || {
-  printf 'brightness-display: jq is required\n' >&2
-  exit 1
-}
-
-mutation=(brightnessctl -d "$device" set "$step")
-if ! "${mutation[@]}" >/dev/null; then
-  printf 'brightness-display: brightness mutation failed\n' >&2
+  if target_json=$(focused_external_target); then
+    run_targeted "$target_json" false
+    exit 0
+  fi
+  printf '%s: no display backlight device found\n' "${0##*/}" >&2
   exit 1
 fi
 
-if ! raw=$(brightnessctl -d "$device" -m 2>/dev/null); then
-  printf 'brightness-display: failed to read brightness state\n' >&2
-  exit 1
-fi
-[[ $raw != *$'\n'* ]] || {
-  printf 'brightness-display: malformed brightness state\n' >&2
-  exit 1
-}
-
-IFS=, read -r reported_device device_class value maximum reported_percent extra <<<"$raw"
-[[ -n $reported_device && -n $device_class && -z $extra ]] || {
-  printf 'brightness-display: malformed brightness state\n' >&2
-  exit 1
-}
-[[ $value =~ ^[0-9]+$ && $maximum =~ ^[0-9]+$ ]] || {
-  printf 'brightness-display: malformed brightness values\n' >&2
-  exit 1
-}
-[[ $reported_percent == *% ]] || {
-  printf 'brightness-display: malformed brightness percentage\n' >&2
-  exit 1
-}
-reported_percent=${reported_percent%\%}
-[[ $reported_percent =~ ^[0-9]+([.][0-9]+)?$ ]] || {
-  printf 'brightness-display: malformed brightness percentage\n' >&2
-  exit 1
-}
-
-if ! jq -n -e \
-  --argjson value "$value" \
-  --argjson maximum "$maximum" \
-  --arg percent "$reported_percent" \
-  '($percent | tonumber) as $reported
-   | ($value * 100 / $maximum) as $expected
-   | ($maximum > 0)
-     and ($value <= $maximum)
-     and ($reported >= 0 and $reported <= 100)
-     and (($reported == ($expected | floor)) or ($reported == ($expected | round)))' \
-  >/dev/null 2>&1; then
-  printf 'brightness-display: inconsistent brightness state\n' >&2
-  exit 1
-fi
-
-payload=$(jq -cn \
-  --arg icon brightness \
-  --arg message '' \
-  --argjson value "$value" \
-  --argjson max "$maximum" \
-  --arg progressText "${reported_percent}%" \
-  '{icon: $icon, message: $message, value: $value, max: $max, progressText: $progressText}')
-
-if ! response=$(desktop-shell call desktop.osd show "$payload"); then
-  printf 'brightness-display: OSD delivery failed\n' >&2
-  exit 3
-fi
-if [[ $response != ok ]]; then
-  printf 'brightness-display: OSD returned an invalid response\n' >&2
-  exit 3
-fi
+run_legacy "$device" "$step"

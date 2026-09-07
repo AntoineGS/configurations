@@ -46,6 +46,29 @@ valid_target() {
   [[ $1 =~ ^[[:alnum:]_.:@+-]+$ ]]
 }
 
+valid_target_record() {
+  local target=$1
+
+  jq -e '
+    type == "object"
+    and (.connector | type) == "string" and (.connector | test("^[[:alnum:]_.:-]+$"))
+    and (.backend == "backlight" or .backend == "ddc")
+    and .available == true and .stale == false
+    and (.error | type) == "string"
+    and (.current | type) == "number" and (.current | floor) == .current and .current >= 0
+    and (.maximum | type) == "number" and (.maximum | floor) == .maximum and .maximum > 0
+    and .current <= .maximum
+    and (.percent | type) == "number" and (.percent | floor) == .percent and .percent >= 0 and .percent <= 100
+    and (.identity | type) == "string" and (.identity | test("^[0-9a-f]{64}$"))
+    and (.topology | type) == "string" and (.topology | test("^[0-9a-f]{64}$"))
+    and (.edid | type) == "string" and (.edid | test("^[0-9a-f]{256}$"))
+    and (.selector | type) == "object"
+    and (.selector.kind | type) == "string" and (.selector.value | type) == "string"
+    and ((.backend == "backlight" and .selector.kind == "backlight")
+      or (.backend == "ddc" and (.selector.kind == "bus" or .selector.kind == "edid")))
+  ' <<<"$target" >/dev/null 2>&1
+}
+
 valid_monitor_scale() {
   [[ $1 =~ ^(1(\.[0-9]{1,7})?|2(\.0{1,7})?)$ ]]
 }
@@ -107,6 +130,29 @@ persist_monitor_layout() {
     rm -f "$temp_file"
     exit 1
   fi
+}
+
+set_display_brightness() {
+  local percent=$1
+  local target_json=${2:-}
+  local display_helper
+  local status
+
+  valid_percent "$percent" || usage
+  display_helper=$(resolve_helper brightness-display) || exit 1
+
+  if (( $# == 2 )); then
+    command -v jq >/dev/null 2>&1 || exit 1
+    valid_target_record "$target_json" || usage
+    if "$display_helper" "${percent}%" --target-json "$target_json"; then
+      return 0
+    else
+      status=$?
+      exit "$status"
+    fi
+  fi
+
+  run_command "$display_helper" "${percent}%"
 }
 
 wait_for_monitor_enabled() {
@@ -494,10 +540,12 @@ case $domain in
   monitor)
     case $action in
       set-display-brightness)
-        (($# == 3)) || usage
-        valid_percent "$3" || usage
-        display_helper=$(resolve_helper brightness-display) || exit 1
-        run_command "$display_helper" "${3}%"
+        (($# == 3 || $# == 4)) || usage
+        if (($# == 4)); then
+          set_display_brightness "$3" "$4"
+        else
+          set_display_brightness "$3"
+        fi
         ;;
       set-keyboard-brightness)
         (($# == 3)) || usage

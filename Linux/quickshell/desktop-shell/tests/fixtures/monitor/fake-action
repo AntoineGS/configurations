@@ -21,4 +21,7 @@ case "$mode" in
     exit 7
     ;;
 esac
+if [ "${1-}" = monitor ] && [ "${2-}" = set-display-brightness ] && [ "$#" -eq 4 ]; then
+  printf '%s\n' "$4"
+fi
 exit 0
