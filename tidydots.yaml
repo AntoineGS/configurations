@@ -621,18 +621,6 @@ applications:
     entries: []
   - package:
       managers:
-        pacman: ddcutil
-    name: ddcutil
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
-    entries:
-      - name: load-i2c-interface
-        sudo: true
-        check:
-          linux: test -d /sys/class/i2c-dev
-        run:
-          linux: modprobe i2c-dev
-  - package:
-      managers:
         pacman: evince
     name: evince
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
