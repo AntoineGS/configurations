@@ -61,6 +61,7 @@ luacheck
 luarocks
 mise
 mold
+moonlight-qt
 mpv
 mqttui
 namcap
@@ -68,6 +69,7 @@ ncdu
 nwg-hello
 obsidian
 openai-codex
+opencode
 partitionmanager
 pinta
 plymouth
