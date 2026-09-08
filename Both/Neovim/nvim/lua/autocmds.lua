@@ -1,5 +1,19 @@
 local autocmd = vim.api.nvim_create_autocmd
 
+-- Copy yanks through Herdr without querying the terminal clipboard on p/P.
+if vim.env.HERDR_ENV == "1" then
+  local copy = require("vim.ui.clipboard.osc52").copy "+"
+  autocmd("TextYankPost", {
+    group = vim.api.nvim_create_augroup("HerdrYankToClipboard", { clear = true }),
+    callback = function()
+      local event = vim.v.event
+      if event.operator == "y" and event.regname ~= "_" then
+        copy(event.regcontents)
+      end
+    end,
+  })
+end
+
 -- Backups: timestamp 'backupext' before each write so saves don't overwrite the previous backup.
 -- Companion to the backup config in options.lua.
 autocmd("BufWritePre", {
