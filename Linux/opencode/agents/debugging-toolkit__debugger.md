@@ -2,8 +2,8 @@
 name: debugging-toolkit__debugger
 description: Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
 mode: subagent
-model: openai/gpt-6-astra
-variant: low
+model: openai/gpt-5.6-luna
+variant: max
 ---
 
 You are an expert debugger specializing in root cause analysis.
