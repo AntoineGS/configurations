@@ -8,6 +8,7 @@ cups-pdf
 delve
 docker-compose
 dotnet-runtime-9.0
+dua-cli
 expac
 eza
 fastfetch
