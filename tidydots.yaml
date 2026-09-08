@@ -2013,6 +2013,18 @@ applications:
           linux: limine-update
         name: rebuild-boot-config
         sudo: true
+  - name: snapper-laptop-config
+    description: Provide the root config required by pre-update snapshots without enabling automatic snapshots
+    when: '{{ eq .Hostname "omarchbook" }}'
+    entries:
+      - targets:
+          linux: /etc/snapper/configs
+        name: root
+        method: copy
+        backup: ./Linux/Snapper/omarchbook
+        files:
+          - root
+        sudo: true
   - package:
       managers:
         git:
