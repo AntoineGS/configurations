@@ -14,7 +14,7 @@ o.laststatus = 3
 o.showmode = false
 o.splitkeep = "screen"
 
-o.clipboard = "unnamedplus"
+o.clipboard = vim.env.HERDR_ENV == "1" and "" or "unnamedplus"
 o.cursorline = true
 o.cursorlineopt = "number"
 
