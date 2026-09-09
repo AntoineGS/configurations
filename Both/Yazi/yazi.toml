@@ -28,6 +28,11 @@ prepend_rules = [
   { url = "*", use = [ "launch", "edit", "admin" ] },
 ]
 
+# Windows version resources and executable metadata, without running the file.
+[[plugin.prepend_previewers]]
+url = "*.{[eE][xX][eE],[dD][lL][lL]}"
+run = 'piper -- exiftool "$1"'
+
 [[plugin.prepend_fetchers]]
 id    = "git"
 url   = "*"

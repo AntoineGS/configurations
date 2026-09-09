@@ -252,8 +252,14 @@ applications:
           - init.nu
   - package:
       managers:
-        brew: yazi
-        pacman: yazi
+        brew:
+          deps:
+            - exiftool
+          name: yazi
+        pacman:
+          deps:
+            - perl-image-exiftool
+          name: yazi
         winget:
           deps:
             - 7zip.7zip
@@ -264,6 +270,7 @@ applications:
             - ajeetdsouza.zoxide
             - imagemagick.imagemagick
             - GnuWin32.File
+            - OliverBetz.ExifTool
           name: sxyazi.yazi
     name: yazi
     description: Terminal file manager
