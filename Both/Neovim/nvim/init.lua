@@ -1,6 +1,8 @@
 vim.g.base46_cache = vim.fn.stdpath "data" .. "/base46/"
 vim.g.mapleader = " "
 
+vim.filetype.add { extension = { dpk = "pascal" } }
+
 -- load theme before plugins so treesitter has highlight groups defined
 local base46_files = { "defaults", "statusline", "syntax", "treesitter" }
 for _, file in ipairs(base46_files) do
