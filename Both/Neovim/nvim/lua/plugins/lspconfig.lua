@@ -1,5 +1,6 @@
 local M = {}
 local map = vim.keymap.set
+local pascal_project = require "pascal_project"
 
 -- export on_attach & capabilities
 M.on_attach = function(_, bufnr)
@@ -54,7 +55,11 @@ M.defaults = function()
 
   vim.api.nvim_create_autocmd("LspAttach", {
     callback = function(args)
-      M.on_attach(_, args.buf)
+      local client = vim.lsp.get_client_by_id(args.data.client_id)
+      M.on_attach(client, args.buf)
+      if client and client.name == "pascal_lsp" then
+        pascal_project.attach(client, args.buf)
+      end
     end,
   })
 
