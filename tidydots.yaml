@@ -907,8 +907,8 @@ applications:
         name: plugin-marketplace
   - package:
       managers:
-        yay: codexbar-cli
-    name: codexbar-cli
+        yay: codexbar-cli-bin
+    name: codexbar-cli-bin
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
   - package:
