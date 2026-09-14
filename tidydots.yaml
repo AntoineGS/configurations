@@ -108,13 +108,6 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
-      - check:
-          linux: ~/.config/opencode/setup-context-tokenizers.sh --check
-          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Check
-        run:
-          linux: ~/.config/opencode/setup-context-tokenizers.sh --apply
-          windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$HOME/.config/opencode/setup-context-tokenizers.ps1" -Apply
-        name: context-analysis tokenizers
   - name: interbase-mcp
     description: Keep the local InterBase MCP endpoints available
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
@@ -1851,7 +1844,7 @@ applications:
       managers:
         yay: insync
     name: insync
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ or (eq .Hostname "omarchbook") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries: []
   - package:
       managers:
@@ -2192,7 +2185,7 @@ applications:
         run:
           linux: herdr machine add 'ssh://antoinegs@desktop-e07vtrn' --label desktop-e07vtrn --remote-session default
         name: machine-desktop
-        when: '{{ and (eq .OS "linux") (ne .Hostname "desktop-e07vtrn") (ne .Hostname "DESKTOP-E07VTRN") }}'
+        when: '{{ and (eq .OS "linux") (ne .Hostname "desktop-e07vtrn") (ne .Hostname "DESKTOP-E07VTRN") (ne .Hostname "antoinews-linux") }}'
         check_mode: status
       - check:
           linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://MULTIDEV\\a.simard@antoinews-linux" and .session == "default")' >/dev/null
@@ -2200,6 +2193,13 @@ applications:
           linux: herdr machine add 'ssh://MULTIDEV\a.simard@antoinews-linux' --label antoinews-linux --remote-session default
         name: machine-workstation
         when: '{{ and (eq .OS "linux") (ne .Hostname "antoinews-linux") }}'
+        check_mode: status
+      - check:
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://MULTIDEV\\a.simard@ubuntu-server" and .session == "default")' >/dev/null
+        run:
+          linux: herdr machine add 'ssh://MULTIDEV\a.simard@ubuntu-server' --label ubuntu-server --remote-session default
+        name: machine-ubuntu-server
+        when: '{{ (eq .Hostname "antoinews-linux") }}'
         check_mode: status
       - check:
           linux: herdr plugin action list --plugin vim-herdr-navigation | jq -e '.result.actions | length == 4' >/dev/null
