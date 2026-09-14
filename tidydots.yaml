@@ -1218,6 +1218,18 @@ applications:
         files:
           - 90-disable-tplink-bluetooth-autosuspend.rules
         sudo: true
+  - name: usb-dock-power
+    description: Keep the Genesys USB2 dock hub awake so downstream devices are detected
+    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+    entries:
+      - targets:
+          linux: /etc/udev/rules.d
+        name: rules
+        method: copy
+        backup: ./Linux/udev
+        files:
+          - 90-disable-genesys-usb2-hub-autosuspend.rules
+        sudo: true
   - name: udev-rules
     description: Detach faulty Raydium touchscreen driver to stop CRC storms and phantom cursor events after resume
     when: '{{ eq .Hostname "omarchbook" }}'
