@@ -1,0 +1,2 @@
+# Keep the dock's USB2 hub awake: runtime suspend prevents downstream hotplug detection.
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="05e3", ATTR{idProduct}=="0610", TEST=="power/control", ATTR{power/control}="on"
