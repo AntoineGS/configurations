@@ -10,6 +10,19 @@ Always run the `-n` variant and read the plan before applying:
 `tidydots restore -n`. Lines describe what WOULD change. If a change looks
 wrong, fix the config before running the real command.
 
+## Matching symlink has a missing source
+
+In the patched version, an existing file or folder symlink pointing to the
+configured source is a no-op only if that source resolves. Both restore and
+dry-run return a contextual error for missing sources, dangling source aliases,
+or source-access failures, leaving the existing link untouched. Valid source
+aliases remain supported. Older binaries may silently accept a dangling link.
+
+Recover the missing source, correct the configured path, or place its required
+generation setup entry before the file entry. Preview the narrow restore again
+and obtain approval before applying; removing the target link alone does not
+recover the missing source.
+
 ## Symlink conflict / existing file at target
 
 For ordinary symlink entries, default restore (merge mode) adopts a pre-existing real file at
