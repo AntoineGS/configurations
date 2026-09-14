@@ -100,6 +100,12 @@ M.defaults = function()
   vim.lsp.enable "gopls"
   vim.lsp.enable "rust_analyzer"
   vim.lsp.enable "vtsls"
+  if vim.fn.has "linux" == 1 then
+    -- Use the local InterBase-enabled build instead of Mason's sqls.
+    vim.lsp.config("sqls", {
+      cmd = { vim.fn.expand "~/gits/sqls/sqls" },
+    })
+  end
   vim.lsp.enable "sqls"
   vim.lsp.enable "intelephense"
 
