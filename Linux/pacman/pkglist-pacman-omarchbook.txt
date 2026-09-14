@@ -50,6 +50,7 @@ mpv
 nautilus-python
 ncdu
 obsidian
+openai-codex
 opencode
 pinta
 playerctl
@@ -74,6 +75,7 @@ thermald
 tldr
 tree-sitter-cli
 uv
+uwsm
 waypipe
 whois
 wiremix

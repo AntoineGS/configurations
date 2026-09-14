@@ -3,11 +3,11 @@
 asdcontrol
 brave-bin
 carapace-bin
-codexbar-cli
+codexbar-cli-bin
 elegoo-slicer-bin
 fzf-tab-completion-git
 golangci-lint-bin
-hyprland-preview-share-picker
+hyprland-preview-share-picker-git
 insync
 limine-snapper-sync
 localsend-bin
