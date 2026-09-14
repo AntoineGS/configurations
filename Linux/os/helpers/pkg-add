@@ -3,7 +3,7 @@
 # Add the named packages to the system if they're missing. Returns false if it couldn't be done.
 
 if pkg-missing "$@"; then
-  sudo pacman -S --noconfirm --needed "$@" || exit 1
+  sudo pacman -S --needed "$@" || exit 1
 fi
 
 for pkg in "$@"; do

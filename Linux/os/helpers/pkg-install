@@ -18,7 +18,7 @@ fzf_args=(
 pkg_names=$(pacman -Slq | fzf "${fzf_args[@]}")
 
 if [[ -n $pkg_names ]]; then
-  # Convert newline-separated selections to space-separated for yay
-  echo "$pkg_names" | tr '\n' ' ' | xargs sudo pacman -S --noconfirm
+  # Reopen terminal input so pacman can ask about package conflicts.
+  echo "$pkg_names" | tr '\n' ' ' | xargs -o sudo pacman -S
   show-done
 fi
