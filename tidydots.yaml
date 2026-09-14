@@ -968,6 +968,11 @@ applications:
     name: teams-for-linux
     when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
+      - name: generate-config
+        check:
+          linux: test -s ./Linux/teams-for-linux/config.json
+        run:
+          linux: umask 077; bash ./Linux/teams-for-linux/generate-config.sh
       - targets:
           linux: ~/.config/teams-for-linux
         name: config
