@@ -22,7 +22,8 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "refreshIntervalSec": 900
+      "refreshIntervalSec": 900,
+      "compactProviders": ["codex"]
     }
   }
 }
