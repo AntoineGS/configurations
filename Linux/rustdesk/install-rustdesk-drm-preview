@@ -2,9 +2,9 @@
 set -Eeuo pipefail
 
 readonly PACKAGE_NAME=rustdesk-drm-preview-bin
-readonly PACKAGE_VERSION=1.4.9.drmfix3-1
-readonly PACKAGE_URL=https://github.com/AntoineGS/rustdesk/releases/download/temp-build/rustdesk-drm-preview-bin-1.4.9.drmfix3-1-x86_64.pkg.tar.zst
-readonly PACKAGE_SHA256=7762eb4c18b5e8349a0a509a4f4116100a83cb31d8e6f24361bba1da06dff913
+readonly PACKAGE_VERSION=1.5.0.drmfix4-1
+readonly PACKAGE_URL=https://github.com/AntoineGS/rustdesk/releases/download/temp-build/rustdesk-drm-preview-bin-1.5.0.drmfix4-1-x86_64.pkg.tar.zst
+readonly PACKAGE_SHA256=5c979735ab45d2f9845b0a8fc70d4b14f0f76e176a2a5baf6623d936387b0e56
 readonly SERVICE_EXECUTABLE=/usr/lib/rustdesk-drm-preview/rustdesk
 
 tmp_package=
