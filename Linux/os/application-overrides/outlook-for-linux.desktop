@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Outlook for Linux
+Exec=/opt/outlook-for-linux/outlook-for-linux --ozone-platform=wayland %U
+Terminal=false
+Type=Application
+Icon=outlook-for-linux
+StartupWMClass=outlook-for-linux
+Comment=Unofficial Microsoft Outlook client for Linux using Electron. It uses the Web App and wraps it as a standalone application using Electron.
+MimeType=x-scheme-handler/msoutlook;
+Categories=Chat;Network;Office;
