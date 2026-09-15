@@ -6,7 +6,7 @@ balena-cli-bin
 brave-bin
 caffeine-ng-git
 carapace-bin
-codexbar-cli
+codexbar-cli-bin
 critique
 elegoo-slicer-bin
 fstl-git
