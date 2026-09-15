@@ -8,7 +8,7 @@
     "~/.config/opencode/commit-exclusions.md"
   ],
   "plugin": [
-{{ if eq .Hostname "ANTOINEWS" }}
+{{ if or (eq .Hostname "ANTOINEWS") (eq .Hostname "antoinews-linux") }}
     "opencode-with-claude",
 {{ end }}
     "superpowers@git+https://github.com/obra/superpowers.git",
@@ -43,7 +43,7 @@
         }
       }
     }
-{{ if eq .Hostname "ANTOINEWS" }},
+{{ if or (eq .Hostname "ANTOINEWS") (eq .Hostname "antoinews-linux") }},
     "anthropic": {
       "options": {
         "baseURL": "http://127.0.0.1:3456",
