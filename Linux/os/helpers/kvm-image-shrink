@@ -1,0 +1,135 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+# Reclaims unused space inside a libvirt guest's qcow2 disk images, in place.
+#
+# Installs libguestfs with NTFS and LVM support, verifies the appliance actually
+# contains them (Arch builds the appliance from host packages, so they must be
+# present before the first run), then runs `virt-sparsify --in-place` on each
+# qcow2 disk of a shut-off domain. In-place sparsification mounts the guest file
+# systems offline and fstrims their free space, so no second copy of the image
+# is needed.
+#
+# Usage:
+#   kvm-image-shrink <domain> [--force]
+#   kvm-image-shrink <image.qcow2> [--force]
+#
+# Windows guests must be fully shut down (not Fast Startup / hibernated), or the
+# NTFS volume will be refused. Inside the guest: powercfg /h off; shutdown /s /t 0
+
+PACKAGES=(guestfs-tools ntfs-3g ntfsprogs lvm2)
+APPLIANCE_GROUPS=(lvm2 ntfs3g ntfsprogs)
+# /tmp is often a swap-backed tmpfs; keep the appliance and scratch files on disk
+GUESTFS_ENV=(env TMPDIR=/var/tmp)
+GUESTFS_CACHE=/var/tmp/.guestfs-0
+
+TARGET=${1:-}
+FORCE=false
+if [[ ${2:-} == "--force" ]]; then
+  FORCE=true
+fi
+
+if [[ -z $TARGET || $TARGET == "-h" || $TARGET == "--help" ]]; then
+  sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+  exit 1
+fi
+
+error() {
+  echo -e "\033[31mError: $*\033[0m" >&2
+  exit 1
+}
+
+install_packages() {
+  echo "Ensuring libguestfs packages are installed: ${PACKAGES[*]}"
+  pkg-add "${PACKAGES[@]}"
+}
+
+appliance_has_groups() {
+  # guestfish list arguments are a single space-separated string
+  sudo "${GUESTFS_ENV[@]}" guestfish --ro -a /dev/null run : available "${APPLIANCE_GROUPS[*]}"
+}
+
+verify_appliance() {
+  echo "Verifying the libguestfs appliance supports: ${APPLIANCE_GROUPS[*]}"
+  if appliance_has_groups; then
+    return 0
+  fi
+
+  # An appliance cached before the packages were installed lacks them; rebuild it once.
+  echo "Appliance is missing support, rebuilding it"
+  sudo rm -rf "$GUESTFS_CACHE"
+  appliance_has_groups || error "libguestfs appliance still lacks ${APPLIANCE_GROUPS[*]}"
+}
+
+is_qcow2() {
+  local info format
+  # Without -U this fails while a running guest holds the image lock, which is what we want.
+  info=$(sudo qemu-img info --output=json "$1") || error "Cannot read $1; is it still in use by a running guest?"
+  format=$(jq -r '.format' <<< "$info")
+  [[ $format == "qcow2" ]]
+}
+
+collect_images() {
+  local -n out=$1
+
+  if [[ -f $TARGET ]]; then
+    is_qcow2 "$TARGET" || error "$TARGET is not a qcow2 image"
+    out=("$TARGET")
+    return 0
+  fi
+
+  local state
+  state=$(sudo virsh domstate "$TARGET" 2>/dev/null) || error "$TARGET is neither a file nor a libvirt domain"
+  if [[ $state != "shut off" ]]; then
+    error "Domain $TARGET is '$state'; it must be shut off (fully, not hibernated) before shrinking"
+  fi
+
+  local image
+  while read -r image; do
+    [[ -n $image ]] || continue
+    if is_qcow2 "$image"; then
+      out+=("$image")
+    else
+      echo "Skipping non-qcow2 disk $image"
+    fi
+  done < <(sudo virsh domblklist "$TARGET" --details | awk '$1 == "file" && $2 == "disk" {print $4}')
+
+  (( ${#out[@]} > 0 )) || error "Domain $TARGET has no qcow2 file disks"
+}
+
+shrink_image() {
+  local image=$1
+
+  echo
+  echo "Image: $image"
+  echo "  Before: $(sudo du -h "$image" | cut -f1)"
+
+  sudo "${GUESTFS_ENV[@]}" virt-sparsify --format qcow2 --in-place "$image"
+
+  echo "  After:  $(sudo du -h "$image" | cut -f1)"
+  echo "  Checking image integrity"
+  sudo qemu-img check "$image" | tail -3 | sed 's/^/  /'
+}
+
+install_packages
+verify_appliance
+
+IMAGES=()
+collect_images IMAGES
+
+echo
+echo "Images to shrink in place:"
+printf '  %s\n' "${IMAGES[@]}"
+echo
+
+if [[ $FORCE != "true" ]] && ! gum confirm "Shrink these images now? The guest must stay off until this finishes."; then
+  exit 0
+fi
+
+for image in "${IMAGES[@]}"; do
+  shrink_image "$image"
+done
+
+echo
+echo "Done. Measure the copy size with: qemu-img measure -O qcow2 -f qcow2 <image>"
