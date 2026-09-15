@@ -24,11 +24,14 @@ fastfetch
 fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
+fprintd
 freecad
+gdu
 ghostty
 gimp
 github-cli
 gitui
+glaze
 gnome-calculator
 gnome-disk-utility
 gobject-introspection
@@ -37,12 +40,14 @@ gpsd
 gpu-screen-recorder
 gtk-doc
 gtkmm3
+guestfs-tools
 gum
 htop
 hypridle
 hyprlock
 hyprshot
 hyprsunset
+hyprwayland-scanner
 impala
 imv
 inetutils
@@ -59,6 +64,7 @@ libqalculate
 libva-nvidia-driver
 luacheck
 luarocks
+meson
 mise
 mold
 moonlight-qt
@@ -71,6 +77,7 @@ obsidian
 openai-codex
 opencode
 partitionmanager
+perl-image-exiftool
 pinta
 plymouth
 pnpm
@@ -102,7 +109,9 @@ texlive-fontsextra
 texlive-xetex
 tldr
 tree-sitter-cli
+umockdev
 uv
+uwsm
 virt-manager
 waypipe
 whois
