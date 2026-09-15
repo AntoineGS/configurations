@@ -1,0 +1,18 @@
+# Catppuccin Mocha; the main background and text inherit the terminal palette.
+style:
+  selected-row:
+    text-color: "#cdd6f4"
+    background-color: "#6c447c"
+  marked:
+    text-color: "#f9e2af"
+    background-color: "#45475a"
+  header:
+    text-color: "#cba6f7"
+    background-color: "#313244"
+  footer:
+    text-color: "#cdd6f4"
+    background-color: "#313244"
+    number-color: "#a6e3a1"
+  result-row:
+    number-color: "#a6e3a1"
+    directory-color: "#89b4fa"
