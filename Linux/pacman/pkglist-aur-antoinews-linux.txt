@@ -7,15 +7,14 @@ bruno-bin
 carapace-bin
 catppuccin-gtk-theme-mocha
 claude-code
-codexbar-cli
+codexbar-cli-bin
 fzf-tab-completion-git
 golangci-lint-bin
-hyprland-preview-share-picker
+hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
 oh-my-zsh-git
 onedrive-abraunegg
-openai-codex-bin
 outlook-for-linux
 posting
 python-evtx
