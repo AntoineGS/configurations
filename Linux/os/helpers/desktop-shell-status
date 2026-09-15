@@ -2,18 +2,20 @@
 set -Eeuo pipefail
 
 if (($# != 1)); then
-  printf 'usage: %s <codex|disk>\n' "${0##*/}" >&2
+  printf 'usage: %s <codex|claude|disk>\n' "${0##*/}" >&2
   exit 2
 fi
 
 case $1 in
-  codex|disk) ;;
+  codex|claude|disk) ;;
   *)
     printf 'unknown status adapter: %s\n' "$1" >&2
     exit 2
     ;;
 esac
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/desktop-shell/status"
 ERROR_FILE=$(mktemp)
 readonly ERROR_FILE
@@ -117,6 +119,31 @@ json_metric_output() {
     '{icon: $icon, value: $value, text: ($icon + " " + $value), tooltip: $tooltip, class: $class}'
 }
 
+# Shared jq prelude: "6d6h", "4h59m", or "12m" until an ISO-8601 timestamp.
+# fromdateiso8601 only takes "...SSZ", so fractional seconds are dropped and a
+# numeric UTC offset is folded into the epoch by hand.
+# shellcheck disable=SC2016
+readonly JQ_COUNTDOWN='
+  def epoch($timestamp):
+    ($timestamp | sub("\\.[0-9]+"; "")) as $clean
+    | ($clean | capture("(?<sign>[+-])(?<hh>[0-9]{2}):?(?<mm>[0-9]{2})$") // null) as $offset
+    | if $offset == null then ($clean | fromdateiso8601)
+      else ($clean | sub("[+-][0-9]{2}:?[0-9]{2}$"; "Z") | fromdateiso8601)
+        - (if $offset.sign == "+" then 1 else -1 end)
+          * (($offset.hh | tonumber) * 3600 + ($offset.mm | tonumber) * 60)
+      end;
+
+  def countdown($timestamp):
+    (epoch($timestamp) - $now | if . < 0 then 0 else floor end) as $seconds
+    | ($seconds / 86400 | floor) as $days
+    | (($seconds % 86400) / 3600 | floor) as $hours
+    | (($seconds % 3600) / 60 | floor) as $minutes
+    | if $days > 0 then "\($days)d\($hours)h"
+      elif $hours > 0 then "\($hours)h\($minutes)m"
+      else "\($minutes)m"
+      end;
+'
+
 codex_status() {
   local source
   local now
@@ -135,17 +162,7 @@ codex_status() {
   fi
 
   : >"$ERROR_FILE"
-  if ! result=$(jq -ce --argjson now "$now" '
-    def countdown($timestamp):
-      (($timestamp | fromdateiso8601) - $now | if . < 0 then 0 else floor end) as $seconds
-      | ($seconds / 86400 | floor) as $days
-      | (($seconds % 86400) / 3600 | floor) as $hours
-      | (($seconds % 3600) / 60 | floor) as $minutes
-      | if $days > 0 then "\($days)d\($hours)h"
-        elif $hours > 0 then "\($hours)h\($minutes)m"
-        else "\($minutes)m"
-        end;
-
+  if ! result=$(jq -ce --argjson now "$now" "$JQ_COUNTDOWN"'
     def codex_provider:
       if type == "array" then
         map(select(.provider == "codex"))
@@ -185,6 +202,69 @@ codex_status() {
   fi
 
   write_result codex "$result"
+}
+
+# Compact Claude text is "<session>%/<reset> <weekly>%/<reset>"; the tooltip
+# lists every window the collector reports, model-scoped ones included.
+claude_status() {
+  local collector="$SCRIPT_DIR/desktop-agent-usage-claude"
+  local source
+  local now
+  local result
+
+  : >"$ERROR_FILE"
+  if ! source=$("$collector" --limits-only 2>"$ERROR_FILE"); then
+    adapter_error claude "$(error_message "Claude status query failed")"
+    return $?
+  fi
+  if [[ -z $source ]]; then
+    adapter_error claude "Claude is not signed in"
+    return $?
+  fi
+
+  : >"$ERROR_FILE"
+  if ! now=$(date +%s 2>"$ERROR_FILE"); then
+    adapter_error claude "$(error_message "Claude status query failed")"
+    return $?
+  fi
+
+  : >"$ERROR_FILE"
+  if ! result=$(jq -ce --argjson now "$now" "$JQ_COUNTDOWN"'
+    def valid_limit:
+      type == "object"
+      and (.label | type) == "string"
+      and (.percent | type) == "number"
+      and (.resetsAt | type) == "string"
+      and ((.resetsAt | try epoch(.) catch null) | type) == "number";
+
+    def used_percent: (.percent * 100 | round);
+
+    def compact: "\(used_percent)%/\(countdown(.resetsAt))";
+
+    if .id != "claude" then error("expected the Claude usage record")
+    elif (.limits | type) != "array" then error("Claude limits are missing")
+    else
+      ([.limits[] | select(valid_limit)]) as $limits
+      | ($limits | map(select(.label | test("5-hour|session"; "i"))) | first) as $session
+      | ($limits | map(select(.label | test("7-day|week"; "i"))) | first) as $weekly
+      | if $session == null or $weekly == null then
+          error(
+            if (.usageStatusText | type) == "string" and .usageStatusText != "" then .usageStatusText
+            else "Claude session or weekly limit is missing" end)
+        else
+          {
+            text: ([$session, $weekly] | map(compact) | join(" ")),
+            tooltip: ($limits | map("\(.title // .label): \(used_percent)% used, resets in \(countdown(.resetsAt))") | join("\n")),
+            class: "muted"
+          }
+        end
+    end
+  ' <<<"$source" 2>"$ERROR_FILE"); then
+    adapter_error claude "$(error_message "invalid Claude usage JSON")"
+    return $?
+  fi
+
+  write_result claude "$result"
 }
 
 format_kib_gib() {
@@ -232,6 +312,7 @@ disk_status() {
 
 case $1 in
   codex) codex_status ;;
+  claude) claude_status ;;
   disk) disk_status ;;
   *)
     printf 'unknown status adapter: %s\n' "$1" >&2

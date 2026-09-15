@@ -34,7 +34,11 @@
         { "id": "desktop.clock", "format": "dddd MMMM dd yyyy - HH:mm:ss" }
       ],
       "right": [
+{{ if eq .Hostname "antoinews-linux" }}
+        { "id": "desktop.agents", "compactProviders": ["codex", "claude"] },
+{{ else }}
         { "id": "desktop.agents" },
+{{ end }}
         { "id": "desktop.tray" },
         { "id": "desktop.tailscale" },
         { "id": "desktop.bluetooth" },
