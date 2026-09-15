@@ -24,6 +24,7 @@ rustdesk-drm-preview-bin
 soapui
 sunshine-bin
 teams-for-linux-electron-bin
+teams-for-linux-electron-bin-debug
 teamviewer
 tobi-try
 tpack-bin
