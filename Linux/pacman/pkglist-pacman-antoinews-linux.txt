@@ -78,6 +78,7 @@ termscp
 thunderbird
 tldr
 tree-sitter-cli
+uwsm
 virt-manager
 waypipe
 whois
