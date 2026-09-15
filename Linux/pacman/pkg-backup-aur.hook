@@ -7,4 +7,5 @@ Target = *
 [Action]
 When = PostTransaction
 # Tidydots symlinks this hook into the repo; resolve it instead of root's home.
-Exec = /bin/bash -ec 'test -L /usr/share/libalpm/hooks/pkg-backup-aur.hook; hook=$(readlink -e /usr/share/libalpm/hooks/pkg-backup-aur.hook); pacman -Qqemt > "$(dirname "$hook")/pkglist-aur-$(hostname).txt"'
+# Commit only this snapshot as the checkout owner, preserving unrelated staged changes.
+Exec = /bin/bash -ec 'test -L /usr/share/libalpm/hooks/pkg-backup-aur.hook; hook=$(readlink -e /usr/share/libalpm/hooks/pkg-backup-aur.hook); dir=$(dirname "$hook"); file="pkglist-aur-$(hostname).txt"; err=$(mktemp); trap "rm -f -- \"$err\"" EXIT; rc=0; pkgs=$(pacman -Qqemt 2>"$err") || rc=$?; if test -s "$err"; then cat -- "$err" >&2; exit 1; fi; [[ $rc == 0 || ( $rc == 1 && -z "$pkgs" ) ]] || exit "$rc"; { if test -n "$pkgs"; then printf "%s\n" "$pkgs"; fi; } > "$dir/$file"; git_cmd=(runuser -u "$(stat -c %U "$dir")" -- git -C "$dir"); "${git_cmd[@]}" add -- "$file"; "${git_cmd[@]}" diff --cached --quiet -- "$file" && exit 0; "${git_cmd[@]}" commit --only -m "chore(pacman): sync pkglist" -- "$file"'
