@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Prepare the Wine prefix MDExplorer runs in (see tidydots.yaml, app "mdexplorer").
+#
+# --check exit codes follow the tidydots `check_mode: status` protocol:
+#   0  set up            1  needs setup (prefix or symlink missing)
+#   2  outdated          3  check failed (wine or the multidev checkout is absent;
+#                            tidydots cannot fix that, so --apply is blocked)
+#
+# The check is read-only and fast: it never launches wine, it only inspects the
+# prefix directory and greps user.reg.
+set -Eeuo pipefail
+
+readonly PREFIX="$HOME/.local/share/wineprefixes/mdexplorer"
+readonly MULTIDEV="$HOME/gits/multidev"
+readonly DRIVE_C_LINK="$PREFIX/drive_c/Multidev"
+readonly APPDATA_DIR="$PREFIX/drive_c/users/$USER/AppData/Local/MDExplorer"
+readonly REG_SECTION='[Software\\Wine\\Drivers]'
+readonly REG_VALUE='"Graphics"="wayland,x11"'
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+fail() {
+  printf '%s: %s\n' "${0##*/}" "$*" >&2
+}
+
+require_tools() {
+  if ! command -v wine >/dev/null 2>&1; then
+    fail 'wine is not installed'
+    return 3
+  fi
+  if [[ ! -d $MULTIDEV/DBExplorer ]]; then
+    fail "multidev checkout is missing: $MULTIDEV (clone it first)"
+    return 3
+  fi
+}
+
+# True when user.reg carries Graphics=wayland,x11 under Software\Wine\Drivers.
+graphics_driver_set() {
+  [[ -f $PREFIX/user.reg ]] || return 1
+  # Passed via ENVIRON, not -v: awk -v would unescape the doubled backslashes
+  # that user.reg uses in section names.
+  WANT_SECTION="$REG_SECTION" WANT_VALUE="$REG_VALUE" awk '
+    BEGIN { section = ENVIRON["WANT_SECTION"]; value = ENVIRON["WANT_VALUE"] }
+    index($0, section) == 1 { in_section = 1; next }
+    /^\[/ { in_section = 0 }
+    in_section && $0 == value { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$PREFIX/user.reg"
+}
+
+prefix_initialized() {
+  [[ -f $PREFIX/system.reg && -d $PREFIX/drive_c/windows ]]
+}
+
+check_setup() {
+  require_tools || return $?
+
+  if ! prefix_initialized; then
+    fail 'wine prefix is not initialized'
+    return 1
+  fi
+  if ! grep -q '^#arch=win64$' "$PREFIX/system.reg"; then
+    fail 'wine prefix is not win64; move it aside and re-run --apply'
+    return 3
+  fi
+  if [[ $(readlink -- "$DRIVE_C_LINK" 2>/dev/null || true) != "$MULTIDEV" ]]; then
+    fail "drive_c/Multidev does not link to $MULTIDEV"
+    return 1
+  fi
+  if [[ ! -d $APPDATA_DIR ]]; then
+    fail "missing $APPDATA_DIR"
+    return 1
+  fi
+  if ! graphics_driver_set; then
+    fail 'Graphics=wayland,x11 is not set in user.reg'
+    return 2
+  fi
+}
+
+run_wine() {
+  WINEPREFIX="$PREFIX" WINEARCH=win64 WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree=d;mshtml=d' "$@"
+}
+
+apply_setup() {
+  require_tools
+
+  if ! prefix_initialized; then
+    mkdir -p -- "$PREFIX"
+    run_wine wineboot -u
+    run_wine wineserver -w
+  fi
+
+  if [[ -e $DRIVE_C_LINK && ! -L $DRIVE_C_LINK ]]; then
+    fail "refusing to replace non-symlink: $DRIVE_C_LINK"
+    return 1
+  fi
+  ln -sfn -- "$MULTIDEV" "$DRIVE_C_LINK"
+
+  mkdir -p -- "$APPDATA_DIR"
+
+  if ! graphics_driver_set; then
+    run_wine wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /t REG_SZ \
+      /d 'wayland,x11' /f >/dev/null
+    run_wine wineserver -w
+  fi
+
+  check_setup
+}
+
+if (($# != 1)); then
+  usage >&2
+  exit 2
+fi
+
+case $1 in
+  --check) check_setup ;;
+  --apply) apply_setup ;;
+  --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

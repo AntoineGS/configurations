@@ -609,6 +609,52 @@ applications:
         sudo: true
   - package:
       managers:
+        pacman: wine
+    name: wine
+    description: Windows compatibility layer used to run MDExplorer
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries: []
+  - name: mdexplorer
+    description: MDExplorer under Wine — prefix, database aliases, settings, client DLLs and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout)
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: setup-script
+        backup: ./Linux/mdexplorer
+        files:
+          - setup-mdexplorer-wine
+      - check:
+          linux: s=~/.local/bin/setup-mdexplorer-wine; if [ -x "$s" ]; then "$s" --check; else echo 'setup-script entry not restored yet' >&2; exit 1; fi
+        run:
+          linux: ~/.local/bin/setup-mdexplorer-wine --apply
+        check_mode: status
+        name: wine-prefix
+      - targets:
+          linux: ~/gits/multidev/DBExplorer
+        name: app-folder
+        backup: ./Linux/mdexplorer/DBExplorer
+        files:
+          - settings.ini
+          - libmariadb.dll
+          - ibclient64.dll
+      - targets:
+          linux: ~/gits/multidev
+        name: database-aliases
+        backup: ./Linux/mdexplorer/multidev
+        files:
+          - DATABASES.ini
+          - databases.servers.ini
+          - databases.configs.ini
+          - databases.oprefs.ini
+      - targets:
+          linux: ~/.local/share/wineprefixes/mdexplorer/drive_c/users/a.simard@multidev.local/AppData/Local/MDExplorer
+        name: favorites
+        backup: ./Linux/mdexplorer/appdata
+        files:
+          - MDExplorer_Favorites.json
+  - package:
+      managers:
         pacman: bluetui
     name: bluetui
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
