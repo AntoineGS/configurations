@@ -18,6 +18,7 @@ fastfetch
 fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
+gdu
 ghostty
 gimp
 git-delta
@@ -26,6 +27,7 @@ gnome-disk-utility
 gnome-themes-extra
 gopls
 gpu-screen-recorder
+guestfs-tools
 gum
 hypridle
 hyprlock
@@ -41,13 +43,13 @@ lazydocker
 lazygit
 libqalculate
 libxcrypt-compat
-lsof
 luarocks
 mise
 mpv
 nautilus-python
 ncdu
 obs-studio
+openai-codex
 openbox
 opencode
 perl-image-exiftool
@@ -69,7 +71,6 @@ starship
 stylua
 sushi
 swaybg
-syncthing
 system-config-printer
 tailscale
 tcpdump
