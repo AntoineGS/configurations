@@ -1387,6 +1387,13 @@ applications:
         files:
           - asbru-cm.desktop
       - targets:
+          linux: ~/.local/share/applications
+        name: outlook-for-linux desktop override
+        when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
+        backup: ./Linux/os/application-overrides
+        files:
+          - outlook-for-linux.desktop
+      - targets:
           linux: ~/.local/share/applications/antoinews-linux
         name: antoinews-linux .desktop files
         when: '{{ eq .Hostname "antoinews-linux" }}'
