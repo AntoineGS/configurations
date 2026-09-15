@@ -1081,6 +1081,13 @@ applications:
         backup: ./Linux/xdg-terminals
         files:
           - xdg-terminals.list
+  - name: gdu
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - targets:
+          linux: ~/.config/gdu
+        name: config
+        backup: ./Linux/gdu
   - name: fastfetch
     when: '{{ eq .OS "linux" }}'
     entries:
