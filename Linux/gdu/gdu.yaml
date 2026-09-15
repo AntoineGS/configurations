@@ -1,3 +1,14 @@
+no-cross: false
+ignore-dirs:
+  - /proc
+  - /dev
+  - /sys
+  - /run
+ignore-dir-patterns:
+  - '^/\.snapshots$'
+  - '^/home/[^/]+/\.snapshots$'
+  - '^/home/[^/]+/Shares$'
+
 # Catppuccin Mocha; the main background and text inherit the terminal palette.
 style:
   selected-row:
