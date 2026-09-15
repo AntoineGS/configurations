@@ -8,7 +8,6 @@ cups-pdf
 delve
 docker-compose
 dotnet-runtime-9.0
-dua-cli
 expac
 eza
 fastfetch
@@ -16,6 +15,7 @@ fcitx5-gtk
 fcitx5-qt
 ffmpegthumbnailer
 freecad
+gdu
 ghostty
 gimp
 git-delta
@@ -52,6 +52,7 @@ ncdu
 obsidian
 openai-codex
 opencode
+perl-image-exiftool
 pinta
 playerctl
 plymouth
