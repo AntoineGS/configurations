@@ -1,0 +1,125 @@
+{
+	"favEntityArray": [{
+			"ID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+			"ParentID": "",
+			"DatabaseName": "",
+			"DatabaseCaption": "",
+			"TableName": "",
+			"EntityName": "Shopify Eligible Products",
+			"EntityType": "mntFolder",
+			"Script": "",
+			"ChildFavs": [{
+					"ID": "{4CD1CC1F-4FFE-4630-A0F7-1A5838261CC3}",
+					"ParentID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+					"DatabaseName": "10.0.0.64:E:\\MULTIDEV\\GDBCREATION\\RUBINO\\SV1020_012HO_2024-11-04.GBB",
+					"DatabaseCaption": "SV1020",
+					"TableName": "",
+					"EntityName": "update",
+					"EntityType": "mntSQL",
+					"Script": "update inventorymaster set iswebproduct = 'Y' where productid in (select a.productid \r\nfrom inventorymaster a\r\njoin inv_publish_cat_rel b on a.productid = b.productid\r\nwhere b.publish_flag = 'Y'\r\nand b.vendor_key is not null\r\nand b.vendor_key <> '')",
+					"ChildFavs": []
+				},{
+					"ID": "{15350062-E580-4CD3-B892-457AA1612911}",
+					"ParentID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+					"DatabaseName": "10.0.0.64:E:\\MULTIDEV\\GDBCREATION\\RUBINO\\SV1020_012HO_2024-11-04.GBB",
+					"DatabaseCaption": "SV1020",
+					"TableName": "",
+					"EntityName": "query",
+					"EntityType": "mntSQL",
+					"Script": "select a.productid, a.iswebproduct \r\nfrom inventorymaster a\r\njoin inv_publish_cat_rel b on a.productid = b.productid\r\nwhere b.publish_flag = 'Y'\r\nand b.vendor_key is not null\r\nand b.vendor_key <> ''\r\nand publish_cat = 'SH'",
+					"ChildFavs": []
+				},{
+					"ID": "{02B392E5-0D2F-4619-AD23-5B8D0E511136}",
+					"ParentID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+					"DatabaseName": "10.0.0.64:E:\\MULTIDEV\\GDBCREATION\\RUBINO\\SV1020_012HO_2024-11-04.GBB",
+					"DatabaseCaption": "SV1020",
+					"TableName": "",
+					"EntityName": "proc query",
+					"EntityType": "mntSQL",
+					"Script": "SELECT productid, iswebproduct, vendor_key, publish_flag, webidqueue, productcode, bmks, coordinategrp, archived, isdim3product\r\nFROM get_upd_products_to_publish('SH', 0, 0, '10', 100, '00')\r\n\r\n",
+					"ChildFavs": []
+				},{
+					"ID": "{26E32F04-C51D-4C2D-A903-AD6FB0B4FD7C}",
+					"ParentID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+					"DatabaseName": "10.0.0.64:E:\\MULTIDEV\\GDBCREATION\\RUBINO\\SV1020_012HO_2024-11-04.GBB",
+					"DatabaseCaption": "SV1020",
+					"TableName": "",
+					"EntityName": "inv_pub_cat_rel",
+					"EntityType": "mntSQL",
+					"Script": "select * from inv_publish_cat_rel where publish_cat = 'SH' order by productid",
+					"ChildFavs": []
+				},{
+					"ID": "{AE76453B-7E11-4799-B61A-C00093449947}",
+					"ParentID": "{A78477EB-49A4-4B1F-ACB6-C3655F8C1B55}",
+					"DatabaseName": "10.0.0.64:E:\\MULTIDEV\\GDBCREATION\\RUBINO\\SV1020_012HO_2024-11-04.GBB",
+					"DatabaseCaption": "SV1020",
+					"TableName": "",
+					"EntityName": "upd inv_pug_cat_rel",
+					"EntityType": "mntSQL",
+					"Script": "update inv_publish_cat_rel set PUBLISH_FLAG = 'Y', VENDOR_KEY = '', SENT = 'N', PRODUCTGID = '' where productid < 100028",
+					"ChildFavs": []
+				}
+			]
+		},{
+			"ID": "{080BF5FB-E518-4223-BF6A-152850AAE491}",
+			"ParentID": "",
+			"DatabaseName": "nrf01/3050:C:\\Multidev\\Gdbcreation\\SV1020_012HO_LAB.GBB",
+			"DatabaseCaption": "SV1020_NRF01",
+			"TableName": "",
+			"EntityName": "wipe import_order",
+			"EntityType": "mntSQL",
+			"Script": "update import_orders set chaindrive_orderid = null, edu_ = 'fIx', import_status = 1 where id = 2061606 ",
+			"ChildFavs": []
+		},{
+			"ID": "{0A3DDB5F-A410-4D35-B425-D37B67720E31}",
+			"ParentID": "",
+			"DatabaseName": "nrf01/3050:C:\\Multidev\\Gdbcreation\\SV1020_012HO_LAB.GBB",
+			"DatabaseCaption": "SV1020_NRF01",
+			"TableName": "",
+			"EntityName": "import order bid",
+			"EntityType": "mntSQL",
+			"Script": "select * from importexternalquotebid(2061606)",
+			"ChildFavs": []
+		},{
+			"ID": "{62248D64-A251-4793-AC27-B8983DCB1515}",
+			"ParentID": "",
+			"DatabaseName": "mysql://MOMOPROD@md-interim.multidev.com:3306/MOMOPROD",
+			"DatabaseCaption": "interim-momo",
+			"TableName": "",
+			"EntityName": "interim-momo",
+			"EntityType": "mntAlias",
+			"Script": "",
+			"ChildFavs": []
+		},{
+			"ID": "{ABD2CBC0-58DD-42C9-94AB-F11AB53F386F}",
+			"ParentID": "",
+			"DatabaseName": "HODB01:E:\\MULTIDEV\\BASE_REFERENCE\\BASE_REF_INPROGRESS.GBB",
+			"DatabaseCaption": "SV1020_REF_INPROGRESS",
+			"TableName": "",
+			"EntityName": "IMPORTEXTERNALORDER_SHOPIFYPOS",
+			"EntityType": "mntProcedure",
+			"Script": "",
+			"ChildFavs": []
+		},{
+			"ID": "{9B64F776-8568-4D35-9206-96A55EB49B1B}",
+			"ParentID": "",
+			"DatabaseName": "10.0.0.18/3060:/var/lib/interbase/data/TODO_TESTING.GBB",
+			"DatabaseCaption": "TODOS_UBUNTUSRV",
+			"TableName": "",
+			"EntityName": "TODOS_UBUNTUSRV",
+			"EntityType": "mntAlias",
+			"Script": "",
+			"ChildFavs": []
+		},{
+			"ID": "{ECC9AF35-5346-467B-A2C1-2398A48F71E1}",
+			"ParentID": "",
+			"DatabaseName": "nrf01/3050:C:\\Multidev\\Gdbcreation\\SV1020_012HO_LAB.GBB",
+			"DatabaseCaption": "SV1020",
+			"TableName": "IMPORT_ORDERS",
+			"EntityName": "IMPORT_ORDERS",
+			"EntityType": "mntTable",
+			"Script": "",
+			"ChildFavs": []
+		}
+	]
+}
