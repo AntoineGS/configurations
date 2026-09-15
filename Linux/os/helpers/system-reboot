@@ -5,6 +5,13 @@
 
 state clear re*-required
 
+# Stop the herdr server before anything else. When the reboot kills the pane
+# shells before herdr gets its own signal, herdr treats each exit as a closed
+# pane, prunes the emptied workspaces, and saves that as the session to restore.
+if command -v herdr >/dev/null 2>&1; then
+  timeout 10 herdr server stop >/dev/null 2>&1 || true
+fi
+
 # Schedule the reboot to happen after closing windows (detached from terminal)
 nohup bash -c "sleep 2 && systemctl reboot --no-wall" >/dev/null 2>&1 &
 
