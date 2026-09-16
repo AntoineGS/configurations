@@ -4,6 +4,12 @@ hl.window_rule({
   workspace = "9",
 })
 
+hl.window_rule({
+  name = "mdexplorer-no-animations",
+  match = { class = "^mdexplorer\\.exe$" },
+  no_anim = true,
+})
+
 -- VCL's TApplication helper: class mdexplorer.exe, empty title from birth,
 -- never owned by another window. Real MDExplorer dialogs/popups are owned,
 -- so Hyprland floats them; the helper is the only one that gets tiled.
