@@ -33,7 +33,8 @@ python-lnxlink
 python-terminaltexteffects
 qmk-git
 rustdesk-drm-preview-bin
-teams-for-linux-electron-bin
+teams-for-linux
+teams-for-linux-debug
 tidydots-git
 tio
 tmux-plugin-manager
