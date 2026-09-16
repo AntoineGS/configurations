@@ -793,7 +793,7 @@ def usable_cached_limits(cached: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def collect_limits(access_token: str, expires_at_ms: int, force: bool) -> dict[str, Any]:
-  result = {"limits": [], "usageStatusText": "", "authHelpText": AUTH_HELP}
+  result = {"limits": [], "usageStatusText": "", "authHelpText": ""}
 
   # A panel that is opened and shut repeatedly must not turn into a request
   # per flick, so recent probe results are reused for a short window — and
@@ -810,6 +810,7 @@ def collect_limits(access_token: str, expires_at_ms: int, force: bool) -> dict[s
   if access_token == "":
     result["limits"] = fallback
     result["usageStatusText"] = "Waiting for auth"
+    result["authHelpText"] = AUTH_HELP
     return result
   if expires_at_ms > 0 and expires_at_ms <= time.time() * 1000:
     result["limits"] = fallback
@@ -843,7 +844,7 @@ def collect_limits(access_token: str, expires_at_ms: int, force: bool) -> dict[s
     result["limits"] = fallback
   else:
     result["usageStatusText"] = "Claude limits unavailable"
-    result["authHelpText"] = probe["helpText"]
+  result["authHelpText"] = probe["helpText"]
   return result
 
 
