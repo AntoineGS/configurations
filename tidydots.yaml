@@ -1415,6 +1415,12 @@ applications:
           - fcitx5-wayland-launcher.desktop
       - targets:
           linux: ~/.local/share/applications
+        name: ghostty desktop override
+        backup: ./Linux/os/application-overrides
+        files:
+          - com.mitchellh.ghostty.desktop
+      - targets:
+          linux: ~/.local/share/applications
         name: asbru-cm desktop override
         when: '{{ eq .Hostname "antoinews-linux" }}'
         backup: ./Linux/os/application-overrides
