@@ -628,8 +628,8 @@ applications:
           linux: s=~/.local/bin/setup-mdexplorer-wine; if [ -x "$s" ]; then "$s" --check; else echo 'setup-script entry not restored yet' >&2; exit 1; fi
         run:
           linux: ~/.local/bin/setup-mdexplorer-wine --apply
-        check_mode: status
         name: wine-prefix
+        check_mode: status
       - targets:
           linux: ~/gits/multidev/DBExplorer
         name: app-folder
@@ -1009,8 +1009,7 @@ applications:
       managers:
         apt: teams-for-linux
         brew: teams-for-linux
-        pacman: teams-for-linux
-        yay: teams-for-linux-electron-bin
+        yay: teams-for-linux
     name: teams-for-linux
     when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
