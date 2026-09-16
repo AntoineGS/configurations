@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Mount the four office shares using the current user's selected Kerberos cache.
+# Mount the office shares using the current user's selected Kerberos cache.
+# The four md-fs01 shares are required; the Embarcadero share lives on the
+# Windows VM and is skipped without failure whenever the VM is unreachable.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
 shopt -s inherit_errexit
 
-readonly server='md-fs01.multidev.local'
+readonly office_server='md-fs01.multidev.local'
+readonly vm_server='antoinews.multidev.local'
 readonly realm='MULTIDEV.LOCAL'
+readonly smb_port=445
+readonly probe_timeout='2s'
 
 unix_user="$(id -un)"
 unix_user="${unix_user%@*}"
@@ -16,11 +21,41 @@ runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 legacy_root="${OFFICE_SHARES_GVFS_ROOT:-$runtime_dir/gvfs}"
 shares_dir="${OFFICE_SHARES_DIR:-$HOME/Shares}"
 
-remote_shares=(serveurgdb fichierscommuns applications qa)
-link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA)
+share_servers=("$office_server" "$office_server" "$office_server" "$office_server" "$vm_server")
+remote_shares=(serveurgdb fichierscommuns applications qa Embarcadero)
+link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero)
+optional_servers=("$vm_server")
+
+declare -A probe_results=()
 
 log() {
   printf 'mount-office-shares: %s\n' "$*" >&2
+}
+
+is_optional_server() {
+  local server="$1" candidate
+
+  for candidate in "${optional_servers[@]}"; do
+    [[ "$candidate" == "$server" ]] && return 0
+  done
+  return 1
+}
+
+# Optional servers (the VM) are probed once per run on the SMB port so an
+# offline VM does not turn every timer run into a slow, noisy mount failure.
+server_reachable() {
+  local server="$1"
+
+  if [[ -z "${probe_results[$server]+set}" ]]; then
+    # shellcheck disable=SC2016 # $0/$1 are expanded by the inner bash, on purpose
+    if timeout "$probe_timeout" bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$server" "$smb_port" 2>/dev/null; then
+      probe_results[$server]=0
+    else
+      probe_results[$server]=1
+    fi
+  fi
+
+  return "${probe_results[$server]}"
 }
 
 find_cache() {
@@ -54,17 +89,19 @@ find_cache() {
 }
 
 legacy_target() {
-  local share="$1"
+  local server="$1"
+  local share="$2"
   printf '%s/smb-share:server=%s,share=%s' "$legacy_root" "$server" "$share"
 }
 
 reconcile_path() {
-  local share="$1"
-  local mountpoint_path="$2"
+  local server="$1"
+  local share="$2"
+  local mountpoint_path="$3"
   local expected_legacy_target
 
   if [[ -L "$mountpoint_path" ]]; then
-    expected_legacy_target="$(legacy_target "$share")"
+    expected_legacy_target="$(legacy_target "$server" "$share")"
     if [[ "$(readlink -- "$mountpoint_path")" == "$expected_legacy_target" ]]; then
       rm -- "$mountpoint_path"
     else
@@ -106,7 +143,7 @@ prepare_shares_root() {
 }
 
 main() {
-  local ccache share mountpoint_path index
+  local ccache server share mountpoint_path index
   local failures=0
 
   ccache="$(find_cache)" || {
@@ -125,9 +162,14 @@ main() {
   prepare_shares_root || return 1
 
   for index in "${!remote_shares[@]}"; do
+    server="${share_servers[$index]}"
     share="${remote_shares[$index]}"
     mountpoint_path="$shares_dir/${link_names[$index]}"
-    if ! reconcile_path "$share" "$mountpoint_path"; then
+    if is_optional_server "$server" && ! server_reachable "$server"; then
+      log "skipping $mountpoint_path: $server is not reachable"
+      continue
+    fi
+    if ! reconcile_path "$server" "$share" "$mountpoint_path"; then
       failures=1
     fi
   done

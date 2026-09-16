@@ -87,6 +87,12 @@ cat >"$bin_dir/timeout" <<'STUB'
 #!/usr/bin/env bash
 set -eu
 
+# VM reachability probe: timeout 2s bash -c '<script>' <server> <port>
+if [[ "${1:-}" == '2s' && "${2:-}" == 'bash' && "${3:-}" == '-c' && $# -eq 6 ]]; then
+  printf 'probe %s:%s\n' "$5" "$6" >>"$OFFICE_TEST_STATE/probe.log"
+  exit "${OFFICE_TEST_PROBE_STATUS:-0}"
+fi
+
 [[ "${1:-}" == '15s' && "${2:-}" == 'mount' && $# -eq 3 ]] || exit 2
 printf '%s\n' "$*" >>"$OFFICE_TEST_STATE/timeout.log"
 shift 1
@@ -127,6 +133,7 @@ run_helper() {
     OFFICE_TEST_MOUNTED="$test_state/mounted" \
     OFFICE_TEST_STATE="$test_state" \
     OFFICE_TEST_FAIL_SHARE="$test_fail_share" \
+    OFFICE_TEST_PROBE_STATUS="${OFFICE_TEST_PROBE_STATUS:-0}" \
     OFFICE_SHARES_CACHE_DIR="$cache_dir" \
     OFFICE_SHARES_DIR="$test_shares" \
     OFFICE_SHARES_GVFS_ROOT="$gvfs_root" \
@@ -139,7 +146,8 @@ expected_mounts_for() {
     "$directory/G-serveurgdb" \
     "$directory/J-fichierscommuns" \
     "$directory/O-applications" \
-    "$directory/Z-QA"
+    "$directory/Z-QA" \
+    "$directory/Embarcadero"
 }
 
 old_gvfs_target() {
@@ -182,11 +190,34 @@ expected_timeouts="$expected_mounts"
 expected_timeouts="${expected_timeouts//$'\n'/$'\n15s mount '}"
 expected_timeouts="15s mount $expected_timeouts"
 [[ "$(<"$test_state/timeout.log")" == "$expected_timeouts" ]] || fail 'mount timeout invocations differ'
-[[ "$(<"$test_state/stdin.log")" == $'closed\nclosed\nclosed\nclosed' ]] || fail 'mount stdin was not closed'
+[[ "$(<"$test_state/stdin.log")" == $'closed\nclosed\nclosed\nclosed\nclosed' ]] || fail 'mount stdin was not closed'
+[[ "$(<"$test_state/probe.log")" == 'probe antoinews.multidev.local:445' ]] || \
+  fail 'VM reachability was not probed exactly once'
 
 mount_count="$(wc -l <"$test_state/mount.log")"
 run_helper || fail 'already-mounted run failed'
 [[ "$(wc -l <"$test_state/mount.log")" == "$mount_count" ]] || fail 'already-mounted paths were mounted again'
+
+offline_state="$tmp_dir/offline-state"
+offline_shares="$tmp_dir/offline-Shares"
+mkdir -p -- "$offline_state" "$offline_shares"
+test_state="$offline_state"
+test_shares="$offline_shares"
+OFFICE_TEST_PROBE_STATUS=1 run_helper 2>"$tmp_dir/offline-vm.err" || fail 'offline VM turned into a failure'
+expected_offline_mounts="$(printf '%s\n' \
+  "$offline_shares/G-serveurgdb" \
+  "$offline_shares/J-fichierscommuns" \
+  "$offline_shares/O-applications" \
+  "$offline_shares/Z-QA")"
+actual_offline_mounts="$(awk -F ' path=' '{ print $2 }' "$offline_state/mount.log")"
+[[ "$actual_offline_mounts" == "$expected_offline_mounts" ]] || fail 'offline VM changed the office share mounts'
+if grep -Fq -- "$offline_shares/Embarcadero" "$offline_state/attempt.log"; then
+  fail 'offline VM share was still attempted'
+fi
+[[ ! -e "$offline_shares/Embarcadero" ]] || fail 'offline VM share mountpoint was created'
+grep -Fq -- 'skipping' "$tmp_dir/offline-vm.err" || fail 'offline VM skip was not logged'
+test_state="$tmp_dir/state"
+test_shares="$tmp_dir/Shares"
 
 symlink_state="$tmp_dir/symlink-root-state"
 symlink_root="$tmp_dir/Shares-symlink"
@@ -270,7 +301,8 @@ fi
 expected_failure_mounts="$(printf '%s\n' \
   "$failure_shares/G-serveurgdb" \
   "$failure_shares/J-fichierscommuns" \
-  "$failure_shares/Z-QA")"
+  "$failure_shares/Z-QA" \
+  "$failure_shares/Embarcadero")"
 actual_failure_mounts="$(awk -F ' path=' '{ print $2 }' "$failure_state/mount.log")"
 [[ "$actual_failure_mounts" == "$expected_failure_mounts" ]] || \
   fail 'one-share failure prevented independent mounts'
@@ -279,7 +311,7 @@ if grep -Fq -- "$failure_shares/O-applications" "$failure_state/mount.log"; then
 fi
 grep -Fq -- "path=$failure_shares/O-applications" "$failure_state/attempt.log" || \
   fail 'failed mount was not attempted'
-for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA; do
+for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero; do
   [[ -d "$failure_shares/$link_name" ]] || fail "mountpoint directory missing after isolated failure: $link_name"
 done
 
