@@ -45,7 +45,9 @@ return {
     event = { "BufReadPost", "BufNewFile" },
     opts = {
       ensure_installed = languages,
-      fold = { enable = true },
+      -- Keep diff folds in `nvim -d` windows; the NvFilePost autocmd re-fires FileType
+      -- after UIEnter, which would otherwise replace foldmethod=diff with treesitter folds.
+      fold = { enable = true, disable = function() return vim.wo.diff end },
       highlight = { enable = true },
       indent = { enable = true },
       incremental_selection = {
