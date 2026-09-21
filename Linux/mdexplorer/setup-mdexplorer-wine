@@ -15,7 +15,7 @@ readonly MULTIDEV="$HOME/gits/multidev"
 readonly DRIVE_C_LINK="$PREFIX/drive_c/Multidev"
 readonly APPDATA_DIR="$PREFIX/drive_c/users/$USER/AppData/Local/MDExplorer"
 readonly REG_SECTION='[Software\\Wine\\Drivers]'
-readonly REG_VALUE='"Graphics"="wayland,x11"'
+readonly REG_VALUE='"Graphics"="x11"'
 
 usage() {
   printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
@@ -36,7 +36,7 @@ require_tools() {
   fi
 }
 
-# True when user.reg carries Graphics=wayland,x11 under Software\Wine\Drivers.
+# True when user.reg carries Graphics=x11 under Software\Wine\Drivers.
 graphics_driver_set() {
   [[ -f $PREFIX/user.reg ]] || return 1
   # Passed via ENVIRON, not -v: awk -v would unescape the doubled backslashes
@@ -74,7 +74,7 @@ check_setup() {
     return 1
   fi
   if ! graphics_driver_set; then
-    fail 'Graphics=wayland,x11 is not set in user.reg'
+    fail 'Graphics=x11 is not set in user.reg'
     return 2
   fi
 }
@@ -103,7 +103,7 @@ apply_setup() {
 
   if ! graphics_driver_set; then
     run_wine wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /t REG_SZ \
-      /d 'wayland,x11' /f >/dev/null
+      /d 'x11' /f >/dev/null
     run_wine wineserver -w
   fi
 
