@@ -86,6 +86,7 @@ wine
 wiremix
 woff2-font-awesome
 wtype
+xdg-terminal-exec
 xmlstarlet
 xournalpp
 yazi
