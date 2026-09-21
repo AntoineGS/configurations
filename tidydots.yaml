@@ -100,6 +100,11 @@ applications:
           - opencode-with-claude.conf
         when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
+          linux: ~/.config/opencode/setup-config-dir-env.sh --check
+        run:
+          linux: ~/.config/opencode/setup-config-dir-env.sh --apply
+        name: config-dir-env
+      - check:
           linux: 'herdr integration status | grep -q ''^opencode: current '''
         run:
           linux: herdr integration install opencode

@@ -11,6 +11,7 @@
 !setup-context-tokenizers.sh
 !setup-context-tokenizers.ps1
 !setup-temp-cleanup.sh
+!setup-config-dir-env.sh
 !environment/
 !environment/opencode-with-claude.conf
 !tests/
