@@ -75,11 +75,11 @@ applications:
     description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; context analysis and magic-context plugins
     entries:
       - check:
-          linux: npm ls -g opencode-with-claude >/dev/null 2>&1
-          windows: npm ls -g opencode-with-claude *> $null
+          linux: 'opencode plugin check opencode-with-claude | grep -q ''(current)'''
+          windows: 'if (-not (opencode plugin check opencode-with-claude | Select-String -Quiet ''\(current\)'')) { exit 1 }'
         run:
-          linux: npm install -g opencode-with-claude
-          windows: npm install -g opencode-with-claude
+          linux: opencode plugin update opencode-with-claude
+          windows: opencode plugin update opencode-with-claude
         name: claude-plugin
         when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
