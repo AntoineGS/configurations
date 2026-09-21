@@ -1,48 +1,87 @@
 {
-  "code-documentation__code-reviewer": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "code-documentation__docs-architect": { "model": "openai/gpt-5.6-terra", "variant": "medium" },
-  "code-documentation__tutorial-engineer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "code-refactoring__code-reviewer": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "code-refactoring__legacy-modernizer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "codebase-cleanup__code-reviewer": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "codebase-cleanup__test-automator": { "model": "openai/gpt-5.6-terra", "variant": "medium" },
-  "comprehensive-review__architect-review": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "comprehensive-review__code-reviewer": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "comprehensive-review__security-auditor": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "database-design__database-architect": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "database-design__sql-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "database-migrations__database-admin": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "database-migrations__database-optimizer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "debugging-toolkit__debugger": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "debugging-toolkit__dx-optimizer": { "model": "openai/gpt-5.6-terra", "variant": "medium" },
-  "dependency-management__legacy-modernizer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "deployment-strategies__deployment-engineer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "deployment-strategies__terraform-specialist": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "deployment-validation__cloud-architect": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "framework-migration__architect-review": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "framework-migration__legacy-modernizer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "full-stack-orchestration__deployment-engineer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "full-stack-orchestration__performance-engineer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "full-stack-orchestration__security-auditor": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "full-stack-orchestration__test-automator": { "model": "openai/gpt-5.6-terra", "variant": "medium" },
-  "javascript-typescript__javascript-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "javascript-typescript__typescript-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "performance-testing-review__performance-engineer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "performance-testing-review__test-automator": { "model": "openai/gpt-5.6-terra", "variant": "medium" },
-  "security-scanning__security-auditor": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "security-scanning__threat-modeling-expert": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "shell-scripting__bash-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "shell-scripting__posix-shell-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "systems-programming__c-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "systems-programming__cpp-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "systems-programming__delphi-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "systems-programming__golang-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "systems-programming__rust-pro": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "tdd-workflows__code-reviewer": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "tdd-workflows__tdd-orchestrator": { "model": "openai/gpt-6-astra", "variant": "high" },
-  "ui-design__accessibility-expert": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "ui-design__design-system-architect": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "ui-design__ui-designer": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "unit-testing__debugger": { "model": "openai/gpt-5.6-luna", "variant": "max" },
-  "unit-testing__test-automator": { "model": "openai/gpt-5.6-terra", "variant": "medium" }
+  "$comment": "Tier -> per-provider model. Switch providers at runtime with /provider.",
+  "default_provider": "openai",
+  "tiers": {
+    "reasoning": {
+      "openai": {
+        "id": "gpt-6-astra",
+        "variant": "high"
+      },
+      "anthropic": {
+        "id": "claude-opus-5",
+        "variant": "high"
+      }
+    },
+    "coding": {
+      "openai": {
+        "id": "gpt-5.6-luna",
+        "variant": "max"
+      },
+      "anthropic": {
+        "id": "claude-sonnet-5",
+        "variant": "max"
+      }
+    },
+    "light": {
+      "openai": {
+        "id": "gpt-5.6-terra",
+        "variant": "medium"
+      },
+      "anthropic": {
+        "id": "claude-haiku-4-5-20251001",
+        "variant": "high"
+      }
+    }
+  },
+  "agents": {
+    "code-documentation__code-reviewer": "reasoning",
+    "code-documentation__docs-architect": "light",
+    "code-documentation__tutorial-engineer": "coding",
+    "code-refactoring__code-reviewer": "reasoning",
+    "code-refactoring__legacy-modernizer": "coding",
+    "codebase-cleanup__code-reviewer": "reasoning",
+    "codebase-cleanup__test-automator": "light",
+    "comprehensive-review__architect-review": "reasoning",
+    "comprehensive-review__code-reviewer": "reasoning",
+    "comprehensive-review__security-auditor": "reasoning",
+    "database-design__database-architect": "reasoning",
+    "database-design__sql-pro": "coding",
+    "database-migrations__database-admin": "coding",
+    "database-migrations__database-optimizer": "coding",
+    "debugging-toolkit__debugger": "coding",
+    "debugging-toolkit__dx-optimizer": "light",
+    "dependency-management__legacy-modernizer": "coding",
+    "deployment-strategies__deployment-engineer": "coding",
+    "deployment-strategies__terraform-specialist": "coding",
+    "deployment-validation__cloud-architect": "reasoning",
+    "explore": "coding",
+    "framework-migration__architect-review": "reasoning",
+    "framework-migration__legacy-modernizer": "coding",
+    "full-stack-orchestration__deployment-engineer": "coding",
+    "full-stack-orchestration__performance-engineer": "coding",
+    "full-stack-orchestration__security-auditor": "reasoning",
+    "full-stack-orchestration__test-automator": "light",
+    "general": "coding",
+    "javascript-typescript__javascript-pro": "coding",
+    "javascript-typescript__typescript-pro": "coding",
+    "performance-testing-review__performance-engineer": "coding",
+    "performance-testing-review__test-automator": "light",
+    "plan": "reasoning",
+    "security-scanning__security-auditor": "reasoning",
+    "security-scanning__threat-modeling-expert": "reasoning",
+    "shell-scripting__bash-pro": "coding",
+    "shell-scripting__posix-shell-pro": "coding",
+    "systems-programming__c-pro": "coding",
+    "systems-programming__cpp-pro": "coding",
+    "systems-programming__delphi-pro": "coding",
+    "systems-programming__golang-pro": "coding",
+    "systems-programming__rust-pro": "coding",
+    "tdd-workflows__code-reviewer": "reasoning",
+    "tdd-workflows__tdd-orchestrator": "reasoning",
+    "ui-design__accessibility-expert": "coding",
+    "ui-design__design-system-architect": "coding",
+    "ui-design__ui-designer": "coding",
+    "unit-testing__debugger": "coding",
+    "unit-testing__test-automator": "light"
+  }
 }
