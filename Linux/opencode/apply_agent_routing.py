@@ -1,3 +1,12 @@
+"""Keep agent frontmatter free of provider-specific models.
+
+Routing lives in agent-routing.json and is applied at runtime by the
+agent-provider-routing plugin, which assigns each agent the model its tier
+maps to for the active provider. Frontmatter must therefore carry no model or
+variant line; this script validates the manifest against the agents on disk and
+strips those lines.
+"""
+
 import argparse
 import json
 import os
@@ -7,36 +16,51 @@ import tempfile
 from pathlib import Path
 
 
-VALID_VARIANTS = {"none", "low", "medium", "high", "xhigh", "max"}
-
-
 class RoutingError(Exception):
   pass
 
 
-def _load_routing(routing_path: Path) -> dict[str, dict[str, str]]:
+def _load_manifest(routing_path: Path) -> dict:
   try:
-    routing = json.loads(routing_path.read_text(encoding="utf-8"))
+    manifest = json.loads(routing_path.read_text(encoding="utf-8"))
   except (OSError, UnicodeError, json.JSONDecodeError) as error:
     raise RoutingError(f"invalid routing manifest: {error}") from error
 
-  if not isinstance(routing, dict):
+  if not isinstance(manifest, dict):
     raise RoutingError("invalid routing manifest: expected an object")
 
-  for name, route in routing.items():
-    if not isinstance(route, dict) or set(route) != {"model", "variant"}:
-      raise RoutingError(f"invalid route for {name}: expected exactly model and variant")
-    model = route["model"]
-    variant = route["variant"]
-    if not isinstance(model, str) or "/" not in model or "\n" in model or "\r" in model:
-      raise RoutingError(f"invalid model for {name}")
-    if not isinstance(variant, str) or variant not in VALID_VARIANTS:
-      raise RoutingError(f"invalid variant for {name}")
+  tiers = manifest.get("tiers")
+  if not isinstance(tiers, dict) or not tiers:
+    raise RoutingError("invalid routing manifest: expected a non-empty tiers object")
 
-  return routing
+  for tier, providers in tiers.items():
+    if not isinstance(providers, dict) or not providers:
+      raise RoutingError(f"invalid tier {tier}: expected a non-empty provider map")
+    for provider, target in providers.items():
+      if not isinstance(target, dict) or not set(target) <= {"id", "variant"} or "id" not in target:
+        raise RoutingError(f"invalid target for {tier}.{provider}: expected id and optional variant")
+      for field, value in target.items():
+        if not isinstance(value, str) or not value or "\n" in value or "\r" in value:
+          raise RoutingError(f"invalid {field} for {tier}.{provider}")
+
+  agents = manifest.get("agents")
+  if not isinstance(agents, dict) or not agents:
+    raise RoutingError("invalid routing manifest: expected a non-empty agents object")
+
+  for name, tier in agents.items():
+    if not isinstance(tier, str) or tier not in tiers:
+      raise RoutingError(f"invalid tier for {name}: {tier!r} is not a defined tier")
+
+  default_provider = manifest.get("default_provider")
+  if default_provider is not None:
+    known = {provider for providers in tiers.values() for provider in providers}
+    if default_provider not in known:
+      raise RoutingError(f"invalid default_provider: {default_provider!r} is not a defined provider")
+
+  return manifest
 
 
-def _rewritten_content(path: Path, route: dict[str, str]) -> tuple[bytes, bytes]:
+def _rewritten_content(path: Path) -> tuple[bytes, bytes]:
   try:
     content = path.read_bytes()
   except OSError as error:
@@ -50,12 +74,10 @@ def _rewritten_content(path: Path, route: dict[str, str]) -> tuple[bytes, bytes]
   if closing is None:
     raise RoutingError(f"invalid frontmatter in {path.name}: missing closing delimiter")
 
-  newline = b"\r\n" if lines[0].endswith(b"\r\n") else b"\n"
   frontmatter = [line for line in lines[1:closing] if not line.startswith((b"model:", b"variant:"))]
-  model = route["model"].encode("utf-8")
-  variant = route["variant"].encode("utf-8")
-  routed = [b"model: " + model + newline, b"variant: " + variant + newline]
-  return content, b"".join([lines[0], *frontmatter, *routed, *lines[closing:]])
+  if not frontmatter:
+    raise RoutingError(f"invalid frontmatter in {path.name}: nothing left after stripping model and variant")
+  return content, b"".join([lines[0], *frontmatter, *lines[closing:]])
 
 
 def _cleanup_staged(staged: list[tuple[Path, Path]]) -> OSError | None:
@@ -70,7 +92,7 @@ def _cleanup_staged(staged: list[tuple[Path, Path]]) -> OSError | None:
 
 
 def _apply_routing(agents_dir: Path, routing_path: Path) -> int:
-  routing = _load_routing(routing_path)
+  manifest = _load_manifest(routing_path)
   if not agents_dir.is_dir():
     raise RoutingError(f"invalid agent inventory: {agents_dir} is not a directory")
   try:
@@ -78,16 +100,16 @@ def _apply_routing(agents_dir: Path, routing_path: Path) -> int:
   except OSError as error:
     raise RoutingError(f"invalid agent inventory: {error}") from error
 
-  inventory = {path.stem for path in agent_paths}
-  route_names = set(routing)
-  if inventory != route_names:
-    missing = sorted(inventory - route_names)
-    unexpected = sorted(route_names - inventory)
-    raise RoutingError(f"inventory mismatch: missing={missing}; unexpected={unexpected}")
+  # Manifest entries without a file are builtins such as plan and general, which
+  # the plugin routes by ID. A file without a manifest entry would silently keep
+  # whatever model it shipped with, so that direction is an error.
+  unrouted = sorted({path.stem for path in agent_paths} - set(manifest["agents"]))
+  if unrouted:
+    raise RoutingError(f"agents missing from routing manifest: {unrouted}")
 
   updates = []
   for path in agent_paths:
-    original, rewritten = _rewritten_content(path, routing[path.stem])
+    original, rewritten = _rewritten_content(path)
     if rewritten != original:
       try:
         mode = stat.S_IMODE(path.stat().st_mode)
@@ -126,7 +148,7 @@ def apply_routing(agents_dir: Path, routing_path: Path) -> None:
 
 def main() -> int:
   base = Path(__file__).parent
-  parser = argparse.ArgumentParser(description="Apply model routing to OpenCode agent frontmatter.")
+  parser = argparse.ArgumentParser(description="Strip provider-specific models from OpenCode agent frontmatter.")
   parser.add_argument("--agents", type=Path, default=base / "agents")
   parser.add_argument("--routing", type=Path, default=base / "agent-routing.json")
   args = parser.parse_args()

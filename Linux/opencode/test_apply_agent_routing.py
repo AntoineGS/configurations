@@ -15,6 +15,17 @@ from unittest import mock
 
 MODULE_PATH = Path(__file__).with_name("apply_agent_routing.py")
 
+TIERS = {
+  "light": {
+    "openai": {"id": "gpt-5.6-terra", "variant": "medium"},
+    "anthropic": {"id": "claude-haiku-4-5-20251001", "variant": "high"},
+  },
+  "coding": {
+    "openai": {"id": "gpt-5.6-luna", "variant": "max"},
+    "anthropic": {"id": "claude-sonnet-5", "variant": "max"},
+  },
+}
+
 
 def load_module():
   spec = importlib.util.spec_from_file_location("apply_agent_routing", MODULE_PATH)
@@ -23,6 +34,10 @@ def load_module():
   module = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(module)
   return module
+
+
+def manifest_for(agents, tiers=None, **extra):
+  return {"default_provider": "openai", "tiers": tiers if tiers is not None else TIERS, "agents": agents, **extra}
 
 
 class ApplyAgentRoutingTest(unittest.TestCase):
@@ -42,15 +57,19 @@ class ApplyAgentRoutingTest(unittest.TestCase):
     path.write_text(f"---\n{frontmatter}---\n\n{body}", encoding="utf-8")
     return path
 
-  def write_routing(self, value):
+  def write_routing(self, agents, tiers=None, **extra):
+    """Write a well-formed manifest routing `agents` (a name -> tier mapping)."""
+    self.write_manifest(manifest_for(agents, tiers, **extra))
+
+  def write_manifest(self, value):
     self.routing.write_text(json.dumps(value), encoding="utf-8")
 
-  def test_rewrites_only_model_and_variant_and_is_idempotent(self):
+  def test_strips_only_model_and_variant_and_is_idempotent(self):
     path = self.write_agent(
       "worker",
-      "name: worker\ndescription: Worker.\nmode: subagent\nmodel: old/model\ncolor: blue\n",
+      "name: worker\ndescription: Worker.\nmode: subagent\nmodel: openai/gpt-6-astra\nvariant: high\ncolor: blue\n",
     )
-    self.write_routing({"worker": {"model": "openai/gpt-5.6-terra", "variant": "high"}})
+    self.write_routing({"worker": "light"})
 
     self.module.apply_routing(self.agents, self.routing)
     first = path.read_text(encoding="utf-8")
@@ -61,23 +80,31 @@ class ApplyAgentRoutingTest(unittest.TestCase):
     self.assertIn("description: Worker.\n", first)
     self.assertIn("mode: subagent\n", first)
     self.assertIn("color: blue\n", first)
-    self.assertIn("model: openai/gpt-5.6-terra\n", first)
-    self.assertIn("variant: high\n", first)
+    self.assertNotIn("model:", first)
+    self.assertNotIn("variant:", first)
     self.assertTrue(first.endswith("\n\nAgent body.\n"))
-    self.assertNotIn("model: old/model", first)
 
-  def test_rejects_inventory_mismatch(self):
+  def test_rejects_agent_file_missing_from_manifest(self):
     self.write_agent("worker", "name: worker\nmodel: old/model\n")
-    self.write_routing({"different": {"model": "openai/gpt-5.6-terra", "variant": "high"}})
+    self.write_routing({"different": "light"})
 
-    with self.assertRaisesRegex(self.module.RoutingError, "inventory mismatch"):
+    with self.assertRaisesRegex(self.module.RoutingError, r"agents missing from routing manifest: \['worker'\]"):
       self.module.apply_routing(self.agents, self.routing)
 
-  def test_rejects_invalid_route_shape(self):
-    self.write_agent("worker", "name: worker\nmodel: old/model\n")
-    self.write_routing({"worker": {"model": "openai/gpt-5.6-terra", "variant": "ultra"}})
+  def test_accepts_manifest_entries_without_an_agent_file(self):
+    path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
+    # plan and general are builtins the plugin routes by ID; they have no file.
+    self.write_routing({"worker": "light", "plan": "coding", "general": "coding"})
 
-    with self.assertRaisesRegex(self.module.RoutingError, "invalid variant"):
+    self.module.apply_routing(self.agents, self.routing)
+
+    self.assertNotIn("model:", path.read_text(encoding="utf-8"))
+
+  def test_rejects_unknown_tier_reference(self):
+    self.write_agent("worker", "name: worker\nmodel: old/model\n")
+    self.write_routing({"worker": "reasoning"})
+
+    with self.assertRaisesRegex(self.module.RoutingError, "invalid tier for worker"):
       self.module.apply_routing(self.agents, self.routing)
 
   def test_rejects_malformed_and_non_object_manifests(self):
@@ -90,46 +117,60 @@ class ApplyAgentRoutingTest(unittest.TestCase):
         with self.assertRaisesRegex(self.module.RoutingError, message):
           self.module.apply_routing(self.agents, self.routing)
 
-  def test_rejects_invalid_route_keys_and_value_types(self):
+  def test_rejects_missing_or_empty_tiers_and_agents(self):
     self.write_agent("worker", "name: worker\nmodel: old/model\n")
     cases = (
-      ({"worker": []}, "invalid route"),
-      ({"worker": {"model": "openai/model"}}, "invalid route"),
-      ({"worker": {"model": "openai/model", "variant": "high", "extra": True}}, "invalid route"),
-      ({"worker": {"model": 1, "variant": "high"}}, "invalid model"),
-      ({"worker": {"model": "openai/model", "variant": 1}}, "invalid variant"),
+      ({"agents": {"worker": "light"}}, "non-empty tiers"),
+      ({"tiers": {}, "agents": {"worker": "light"}}, "non-empty tiers"),
+      ({"tiers": TIERS}, "non-empty agents"),
+      ({"tiers": TIERS, "agents": {}}, "non-empty agents"),
+      ({"tiers": TIERS, "agents": []}, "non-empty agents"),
     )
 
-    for routing, message in cases:
-      with self.subTest(routing=routing):
-        self.write_routing(routing)
+    for value, message in cases:
+      with self.subTest(value=value):
+        self.write_manifest(value)
         with self.assertRaisesRegex(self.module.RoutingError, message):
           self.module.apply_routing(self.agents, self.routing)
 
-  def test_rejects_models_without_provider_separator(self):
+  def test_rejects_invalid_tier_targets(self):
     self.write_agent("worker", "name: worker\nmodel: old/model\n")
+    cases = (
+      ({"light": []}, "non-empty provider map"),
+      ({"light": {}}, "non-empty provider map"),
+      ({"light": {"openai": {"variant": "high"}}}, "invalid target for light.openai"),
+      ({"light": {"openai": {"id": "m", "extra": "x"}}}, "invalid target for light.openai"),
+      ({"light": {"openai": {"id": 1}}}, "invalid id for light.openai"),
+      ({"light": {"openai": {"id": "m", "variant": 1}}}, "invalid variant for light.openai"),
+      ({"light": {"openai": {"id": ""}}}, "invalid id for light.openai"),
+      ({"light": {"openai": {"id": "m\nname: replaced"}}}, "invalid id for light.openai"),
+    )
 
-    for model in ("", "gpt-5.6-terra"):
-      with self.subTest(model=model):
-        self.write_routing({"worker": {"model": model, "variant": "high"}})
-        with self.assertRaisesRegex(self.module.RoutingError, "invalid model"):
+    for tiers, message in cases:
+      with self.subTest(tiers=tiers):
+        self.write_routing({"worker": "light"}, tiers=tiers)
+        with self.assertRaisesRegex(self.module.RoutingError, message):
           self.module.apply_routing(self.agents, self.routing)
 
-  def test_rejects_models_with_line_breaks_without_modifying_agent(self):
+  def test_rejects_default_provider_absent_from_tiers(self):
+    self.write_agent("worker", "name: worker\nmodel: old/model\n")
+    self.write_routing({"worker": "light"}, default_provider="google")
+
+    with self.assertRaisesRegex(self.module.RoutingError, "invalid default_provider"):
+      self.module.apply_routing(self.agents, self.routing)
+
+  def test_rejects_invalid_manifest_without_modifying_agent(self):
     original = b"---\nname: worker\nmodel: old/model\n---\n\nAgent body.\n"
+    path = self.agents / "worker.md"
+    path.write_bytes(original)
+    self.write_routing({"worker": "missing-tier"})
 
-    for model in ("openai/model\nname: replaced", "openai/model\rvariant: max"):
-      with self.subTest(model=model):
-        path = self.agents / "worker.md"
-        path.write_bytes(original)
-        self.write_routing({"worker": {"model": model, "variant": "high"}})
-
-        with self.assertRaisesRegex(self.module.RoutingError, "invalid model"):
-          self.module.apply_routing(self.agents, self.routing)
-        self.assertEqual(path.read_bytes(), original)
+    with self.assertRaisesRegex(self.module.RoutingError, "invalid tier for worker"):
+      self.module.apply_routing(self.agents, self.routing)
+    self.assertEqual(path.read_bytes(), original)
 
   def test_rejects_missing_frontmatter_delimiters(self):
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     cases = (
       (b"name: worker\n---\nBody\n", "missing opening delimiter"),
       (b"---\nname: worker\nBody\n", "missing closing delimiter"),
@@ -141,51 +182,34 @@ class ApplyAgentRoutingTest(unittest.TestCase):
         with self.assertRaisesRegex(self.module.RoutingError, message):
           self.module.apply_routing(self.agents, self.routing)
 
-  def test_inventory_mismatch_lists_missing_and_unexpected_names(self):
-    self.write_agent("alpha", "name: alpha\nmodel: old/model\n")
-    self.write_agent("beta", "name: beta\nmodel: old/model\n")
-    self.write_routing(
-      {
-        "beta": {"model": "openai/model", "variant": "high"},
-        "gamma": {"model": "openai/model", "variant": "high"},
-      }
-    )
+  def test_rejects_frontmatter_that_is_only_model_and_variant(self):
+    self.write_agent("worker", "model: openai/gpt-6-astra\nvariant: high\n")
+    self.write_routing({"worker": "light"})
 
-    with self.assertRaisesRegex(
-      self.module.RoutingError,
-      r"inventory mismatch: missing=\['alpha'\]; unexpected=\['gamma'\]",
-    ):
+    with self.assertRaisesRegex(self.module.RoutingError, "nothing left after stripping"):
       self.module.apply_routing(self.agents, self.routing)
 
   def test_preserves_crlf_and_missing_final_newline(self):
     path = self.agents / "worker.md"
-    path.write_bytes(b"---\r\nname: worker\r\nmodel: old/model\r\n---\r\n\r\nBody without newline")
-    self.write_routing({"worker": {"model": "openai/model", "variant": "medium"}})
+    path.write_bytes(b"---\r\nname: worker\r\nmodel: old/model\r\nvariant: max\r\n---\r\n\r\nBody without newline")
+    self.write_routing({"worker": "light"})
 
     self.module.apply_routing(self.agents, self.routing)
 
-    self.assertEqual(
-      path.read_bytes(),
-      b"---\r\nname: worker\r\nmodel: openai/model\r\nvariant: medium\r\n---\r\n\r\nBody without newline",
-    )
+    self.assertEqual(path.read_bytes(), b"---\r\nname: worker\r\n---\r\n\r\nBody without newline")
 
   def test_validates_every_agent_before_writing_any_file(self):
     alpha = self.write_agent("alpha", "name: alpha\nmodel: old/model\n")
     original = alpha.read_bytes()
     (self.agents / "zeta.md").write_bytes(b"not frontmatter\n")
-    self.write_routing(
-      {
-        "alpha": {"model": "openai/model", "variant": "high"},
-        "zeta": {"model": "openai/model", "variant": "high"},
-      }
-    )
+    self.write_routing({"alpha": "light", "zeta": "light"})
 
     with self.assertRaisesRegex(self.module.RoutingError, "invalid frontmatter"):
       self.module.apply_routing(self.agents, self.routing)
     self.assertEqual(alpha.read_bytes(), original)
 
   def test_rejects_missing_and_non_directory_agent_paths(self):
-    self.write_routing({})
+    self.write_routing({"worker": "light"})
     non_directory = self.root / "agents-file"
     non_directory.write_text("not a directory", encoding="utf-8")
 
@@ -201,24 +225,21 @@ class ApplyAgentRoutingTest(unittest.TestCase):
     script = cli_root / "apply_agent_routing.py"
     shutil.copy2(MODULE_PATH, script)
     (cli_agents / "worker.md").write_text("---\nname: worker\nmodel: old/model\n---\n", encoding="utf-8")
-    (cli_root / "agent-routing.json").write_text(
-      json.dumps({"worker": {"model": "openai/model", "variant": "high"}}),
-      encoding="utf-8",
-    )
+    (cli_root / "agent-routing.json").write_text(json.dumps(manifest_for({"worker": "light"})), encoding="utf-8")
 
     result = subprocess.run([sys.executable, str(script)], text=True, capture_output=True, check=False)
 
     self.assertEqual(result.returncode, 0)
     self.assertEqual(result.stdout, "updated 1 agent files\n")
     self.assertEqual(result.stderr, "")
-    self.assertIn("model: openai/model\nvariant: high\n", (cli_agents / "worker.md").read_text(encoding="utf-8"))
+    self.assertNotIn("model:", (cli_agents / "worker.md").read_text(encoding="utf-8"))
 
   def test_cli_reports_missing_default_agents_directory_without_traceback(self):
     cli_root = self.root / "cli"
     cli_root.mkdir()
     script = cli_root / "apply_agent_routing.py"
     shutil.copy2(MODULE_PATH, script)
-    (cli_root / "agent-routing.json").write_text("{}", encoding="utf-8")
+    (cli_root / "agent-routing.json").write_text(json.dumps(manifest_for({"worker": "light"})), encoding="utf-8")
 
     result = subprocess.run([sys.executable, str(script)], text=True, capture_output=True, check=False)
 
@@ -229,7 +250,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
 
   def test_reads_each_agent_once_when_comparing_changes(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     real_read_bytes = Path.read_bytes
     agent_reads = 0
 
@@ -245,11 +266,11 @@ class ApplyAgentRoutingTest(unittest.TestCase):
       self.module.apply_routing(self.agents, self.routing)
 
     self.assertEqual(agent_reads, 1)
-    self.assertIn(b"model: openai/model\nvariant: high\n", real_read_bytes(path))
+    self.assertNotIn(b"model:", real_read_bytes(path))
 
   def test_stages_flushes_and_atomically_replaces_in_same_directory(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     real_replace = os.replace
     replacements = []
 
@@ -269,13 +290,13 @@ class ApplyAgentRoutingTest(unittest.TestCase):
     staged, destination, staged_content = replacements[0]
     self.assertEqual(staged.parent, path.parent)
     self.assertEqual(destination, path)
-    self.assertIn(b"model: openai/model\nvariant: high\n", staged_content)
+    self.assertNotIn(b"model:", staged_content)
     self.assertEqual(fsync.call_count, 1)
 
   def test_cleans_staged_file_and_preserves_agent_when_flush_fails(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     original = path.read_bytes()
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
 
     with mock.patch("os.fsync", side_effect=OSError("disk full")):
       with self.assertRaisesRegex(self.module.RoutingError, "cannot stage agent worker.md"):
@@ -287,7 +308,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
   def test_cleans_staged_file_and_preserves_agent_when_replace_fails(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     original = path.read_bytes()
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
 
     with mock.patch("os.replace", side_effect=OSError("permission denied")):
       with self.assertRaisesRegex(self.module.RoutingError, "cannot replace agent worker.md"):
@@ -296,9 +317,9 @@ class ApplyAgentRoutingTest(unittest.TestCase):
     self.assertEqual(path.read_bytes(), original)
     self.assertEqual(sorted(candidate.name for candidate in self.agents.iterdir()), ["worker.md"])
 
-  def test_does_not_replace_unchanged_agent(self):
-    self.write_agent("worker", "name: worker\nmodel: openai/model\nvariant: high\n")
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+  def test_does_not_replace_already_stripped_agent(self):
+    self.write_agent("worker", "name: worker\nmode: subagent\n")
+    self.write_routing({"worker": "light"})
 
     with mock.patch("os.replace") as replace:
       self.module.apply_routing(self.agents, self.routing)
@@ -307,7 +328,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
 
   def test_translates_agent_read_failure(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     real_read_bytes = Path.read_bytes
 
     def fail_agent_read(candidate):
@@ -322,7 +343,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
   def test_cli_reports_staging_failure_without_traceback(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     original = path.read_bytes()
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     stdout = io.StringIO()
     stderr = io.StringIO()
     arguments = [str(MODULE_PATH), "--agents", str(self.agents), "--routing", str(self.routing)]
@@ -344,7 +365,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
   def test_updated_agent_retains_exact_permission_bits(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     path.chmod(0o644)
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
 
     self.module.apply_routing(self.agents, self.routing)
 
@@ -353,7 +374,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
   def test_translates_agent_mode_read_failure_before_staging(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     original = path.read_bytes()
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
     real_stat = Path.stat
 
     def fail_agent_stat(candidate, *args, **kwargs):
@@ -371,7 +392,7 @@ class ApplyAgentRoutingTest(unittest.TestCase):
   def test_cleans_staged_file_when_chmod_fails(self):
     path = self.write_agent("worker", "name: worker\nmodel: old/model\n")
     original = path.read_bytes()
-    self.write_routing({"worker": {"model": "openai/model", "variant": "high"}})
+    self.write_routing({"worker": "light"})
 
     with mock.patch("os.chmod", side_effect=OSError("operation not permitted")):
       with self.assertRaisesRegex(self.module.RoutingError, "cannot stage agent worker.md"):
@@ -379,6 +400,18 @@ class ApplyAgentRoutingTest(unittest.TestCase):
 
     self.assertEqual(path.read_bytes(), original)
     self.assertEqual(sorted(candidate.name for candidate in self.agents.iterdir()), ["worker.md"])
+
+
+class RepositoryManifestTest(unittest.TestCase):
+  """The checked-in manifest must route every agent that ships in this repo."""
+
+  def test_repository_manifest_matches_agent_inventory(self):
+    module = load_module()
+    base = MODULE_PATH.parent
+    manifest = module._load_manifest(base / "agent-routing.json")
+    inventory = {path.stem for path in (base / "agents").glob("*.md")}
+
+    self.assertEqual(inventory - set(manifest["agents"]), set())
 
 
 if __name__ == "__main__":
