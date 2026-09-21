@@ -146,9 +146,8 @@
       },
       "oauth": false,
       "timeout": 30000
-    },
-{{ end }}
-{{ if eq .Hostname "DESKTOP-E07VTRN" }}
+    }
+{{ else if eq .Hostname "DESKTOP-E07VTRN" }}
     "home-assistant": {
       "type": "local",
       "command": [
