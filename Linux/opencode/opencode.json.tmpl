@@ -7,7 +7,7 @@
     "~/.config/opencode/worktree-preferences.md",
     "~/.config/opencode/commit-exclusions.md"
   ],
-  "plugin": [
+  "plugins": [
 {{ if or (eq .Hostname "ANTOINEWS") (eq .Hostname "antoinews-linux") }}
     "opencode-with-claude",
 {{ end }}
@@ -18,12 +18,15 @@
     "auto": true,
     "prune": false
   },
+  "experimental": {
+    "subagent_depth": 3
+  },
   "agent": {
     "plan": { "model": "openai/gpt-6-astra", "variant": "high" },
     "general": { "model": "openai/gpt-5.6-luna", "variant": "max" },
     "explore": { "model": "openai/gpt-5.6-luna", "variant": "max" }
   },
-  "provider": {
+  "providers": {
     "openai": {
       "models": {
         "gpt-6-astra": {
@@ -45,8 +48,8 @@
     }
 {{ if or (eq .Hostname "ANTOINEWS") (eq .Hostname "antoinews-linux") }},
     "anthropic": {
-      "options": {
-        "baseURL": "http://127.0.0.1:3456",
+      "settings": {
+        "baseURL": "http://127.0.0.1:3456/v1",
         "apiKey": "dummy"
       }
     }

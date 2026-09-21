@@ -92,6 +92,13 @@ applications:
           windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
+      - targets:
+          linux: ~/.config/environment.d
+        name: claude-environment
+        backup: ./Linux/opencode/environment
+        files:
+          - opencode-with-claude.conf
+        when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
           linux: 'herdr integration status | grep -q ''^opencode: current '''
         run:
