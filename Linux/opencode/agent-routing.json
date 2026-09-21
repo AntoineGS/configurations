@@ -5,26 +5,36 @@
     "reasoning": {
       "openai": {
         "id": "gpt-6-astra",
-        "variant": "high"
+        "variant": "medium"
       },
       "anthropic": {
         "id": "claude-opus-5",
         "variant": "high"
       }
     },
+    "review": {
+      "openai": {
+        "id": "gpt-6-astra",
+        "variant": "low"
+      },
+      "anthropic": {
+        "id": "claude-opus-5",
+        "variant": "medium"
+      }
+    },
     "coding": {
       "openai": {
         "id": "gpt-5.6-luna",
-        "variant": "max"
+        "variant": "high"
       },
       "anthropic": {
         "id": "claude-sonnet-5",
-        "variant": "max"
+        "variant": "high"
       }
     },
     "light": {
       "openai": {
-        "id": "gpt-5.6-terra",
+        "id": "gpt-5.6-luna",
         "variant": "medium"
       },
       "anthropic": {
@@ -34,15 +44,15 @@
     }
   },
   "agents": {
-    "code-documentation__code-reviewer": "reasoning",
+    "code-documentation__code-reviewer": "review",
     "code-documentation__docs-architect": "light",
     "code-documentation__tutorial-engineer": "coding",
-    "code-refactoring__code-reviewer": "reasoning",
+    "code-refactoring__code-reviewer": "review",
     "code-refactoring__legacy-modernizer": "coding",
-    "codebase-cleanup__code-reviewer": "reasoning",
+    "codebase-cleanup__code-reviewer": "review",
     "codebase-cleanup__test-automator": "light",
     "comprehensive-review__architect-review": "reasoning",
-    "comprehensive-review__code-reviewer": "reasoning",
+    "comprehensive-review__code-reviewer": "review",
     "comprehensive-review__security-auditor": "reasoning",
     "database-design__database-architect": "reasoning",
     "database-design__sql-pro": "coding",
@@ -54,7 +64,7 @@
     "deployment-strategies__deployment-engineer": "coding",
     "deployment-strategies__terraform-specialist": "coding",
     "deployment-validation__cloud-architect": "reasoning",
-    "explore": "coding",
+    "explore": "light",
     "framework-migration__architect-review": "reasoning",
     "framework-migration__legacy-modernizer": "coding",
     "full-stack-orchestration__deployment-engineer": "coding",
@@ -76,11 +86,11 @@
     "systems-programming__delphi-pro": "coding",
     "systems-programming__golang-pro": "coding",
     "systems-programming__rust-pro": "coding",
-    "tdd-workflows__code-reviewer": "reasoning",
+    "tdd-workflows__code-reviewer": "review",
     "tdd-workflows__tdd-orchestrator": "reasoning",
-    "ui-design__accessibility-expert": "coding",
-    "ui-design__design-system-architect": "coding",
-    "ui-design__ui-designer": "coding",
+    "ui-design__accessibility-expert": "reasoning",
+    "ui-design__design-system-architect": "reasoning",
+    "ui-design__ui-designer": "reasoning",
     "unit-testing__debugger": "coding",
     "unit-testing__test-automator": "light"
   }
