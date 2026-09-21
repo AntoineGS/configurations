@@ -1541,6 +1541,27 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now md-ftp-mount.timer
         name: enable-md-ftp-timer
+  - package:
+      managers:
+        pacman: samba
+    name: samba-server
+    description: Standalone SMB server sharing the multidev worktree with libvirt guests only (bound to lo + virbr0). Copied, not symlinked - smbd starts as root at boot and must not depend on a link into /home.
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - targets:
+          linux: /etc/samba
+        name: config
+        method: copy
+        backup: ./Linux/samba
+        files:
+          - smb.conf
+        sudo: true
+      - check:
+          linux: systemctl is-enabled --quiet smb.service && systemctl is-active --quiet smb.service
+        run:
+          linux: systemctl enable --now smb.service
+        name: enable-smb
+        sudo: true
   - name: nvim-open
     when: '{{ eq .OS "linux" }}'
     entries:
