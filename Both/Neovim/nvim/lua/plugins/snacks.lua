@@ -15,6 +15,7 @@ wk.add {
   { "<leader>fr", "<cmd>lua Snacks.picker.recent()<CR>", desc = "Recent" },
   -- git
   { "<leader>gb", "<cmd>lua Snacks.picker.git_branches()<CR>", desc = "Git Branches" },
+  { "<leader>gB", "<cmd>lua Snacks.git.blame_line()<CR>", desc = "Git Blame Line" },
   { "<leader>gl", "<cmd>lua Snacks.picker.git_log()<CR>", desc = "Git Log" },
   { "<leader>gL", "<cmd>lua Snacks.picker.git_log_line()<CR>", desc = "Git Log Line" },
   { "<leader>gs", "<cmd>lua Snacks.picker.git_status()<CR>", desc = "Git Status" },
