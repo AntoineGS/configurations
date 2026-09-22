@@ -2,6 +2,16 @@
   "$comment": "Tier -> per-provider model. Switch providers at runtime with /provider.",
   "default_provider": "openai",
   "tiers": {
+    "orchestration": {
+      "openai": {
+        "id": "gpt-5.6-terra",
+        "variant": "medium"
+      },
+      "anthropic": {
+        "id": "claude-sonnet-5",
+        "variant": "high"
+      }
+    },
     "reasoning": {
       "openai": {
         "id": "gpt-6-astra",
@@ -76,6 +86,7 @@
     "javascript-typescript__typescript-pro": "coding",
     "performance-testing-review__performance-engineer": "coding",
     "performance-testing-review__test-automator": "light",
+    "orchestrator": "orchestration",
     "plan": "reasoning",
     "security-scanning__security-auditor": "reasoning",
     "security-scanning__threat-modeling-expert": "reasoning",
