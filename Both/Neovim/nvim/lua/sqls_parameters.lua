@@ -469,6 +469,21 @@ function M.execute(client_id, bufnr, opts)
   end
 end
 
+-- selected_range is the range a code action actually selected. Invoked in
+-- normal mode, vim.lsp.buf.code_action builds the range from the cursor, so
+-- start equals end. The server slices the document with whatever range it
+-- receives, and a zero-width one slices out the empty string; absent means the
+-- whole document, which is what an unselected "Execute Query" means.
+local function selected_range(range)
+  if not range or not range.start or not range["end"] then
+    return nil
+  end
+  if range.start.line == range["end"].line and range.start.character == range["end"].character then
+    return nil
+  end
+  return range
+end
+
 -- code_action runs a server-offered executeQuery. Its range comes from the
 -- code action request that produced it, never from wherever the cursor happens
 -- to be now.
@@ -483,7 +498,8 @@ function M.code_action(command, context)
     notify "this code action belongs to another document; run it from that buffer"
     return
   end
-  M.execute(context.client_id, bufnr, { range = context.params and context.params.range })
+  local range = selected_range(context.params and context.params.range)
+  M.execute(context.client_id, bufnr, { range = range })
 end
 
 -- clear forgets everything remembered for a client and makes every callback
