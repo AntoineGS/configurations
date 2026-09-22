@@ -4,7 +4,7 @@
   "tiers": {
     "orchestration": {
       "openai": {
-        "id": "gpt-5.6-terra",
+        "id": "gpt-6-sol",
         "variant": "medium"
       },
       "anthropic": {
@@ -14,8 +14,8 @@
     },
     "reasoning": {
       "openai": {
-        "id": "gpt-6-astra",
-        "variant": "medium"
+        "id": "gpt-6-sol",
+        "variant": "high"
       },
       "anthropic": {
         "id": "claude-opus-5",
@@ -24,8 +24,8 @@
     },
     "review": {
       "openai": {
-        "id": "gpt-6-astra",
-        "variant": "low"
+        "id": "gpt-6-sol",
+        "variant": "medium"
       },
       "anthropic": {
         "id": "claude-opus-5",
@@ -34,7 +34,7 @@
     },
     "coding": {
       "openai": {
-        "id": "gpt-5.6-luna",
+        "id": "gpt-6-luna",
         "variant": "high"
       },
       "anthropic": {
@@ -44,7 +44,7 @@
     },
     "light": {
       "openai": {
-        "id": "gpt-5.6-luna",
+        "id": "gpt-6-luna",
         "variant": "medium"
       },
       "anthropic": {
