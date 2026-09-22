@@ -490,6 +490,46 @@ pendingRemoval = step(pendingRemoval, { type: "SENDER_CLOSED", identity: "28000:
   assert.deepEqual(s.visual.incomingDeck.snapshots, [])
 })
 
+// Bulk dismissal must preserve critical rows and their sender/history lifecycle,
+// including while a normal row is still opening or the route is hidden.
+for (const phase of ["open", "opening", "hidden"]) {
+  let selective = phase === "open" ? openState(criticalC)
+    : Presentation.createInitialState({ routeVisible: phase !== "hidden", output: "DP-1" })
+  selective = step(selective, { type: "ARRIVE", snapshot: normalA })
+  if (phase !== "open") selective = step(selective, { type: "ARRIVE", snapshot: criticalC })
+  selective = step(selective, { type: "ARRIVE", snapshot: normalB })
+  const criticalD = snapshot("4000:4", 2, 0, 0)
+  selective = step(selective, { type: "ARRIVE", snapshot: criticalD })
+  const cleared = apply(selective, { type: "DISMISS_NON_CRITICAL", now: 5000 })
+  assert.deepEqual(ids([cleared.state.active, ...cleared.state.pending].filter(Boolean)),
+    ["3000:3", "4000:4"], phase + " preserves only critical notifications")
+  for (const type of ["senderDismiss", "cleanup", "archive"]) {
+    assert.deepEqual(cleared.effects.filter(effect => effect.type === type).map(effect => effect.identity).sort(),
+      ["1000:1", "2000:2"], phase + " applies " + type + " only to dismissed rows")
+  }
+  assert.equal(cleared.state.retired["3000:3"], undefined)
+  assert.equal(cleared.state.retired["4000:4"], undefined)
+  const repeated = apply(cleared.state, { type: "DISMISS_NON_CRITICAL", now: 5001 })
+  assert.deepEqual(repeated.state, cleared.state, "repeated bulk dismissal leaves critical transitions alone")
+  assert.deepEqual(repeated.effects, [])
+}
+
+let rapid = openState(normalA)
+rapid = step(rapid, { type: "ARRIVE", snapshot: normalB })
+rapid = step(rapid, { type: "ARRIVE", snapshot: snapshot("4000:4", 0, 10000, 10000) })
+rapid = step(rapid, { type: "DISMISS", identity: "1000:1" })
+const firstRapidToken = rapid.visual.token
+const secondRapid = apply(rapid, { type: "DISMISS", identity: "2000:2" })
+assert.equal(secondRapid.state.active.identity, "4000:4", "rapid dismiss advances without a completion callback")
+assert.deepEqual(secondRapid.effects.filter(effect => effect.type === "senderDismiss").map(effect => effect.identity), ["2000:2"])
+rapid = step(secondRapid.state, { type: "TRANSITION_FINISHED", token: firstRapidToken, kind: "switch", output: "DP-1" })
+assert.deepEqual(rapid, secondRapid.state, "interrupted animation cannot settle the next handoff")
+rapid = step(rapid, { type: "ARRIVE", snapshot: criticalC })
+const rapidClear = apply(rapid, { type: "DISMISS_NON_CRITICAL" })
+assert.equal(rapidClear.state.active.identity, "3000:3", "bulk dismissal during a handoff promotes the retained critical card")
+assert.deepEqual(rapidClear.state.pending, [])
+assert.deepEqual(rapidClear.effects.filter(effect => effect.type === "senderDismiss").map(effect => effect.identity), ["4000:4"])
+
 let allDeck = openState(snapshot("26000:40", 1, 1000, 1000))
 allDeck = step(allDeck, { type: "HOVER_CHANGED", hovered: true })
 allDeck = step(allDeck, { type: "ARRIVE", snapshot: snapshot("27000:40", 2, 0, 0) })

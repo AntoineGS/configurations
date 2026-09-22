@@ -37,6 +37,11 @@ hl.bind(
 
 -- Notifications
 hl.bind(
+	"SUPER + CTRL + SHIFT + D",
+	hl.dsp.exec_cmd("desktop-shell call desktop.notifications dismissNonCritical"),
+	{ description = "Dismiss all non-critical notifications" }
+)
+hl.bind(
 	"SUPER + CTRL + D",
 	hl.dsp.exec_cmd("desktop-shell call desktop.notifications dismissLast"),
 	{ description = "Dismiss current notification" }
