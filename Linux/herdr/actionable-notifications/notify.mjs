@@ -161,7 +161,8 @@ export async function processTree(rootPid, read = readFile, readDir = readdir) {
 }
 
 async function ghosttyTarget(session) {
-  const clients = await commandJson("hyprctl", ["clients", "-j"])
+  // Herdr can outlive Hyprland, leaving its inherited instance signature stale.
+  const clients = await commandJson("hyprctl", ["--instance", "0", "clients", "-j"])
   const processTrees = {}
   for (const client of clients) {
     if (String(client?.class || "").toLowerCase() !== "com.mitchellh.ghostty") continue
@@ -246,7 +247,7 @@ async function main() {
     diagnose: message => console.error(`actionable-notifications: ${message}`),
     notify: showNotification,
     focusPane: paneId => socketRequest(socketPath, paneFocusRequest(paneId, requestId)),
-    focusWindow: address => execFileAsync("hyprctl", hyprFocusWindowArgs(address), {
+    focusWindow: address => execFileAsync("hyprctl", ["--instance", "0", ...hyprFocusWindowArgs(address)], {
       encoding: "utf8",
       timeout: 3000,
     }),
