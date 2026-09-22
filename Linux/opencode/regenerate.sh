@@ -30,9 +30,13 @@ for p in "${PLUGINS[@]}"; do
 done
 
 echo "==> Vendoring into repo"
-rm -rf "$REPO_DIR/agents" "$REPO_DIR/commands" "$REPO_DIR/skills"
-cp -a "$MP/.opencode/agents"   "$REPO_DIR/agents"
-cp -a "$MP/.opencode/commands" "$REPO_DIR/commands"
+# Generated agents and commands use plugin__name.md; preserve local additions.
+for kind in agents commands; do
+  mkdir -p "$REPO_DIR/$kind"
+  find "$REPO_DIR/$kind" -maxdepth 1 -type f -name '*__*.md' -delete
+  cp -a "$MP/.opencode/$kind/." "$REPO_DIR/$kind/"
+done
+rm -rf "$REPO_DIR/skills"
 cp -a "$MP/.opencode/skills"   "$REPO_DIR/skills"
 
 echo "==> Stripping provider-specific models (routing is applied at runtime by the plugin)"
