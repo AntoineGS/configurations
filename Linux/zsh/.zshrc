@@ -64,7 +64,8 @@ alias y="yazi"
 alias lg="lazygit"
 alias gu="gitui"
 alias guw="gitui --watcher"
-alias ocv="opencode"
+alias oc="opencode"
+alias occ="opencode -c"
 alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
@@ -108,7 +109,7 @@ if [[ "${HERDR_ENV:-}" == 1 ]]; then
             read_status=$?
             printf x
             exit "$read_status"
-        ) || {
+            ) || {
             _herdr_restore_local_wayland_env
             return 1
         }
