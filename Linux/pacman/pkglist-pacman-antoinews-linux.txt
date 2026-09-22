@@ -51,7 +51,6 @@ ncdu
 obs-studio
 openai-codex
 openbox
-opencode
 perl-image-exiftool
 pinta
 playerctl

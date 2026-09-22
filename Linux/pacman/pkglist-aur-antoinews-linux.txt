@@ -15,6 +15,7 @@ limine-snapper-sync
 localsend-bin
 oh-my-zsh-git
 onedrive-abraunegg
+opencode-beta
 outlook-for-linux
 posting
 python-evtx
