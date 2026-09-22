@@ -115,35 +115,42 @@ export default {
         return `Agent provider: ${state.provider}\n${tiers}`;
       };
 
+      const switchProvider = async (sessionID, requested) => {
+        state.manifest = await loadManifest();
+        const available = await refresh();
+
+        if (!requested) {
+          await ctx.session.synthetic({ sessionID, text: status() });
+          return;
+        }
+
+        const next = requested === "toggle" ? [...available].find((provider) => provider !== state.provider) : requested;
+
+        if (!next || !available.has(next)) {
+          const text = `Provider ${requested} is not available here. Available: ${[...available].join(", ")}`;
+          await ctx.session.synthetic({ sessionID, text });
+          return;
+        }
+
+        state.provider = next;
+        await ctx.storage.set(STORAGE_KEY, next);
+        await ctx.agent.reload();
+        await ctx.session.synthetic({ sessionID, text: status() });
+      };
+
       await ctx.command.transform((editor) => {
         editor.add({
           name: "provider",
           description: "Switch every agent between openai and anthropic tiers",
-          execute: async ({ sessionID, prompt }) => {
-            const requested = (prompt?.text ?? "").trim().toLowerCase();
-            state.manifest = await loadManifest();
-            const available = await refresh();
-
-            if (!requested) {
-              await ctx.session.synthetic({ sessionID, text: status() });
-              return;
-            }
-
-            const next =
-              requested === "toggle" ? [...available].find((provider) => provider !== state.provider) : requested;
-
-            if (!next || !available.has(next)) {
-              const text = `Provider ${requested} is not available here. Available: ${[...available].join(", ")}`;
-              await ctx.session.synthetic({ sessionID, text });
-              return;
-            }
-
-            state.provider = next;
-            await ctx.storage.set(STORAGE_KEY, next);
-            await ctx.agent.reload();
-            await ctx.session.synthetic({ sessionID, text: status() });
-          },
+          execute: ({ sessionID, prompt }) => switchProvider(sessionID, (prompt?.text ?? "").trim().toLowerCase()),
         });
+        for (const provider of ["openai", "anthropic"]) {
+          editor.add({
+            name: provider,
+            description: `Switch every agent to ${provider} tiers`,
+            execute: ({ sessionID }) => switchProvider(sessionID, provider),
+          });
+        }
       });
     } catch (error) {
       console.error("agent-provider-routing setup failed:", error?.stack ?? error);
