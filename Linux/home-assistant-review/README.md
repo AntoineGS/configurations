@@ -22,10 +22,35 @@ produce one catch-up review rather than multiple paid model runs.
 ## Installation
 
 Requires Python 3.10+, systemd, authenticated `/usr/bin/opencode`, `uvx`, `jq`,
-and `sh` on the service PATH. The Home Assistant project must already have its
-project-scoped MCP definition. Both it and the wrapper use the existing token
+and `sh` on the service PATH. The project-scoped MCP and the wrapper use the existing token
 in `~/.claude.json` at `mcpServers.home-assistant.env.HOMEASSISTANT_TOKEN`.
 The HA URL is `https://ha.antoinedev.io`. Tokens are never put in the job config.
+
+### Tidydots (recommended)
+
+The `home-assistant-review` application is scoped to Linux host
+`DESKTOP-E07VTRN`. With this repository at `~/gits/configurations`, preview its
+changes, then apply the reviewed restore:
+
+```sh
+tidydots --dir ~/gits/configurations restore home-assistant-review -n
+tidydots --dir ~/gits/configurations restore home-assistant-review
+```
+
+It deploys the project MCP configuration and rendered `.review-config.json`,
+links the agent and systemd units, sets settings permissions to 0600, enables
+user lingering, and enables the persistent timer. Already-correct setup steps
+are skipped. `agents/daily-ha-review.md` is a source alias for `review-agent.md`
+so the installed OpenCode agent ID remains `daily-ha-review`.
+
+The settings template keeps `notify.mobile_app_phone_antoine` as the selected
+target and renders the current HOME into the project path. MCP credentials and
+OpenCode authentication must already exist locally; they are not installed or
+committed by this application. Reports and `.review-state/` are not managed by
+tidydots. Restoring does not run a model review or send a test notification
+directly, but enabling a timer with a missed schedule can trigger its catch-up.
+
+### Manual installation
 
 Inspect any existing destination files before running installation commands:
 
