@@ -4,17 +4,7 @@
   "scroll_acceleration": {
     "enabled": true
   },
-  "plugin": [
-    [
-      "@leohenon/opencode-vim-plugin",
-      {
-        "enabled": true,
-        "vim_initial_mode": "insert",
-        "indicator": true,
-        "vim_enter_submit": true
-      }
-    ]
-  ],
+  "plugin": [],
   "keybinds": {
     "app_exit": "ctrl+c,<leader>q",
     "input_submit": "alt+return",
