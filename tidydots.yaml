@@ -120,6 +120,46 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
+  - name: home-assistant-review
+    description: Daily Astra log review, local reports, and phone notifications
+    when: '{{ and (eq .OS "linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
+    entries:
+      - name: project-config
+        backup: ./Linux/home-assistant-review/project
+        targets:
+          linux: ~/gits/home-assistant
+        method: copy
+        files:
+          - .review-config.json.tmpl
+          - .opencode/opencode.json
+      - name: review-agent
+        backup: ./Linux/home-assistant-review/agents
+        targets:
+          linux: ~/gits/home-assistant/.opencode/agents
+        files:
+          - daily-ha-review.md
+      - name: user-units
+        backup: ./Linux/home-assistant-review
+        targets:
+          linux: ~/.config/systemd/user
+        files:
+          - home-assistant-review.service
+          - home-assistant-review.timer
+      - name: private-settings
+        check:
+          linux: 'test "$(stat -c %a "$HOME/gits/home-assistant/.review-config.json")" = 600'
+        run:
+          linux: chmod 600 "$HOME/gits/home-assistant/.review-config.json"
+      - name: enable-user-lingering
+        check:
+          linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
+        run:
+          linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
+      - name: enable-timer
+        check:
+          linux: systemctl --user is-enabled --quiet home-assistant-review.timer && systemctl --user is-active --quiet home-assistant-review.timer && test "$(systemctl --user show home-assistant-review.service --property=NeedDaemonReload --value)" = no && test "$(systemctl --user show home-assistant-review.timer --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now home-assistant-review.timer
   - name: interbase-mcp
     description: Keep the local InterBase MCP endpoints available
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
