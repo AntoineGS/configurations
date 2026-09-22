@@ -28,6 +28,5 @@
 !skills/**
 !plugins/
 !plugins/agent-provider-routing.js
-!plugins/cc-safety-net-v2.js
 !plugins/opencode-tmux-agent-indicator.js
 !plugins/opencode-tmux-agent-indicator.test.mjs
