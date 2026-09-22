@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Advertise one agent per identical prompt; retain aliases for existing commands.
+  // Keep these overrides here so regenerate.sh does not restore duplicate listings.
+  "agents": {
+    // Canonical: comprehensive-review__code-reviewer
+    "code-documentation__code-reviewer": { "hidden": true },
+    "code-refactoring__code-reviewer": { "hidden": true },
+    "codebase-cleanup__code-reviewer": { "hidden": true },
+    "tdd-workflows__code-reviewer": { "hidden": true },
+    // Canonical: framework-migration__legacy-modernizer
+    "code-refactoring__legacy-modernizer": { "hidden": true },
+    "dependency-management__legacy-modernizer": { "hidden": true },
+    // Canonical: unit-testing__test-automator
+    "codebase-cleanup__test-automator": { "hidden": true },
+    "full-stack-orchestration__test-automator": { "hidden": true },
+    "performance-testing-review__test-automator": { "hidden": true },
+    // Canonical: comprehensive-review__architect-review
+    "framework-migration__architect-review": { "hidden": true },
+    // Canonical: security-scanning__security-auditor
+    "comprehensive-review__security-auditor": { "hidden": true },
+    "full-stack-orchestration__security-auditor": { "hidden": true },
+    // Canonical: debugging-toolkit__debugger
+    "unit-testing__debugger": { "hidden": true },
+    // Canonical: deployment-strategies__deployment-engineer
+    "full-stack-orchestration__deployment-engineer": { "hidden": true },
+    // Canonical: performance-testing-review__performance-engineer
+    "full-stack-orchestration__performance-engineer": { "hidden": true }
+  }
+}
