@@ -1,0 +1,11 @@
+[Unit]
+Description=Review Home Assistant logs with Astra medium
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/gits/home-assistant
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 %h/gits/configurations/Linux/home-assistant-review/review.py run
+TimeoutStartSec=16min
+TimeoutStopSec=30s
+UMask=0077

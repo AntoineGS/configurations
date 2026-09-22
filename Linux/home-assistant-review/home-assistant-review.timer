@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Home Assistant review at 08:00 Toronto
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 America/Toronto
+Persistent=true
+AccuracySec=1min
+Unit=home-assistant-review.service
+
+[Install]
+WantedBy=timers.target
