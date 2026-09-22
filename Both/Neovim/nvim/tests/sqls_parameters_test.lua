@@ -266,13 +266,27 @@ test("prefills the previous value for the same connection and query", function()
   assert_eq(fake.execution_count(), 1, "executions")
 end)
 
-test("prompts once for a name repeated in the selection", function()
+test("a name repeated in mixed case is prompted once and submitted once", {
+  lines = {
+    "SELECT * FROM EMPLOYE",
+    "WHERE EMPLYID = :EMPLYID",
+    "  AND MGR_ID = :emplyid",
+    "  AND ALT_ID = :EmplyId;",
+  },
+}, function()
   M.execute(client_id, bufnr, {})
+  -- Three spellings of the same marker are in the buffer. Deduplication belongs
+  -- to the server: contracts.md has it return unique parameters in
+  -- first-appearance order, so discovery answers with one canonical entry and
+  -- the client must not re-prompt or re-submit per occurrence.
   answer_discovery("nrf-key", "query-key", { { name = "EMPLYID", key = "EMPLYID" } })
+  assert_eq(#fake.selects, 1, "type selections offered")
   choose_type "text"
+  assert_eq(#fake.inputs, 1, "value prompts offered")
   enter_value "000123"
   assert_eq(#fake.inputs, 0, "left over input prompts")
   assert_eq(#fake.selects, 0, "left over selections")
+  assert_eq(#submitted_values(), 1, "submitted entries")
   assert_same(submitted_values(), { { name = "EMPLYID", type = "text", value = "000123" } }, "values")
 end)
 
@@ -617,6 +631,27 @@ test("a selected range is sent with exact utf-16 endpoints", {
     start = { line = 0, character = 0 },
     ["end"] = { line = 1, character = 24 },
   }, "executed range")
+end)
+
+-- A code action invoked in normal mode carries the cursor range Neovim builds
+-- in vim.lsp.buf.code_action, whose start and end are equal. The server slices
+-- the document with any range it is given, so forwarding a zero-width one asks
+-- it to run the empty string; the whole document is what the user meant.
+test("a normal-mode code action runs the whole document, not an empty slice", function()
+  local cursor = { start = { line = 1, character = 4 }, ["end"] = { line = 1, character = 4 } }
+  M.code_action({ command = "executeQuery", arguments = { vim.uri_from_bufnr(bufnr) } }, {
+    bufnr = bufnr,
+    client_id = client_id,
+    params = { range = cursor },
+  })
+  local request = fake.last_request()
+  assert_eq(request.params.command, "getQueryParameters", "command")
+  assert_eq(request.params.range, nil, "discovery range")
+  answer_discovery("nrf-key", "query-key", one_parameter)
+  choose_type "text"
+  enter_value "000123"
+  assert_eq(fake.last_request().params.range, nil, "executed range")
+  assert_eq(fake.execution_count(), 1, "executions")
 end)
 
 test("a code action executes with its own range and buffer", function()
