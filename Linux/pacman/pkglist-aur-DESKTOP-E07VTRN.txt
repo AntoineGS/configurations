@@ -25,6 +25,7 @@ limine-snapper-sync
 localsend-bin
 nvidia-580xx-dkms
 oh-my-zsh-git
+opencode-beta
 openssl-1.1
 outlook-for-linux
 posting
@@ -34,7 +35,6 @@ python-terminaltexteffects
 qmk-git
 rustdesk-drm-preview-bin
 teams-for-linux
-teams-for-linux-debug
 tidydots-git
 tio
 tmux-plugin-manager
@@ -44,7 +44,6 @@ ttf-ia-writer
 tzupdate
 ufw-docker
 wol-systemd
-xdg-terminal-exec
 yaru-icon-theme
 yay
 zsh-transient-prompt-git
