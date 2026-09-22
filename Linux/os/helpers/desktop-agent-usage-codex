@@ -115,18 +115,18 @@ def add_usage(day, session_key, model, input_tokens, output_tokens, cache_read, 
   total_sessions.add(session_key)
   active_days.add(day)
 
-  bucket = model_usage.setdefault(model, {
-    "inputTokens": 0,
-    "outputTokens": 0,
-    "cacheReadInputTokens": 0,
-    "cacheCreationInputTokens": 0,
-  })
-  bucket["inputTokens"] += input_tokens
-  bucket["outputTokens"] += output_tokens
-  bucket["cacheReadInputTokens"] += cache_read
-  bucket["cacheCreationInputTokens"] += cache_write
-
+  # Match the seven local calendar days shown in the activity chart.
   if day in recent:
+    bucket = model_usage.setdefault(model, {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+    })
+    bucket["inputTokens"] += input_tokens
+    bucket["outputTokens"] += output_tokens
+    bucket["cacheReadInputTokens"] += cache_read
+    bucket["cacheCreationInputTokens"] += cache_write
     recent[day]["messageCount"] += total
 
   if day == today:
@@ -409,7 +409,7 @@ def write_json(path, payload):
 # of a crash or a garbage record.
 def read_cached_stats(cache_file, max_age_seconds):
   cached = read_fresh_json(cache_file, max_age_seconds)
-  if not isinstance(cached, dict) or cached.get("schemaVersion") != 1:
+  if not isinstance(cached, dict) or cached.get("schemaVersion") != 2:
     return None
   # today* fields only mean "today" on the day they were scanned. A cache
   # from another local date (midnight passed, or the clock moved) is a miss,
@@ -426,7 +426,7 @@ def read_cached_stats(cache_file, max_age_seconds):
 
 def write_cached_stats(cache_file, stats):
   try:
-    write_json(cache_file, {"schemaVersion": 1, "scanDate": today, "stats": stats})
+    write_json(cache_file, {"schemaVersion": 2, "scanDate": today, "stats": stats})
   except Exception as exc:
     print(f"desktop-agent-usage-codex: could not write usage cache ({exc})", file=sys.stderr)
 
