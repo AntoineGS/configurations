@@ -178,13 +178,12 @@ def scan_projects(projects_path: Path) -> dict[str, Any]:
           active_days.add(day)
           prompts += 1
 
-          bucket = usage_by_model.setdefault(model, empty_bucket())
-          bucket["inputTokens"] += input_tokens
-          bucket["outputTokens"] += output_tokens
-          bucket["cacheReadInputTokens"] += cache_read
-          bucket["cacheCreationInputTokens"] += cache_write
-
           if day in recent:
+            bucket = usage_by_model.setdefault(model, empty_bucket())
+            bucket["inputTokens"] += input_tokens
+            bucket["outputTokens"] += output_tokens
+            bucket["cacheReadInputTokens"] += cache_read
+            bucket["cacheCreationInputTokens"] += cache_write
             # recentDays.messageCount is actually a token total, despite the
             # legacy name shared with saved snapshots.
             recent[day]["messageCount"] += total
@@ -217,7 +216,7 @@ def scan_projects(projects_path: Path) -> dict[str, Any]:
 def scan_cache_paths(projects_path: Path) -> tuple[Path, Path]:
   digest = hashlib.sha1(str(projects_path).encode("utf-8")).hexdigest()[:16]
   root = cache_root()
-  return root / f"claude-scan-{digest}.json", root / f"claude-scan-{digest}.lock"
+  return root / f"claude-scan-weekly-{digest}.json", root / f"claude-scan-weekly-{digest}.lock"
 
 
 def read_fresh_json(path: Path, max_age_seconds: float) -> dict[str, Any] | None:
@@ -297,7 +296,9 @@ def stats_cache_fallback(claude_dir: Path) -> dict[str, Any] | None:
     "todayTotalTokens": sum(number(v) for v in today_tokens.values()),
     "todayTokensByModel": today_tokens,
     "recentDays": daily_activity[-7:],
-    "modelUsage": data.get("modelUsage") or {},
+    # Aggregate cache totals have no dated input/output/cache breakdown.
+    # Do not present those all-time totals as weekly usage.
+    "modelUsage": {},
     "totalPrompts": number(data.get("totalMessages")),
     "totalSessions": number(data.get("totalSessions")),
     "activeDays": len(active_dates),
@@ -343,7 +344,7 @@ def scan_pi_usage(max_age_seconds: float) -> dict[str, Any] | None:
     Path.home() / ".pi" / "agent" / "sessions",
     Path.home() / ".omp" / "agent" / "sessions",
   ]
-  cache_file = cache_root() / "claude-pi-sessions.json"
+  cache_file = cache_root() / "claude-pi-sessions-weekly.json"
   cached = read_fresh_json(cache_file, max_age_seconds)
   if cached is not None:
     return cached.get("stats")
@@ -401,12 +402,12 @@ def scan_pi_usage(max_age_seconds: float) -> dict[str, Any] | None:
             sessions.add(session_key)
             active_days.add(day)
             prompts += 1
-            bucket = usage_by_model.setdefault(model, empty_bucket())
-            bucket["inputTokens"] += input_tokens
-            bucket["outputTokens"] += output_tokens
-            bucket["cacheReadInputTokens"] += cache_read
-            bucket["cacheCreationInputTokens"] += cache_write
             if day in recent:
+              bucket = usage_by_model.setdefault(model, empty_bucket())
+              bucket["inputTokens"] += input_tokens
+              bucket["outputTokens"] += output_tokens
+              bucket["cacheReadInputTokens"] += cache_read
+              bucket["cacheCreationInputTokens"] += cache_write
               recent[day]["messageCount"] += total
             if day == today:
               today_prompt_count += 1
@@ -450,7 +451,7 @@ def scan_opencode_usage(max_age_seconds: float) -> dict[str, Any] | None:
   # Same freshness contract as the transcript scan: --limits-only promises to
   # reuse recent local stats, and a big opencode history walked on every panel
   # open would break that promise.
-  cache_file = cache_root() / f"claude-opencode-{hashlib.sha1(str(db).encode('utf-8')).hexdigest()[:16]}.json"
+  cache_file = cache_root() / f"claude-opencode-weekly-{hashlib.sha1(str(db).encode('utf-8')).hexdigest()[:16]}.json"
   cached = read_fresh_json(cache_file, max_age_seconds)
   if cached is not None:
     return cached.get("stats")
@@ -506,13 +507,12 @@ def scan_opencode_usage(max_age_seconds: float) -> dict[str, Any] | None:
       active_days.add(day)
       prompts += 1
 
-      bucket = usage_by_model.setdefault(model, empty_bucket())
-      bucket["inputTokens"] += input_tokens
-      bucket["outputTokens"] += output_tokens
-      bucket["cacheReadInputTokens"] += cache_read
-      bucket["cacheCreationInputTokens"] += cache_write
-
       if day in recent:
+        bucket = usage_by_model.setdefault(model, empty_bucket())
+        bucket["inputTokens"] += input_tokens
+        bucket["outputTokens"] += output_tokens
+        bucket["cacheReadInputTokens"] += cache_read
+        bucket["cacheCreationInputTokens"] += cache_write
         recent[day]["messageCount"] += total
       if day == today:
         today_prompt_count += 1
