@@ -75,7 +75,6 @@ ncdu
 nwg-hello
 obsidian
 openai-codex
-opencode
 partitionmanager
 perl-image-exiftool
 pinta
@@ -120,6 +119,7 @@ wiremix
 wl-clip-persist
 woff2-font-awesome
 wtype
+xdg-terminal-exec
 xmlstarlet
 xorg-xhost
 xournalpp
