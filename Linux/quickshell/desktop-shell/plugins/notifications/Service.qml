@@ -2220,6 +2220,11 @@ Item {
     return "ok"
   }
 
+  function dismissNonCritical() {
+    dispatchPresentation({ type: "DISMISS_NON_CRITICAL", now: Date.now() })
+    return "ok"
+  }
+
   function dismissLast() {
     if (popupModel.count > 0) service.requestPopupRemoval(
       NotificationLogic.popupIdentity(popupModel.get(0)), "dismiss")
@@ -2259,6 +2264,7 @@ Item {
     function ping(): string { return service.ping() }
     function status(): string { return service.status() }
     function dismissAll(): string { return service.dismissAll() }
+    function dismissNonCritical(): string { return service.dismissNonCritical() }
     function dismissLast(): string { return service.dismissLast() }
     function restoreLast(): string { return service.restoreLast() }
     function invokeLast(): string { return service.invokeLast() }

@@ -247,6 +247,19 @@ function reduce(input, event) {
         }
       }
       break
+    case "DISMISS_NON_CRITICAL":
+      state.pending = state.pending.filter(function (item) {
+        if (activeCritical(item)) return true
+        retire(state, identityOf(item)); tombstone(state, item, event.now)
+        if (Number(item.originalId) >= 0)
+          effects.push({ type: "senderDismiss", identity: identityOf(item), snapshot: copy(item), reason: "dismiss" })
+        cleanup(item, effects, "dismiss"); archive(item, effects, "dismiss")
+        return false
+      })
+      syncIncomingDeck(state)
+      if (state.active && !activeCritical(state.active))
+        removeActive(state, effects, "senderDismiss", "dismiss", event.now)
+      break
     case "DISMISS_ALL":
       row = state.active ? copy(state.active) : null
       var outgoingRows = state.pending.slice()
