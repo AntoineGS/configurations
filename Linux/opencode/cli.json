@@ -1,0 +1,34 @@
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "theme": {
+    "name": "catppuccin"
+  },
+  "keybinds": {
+    "app.exit": "ctrl+c,<leader>q",
+    "session.page.up": "ctrl+u",
+    "session.page.down": "ctrl+d",
+    "input.submit": "alt+return",
+    "input.newline": "return,shift+return,ctrl+return,ctrl+j"
+  },
+  "plugins": [
+    "./herdr-opencode",
+    "./cli-plugins/provider-indicator"
+  ],
+  "scroll": {
+    "acceleration": true
+  },
+  "diffs": {
+    "wrap": "word"
+  },
+  "session": {
+    "sidebar": "auto",
+    "scrollbar": false,
+    "thinking": "hide",
+    "markdown": "rendered",
+    "permissions": "autoaccept"
+  },
+  "animations": true,
+  "tabs": {
+    "enabled": false
+  }
+}

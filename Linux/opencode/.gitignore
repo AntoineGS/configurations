@@ -4,6 +4,7 @@
 !opencode.json
 !opencode.jsonc
 !opencode.json.tmpl
+!cli.json
 !commit-exclusions.md
 !lsp-first.md
 !worktree-preferences.md
@@ -30,3 +31,7 @@
 !plugins/agent-provider-routing.js
 !plugins/opencode-tmux-agent-indicator.js
 !plugins/opencode-tmux-agent-indicator.test.mjs
+!cli-plugins/
+!cli-plugins/provider-indicator/
+!cli-plugins/provider-indicator/package.json
+!cli-plugins/provider-indicator/tui.tsx
