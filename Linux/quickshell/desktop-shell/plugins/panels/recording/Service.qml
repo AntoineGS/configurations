@@ -450,7 +450,7 @@ SharedService {
       id: process
       property int generation: 0
       property int collectionGeneration: 0
-      command: [root.toggleExecutable]
+      command: [root.toggleExecutable, "--resolution=0x0"]
       onStarted: root.handleToggleStarted(process)
       onExited: function(exitCode) { root.finishToggle(process, Number(exitCode), false) }
       onRunningChanged: root.handleToggleRunningChanged(process)

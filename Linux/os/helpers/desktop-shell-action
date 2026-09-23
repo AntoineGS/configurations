@@ -28,7 +28,7 @@ wait_for_menu_dismissal() {
 
 case "$action" in
   trigger.screenshot)       argv=(cmd-screenshot) ;;
-  trigger.screenrecord)     argv=(cmd-screenrecord) ;;
+  trigger.screenrecord)     argv=(cmd-screenrecord --resolution=0x0) ;;
   trigger.color)            argv=(hyprpicker -a) ;;
   trigger.share-clipboard)  argv=(cmd-share clipboard) ;;
   trigger.share-file)       argv=(launch-tui-large cmd-share file) ;;
