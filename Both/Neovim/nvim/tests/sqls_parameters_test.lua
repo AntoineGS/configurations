@@ -7,7 +7,7 @@
 -- connection and never loads the user's init.
 
 local script = debug.getinfo(1, "S").source:sub(2)
-local nvim_dir = vim.fn.fnamemodify(script, ":h:h")
+local nvim_dir = vim.fn.fnamemodify(script, ":p:h:h")
 package.path = nvim_dir .. "/lua/?.lua;" .. package.path
 
 local M, fake, client_id, bufnr
@@ -88,7 +88,7 @@ end
 local function setup(opts)
   opts = opts or {}
   package.loaded["sqls_parameters"] = nil
-  M = require "sqls_parameters"
+  M = dofile(nvim_dir .. "/lua/sqls_parameters.lua")
   fake = new_fake()
   client_id = fake.client(1, opts).id
   bufnr = new_buffer(opts.lines)
@@ -98,6 +98,7 @@ local function setup(opts)
   saved.get_client_by_id = vim.lsp.get_client_by_id
   saved.buf_is_attached = vim.lsp.buf_is_attached
   saved.notify = vim.notify
+  saved.snacks = _G.Snacks
 
   vim.ui.input = function(input_opts, on_confirm)
     fake.last_input = vim.deepcopy(input_opts)
@@ -116,6 +117,7 @@ local function setup(opts)
   vim.notify = function(message, level)
     table.insert(notifications, { message = message, level = level })
   end
+  _G.Snacks = { input = { input = vim.ui.input } }
 end
 
 local function teardown()
@@ -124,6 +126,7 @@ local function teardown()
   vim.lsp.get_client_by_id = saved.get_client_by_id
   vim.lsp.buf_is_attached = saved.buf_is_attached
   vim.notify = saved.notify
+  _G.Snacks = saved.snacks
   for _, buf in ipairs(buffers) do
     if vim.api.nvim_buf_is_valid(buf) then
       vim.api.nvim_buf_delete(buf, { force = true })
@@ -197,6 +200,24 @@ local function enter_value(text)
   local pending = table.remove(fake.inputs, 1)
   assert(pending, "no pending value input")
   pending.confirm(text)
+end
+
+local function take_input()
+  local pending = table.remove(fake.inputs, 1)
+  assert(pending, "no pending value input")
+  return pending
+end
+
+local function open_prompt_window(pending)
+  local popup = { titles = {} }
+  function popup.win_set_title(_, title)
+    table.insert(popup.titles, title)
+  end
+  popup.win = { set_title = popup.win_set_title }
+  if pending.opts.win and pending.opts.win.on_win then
+    pending.opts.win.on_win(popup.win)
+  end
+  return popup
 end
 
 local function answer_execution(result)
@@ -378,6 +399,147 @@ test("booleans are chosen, not typed", function()
   assert_same(fake.last_select.items, { "true", "false" }, "boolean choices")
   choose_boolean "false"
   assert_same(submitted_values(), { { name = "EMPLYID", type = "boolean", value = "false" } }, "values")
+end)
+
+test("an inferred integer opens a value input and submits its typed value", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  assert_eq(#fake.selects, 0, "type selections")
+  assert_eq(#fake.inputs, 1, "value inputs")
+  assert_eq(fake.inputs[1].opts.default, "", "initial value")
+  assert(fake.inputs[1].opts.prompt:find("INTEGER", 1, true), "database type label was not shown")
+  enter_value "12"
+  assert_same(submitted_values(), { { name = "id", type = "integer", value = "12" } }, "values")
+end)
+
+test("an inferred integer does not reuse a remembered text value", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", { { name = "id", key = "ID" } })
+  choose_type "text"
+  enter_value "old text"
+
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  assert_eq(#fake.selects, 0, "type selections")
+  assert_eq(#fake.inputs, 1, "value inputs")
+  assert_eq(fake.inputs[1].opts.default, "", "incompatible remembered value")
+  enter_value "12"
+  assert_same(submitted_values(), { { name = "id", type = "integer", value = "12" } }, "values")
+end)
+
+test("an inferred input has a scoped Ctrl-T action that toggles NULL and restores typed text", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  local pending = take_input()
+  local win_opts = pending.opts.win
+  assert(
+    win_opts and win_opts.actions and type(win_opts.actions.toggle_null) == "function",
+    "missing popup NULL action"
+  )
+  assert_same(win_opts.keys["<c-t>"], { "toggle_null", mode = "i" }, "Ctrl-T mapping")
+
+  local popup = open_prompt_window(pending)
+  assert_eq(#popup.titles, 1, "initial title updates")
+  assert(not popup.titles[1]:find("NULL", 1, true), "typed state initially showed NULL")
+  local text = "12"
+  win_opts.actions.toggle_null(popup.win)
+  assert(popup.titles[#popup.titles]:find("NULL", 1, true), "NULL state was not visible in the title")
+  win_opts.actions.toggle_null(popup.win)
+  assert(not popup.titles[#popup.titles]:find("NULL", 1, true), "typed state was not restored in the title")
+  pending.confirm(text)
+  assert_same(submitted_values(), { { name = "id", type = "integer", value = "12" } }, "restored typed value")
+end)
+
+test("an inferred input submits NULL with an empty value when toggled", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  local pending = take_input()
+  local popup = open_prompt_window(pending)
+  pending.opts.win.actions.toggle_null(popup.win)
+  pending.confirm "not an integer"
+  assert_same(submitted_values(), { { name = "id", type = "null", value = "" } }, "NULL values")
+end)
+
+test("a remembered NULL reopens an inferred input in NULL state", function()
+  local parameter = { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" }
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", { parameter })
+  local first = take_input()
+  local first_popup = open_prompt_window(first)
+  first.opts.win.actions.toggle_null(first_popup.win)
+  first.confirm "12"
+  assert_same(submitted_values(), { { name = "id", type = "null", value = "" } }, "initial NULL values")
+
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", { parameter })
+  local second = take_input()
+  local second_popup = open_prompt_window(second)
+  assert(second_popup.titles[1]:find("NULL", 1, true), "remembered NULL did not reopen visibly toggled")
+end)
+
+test("cancelling an inferred value submits nothing and preserves the previous cache", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", { { name = "id", key = "ID" } })
+  choose_type "text"
+  enter_value "remember me"
+
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  enter_value(nil)
+  assert_eq(fake.execution_count(), 1, "executions after cancellation")
+
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", { { name = "id", key = "ID" } })
+  choose_type "text"
+  assert_eq(fake.last_input.default, "remember me", "remembered value after cancellation")
+end)
+
+test("inference falls back to the NULL type picker when Snacks does not own input", function()
+  _G.Snacks = nil
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "integer", databaseType = "INTEGER" },
+  })
+  assert_eq(#fake.inputs, 0, "direct value inputs")
+  assert(vim.tbl_contains(fake.last_select.items, "null"), "fallback picker omitted NULL")
+  choose_type "null"
+  assert_same(submitted_values(), { { name = "id", type = "null", value = "" } }, "fallback NULL values")
+end)
+
+test("an unknown inferred type keeps the picker and has no sqls Ctrl-T binding", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "id", key = "ID", inferredType = "unknown", databaseType = "MYSTERY" },
+  })
+  assert(vim.tbl_contains(fake.last_select.items, "null"), "unknown type picker omitted NULL")
+  choose_type "text"
+  assert(fake.inputs[1].opts.win == nil, "non-inferred popup received sqls-specific window options")
+  enter_value "value"
+  assert_same(submitted_values(), { { name = "id", type = "text", value = "value" } }, "fallback values")
+end)
+
+test("an inferred boolean uses a validated value input", function()
+  M.execute(client_id, bufnr, {})
+  answer_discovery("nrf-key", "query-key", {
+    { name = "enabled", key = "ENABLED", inferredType = "boolean", databaseType = "BOOLEAN" },
+  })
+  assert_eq(#fake.selects, 0, "type and boolean selections")
+  assert_eq(#fake.inputs, 1, "boolean value inputs")
+  enter_value "yes"
+  assert_eq(fake.execution_count(), 0, "executions after invalid boolean")
+  assert(notified "true or false", "expected a boolean validation notification")
+  enter_value "false"
+  assert_same(submitted_values(), { { name = "enabled", type = "boolean", value = "false" } }, "boolean values")
 end)
 
 test("int64 text is compared as digits, never converted to a number", function()

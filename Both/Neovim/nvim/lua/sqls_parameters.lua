@@ -210,6 +210,12 @@ local function invalid(value_type, text)
     end
     return nil
   end
+  if value_type == "boolean" then
+    if trimmed ~= "true" and trimmed ~= "false" then
+      return "expects true or false"
+    end
+    return nil
+  end
   return nil
 end
 
@@ -313,8 +319,26 @@ local function run_prompts(session, state, epoch, discovery)
     end
   end
 
-  local function prompt_value(name, value_type, default)
-    vim.ui.input({ prompt = name .. " (" .. value_type .. "): ", default = default }, function(text)
+  local function prompt_value(name, value_type, default, database_type, toggle_null, initially_null)
+    local null_active = initially_null == true
+    local label = database_type or value_type
+    local input_opts = { prompt = name .. " (" .. label .. "): ", default = default }
+    if toggle_null then
+      local function set_title(win)
+        win:set_title(name .. " (" .. label .. ")" .. (null_active and " [NULL]" or ""))
+      end
+      input_opts.win = {
+        actions = {
+          toggle_null = function(win)
+            null_active = not null_active
+            set_title(win)
+          end,
+        },
+        keys = { ["<c-t>"] = { "toggle_null", mode = "i" } },
+        on_win = set_title,
+      }
+    end
+    vim.ui.input(input_opts, function(text)
       if not live() then
         return
       end
@@ -322,10 +346,14 @@ local function run_prompts(session, state, epoch, discovery)
         release()
         return
       end
+      if null_active then
+        advance(name, "null", "")
+        return
+      end
       local problem = invalid(value_type, text)
       if problem then
         notify(name .. " " .. problem, vim.log.levels.WARN)
-        prompt_value(name, value_type, text)
+        prompt_value(name, value_type, text, database_type, toggle_null, false)
         return
       end
       advance(name, value_type, text)
@@ -349,6 +377,20 @@ local function run_prompts(session, state, epoch, discovery)
     local parameter = parameters[index + 1]
     local name = parameter.name
     local prior = previous[name]
+    local inferred = parameter.inferredType
+    local snacks = rawget(_G, "Snacks")
+    local snacks_owns_input = type(snacks) == "table"
+      and type(snacks.input) == "table"
+      and type(snacks.input.input) == "function"
+      and vim.ui.input == snacks.input.input
+    if snacks_owns_input and inferred ~= "null" and vim.tbl_contains(TYPES, inferred) then
+      local default = ""
+      if prior and prior.type == inferred then
+        default = prior.value
+      end
+      prompt_value(name, inferred, default, parameter.databaseType, true, prior and prior.type == "null")
+      return
+    end
     vim.ui.select(type_choices(prior and prior.type), { prompt = name .. " type" }, function(choice)
       if not live() then
         return
