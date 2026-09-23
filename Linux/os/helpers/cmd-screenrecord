@@ -207,7 +207,8 @@ default_resolution() {
 
 select_capture_target() {
   if [[ $CAPTURE_MODE == "region" ]]; then
-    CAPTURE_TARGET=$(slurp -f "%wx%h+%x+%y" 2>/dev/null) || return 1
+    # Quickshell keeps stdin open; slurp would wait for rectangle input on that pipe.
+    CAPTURE_TARGET=$(slurp -f "%wx%h+%x+%y" </dev/null 2>/dev/null) || return 1
     [[ -n $CAPTURE_TARGET ]] || return 1
   fi
 }
