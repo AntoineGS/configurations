@@ -12,9 +12,15 @@
 -- last modified less than MIN_AGE_DAYS ago is excluded from this upgrade. It will
 -- be offered again automatically once it crosses the age threshold. Repo (pacman)
 -- packages are never affected. The native exclude menu is still shown so the
--- decision can be reviewed/overridden interactively.
+-- decision can be reviewed/overridden interactively. Held-back packages are
+-- printed before the menu; add trusted packages to AGE_EXEMPTIONS to bypass
+-- the age gate on future upgrades.
 
 local MIN_AGE_DAYS = 7
+local AGE_EXEMPTIONS = {
+  ["opencode-beta"] = true,
+  ["claude-code"] = true,
+}
 
 yay.create_autocmd("UpgradeSelect", {
   desc = "hold back AUR packages modified in the last " .. MIN_AGE_DAYS .. " days",
@@ -23,11 +29,20 @@ yay.create_autocmd("UpgradeSelect", {
     local cutoff = os.time() - (MIN_AGE_DAYS * 24 * 60 * 60)
 
     for _, pkg in ipairs(event.data.upgrades) do
-      if pkg.repository == "aur"
+      if
+        pkg.repository == "aur"
         and pkg.last_modified ~= nil
         and pkg.last_modified >= cutoff
+        and not AGE_EXEMPTIONS[pkg.name]
       then
         table.insert(exclude, pkg.name)
+      end
+    end
+
+    if #exclude > 0 then
+      print("AUR packages held back by the " .. MIN_AGE_DAYS .. "-day age gate:")
+      for _, name in ipairs(exclude) do
+        print("  " .. name)
       end
     end
 
