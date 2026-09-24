@@ -8,6 +8,7 @@ BarMetricButton 1.0 BarMetricButton.qml
 BarWidget 1.0 BarWidget.qml
 BorderOverlay 1.0 BorderOverlay.qml
 BorderSurface 1.0 BorderSurface.qml
+EmptyWorkspaceFocusBorder 1.0 EmptyWorkspaceFocusBorder.qml
 ElevatedSurface 1.0 ElevatedSurface.qml
 Button 1.0 Button.qml
 ConfirmDialog 1.0 ConfirmDialog.qml
