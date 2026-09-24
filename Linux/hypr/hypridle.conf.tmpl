@@ -1,18 +1,18 @@
 general {
-    {{- if eq .Hostname "omarchbook" -}}
-    lock_cmd = pidof hyprlock || hyprlock                   # lock screen
+    {{- if or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") }}
+    lock_cmd = lock-screen                                  # lock screen and 1password
     before_sleep_cmd = loginctl lock-session                # lock before suspend.
     inhibit_sleep = 3                                       # wait until screen is locked
     {{- end }}
     after_sleep_cmd = sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on"}))'   # to avoid having to press a key twice to turn on the display.
 }
 
-{{- if eq .Hostname "omarchbook" -}}
+{{ if or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") }}
 listener {
     timeout = 300
     on-timeout = pidof hyprlock || loginctl lock-session     # lock screen on idle (if we haven't locked already)
 }
-{{- end -}}
+{{ end }}
 
 listener {
     timeout = 30 
