@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 
 import qs.Commons
+import qs.Ui
 
 import "plugins/bar"
 import "plugins/bar/BarModel.js" as BarModel
@@ -408,6 +409,10 @@ ShellRoot {
       shell: shell
       manifest: shell.barManifestFor(shell.defaultBarId)
     }
+  }
+
+  EmptyWorkspaceFocusBorder {
+    surfaceAllowed: !shell.previewMode && !shell.testSurfaceSuppressed
   }
 
   Loader {
