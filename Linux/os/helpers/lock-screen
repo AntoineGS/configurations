@@ -2,9 +2,6 @@
 
 # Locks the system using hyprlock and ensures 1password has also been locked.
 
-# Lock the screen
-pidof hyprlock || hyprlock &
-
 # Set keyboard layout to default (first layout)
 hyprctl switchxkblayout all 0 > /dev/null 2>&1
 
@@ -12,3 +9,7 @@ hyprctl switchxkblayout all 0 > /dev/null 2>&1
 if pgrep -x "1password" >/dev/null; then
   1password --lock &
 fi
+
+# Keep the locker attached so Quickshell keeps its output pipes open until unlock.
+# Backgrounding it lets the menu action exit early and kills hyprlock with SIGPIPE.
+pidof hyprlock >/dev/null || exec hyprlock
