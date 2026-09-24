@@ -43,6 +43,7 @@ lazydocker
 lazygit
 libqalculate
 libxcrypt-compat
+libxml2-legacy
 luarocks
 mise
 mpv
