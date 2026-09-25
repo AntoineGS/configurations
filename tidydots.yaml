@@ -72,16 +72,8 @@ applications:
         brew: opencode
         yay: opencode-beta
     name: opencode
-    description: AI coding agent — Claude Max subscription via opencode-with-claude/Meridian plugin; context analysis and magic-context plugins
+    description: AI coding agent — Claude Max subscription via Meridian
     entries:
-      - check:
-          linux: 'opencode plugin check opencode-with-claude | grep -q ''(current)'''
-          windows: 'if (-not (opencode plugin check opencode-with-claude | Select-String -Quiet ''\(current\)'')) { exit 1 }'
-        run:
-          linux: opencode plugin update opencode-with-claude
-          windows: opencode plugin update opencode-with-claude
-        name: claude-plugin
-        when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
         run:
@@ -92,13 +84,6 @@ applications:
           windows: ~/.config/opencode
         name: config
         backup: ./Linux/opencode
-      - targets:
-          linux: ~/.config/environment.d
-        name: claude-environment
-        backup: ./Linux/opencode/environment
-        files:
-          - opencode-with-claude.conf
-        when: '{{ eq .Hostname "antoinews-linux" }}'
       - check:
           linux: ~/.config/opencode/setup-config-dir-env.sh --check
         run:
@@ -120,6 +105,51 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
+  - name: meridian
+    description: Standalone Claude Max proxy and OpenCode prompt scrubber
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    package:
+      managers:
+        yay:
+          name: meridian
+          deps:
+            - claude-code
+            - npm
+    entries:
+      # Retain the existing filename so deployed environment.d links stay valid.
+      - name: environment
+        backup: ./Linux/opencode/environment
+        targets:
+          linux: ~/.config/environment.d
+        files:
+          - opencode-with-claude.conf
+      - name: plugins
+        backup: ./Linux/meridian
+        targets:
+          linux: ~/.config/meridian
+        files:
+          - plugins.json.tmpl
+      - name: opencode-scrub
+        check:
+          linux: 'test -r "$HOME/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/index.js" && node -e ''process.exit(require(process.env.HOME + "/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/package.json").version === "0.2.0" ? 0 : 1)'''
+        run:
+          linux: npm install --prefix "$HOME/.config/meridian" --no-save --package-lock=false @rynfar/meridian-plugin-opencode-scrub@0.2.0
+      - name: user-service
+        backup: ./Linux/meridian/systemd
+        targets:
+          linux: ~/.config/systemd/user
+        files:
+          - meridian.service
+      - name: enable-user-lingering
+        check:
+          linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
+        run:
+          linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
+      - name: enable-service
+        check:
+          linux: systemctl --user is-enabled --quiet meridian.service && systemctl --user is-active --quiet meridian.service && test "$(systemctl --user show meridian.service --property=NeedDaemonReload --value)" = no && started=$(date --date="$(systemctl --user show meridian.service --property=ExecMainStartTimestamp --value)" +%s) && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/systemd/user/meridian.service")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/environment.d/opencode-with-claude.conf")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/meridian/plugins.json")" && test "$started" -ge "$(stat -Lc %Y /usr/lib/meridian/package.json)" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/package.json")"
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable meridian.service && systemctl --user restart meridian.service
   - name: home-assistant-review
     description: Daily Astra log review, local reports, and phone notifications
     when: '{{ and (eq .OS "linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
