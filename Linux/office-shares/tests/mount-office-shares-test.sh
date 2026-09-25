@@ -117,6 +117,11 @@ if [[ "${OFFICE_TEST_FAIL_SHARE:-}" == "${mountpoint_path##*/}" ]]; then
   exit 1
 fi
 
+# The VM install share carries the empty mountpoints for the IDE settings shares.
+if [[ "${mountpoint_path##*/}" == 'Embarcadero' ]]; then
+  mkdir -p -- "$mountpoint_path/AppData/CodeGear/BDS" "$mountpoint_path/AppData/Embarcadero/BDS"
+fi
+
 printf '%s\n' "$mountpoint_path" >>"$OFFICE_TEST_MOUNTED"
 printf 'KRB5CCNAME=%s path=%s\n' "${KRB5CCNAME-}" "$mountpoint_path" >>"$OFFICE_TEST_STATE/mount.log"
 STUB
@@ -147,7 +152,9 @@ expected_mounts_for() {
     "$directory/J-fichierscommuns" \
     "$directory/O-applications" \
     "$directory/Z-QA" \
-    "$directory/Embarcadero"
+    "$directory/Embarcadero" \
+    "$directory/Embarcadero/AppData/CodeGear/BDS" \
+    "$directory/Embarcadero/AppData/Embarcadero/BDS"
 }
 
 old_gvfs_target() {
@@ -190,7 +197,7 @@ expected_timeouts="$expected_mounts"
 expected_timeouts="${expected_timeouts//$'\n'/$'\n15s mount '}"
 expected_timeouts="15s mount $expected_timeouts"
 [[ "$(<"$test_state/timeout.log")" == "$expected_timeouts" ]] || fail 'mount timeout invocations differ'
-[[ "$(<"$test_state/stdin.log")" == $'closed\nclosed\nclosed\nclosed\nclosed' ]] || fail 'mount stdin was not closed'
+[[ "$(<"$test_state/stdin.log")" == $'closed\nclosed\nclosed\nclosed\nclosed\nclosed\nclosed' ]] || fail 'mount stdin was not closed'
 [[ "$(<"$test_state/probe.log")" == 'probe antoinews.multidev.local:445' ]] || \
   fail 'VM reachability was not probed exactly once'
 
@@ -211,10 +218,12 @@ expected_offline_mounts="$(printf '%s\n' \
   "$offline_shares/Z-QA")"
 actual_offline_mounts="$(awk -F ' path=' '{ print $2 }' "$offline_state/mount.log")"
 [[ "$actual_offline_mounts" == "$expected_offline_mounts" ]] || fail 'offline VM changed the office share mounts'
-if grep -Fq -- "$offline_shares/Embarcadero" "$offline_state/attempt.log"; then
-  fail 'offline VM share was still attempted'
-fi
-[[ ! -e "$offline_shares/Embarcadero" ]] || fail 'offline VM share mountpoint was created'
+for link_name in Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS; do
+  if grep -Fq -- "$offline_shares/$link_name" "$offline_state/attempt.log"; then
+    fail "offline VM share was still attempted: $link_name"
+  fi
+  [[ ! -e "$offline_shares/$link_name" ]] || fail "offline VM share mountpoint was created: $link_name"
+done
 grep -Fq -- 'skipping' "$tmp_dir/offline-vm.err" || fail 'offline VM skip was not logged'
 test_state="$tmp_dir/state"
 test_shares="$tmp_dir/Shares"
@@ -302,7 +311,9 @@ expected_failure_mounts="$(printf '%s\n' \
   "$failure_shares/G-serveurgdb" \
   "$failure_shares/J-fichierscommuns" \
   "$failure_shares/Z-QA" \
-  "$failure_shares/Embarcadero")"
+  "$failure_shares/Embarcadero" \
+  "$failure_shares/Embarcadero/AppData/CodeGear/BDS" \
+  "$failure_shares/Embarcadero/AppData/Embarcadero/BDS")"
 actual_failure_mounts="$(awk -F ' path=' '{ print $2 }' "$failure_state/mount.log")"
 [[ "$actual_failure_mounts" == "$expected_failure_mounts" ]] || \
   fail 'one-share failure prevented independent mounts'
@@ -311,8 +322,23 @@ if grep -Fq -- "$failure_shares/O-applications" "$failure_state/mount.log"; then
 fi
 grep -Fq -- "path=$failure_shares/O-applications" "$failure_state/attempt.log" || \
   fail 'failed mount was not attempted'
-for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero; do
+for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS; do
   [[ -d "$failure_shares/$link_name" ]] || fail "mountpoint directory missing after isolated failure: $link_name"
 done
+
+parent_state="$tmp_dir/parent-failure-state"
+parent_shares="$tmp_dir/parent-failure-Shares"
+mkdir -p -- "$parent_state" "$parent_shares"
+test_state="$parent_state"
+test_shares="$parent_shares"
+test_fail_share=Embarcadero
+if run_helper 2>"$tmp_dir/parent-failure.err"; then
+  fail 'parent share failure returned success'
+fi
+[[ ! -e "$parent_shares/Embarcadero/AppData" ]] || fail 'nested mountpoints were created under an unmounted parent'
+if grep -Fq -- "$parent_shares/Embarcadero/AppData" "$parent_state/attempt.log"; then
+  fail 'nested share was mounted without its parent'
+fi
+grep -Fq -- 'nested mountpoint is missing' "$tmp_dir/parent-failure.err" || fail 'missing nested mountpoint was not logged'
 
 printf 'PASS: office share mount helper\n'

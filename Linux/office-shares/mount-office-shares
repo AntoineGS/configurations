@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Mount the office shares using the current user's selected Kerberos cache.
-# The four md-fs01 shares are required; the Embarcadero share lives on the
-# Windows VM and is skipped without failure whenever the VM is unreachable.
+# The four md-fs01 shares are required; the Embarcadero install and IDE
+# settings shares live on the Windows VM and are skipped without failure
+# whenever the VM is unreachable. The IDE settings shares are nested inside the
+# install share, whose empty AppData folders provide their mountpoints.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
@@ -21,9 +23,9 @@ runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 legacy_root="${OFFICE_SHARES_GVFS_ROOT:-$runtime_dir/gvfs}"
 shares_dir="${OFFICE_SHARES_DIR:-$HOME/Shares}"
 
-share_servers=("$office_server" "$office_server" "$office_server" "$office_server" "$vm_server")
-remote_shares=(serveurgdb fichierscommuns applications qa Embarcadero)
-link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero)
+share_servers=("$office_server" "$office_server" "$office_server" "$office_server" "$vm_server" "$vm_server" "$vm_server")
+remote_shares=(serveurgdb fichierscommuns applications qa Embarcadero CodeGear-BDS Embarcadero-BDS)
+link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS)
 optional_servers=("$vm_server")
 
 declare -A probe_results=()
@@ -114,6 +116,12 @@ reconcile_path() {
   fi
 
   if [[ ! -d "$mountpoint_path" ]]; then
+    # Nested mountpoints come from the parent share; creating them locally
+    # would hide the new mount under the parent once it is mounted.
+    if [[ "${mountpoint_path%/*}" != "$shares_dir" ]]; then
+      log "nested mountpoint is missing, is its parent share mounted? $mountpoint_path"
+      return 1
+    fi
     mkdir -- "$mountpoint_path" || return 1
   fi
 
