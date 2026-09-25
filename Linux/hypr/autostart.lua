@@ -37,8 +37,12 @@ hl.on("hyprland.start", function()
 	-- Hyprland 0.55 regression: cursor cannot enter DP-2's region until the monitor is re-applied.
 	-- `hyprctl keyword` is disabled under the Lua parser, so route the nudge through `hyprctl eval` instead.
 	if hostname == "antoinews-linux" then
+		-- Preserve the selected layout instead of forcing DP-2 back to the left.
 		hl.exec_cmd(
-			[[sleep 2 && hyprctl -j monitors all | jq -e '.[] | select(.name == "DP-2" and .disabled != true)' >/dev/null && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1x0", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "0x0", scale = 1 })']]
+			[[sleep 2 && code=$(hyprctl -j monitors all | jq -r '
+				.[] | select(.name == "DP-2" and .disabled != true)
+				| "hl.monitor({ output = \"DP-2\", mode = \"1920x1080@60\", position = \"\(.x + 1)x\(.y)\", scale = \(.scale) }); hl.monitor({ output = \"DP-2\", mode = \"1920x1080@60\", position = \"\(.x)x\(.y)\", scale = \(.scale) })"
+			') && [ -n "$code" ] && hyprctl eval "$code"]]
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
 		hl.exec_cmd(

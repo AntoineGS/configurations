@@ -7,6 +7,45 @@ if hostname_pipe then
   hostname_pipe:close()
 end
 
+local has_window_beyond = require("bindings.workspace-edge")
+
+local function vertical_window_action(direction, workspace, move)
+  return function()
+    local window = hl.get_active_window()
+    if not window then
+      if not move then
+        hl.dispatch(hl.dsp.focus({ workspace = workspace }))
+      end
+      return
+    end
+
+    local within_workspace = window.floating or not window.workspace
+      or has_window_beyond(window, hl.get_workspace_windows(window.workspace), direction)
+
+    if within_workspace then
+      if move then
+        hl.dispatch(hl.dsp.window.move({ direction = direction }))
+      else
+        hl.dispatch(hl.dsp.focus({ direction = direction }))
+      end
+    elseif move then
+      hl.dispatch(hl.dsp.window.move({ workspace = workspace }))
+    else
+      hl.dispatch(hl.dsp.focus({ workspace = workspace }))
+    end
+  end
+end
+
+local function horizontal_focus_action(monitor, focused_action)
+  return function()
+    if hl.get_active_window() then
+      hl.dispatch(focused_action)
+    else
+      hl.dispatch(hl.dsp.focus({ monitor = monitor }))
+    end
+  end
+end
+
 -- Fullscreen management
 hl.bind("SUPER + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }), { description = "Force full screen" })
 hl.bind("SUPER + F",         hl.dsp.window.fullscreen({ mode = "maximized",  action = "toggle" }), { description = "Full width" })
@@ -79,20 +118,18 @@ end)
 -- Tiling
 hl.bind("SUPER + SHIFT + H", hl.dsp.window.move({ direction = "left"  }), { description = "Move window to left workspace" })
 hl.bind("SUPER + SHIFT + L", hl.dsp.window.move({ direction = "right" }), { description = "Move window to right workspace" })
-hl.bind("SUPER + SHIFT + K", hl.dsp.window.move({ direction = "up"    }), { description = "Move window to upper workspace" })
-hl.bind("SUPER + SHIFT + J", hl.dsp.window.move({ direction = "down"  }), { description = "Move window to lower workspace" })
+hl.bind("SUPER + SHIFT + K", vertical_window_action("up", "m-1", true), { description = "Move window up or to previous workspace" })
+hl.bind("SUPER + SHIFT + J", vertical_window_action("down", "m+1", true), { description = "Move window down or to next workspace" })
 hl.bind("SUPER + M",         hl.dsp.layout("swapwithmaster"),             { description = "Swap with master" })
 
 if hostname == "antoinews-linux" then
-  hl.bind("SUPER + H", hl.dsp.exec_cmd("~/.config/hypr/rustdesk-focus-handoff.sh send"), { description = "Move focus left" })
+  hl.bind("SUPER + H", horizontal_focus_action("l", hl.dsp.exec_cmd("~/.config/hypr/rustdesk-focus-handoff.sh send")), { description = "Move focus left" })
 else
-  hl.bind("SUPER + H", hl.dsp.focus({ direction = "left" }), { description = "Move focus left" })
+  hl.bind("SUPER + H", horizontal_focus_action("l", hl.dsp.focus({ direction = "left" })), { description = "Move focus left" })
 end
-hl.bind("SUPER + L", hl.dsp.focus({ direction = "right" }), { description = "Move focus right" })
-hl.bind("SUPER + K", hl.dsp.focus({ direction = "up"    }), { description = "Move focus up" })
-hl.bind("SUPER + J", hl.dsp.focus({ direction = "down"  }), { description = "Move focus down" })
-hl.bind("SUPER + N", hl.dsp.focus({ workspace  = "m+1"  }), { description = "Next workspace on monitor" })
-hl.bind("SUPER + P", hl.dsp.focus({ workspace  = "m-1"  }), { description = "Previous workspace on monitor" })
+hl.bind("SUPER + L", horizontal_focus_action("r", hl.dsp.focus({ direction = "right" })), { description = "Move focus right" })
+hl.bind("SUPER + K", vertical_window_action("up", "m-1", false), { description = "Focus up or previous workspace" })
+hl.bind("SUPER + J", vertical_window_action("down", "m+1", false), { description = "Focus down or next workspace" })
 hl.bind("SUPER + SHIFT + ALT + H", hl.dsp.workspace.move({ monitor = "l" }), { description = "Move current workspace left" })
 hl.bind("SUPER + SHIFT + ALT + L", hl.dsp.workspace.move({ monitor = "r" }), { description = "Move current workspace right" })
 
