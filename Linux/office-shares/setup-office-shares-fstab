@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Manage the Kerberos-only office share block in fstab.
 # The Embarcadero entry is the read-only RAD Studio install share on the
-# Windows VM (antoinews); it is optional and only mounted when the VM is up.
+# Windows VM (antoinews). The CodeGear-BDS/Embarcadero-BDS entries are the
+# %APPDATA% IDE settings, nested under Embarcadero/AppData so they mirror the
+# Windows layout. All three are optional and only mounted when the VM is up.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
@@ -101,6 +103,8 @@ resolve_settings() {
     "//md-fs01.multidev.local/applications $home_path/Shares/O-applications cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//md-fs01.multidev.local/qa $home_path/Shares/Z-QA cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//antoinews.multidev.local/Embarcadero $home_path/Shares/Embarcadero cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//antoinews.multidev.local/CodeGear-BDS $home_path/Shares/Embarcadero/AppData/CodeGear/BDS cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//antoinews.multidev.local/Embarcadero-BDS $home_path/Shares/Embarcadero/AppData/Embarcadero/BDS cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
   )
 }
 
