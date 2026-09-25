@@ -18,6 +18,7 @@
   "trigger.toggle.workspace-layout": { "label": "Toggle workspace layout", "action": "trigger.toggle.workspace-layout" },
   "trigger.toggle.nightlight": { "label": "Toggle nightlight", "action": "trigger.toggle.nightlight" },
   "trigger.toggle.idle-lock": { "label": "Toggle idle lock", "action": "trigger.toggle.idle-lock" },
+  "trigger.toggle.do-not-disturb": { "label": "Toggle Do Not Disturb (DND)", "action": "trigger.toggle.do-not-disturb" },
   "trigger.turn-off-screens": { "label": "Turn off screens", "action": "trigger.turn-off-screens" },
   "trigger.start-all-terminals": { "label": "Start all terminals", "action": "trigger.start-all-terminals" },
 
