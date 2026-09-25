@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: herdr-clipboard {local|remote|status}
+
+  local   Select this PC's Wayland desktop clipboard, even when run over SSH.
+          Discovers the desktop through the systemd user environment (UWSM).
+  remote  Select the clipboard forwarded into the current SSH shell.
+          Run in the outer Waypipe/SSH shell, before attaching to Herdr.
+  status  Show the saved clipboard display and whether its socket exists.
+
+Examples:
+  herdr-clipboard local
+  ssh work-pc '~/.local/share/helpers/herdr-clipboard local'
+  waypipe ssh work-pc '~/.local/share/helpers/herdr-clipboard remote && herdr'
+
+Remote mode requires Wayland forwarding such as Waypipe; plain SSH is not enough.
+Selection is shared by Herdr panes using the wl-copy/wl-paste helpers, including
+already-running OpenCode processes. The last selection wins. SSH reconnect or
+disconnect hooks can replace or clear it; rerun this command when switching.
+Status checks the saved socket, not its responsiveness or clipboard contents.
+EOF
+}
+
+fail() {
+  printf 'herdr-clipboard: %s\n' "$*" >&2
+  exit 1
+}
+
+# Read only clipboard-related values, without evaluating shell assignments.
+desktop_environment() {
+  local values
+  values=$(systemctl --user show-environment --output=json 2>/dev/null |
+    jq -er '
+      [.WAYLAND_DISPLAY, .XDG_RUNTIME_DIR, (.DISPLAY // "")]
+      | select(all(.[]; type == "string"))
+      | select(.[0] != "" and .[1] != "")
+      | select(all(.[]; test("[\u0000-\u001f\u007f]") | not))
+      | .[]
+    ' 2>/dev/null) || return 1
+  mapfile -t desktop_values <<< "$values"
+}
+
+socket_path() {
+  if [[ $1 == /* ]]; then
+    printf '%s\n' "$1"
+  else
+    printf '%s/%s\n' "$2" "$1"
+  fi
+}
+
+[[ $# == 1 ]] || { usage >&2; exit 2; }
+case $1 in
+  -h|--help|help) usage; exit 0 ;;
+  local|remote|status) ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+# SSH command shells do not necessarily have the helpers directory on PATH.
+env_helper="$(dirname -- "${BASH_SOURCE[0]}")/herdr-waypipe-env"
+[[ -x $env_helper ]] || fail "Missing environment helper: $env_helper"
+
+if [[ $1 == status ]]; then
+  if snapshot=$("$env_helper" read); then
+    printf 'Selected clipboard (socket exists):\n%s\n' "$snapshot"
+  else
+    fail 'No usable saved clipboard display. Run herdr-clipboard local or remote.'
+  fi
+  exit 0
+fi
+
+desktop_values=()
+case $1 in
+  local)
+    desktop_environment || fail 'No Wayland desktop found in the systemd user environment. Log into the PC desktop first.'
+    wayland_display=${desktop_values[0]}
+    xdg_runtime_dir=${desktop_values[1]}
+    display=${desktop_values[2]-}
+    ;;
+  remote)
+    [[ ${HERDR_ENV-} != 1 ]] || fail 'Run remote mode in the outer forwarded SSH shell, not inside a persistent Herdr pane.'
+    [[ -n ${SSH_CONNECTION-}${SSH_TTY-} ]] || fail 'Run remote mode in a Waypipe/SSH shell on the target PC.'
+    wayland_display=${WAYLAND_DISPLAY-}
+    xdg_runtime_dir=${XDG_RUNTIME_DIR-}
+    display=${DISPLAY-}
+    [[ -n $wayland_display && -n $xdg_runtime_dir ]] ||
+      fail 'This SSH shell has no forwarded Wayland display. Connect with Waypipe first.'
+    if desktop_environment; then
+      remote_socket=$(socket_path "$wayland_display" "$xdg_runtime_dir")
+      local_socket=$(socket_path "${desktop_values[0]}" "${desktop_values[1]}")
+      [[ ! $remote_socket -ef $local_socket ]] ||
+        fail 'This shell points to the PC desktop, not a forwarded clipboard. Connect with Waypipe first.'
+    fi
+    ;;
+esac
+
+socket=$(socket_path "$wayland_display" "$xdg_runtime_dir")
+[[ -S $socket ]] || fail "Wayland socket is unavailable: $socket"
+WAYLAND_DISPLAY=$wayland_display XDG_RUNTIME_DIR=$xdg_runtime_dir DISPLAY=$display \
+  "$env_helper" publish || fail 'Could not save the clipboard environment.'
+
+printf 'Selected %s clipboard: %s\n' "$1" "$socket"
+printf 'Try Ctrl+V in OpenCode. This selection applies to the shared Herdr clipboard environment.\n'
