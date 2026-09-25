@@ -23,6 +23,7 @@ export PATH="~/.local/bin:$PATH"
 export PATH="$PATH:$(go env GOPATH)/bin"
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense' # optional
 export RIPGREP_CONFIG_PATH=~/.ripgreprc
+export MERIDIAN_CLAUDE_PATH=/usr/bin/claude
 
 # Load local secrets (not tracked in git)
 if [[ -f ~/.zshenv.local ]]; then
