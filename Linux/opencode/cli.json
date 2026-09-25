@@ -7,8 +7,8 @@
     "app.exit": "ctrl+c,<leader>q",
     "session.page.up": "ctrl+u",
     "session.page.down": "ctrl+d",
-    "input.submit": "alt+return",
-    "input.newline": "return,shift+return,ctrl+return,ctrl+j"
+    "input.submit": "return",
+    "input.newline": "shift+return,ctrl+return,ctrl+j"
   },
   "plugins": [
     "./herdr-opencode",
@@ -27,7 +27,7 @@
     "markdown": "rendered",
     "permissions": "autoaccept"
   },
-  "animations": true,
+  "animations": false,
   "tabs": {
     "enabled": false
   }
