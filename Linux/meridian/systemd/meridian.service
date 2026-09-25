@@ -1,0 +1,21 @@
+[Unit]
+Description=Meridian Claude Max proxy
+ConditionFileIsExecutable=/usr/bin/meridian
+ConditionFileIsExecutable=/usr/bin/claude
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=%h
+Environment=MERIDIAN_HOST=127.0.0.1
+Environment=MERIDIAN_PORT=3456
+Environment=MERIDIAN_CLAUDE_PATH=/usr/bin/claude
+EnvironmentFile=%h/.config/environment.d/opencode-with-claude.conf
+ExecStart=/usr/bin/meridian
+KillMode=mixed
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
