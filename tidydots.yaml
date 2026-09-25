@@ -1515,6 +1515,13 @@ applications:
         files:
           - outlook-for-linux.desktop
       - targets:
+          linux: ~/.local/share/applications
+        name: teams-for-linux-electron desktop override
+        when: '{{ eq .Hostname "antoinews-linux" }}'
+        backup: ./Linux/os/application-overrides
+        files:
+          - teams-for-linux-electron.desktop
+      - targets:
           linux: ~/.local/share/applications/antoinews-linux
         name: antoinews-linux .desktop files
         when: '{{ eq .Hostname "antoinews-linux" }}'
