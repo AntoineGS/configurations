@@ -9,6 +9,9 @@ export default Plugin.define({
 
     const refresh = async () => {
       const location = context.location ?? context.data.location.default();
+      // This listener can run before the data layer invalidates its agent
+      // cache, in which case sync() would resolve with the stale roster.
+      context.data.location.agent.invalidate(location);
       await context.data.location.agent.sync(location);
       const agent = context.data.location.agent.list(location)?.find((item) => item.id === "orchestrator");
       const active = agent?.model?.providerID;

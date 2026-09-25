@@ -115,27 +115,30 @@ export default {
         return `Agent provider: ${state.provider}\n${tiers}`;
       };
 
+      // Synthetic messages schedule a model turn by default; these are status
+      // notes for the user, so admit them without resuming the session.
+      const notify = (sessionID, text) => ctx.session.synthetic({ sessionID, text, resume: false });
+
       const switchProvider = async (sessionID, requested) => {
         state.manifest = await loadManifest();
         const available = await refresh();
 
         if (!requested) {
-          await ctx.session.synthetic({ sessionID, text: status() });
+          await notify(sessionID, status());
           return;
         }
 
         const next = requested === "toggle" ? [...available].find((provider) => provider !== state.provider) : requested;
 
         if (!next || !available.has(next)) {
-          const text = `Provider ${requested} is not available here. Available: ${[...available].join(", ")}`;
-          await ctx.session.synthetic({ sessionID, text });
+          await notify(sessionID, `Provider ${requested} is not available here. Available: ${[...available].join(", ")}`);
           return;
         }
 
         state.provider = next;
         await ctx.storage.set(STORAGE_KEY, next);
         await ctx.agent.reload();
-        await ctx.session.synthetic({ sessionID, text: status() });
+        await notify(sessionID, status());
       };
 
       await ctx.command.transform((editor) => {

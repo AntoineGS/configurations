@@ -18,7 +18,7 @@
         "variant": "high"
       },
       "anthropic": {
-        "id": "claude-opus-5",
+        "id": "claude-opus-5-5",
         "variant": "high"
       }
     },
@@ -28,7 +28,7 @@
         "variant": "medium"
       },
       "anthropic": {
-        "id": "claude-opus-5",
+        "id": "claude-opus-5-5",
         "variant": "medium"
       }
     },
