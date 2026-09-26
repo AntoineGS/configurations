@@ -14,7 +14,6 @@ hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
 meridian
-meridian-debug
 oh-my-zsh-git
 onedrive-abraunegg
 opencode-beta
