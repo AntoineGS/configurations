@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Mount the office shares using the current user's selected Kerberos cache.
-# The four md-fs01 shares are required; the Embarcadero install and IDE
-# settings shares live on the Windows VM and are skipped without failure
-# whenever the VM is unreachable. The IDE settings shares are nested inside the
-# install share, whose empty AppData folders provide their mountpoints.
+# The four md-fs01 shares are required; the Embarcadero install, IDE settings,
+# third-party dependency and platform SDK shares live on the Windows VM and are
+# skipped without failure whenever the VM is unreachable. All but the install
+# share are nested inside it, whose empty AppData, Dependencies and SDKs
+# folders provide their mountpoints.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
@@ -23,9 +24,25 @@ runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$UID}"
 legacy_root="${OFFICE_SHARES_GVFS_ROOT:-$runtime_dir/gvfs}"
 shares_dir="${OFFICE_SHARES_DIR:-$HOME/Shares}"
 
-share_servers=("$office_server" "$office_server" "$office_server" "$office_server" "$vm_server" "$vm_server" "$vm_server")
-remote_shares=(serveurgdb fichierscommuns applications qa Embarcadero CodeGear-BDS Embarcadero-BDS)
-link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS)
+share_servers=("$office_server" "$office_server" "$office_server" "$office_server" "$vm_server")
+remote_shares=(serveurgdb fichierscommuns applications qa Embarcadero)
+link_names=(G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero)
+
+vm_nested_shares=(
+  CodeGear-BDS:AppData/CodeGear/BDS
+  Embarcadero-BDS:AppData/Embarcadero/BDS
+  Delphi-Devart:Dependencies/Devart
+  Delphi-FastReports:Dependencies/FastReports
+  Delphi-ImageEn:Dependencies/ImageEn
+  Delphi-Raize:Dependencies/Raize
+  Delphi-Woll2Woll:Dependencies/Woll2Woll
+  Delphi-SDKs:SDKs
+)
+for nested_share in "${vm_nested_shares[@]}"; do
+  share_servers+=("$vm_server")
+  remote_shares+=("${nested_share%%:*}")
+  link_names+=("Embarcadero/${nested_share#*:}")
+done
 optional_servers=("$vm_server")
 
 declare -A probe_results=()

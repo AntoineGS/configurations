@@ -11,6 +11,17 @@ gvfs_root="$tmp_dir/runtime/gvfs"
 test_state="$tmp_dir/state"
 test_shares="$tmp_dir/Shares"
 test_fail_share=''
+# VM shares mounted inside the Embarcadero install share, in helper order.
+vm_nested_links=(
+  Embarcadero/AppData/CodeGear/BDS
+  Embarcadero/AppData/Embarcadero/BDS
+  Embarcadero/Dependencies/Devart
+  Embarcadero/Dependencies/FastReports
+  Embarcadero/Dependencies/ImageEn
+  Embarcadero/Dependencies/Raize
+  Embarcadero/Dependencies/Woll2Woll
+  Embarcadero/SDKs
+)
 
 cleanup() {
   rm -rf -- "$tmp_dir"
@@ -119,7 +130,9 @@ fi
 
 # The VM install share carries the empty mountpoints for the IDE settings shares.
 if [[ "${mountpoint_path##*/}" == 'Embarcadero' ]]; then
-  mkdir -p -- "$mountpoint_path/AppData/CodeGear/BDS" "$mountpoint_path/AppData/Embarcadero/BDS"
+  for nested_link in $OFFICE_TEST_NESTED_LINKS; do
+    mkdir -p -- "${mountpoint_path%/Embarcadero}/$nested_link"
+  done
 fi
 
 printf '%s\n' "$mountpoint_path" >>"$OFFICE_TEST_MOUNTED"
@@ -139,6 +152,7 @@ run_helper() {
     OFFICE_TEST_STATE="$test_state" \
     OFFICE_TEST_FAIL_SHARE="$test_fail_share" \
     OFFICE_TEST_PROBE_STATUS="${OFFICE_TEST_PROBE_STATUS:-0}" \
+    OFFICE_TEST_NESTED_LINKS="${vm_nested_links[*]}" \
     OFFICE_SHARES_CACHE_DIR="$cache_dir" \
     OFFICE_SHARES_DIR="$test_shares" \
     OFFICE_SHARES_GVFS_ROOT="$gvfs_root" \
@@ -153,8 +167,7 @@ expected_mounts_for() {
     "$directory/O-applications" \
     "$directory/Z-QA" \
     "$directory/Embarcadero" \
-    "$directory/Embarcadero/AppData/CodeGear/BDS" \
-    "$directory/Embarcadero/AppData/Embarcadero/BDS"
+    "${vm_nested_links[@]/#/$directory/}"
 }
 
 old_gvfs_target() {
@@ -197,7 +210,8 @@ expected_timeouts="$expected_mounts"
 expected_timeouts="${expected_timeouts//$'\n'/$'\n15s mount '}"
 expected_timeouts="15s mount $expected_timeouts"
 [[ "$(<"$test_state/timeout.log")" == "$expected_timeouts" ]] || fail 'mount timeout invocations differ'
-[[ "$(<"$test_state/stdin.log")" == $'closed\nclosed\nclosed\nclosed\nclosed\nclosed\nclosed' ]] || fail 'mount stdin was not closed'
+expected_stdin="$(awk '{ print "closed" }' <<<"$expected_mounts")"
+[[ "$(<"$test_state/stdin.log")" == "$expected_stdin" ]] || fail 'mount stdin was not closed'
 [[ "$(<"$test_state/probe.log")" == 'probe antoinews.multidev.local:445' ]] || \
   fail 'VM reachability was not probed exactly once'
 
@@ -218,7 +232,7 @@ expected_offline_mounts="$(printf '%s\n' \
   "$offline_shares/Z-QA")"
 actual_offline_mounts="$(awk -F ' path=' '{ print $2 }' "$offline_state/mount.log")"
 [[ "$actual_offline_mounts" == "$expected_offline_mounts" ]] || fail 'offline VM changed the office share mounts'
-for link_name in Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS; do
+for link_name in Embarcadero "${vm_nested_links[@]}"; do
   if grep -Fq -- "$offline_shares/$link_name" "$offline_state/attempt.log"; then
     fail "offline VM share was still attempted: $link_name"
   fi
@@ -312,8 +326,7 @@ expected_failure_mounts="$(printf '%s\n' \
   "$failure_shares/J-fichierscommuns" \
   "$failure_shares/Z-QA" \
   "$failure_shares/Embarcadero" \
-  "$failure_shares/Embarcadero/AppData/CodeGear/BDS" \
-  "$failure_shares/Embarcadero/AppData/Embarcadero/BDS")"
+  "${vm_nested_links[@]/#/$failure_shares/}")"
 actual_failure_mounts="$(awk -F ' path=' '{ print $2 }' "$failure_state/mount.log")"
 [[ "$actual_failure_mounts" == "$expected_failure_mounts" ]] || \
   fail 'one-share failure prevented independent mounts'
@@ -322,7 +335,7 @@ if grep -Fq -- "$failure_shares/O-applications" "$failure_state/mount.log"; then
 fi
 grep -Fq -- "path=$failure_shares/O-applications" "$failure_state/attempt.log" || \
   fail 'failed mount was not attempted'
-for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero Embarcadero/AppData/CodeGear/BDS Embarcadero/AppData/Embarcadero/BDS; do
+for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero "${vm_nested_links[@]}"; do
   [[ -d "$failure_shares/$link_name" ]] || fail "mountpoint directory missing after isolated failure: $link_name"
 done
 
@@ -335,8 +348,10 @@ test_fail_share=Embarcadero
 if run_helper 2>"$tmp_dir/parent-failure.err"; then
   fail 'parent share failure returned success'
 fi
-[[ ! -e "$parent_shares/Embarcadero/AppData" ]] || fail 'nested mountpoints were created under an unmounted parent'
-if grep -Fq -- "$parent_shares/Embarcadero/AppData" "$parent_state/attempt.log"; then
+[[ ! -e "$parent_shares/Embarcadero/AppData" && ! -e "$parent_shares/Embarcadero/Dependencies" && \
+  ! -e "$parent_shares/Embarcadero/SDKs" ]] || \
+  fail 'nested mountpoints were created under an unmounted parent'
+if grep -Fq -- "$parent_shares/Embarcadero/" "$parent_state/attempt.log"; then
   fail 'nested share was mounted without its parent'
 fi
 grep -Fq -- 'nested mountpoint is missing' "$tmp_dir/parent-failure.err" || fail 'missing nested mountpoint was not logged'
