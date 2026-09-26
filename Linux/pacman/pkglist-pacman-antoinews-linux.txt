@@ -82,7 +82,7 @@ uwsm
 virt-manager
 waypipe
 whois
-wine
+winetricks
 wiremix
 woff2-font-awesome
 wtype
