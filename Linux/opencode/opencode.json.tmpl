@@ -148,6 +148,64 @@
       },
       "oauth": false,
       "timeout": 30000
+    },
+    "rdbg_x64": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "set -euo pipefail; repo_root=$(git rev-parse --show-toplevel); exec \"$repo_root/Tools/wine-debug-mcp\""
+      ],
+      "cwd": ".",
+      "enabled": false,
+      "timeout": 60000,
+      "environment": {
+        "MULTIDEV_RDBG_BITNESS": "x64"
+      }
+    },
+    "rdbg_x86": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "set -euo pipefail; repo_root=$(git rev-parse --show-toplevel); exec \"$repo_root/Tools/wine-debug-mcp\""
+      ],
+      "cwd": ".",
+      "enabled": false,
+      "timeout": 60000,
+      "environment": {
+        "MULTIDEV_RDBG_BITNESS": "x86"
+      }
+    },
+    "rdbg_vm_x64": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "set -euo pipefail; repo_root=$(git rev-parse --show-toplevel); exec \"$repo_root/Tools/windows-debug-mcp\""
+      ],
+      "cwd": ".",
+      "enabled": false,
+      "timeout": 15000,
+      "environment": {
+        "MULTIDEV_RDBG_BITNESS": "x64",
+        "MULTIDEV_WINDOWS_HOST": "a.simard@multidev.local@192.168.122.53"
+      }
+    },
+    "rdbg_vm_x86": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "set -euo pipefail; repo_root=$(git rev-parse --show-toplevel); exec \"$repo_root/Tools/windows-debug-mcp\""
+      ],
+      "cwd": ".",
+      "enabled": false,
+      "timeout": 15000,
+      "environment": {
+        "MULTIDEV_RDBG_BITNESS": "x86",
+        "MULTIDEV_WINDOWS_HOST": "a.simard@multidev.local@192.168.122.53"
+      }
     }
 {{ end }}
   },
