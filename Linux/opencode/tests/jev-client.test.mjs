@@ -107,4 +107,8 @@ test("size bounds, missing credential, and unknown billed cost", async () => {
   assert.equal((await tiny.client.evaluate(request())).reason,"response-too-large");
   const client = createJevClient({ctx:{integration:{connection:{active:async()=>undefined}}},config:loadConfig(),usage:f.usage});
   assert.equal((await client.evaluate(request())).reason,"credentials-unavailable");
+  const denied = fixture(async () => new Response("private error body",{status:403}));
+  const result = await denied.client.evaluate(request());
+  assert.equal(result.httpStatus,403); assert.equal(result.reason,"authentication");
+  assert.equal(JSON.stringify(result).includes("private"),false);
 });

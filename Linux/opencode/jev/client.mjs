@@ -103,12 +103,13 @@ export function createJevClient({ ctx, config, usage, fetchImpl = fetch, now = D
         const inputHash = hash([ENDPOINT,credential.identity,body,request.rubricVersion]);
         result = await cache.subscribe(inputHash, async signal => {
           const release = await acquire(signal);
-          const requestID = randomUUID(); let counted = false; let cost = {}; let model;
+          const requestID = randomUUID(); let counted = false; let cost = {}; let model; let httpStatus;
           try {
             if (!request.bypassCooldown && cooldownUntil > now()) return fallback("cooldown");
             started = true; counted = true;
             const response = await fetchImpl(ENDPOINT, {method:"POST",redirect:"error",signal,
               headers:{Authorization:`Bearer ${credential.apiKey}`,"Content-Type":"application/json"},body});
+            httpStatus = response.status;
             if (!response.ok) {
               await response.body?.cancel();
               throw new Error(response.status === 401 || response.status === 403 ? "authentication" : response.status === 429 ? "rate-limit" : "http");
@@ -127,7 +128,7 @@ export function createJevClient({ ctx, config, usage, fetchImpl = fetch, now = D
             if (["authentication","rate-limit","http","network"].includes(reason)) {
               failures++; if (failures >= config.cooldownFailures) cooldownUntil = now()+config.cooldownMs;
             }
-            return fallback(reason);
+            return {...fallback(reason),httpStatus};
           } finally {
             release();
             if (counted) await record({...base,transport:true,requestID,model,...cost,inputHash,latencyMs:now()-start});
