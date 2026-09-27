@@ -15,7 +15,8 @@ export async function classifyTask({client,task,view,prompt,previous,deadlineAt}
     if (length + message.text.length > 8000) break;
     length += message.text.length; tail.unshift(message.text);
   }
-  const context = {request,files:prompt.files ?? [],explicitAgents:prompt.agents ?? [],explicitSkills:prompt.skills ?? [],tail};
+  const context = {request,initialRequest:request,followups:[],omittedFollowups:0,
+    files:prompt.files ?? [],explicitAgents:prompt.agents ?? [],explicitSkills:prompt.skills ?? [],tail};
   if (!previous) return {kind:view.messages.some(m=>m.type==="user")?"unknown":"new",context};
   let kind = "continue";
   if (!view.busy && !/^(continue|yes|ok(?:ay)?|go ahead|keep going)[.!\s]*$/i.test(request)) {
@@ -23,6 +24,17 @@ export async function classifyTask({client,task,view,prompt,previous,deadlineAt}
       questions:taskQuestions(),rubricVersion,deadlineAt});
     if (result.status === "ok" && result.answers.independent.noul >= 0.8) kind = "new";
   }
-  if (kind === "continue") context.request = `${previous.request}\n\nFollow-up: ${request}`;
+  if (kind === "continue") {
+    context.initialRequest=previous.initialRequest ?? previous.request;
+    context.followups=[...(previous.followups ?? []),request];
+    context.omittedFollowups=previous.omittedFollowups ?? 0;
+    // Keep complete messages and always keep the current request intact. Never
+    // append an already-rendered previous window into the new window.
+    let size=context.followups.reduce((n,message)=>n+message.length+2,0);
+    while(context.followups.length>1 && size>8000) {
+      size-=context.followups.shift().length+2;context.omittedFollowups++;
+    }
+    context.request=`${context.initialRequest}\n\nRecent follow-ups (${context.omittedFollowups} earlier omitted):\n${context.followups.join("\n\n")}`;
+  } else context.tail=[];
   return {kind,context};
 }

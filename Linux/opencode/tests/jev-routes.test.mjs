@@ -65,3 +65,15 @@ test("specialist fit is independent of cost route and only produces an advisory 
   const result=await selectRoute({client,task,view:{},context:{request:"Optimize SQL",files:[]},routing:r,config:loadConfig()});
   assert.equal(result.agent,"build");assert.equal(result.specialist,"sql-pro");assert.equal(calls,2);
 });
+
+test("many corrections retain initial and current requirements within a bounded complete-message window",async()=>{
+  const client={evaluate:async()=>({status:"ok",answers:{independent:{type:"noul",noul:0}}})};
+  let previous=(await classifyTask({client,task,view:{messages:[]},prompt:{text:"Original requirement: preserve transactions."}})).context;
+  for(let i=0;i<1000;i++){
+    const current=`Correction ${i}: retain all current constraints and investigate the next failing case.`;
+    previous=(await classifyTask({client,task,view:{messages:[]},prompt:{text:current},previous})).context;
+    assert.ok(previous.request.includes(current));assert.ok(previous.request.includes("Original requirement: preserve transactions."));
+    assert.ok(previous.request.length<8500);
+  }
+  assert.ok(previous.omittedFollowups>0);
+});

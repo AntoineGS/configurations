@@ -20,7 +20,8 @@ export function chooseReviewers({answers={},policy,agents,complete,config}) {
   const missingRequired=required.filter(id=>!available.has(id));
   const requested=[...new Set([...required,...dimensions.map(d=>reviewAgents[d])])];
   const missingRelevant=requested.filter(id=>!available.has(id));
-  return {status:policy.mode==="full"?"full":invalid||!complete||missingRelevant.length?"fallback":"selected",
+  const incomplete=!complete || missingRelevant.length>0;
+  return {status:incomplete?"fallback":policy.mode==="full"?"full":invalid?"fallback":"selected",
     selectedAgents:policy.delegationAllowed?requested.filter(id=>available.has(id)):[],missingRequired,missingRelevant,
     dimensions,delegationAllowed:policy.delegationAllowed,baselineRequired:policy.baselineRequired};
 }
