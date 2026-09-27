@@ -2,11 +2,13 @@ import { loadConfig } from "./config.mjs";
 import { createJevClient } from "./client.mjs";
 import { createUsage } from "./usage.mjs";
 import { createSessions } from "./sessions.mjs";
-import { hash, notify, readSessionView, resolveOpenRouter, unwrap } from "./runtime.mjs";
+import { hash, notify, readSessionView, resolveOpenRouter, unwrap, textResult } from "./runtime.mjs";
 import { classifyTask, workflowMode } from "./tasks.mjs";
 import { applyRoute, canRoute, selectRoute } from "./routes.mjs";
 import { readRouting } from "./routing.mjs";
 import { suggestSkills, renderSkillHint, skillCatalogHash } from "./skills.mjs";
+import { createArchive } from "./archive.mjs";
+import { filterContext } from "./context.mjs";
 
 export const doctorQuestions = {
   build: {type:"noul",instructions:"Does the state describe a compiler failure?"},
@@ -22,9 +24,39 @@ export async function setupJev(ctx) {
   const client = createJevClient({ctx,config,usage});
   const sessions = createSessions({storage:ctx.storage,readView:id=>readSessionView(ctx,id),enabled:config.enabled});
   const registrations = []; const abort = new AbortController();
+  const archive = createArchive({retentionMs:config.archiveRetentionDays*86400000});
+  const toolTasks = new Map();
+  void archive.prune().catch(()=>{});
+  const pruneTimer = setInterval(()=>void archive.prune().catch(()=>{}),86400000);
+  pruneTimer.unref?.();
   const guard = fn => async (...args) => {
     try { return await fn(...args); } catch { console.error("jev: operation-fallback"); }
   };
+  registrations.push(await ctx.tool.transform(editor=>{
+    editor.add({name:"context_read",description:"Recover complete text omitted by Jev. Uses current session only; offsets are UTF-16 characters.",
+      options:{namespace:"jev",codemode:true},input:{type:"object",properties:{id:{type:"string"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:16000}},required:["id"],additionalProperties:false},
+      execute:async (input,toolContext)=>{
+        try {return textResult(JSON.stringify(await archive.read({...input,sessionID:toolContext.sessionID})));}
+        catch {return textResult("Recovery unavailable: invalid reference, expired record, or invalid offset/limit. The original command was not rerun.");}
+      }});
+  }));
+  registrations.push(await ctx.tool.hook("execute.before",guard(async event=>{
+    if (!config.features.context || !["grep","webfetch","shell"].includes(event.tool)) return;
+    const state = await sessions.get(event.sessionID);
+    if (state.task && sessions.current(state.task)) toolTasks.set(`${event.sessionID}/${event.id}`,state.task);
+    while (toolTasks.size>512) toolTasks.delete(toolTasks.keys().next().value);
+  })));
+  registrations.push(await ctx.tool.hook("execute.after",guard(async event=>{
+    const key=`${event.sessionID}/${event.id}`;const task=toolTasks.get(key);toolTasks.delete(key);
+    if (!task || event.status!=="completed" || !sessions.current(task)) return;
+    const result=await filterContext({client,archive,sessions,task,event,config});
+    await sessions.get(event.sessionID); // Revalidate a moved session after asynchronous I/O.
+    if (sessions.current(task)) {
+      event.result=result;
+      if(result.metadata?.jev) await usage.record({sessionID:event.sessionID,taskID:task.taskID,kind:"context-selected",
+        originalChars:result.metadata.jev.originalChars,selectedChars:result.metadata.jev.selectedChars});
+    }
+  })));
   registrations.push(await ctx.session.hook("prompt",guard(async event => {
     const state = await sessions.get(event.sessionID);
     if (!state.enabled) return;
@@ -113,7 +145,7 @@ export async function setupJev(ctx) {
     }),
   })));
   return async () => {
-    abort.abort(); sessions.close(); client.close();
+    abort.abort(); clearInterval(pruneTimer); toolTasks.clear(); sessions.close(); client.close();
     await Promise.all(registrations.map(registration=>registration.dispose()));
   };
 }
