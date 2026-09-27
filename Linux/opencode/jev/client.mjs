@@ -134,7 +134,7 @@ export function createJevClient({ ctx, config, usage, fetchImpl = fetch, now = D
             if (counted) await record({...base,transport:true,requestID,model,...cost,inputHash,latencyMs:now()-start});
           }
         },{signal:request.task.signal,deadlineAt});
-        result = {...result,cached:!started};
+        result = {...result,cached:result.status==="ok" && !started};
       } catch (error) {
         const allowed = ["closed","cooldown","invalid-questions","request-too-large","credentials-unavailable"];
         result = fallback(allowed.includes(error?.message) ? error.message : request.task.signal?.aborted ? "cancelled" : "deadline");

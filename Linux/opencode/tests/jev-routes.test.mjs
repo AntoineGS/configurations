@@ -55,3 +55,13 @@ test("task continuations and explicit workflow modes bypass expensive classifica
   assert.equal(workflowMode("Treat this as a one-shot task. I explicitly request that you skip brainstorming,"),"none");
   assert.equal(workflowMode("You are a subagent spawned by another session.\n# Comprehensive Code Review Orchestrator"),"full");
 });
+
+test("specialist fit is independent of cost route and only produces an advisory hint",async()=>{
+  const r=routing();r.agents.push({id:"sql-pro",mode:"subagent",description:"SQL query optimization"});
+  let calls=0;
+  const client={evaluate:async request=>{calls++;return request.kind==="route"
+    ? {status:"ok",answers:{route:{choice:"direct",confidence:1},specialist:{choice:"sql-pro",confidence:1}}}
+    : {status:"ok",answers:{fit:{type:"noul",noul:0.9}}};}};
+  const result=await selectRoute({client,task,view:{},context:{request:"Optimize SQL",files:[]},routing:r,config:loadConfig()});
+  assert.equal(result.agent,"build");assert.equal(result.specialist,"sql-pro");assert.equal(calls,2);
+});

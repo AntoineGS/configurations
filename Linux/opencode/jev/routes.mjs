@@ -16,7 +16,7 @@ const intents = [
   {key:"coordinate",agent:"orchestrator",tier:"orchestration",description:"Multi-part implementation requiring specialist coordination"},
   {key:"reason",agent:"build",tier:"reasoning",description:"Complex causal investigation or difficult design reasoning by one worker"},
 ];
-export async function selectRoute({client,task,view,context,routing,config,deadlineAt}) {
+export async function selectRoute({client,task,view,context,routing,config,deadlineAt=Date.now()+config.deadlineMs}) {
   const no = reason => ({status:"fallback",reason});
   if (context.files?.length || context.explicitAgents?.length || !routing.provider || context.request.length > 12000) return no("route-ineligible");
   const candidates = intents.flatMap(intent => {
@@ -29,12 +29,24 @@ export async function selectRoute({client,task,view,context,routing,config,deadl
     return [{...intent,agent,model}];
   });
   if (!candidates.length) return no("no-candidates");
-  const result = await client.evaluate({task,kind:"route",state:context,questions:routeQuestions(candidates),rubricVersion,deadlineAt});
+  const specialists=routing.agents.filter(a=>!a.hidden && a.mode==="subagent" && a.description);
+  const questions=routeQuestions(candidates);
+  if(specialists.length>0 && specialists.length<=254) questions.specialist={type:"choice",instructions:
+    "Independently of the model tier, which domain specialist would materially help if delegation is already authorized? Choose none if unnecessary. This does not authorize delegation.",
+    criteria:{none:"No specialist needed",...Object.fromEntries(specialists.map(a=>[a.id,a.description.slice(0,400)]))}};
+  const result = await client.evaluate({task,kind:"route",state:context,questions,rubricVersion,deadlineAt});
   if (result.status !== "ok") return result;
   const answer = result.answers.route;
   const chosen = candidates.find(c=>c.key===answer.choice);
   if (!chosen || answer.confidence < config.routeConfidence) return no("uncertain-route");
-  return {status:"selected",agent:chosen.agent,model:chosen.model,provider:routing.provider,confidence:answer.confidence};
+  let specialist;
+  const suggested=specialists.find(a=>a.id===result.answers.specialist?.choice);
+  if(suggested && result.answers.specialist.confidence>=config.routeConfidence) {
+    const fit=await client.evaluate({task,kind:"specialist-fit",state:{request:context.request,specialist:{id:suggested.id,description:suggested.description}},
+      questions:{fit:{type:"noul",instructions:"Does the described specialist materially help the current task? A shared keyword alone is insufficient."}},rubricVersion,deadlineAt});
+    if(fit.status==="ok" && fit.answers.fit.noul>=config.skillFitProbability)specialist=suggested.id;
+  }
+  return {status:"selected",agent:chosen.agent,model:chosen.model,provider:routing.provider,confidence:answer.confidence,specialist};
 }
 
 export async function applyRoute({ctx,sessions,task,route}) {

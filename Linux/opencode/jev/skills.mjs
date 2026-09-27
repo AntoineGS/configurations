@@ -29,7 +29,7 @@ export async function suggestSkills({client,task,context,catalog,explicitIDs=[],
   const fit = await client.evaluate({task,kind:"skill-fit",state:{request:context.request,candidates:excerpts},
     questions:skillFitQuestions(finalists),rubricVersion,deadlineAt});
   if (fit.status !== "ok" || task.signal.aborted) return none("fit-failed");
-  return {status:"ok",catalogHash,suggestedIDs:finalists.filter(s=>fit.answers[s.id]?.noul>=config.skillFitProbability)
+  return {status:"ok",catalogHash,signals:Object.fromEntries(finalists.map(s=>[s.id,fit.answers[s.id]?.noul])),suggestedIDs:finalists.filter(s=>fit.answers[s.id]?.noul>=config.skillFitProbability)
     .sort((a,b)=>fit.answers[b.id].noul-fit.answers[a.id].noul).slice(0,config.skillLimit).map(s=>s.id)};
 }
 export function renderSkillHint(result) {

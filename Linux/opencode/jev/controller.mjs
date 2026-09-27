@@ -84,6 +84,7 @@ export async function setupJev(ctx) {
     }
   })));
   registrations.push(await ctx.session.hook("prompt",guard(async event => {
+    if (!Object.values(config.features).some(Boolean)) return;
     const state = await sessions.get(event.sessionID);
     if (!state.enabled) return;
     if (state.revision === event.messageID) return;
@@ -99,6 +100,7 @@ export async function setupJev(ctx) {
       const classified = await classifyTask({client,task,view:{...view,busy},prompt:event.prompt,previous:state.context,deadlineAt});
       if (!sessions.current(task)) return;
       if (classified.kind === "new" && !busy) task.taskID = event.messageID;
+      if(classified.kind === "new")state.specialist=undefined;
       state.context = classified.context;
       const mode = workflowMode(event.prompt.text);
       state.workflow = mode === "adaptive" && classified.kind !== "new" ? (state.workflow ?? mode) : mode;
@@ -108,8 +110,9 @@ export async function setupJev(ctx) {
         const route = await selectRoute({client,task,view,context:state.context,routing,config,deadlineAt});
         if (route.status === "selected" && sessions.current(task)) {
           const result = await applyRoute({ctx,sessions,task,view,route});
+          if(sessions.current(task))state.specialist=route.specialist;
           await usage.record({sessionID:event.sessionID,taskID:task.taskID,kind:"route-applied",status:result.status,
-            reason:result.reason,selectedIDs:[route.agent,`${route.model.providerID}/${route.model.id}`]});
+            reason:result.reason,signals:{confidence:route.confidence},selectedIDs:[route.agent,`${route.model.providerID}/${route.model.id}`]});
         }
       }
       state.awaitingAdmission = true;
@@ -120,7 +123,11 @@ export async function setupJev(ctx) {
         const reuse = classified.kind !== "new" && /^(continue|yes|ok(?:ay)?|go ahead|keep going)[.!\s]*$/i.test(event.prompt.text)
           && oldHint?.catalogHash === skillCatalogHash(catalog) && oldHint.explicitHash === explicitHash;
         const suggestion = reuse ? oldHint : await suggestSkills({client,task,context:state.context,catalog,explicitIDs,config});
-        if (sessions.current(task)) state.hint = {...suggestion,taskID:task.taskID,explicitHash};
+        if (sessions.current(task)) {
+          state.hint = {...suggestion,taskID:task.taskID,explicitHash};
+          if(!reuse)await usage.record({sessionID:event.sessionID,taskID:task.taskID,kind:"skill-suggested",status:suggestion.status,
+            reason:suggestion.reason,selectedIDs:suggestion.suggestedIDs,signals:suggestion.signals});
+        }
       }
     });
   })));
@@ -128,6 +135,8 @@ export async function setupJev(ctx) {
     const state = await sessions.get(event.sessionID);
     state.awaitingAdmission = false;
     if (!state.enabled || !state.task || !sessions.current(state.task)) return;
+    if(state.specialist && state.workflow==="adaptive") event.system.push({type:"text",text:
+      `Jev advisory specialist fit: ${state.specialist}. Consider this through ordinary delegation only if the user and repository already permit it. This is not an instruction to spawn an agent.`});
     if(config.features.review && state.workflow!=="none" && state.workflow!=="full") event.system.push({type:"text",text:
       "When your ordinary workflow requires review, use jev_review_select at that review boundary with the actual scope, requirements, and repository/user policy. Keep mandatory correctness reviews. This adds no review phase where review is excluded, authorizes no delegation, and never narrows an explicitly requested full review. On fallback, use your ordinary review workflow."});
     if (state.hint) {
@@ -137,18 +146,22 @@ export async function setupJev(ctx) {
       if (text && sessions.current(state.task)) event.system.push({type:"text",text});
     }
   })));
-  void (async () => {
-    for await (const event of ctx.event.subscribe({signal:abort.signal})) {
+  const onEvent=guard(async event=>{
       const sessionID = event.data?.sessionID;
-      if (!sessionID || event.location?.directory !== ctx.location.directory) continue;
+      if (!sessionID || (event.location?.directory !== ctx.location.directory && !sessions.has(sessionID))) return;
       if (["session.model.selected","session.agent.selected"].includes(event.type)) {
         const state = await sessions.get(sessionID);
         const view = await readSessionView(ctx,sessionID);
         if (!state.applying && !canRoute({view:{...view,busy:false},ownership:state.route})) await sessions.pin(sessionID);
-      } else if (event.type === "session.location.switched" || event.type === "session.interrupted") {
+      } else if (["session.moved","session.execution.interrupted","session.inbox.cancelled"].includes(event.type)) {
         sessions.invalidate(sessionID);
+        if(sessions.has(sessionID))(await sessions.get(sessionID)).awaitingAdmission=false;
+      } else if (["session.execution.succeeded","session.execution.failed"].includes(event.type) && sessions.has(sessionID)) {
+        (await sessions.get(sessionID)).awaitingAdmission=false;
       }
-    }
+  });
+  void (async () => {
+    for await (const event of ctx.event.subscribe({signal:abort.signal})) await onEvent(event);
   })().catch(()=>{});
   registrations.push(await ctx.command.transform(editor=>editor.add({name:"review-adaptive",description:"Select relevant reviews for the current working diff",execute:guard(async({sessionID,prompt,delivery})=>{
     const view=await readSessionView(ctx,sessionID);
