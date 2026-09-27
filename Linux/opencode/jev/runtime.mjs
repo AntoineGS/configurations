@@ -5,7 +5,9 @@ import { createHash } from "node:crypto";
 // Same-model switchModel is silent: /jev pin is the explicit ownership override.
 // The plugin's session API lacks active(); infer busy conservatively from history.
 export const unwrap = value => value && typeof value === "object" && "data" in value ? value.data : value;
-export const hash = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export const hash = value => createHash("sha256").update(JSON.stringify(value, (_key,item) =>
+  item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])) : item) ?? "undefined").digest("hex");
 
 export async function resolveOpenRouter(ctx) {
   const connection = await ctx.integration.connection.active("openrouter");

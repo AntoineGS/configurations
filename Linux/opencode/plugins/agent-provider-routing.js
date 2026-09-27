@@ -6,61 +6,8 @@
 // storage, so it survives restarts. Agent `.md` files carry no model/variant
 // frontmatter: this plugin is the only thing that assigns them.
 
-import { readFile } from "node:fs/promises";
-
-const MANIFEST = new URL("../agent-routing.json", import.meta.url);
+import { loadManifest, resolveCatalog, providersFor, modelFor } from "../jev/routing.mjs";
 const STORAGE_KEY = "provider";
-
-async function loadManifest() {
-  const manifest = JSON.parse(await readFile(MANIFEST, "utf8"));
-  if (!manifest?.tiers || !manifest?.agents) throw new Error("agent-routing.json: expected tiers and agents");
-  for (const [agent, tier] of Object.entries(manifest.agents)) {
-    if (!manifest.tiers[tier]) throw new Error(`agent-routing.json: ${agent} uses unknown tier ${tier}`);
-  }
-  return manifest;
-}
-
-// Context read methods mirror the HTTP client, which wraps collections in a
-// `data` envelope. Older shapes return the array directly.
-function asArray(result) {
-  if (Array.isArray(result)) return result;
-  if (Array.isArray(result?.data)) return result.data;
-  return [];
-}
-
-// Providers a tier can actually reach right now. The anthropic provider is only
-// configured on some hosts, so availability is checked against the live model
-// list rather than assumed from the manifest.
-function resolveCatalog(models) {
-  const catalog = new Map();
-  for (const model of asArray(models)) {
-    if (model.enabled === false) continue;
-    catalog.set(`${model.providerID}/${model.id}`, new Set((model.variants ?? []).map((variant) => variant.id)));
-  }
-  return catalog;
-}
-
-function providersFor(manifest, catalog) {
-  const providers = new Set();
-  for (const tier of Object.values(manifest.tiers)) {
-    for (const [provider, target] of Object.entries(tier)) {
-      if (catalog.has(`${provider}/${target.id}`)) providers.add(provider);
-    }
-  }
-  return providers;
-}
-
-// A model that does not expose the requested variant still works at its own
-// default, so drop the variant instead of failing the switch.
-function modelFor(manifest, catalog, provider, tier) {
-  const target = manifest.tiers[tier]?.[provider];
-  if (!target) return undefined;
-  const variants = catalog.get(`${provider}/${target.id}`);
-  if (!variants) return undefined;
-  const model = { providerID: provider, id: target.id };
-  if (target.variant && variants.has(target.variant)) model.variant = target.variant;
-  return model;
-}
 
 function describe(model) {
   return model.variant ? `${model.providerID}/${model.id}#${model.variant}` : `${model.providerID}/${model.id}`;

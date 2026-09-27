@@ -3,6 +3,9 @@ import { createJevClient } from "./client.mjs";
 import { createUsage } from "./usage.mjs";
 import { createSessions } from "./sessions.mjs";
 import { notify, readSessionView, resolveOpenRouter } from "./runtime.mjs";
+import { classifyTask, workflowMode } from "./tasks.mjs";
+import { applyRoute, canRoute, selectRoute } from "./routes.mjs";
+import { readRouting } from "./routing.mjs";
 
 export const doctorQuestions = {
   build: {type:"noul",instructions:"Does the state describe a compiler failure?"},
@@ -21,6 +24,54 @@ export async function setupJev(ctx) {
   const guard = fn => async (...args) => {
     try { return await fn(...args); } catch { console.error("jev: operation-fallback"); }
   };
+  registrations.push(await ctx.session.hook("prompt",guard(async event => {
+    const state = await sessions.get(event.sessionID);
+    if (!state.enabled) return;
+    if (state.revision === event.messageID) return;
+    const oldTaskID = state.task?.taskID;
+    // Invalidate pending older decisions before joining the admission queue.
+    const task = await sessions.beginTask(event.sessionID,oldTaskID ?? event.messageID,event.messageID);
+    await sessions.serial(event.sessionID,async () => {
+      if (!sessions.current(task)) return;
+      const view = await readSessionView(ctx,event.sessionID);
+      const busy = view.busy || state.awaitingAdmission;
+      const deadlineAt = Date.now()+config.deadlineMs;
+      const classified = await classifyTask({client,task,view:{...view,busy},prompt:event.prompt,previous:state.context,deadlineAt});
+      if (!sessions.current(task)) return;
+      if (classified.kind === "new" && !busy) task.taskID = event.messageID;
+      state.context = classified.context;
+      const mode = workflowMode(event.prompt.text);
+      state.workflow = mode === "adaptive" && classified.kind !== "new" ? (state.workflow ?? mode) : mode;
+      if (config.features.routing && !busy && classified.kind === "new" && state.workflow === "adaptive"
+        && canRoute({view,ownership:state.route})) {
+        const routing = await readRouting(ctx,view.directory);
+        const route = await selectRoute({client,task,view,context:state.context,routing,config,deadlineAt});
+        if (route.status === "selected" && sessions.current(task)) {
+          const result = await applyRoute({ctx,sessions,task,view,route});
+          await usage.record({sessionID:event.sessionID,taskID:task.taskID,kind:"route-applied",status:result.status,
+            reason:result.reason,selectedIDs:[route.agent,`${route.model.providerID}/${route.model.id}`]});
+        }
+      }
+      state.awaitingAdmission = true;
+    });
+  })));
+  registrations.push(await ctx.session.hook("context",guard(async event => {
+    const state = await sessions.get(event.sessionID);
+    state.awaitingAdmission = false;
+  })));
+  void (async () => {
+    for await (const event of ctx.event.subscribe({signal:abort.signal})) {
+      const sessionID = event.data?.sessionID;
+      if (!sessionID || event.location?.directory !== ctx.location.directory) continue;
+      if (["session.model.selected","session.agent.selected"].includes(event.type)) {
+        const state = await sessions.get(sessionID);
+        const view = await readSessionView(ctx,sessionID);
+        if (!state.applying && !canRoute({view:{...view,busy:false},ownership:state.route})) await sessions.pin(sessionID);
+      } else if (event.type === "session.location.switched" || event.type === "session.interrupted") {
+        sessions.invalidate(sessionID);
+      }
+    }
+  })().catch(()=>{});
   registrations.push(await ctx.command.transform(editor => editor.add({
     name:"jev",description:"Jev status, on, off, pin, or doctor",
     execute:guard(async ({sessionID,prompt}) => {
