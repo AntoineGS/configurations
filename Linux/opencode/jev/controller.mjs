@@ -9,6 +9,7 @@ import { readRouting } from "./routing.mjs";
 import { suggestSkills, renderSkillHint, skillCatalogHash } from "./skills.mjs";
 import { createArchive } from "./archive.mjs";
 import { filterContext } from "./context.mjs";
+import { collectReviewScope, selectReview, renderReviewAssignment } from "./reviews.mjs";
 
 export const doctorQuestions = {
   build: {type:"noul",instructions:"Does the state describe a compiler failure?"},
@@ -32,12 +33,37 @@ export async function setupJev(ctx) {
   const guard = fn => async (...args) => {
     try { return await fn(...args); } catch { console.error("jev: operation-fallback"); }
   };
+  const runReview = async (sessionID,input,signal) => {
+    const state=await sessions.get(sessionID);
+    if(!state.enabled || !config.features.review)return {status:"fallback",reason:"review-disabled"};
+    const policy={...input.policy,mode:state.workflow==="none"?"none":state.workflow==="full"?"full":input.policy.mode};
+    const task=state.task ?? await sessions.beginTask(sessionID,`review-${Date.now()}`);
+    const requestTask=signal?{...task,signal:AbortSignal.any([task.signal,signal])}:task;
+    const scope=await collectReviewScope({ctx,sessionID,scope:input.scope});
+    const agents=unwrap(await ctx.agent.list({location:{directory:scope.directory}}));
+    const result=await selectReview({client,task:requestTask,scope,requirements:input.requirements,policy,agents,config});
+    const fresh=await collectReviewScope({ctx,sessionID,scope:input.scope});
+    await sessions.get(sessionID);
+    if(!sessions.current(task) || requestTask.signal.aborted || fresh.hash!==scope.hash) return {...result,status:"fallback",reason:"stale-review-scope",selection:undefined};
+    await usage.record({sessionID,taskID:task.taskID,kind:"review-selected",status:result.status,reason:result.reason,
+      selectedIDs:result.selection?.selectedAgents,signals:result.signals});
+    return result;
+  };
   registrations.push(await ctx.tool.transform(editor=>{
     editor.add({name:"context_read",description:"Recover complete text omitted by Jev. Uses current session only; offsets are UTF-16 characters.",
       options:{namespace:"jev",codemode:true},input:{type:"object",properties:{id:{type:"string"},offset:{type:"integer",minimum:0},limit:{type:"integer",minimum:1,maximum:16000}},required:["id"],additionalProperties:false},
       execute:async (input,toolContext)=>{
         try {return textResult(JSON.stringify(await archive.read({...input,sessionID:toolContext.sessionID})));}
         catch {return textResult("Recovery unavailable: invalid reference, expired record, or invalid offset/limit. The original command was not rerun.");}
+      }});
+    editor.add({name:"review_select",description:"Select review dimensions from the current diff. Supply repository/user policy explicitly; selection is not a correctness verdict.",
+      options:{namespace:"jev",codemode:true},input:{type:"object",properties:{requirements:{type:"string"},
+        scope:{type:"object",properties:{mode:{enum:["working","branch","committed"]},base:{type:"string"},files:{type:"array",items:{type:"string"}}},required:["mode"],additionalProperties:false},
+        policy:{type:"object",properties:{mode:{enum:["adaptive","full","none"]},delegationAllowed:{type:"boolean"},baselineRequired:{type:"boolean"},requiredAgents:{type:"array",items:{type:"string"}}},required:["mode","delegationAllowed","baselineRequired","requiredAgents"],additionalProperties:false}},
+        required:["requirements","scope","policy"],additionalProperties:false},
+      execute:async(input,toolContext)=>{
+        try{return textResult(renderReviewAssignment(await runReview(toolContext.sessionID,input,toolContext.signal)));}
+        catch{return textResult("Jev review selection failed. Use the ordinary review policy, preserving mandatory reviews and delegation restrictions; this is not an all-clear.");}
       }});
   }));
   registrations.push(await ctx.tool.hook("execute.before",guard(async event=>{
@@ -76,7 +102,7 @@ export async function setupJev(ctx) {
       state.context = classified.context;
       const mode = workflowMode(event.prompt.text);
       state.workflow = mode === "adaptive" && classified.kind !== "new" ? (state.workflow ?? mode) : mode;
-      if (config.features.routing && !busy && classified.kind === "new" && state.workflow === "adaptive"
+      if (config.features.routing && !event.metadata?.jevReview && !busy && classified.kind === "new" && state.workflow === "adaptive"
         && canRoute({view,ownership:state.route})) {
         const routing = await readRouting(ctx,view.directory);
         const route = await selectRoute({client,task,view,context:state.context,routing,config,deadlineAt});
@@ -102,6 +128,8 @@ export async function setupJev(ctx) {
     const state = await sessions.get(event.sessionID);
     state.awaitingAdmission = false;
     if (!state.enabled || !state.task || !sessions.current(state.task)) return;
+    if(config.features.review && state.workflow!=="none" && state.workflow!=="full") event.system.push({type:"text",text:
+      "When your ordinary workflow requires review, use jev_review_select at that review boundary with the actual scope, requirements, and repository/user policy. Keep mandatory correctness reviews. This adds no review phase where review is excluded, authorizes no delegation, and never narrows an explicitly requested full review. On fallback, use your ordinary review workflow."});
     if (state.hint) {
       const catalog = unwrap(await ctx.skill.list({location:{directory:state.directory}}));
       if (state.hint.catalogHash !== skillCatalogHash(catalog)) state.hint = undefined;
@@ -122,6 +150,20 @@ export async function setupJev(ctx) {
       }
     }
   })().catch(()=>{});
+  registrations.push(await ctx.command.transform(editor=>editor.add({name:"review-adaptive",description:"Select relevant reviews for the current working diff",execute:guard(async({sessionID,prompt,delivery})=>{
+    const view=await readSessionView(ctx,sessionID);
+    if(view.busy){await notify(ctx,sessionID,"Run /review-adaptive at an idle review boundary.");return;}
+    const requirements=prompt?.text?.trim() || "Review the current working-tree changes.";
+    const state=await sessions.get(sessionID);
+    if(state.enabled){await sessions.beginTask(sessionID,`review-${Date.now()}`);state.workflow="adaptive";}
+    // Repository policy is semantic: the coordinator confirms delegation before
+    // launching anyone. Direct command preselection conservatively forbids it.
+    const input={requirements,scope:{mode:"working"},policy:{mode:"adaptive",delegationAllowed:false,baselineRequired:true,requiredAgents:[]}};
+    let result;
+    try{result=await runReview(sessionID,input,abort.signal);}catch{result={status:"fallback",reason:"scope-unavailable"};}
+    await ctx.session.prompt({...prompt,sessionID,delivery,metadata:{jevReview:true},
+      text:`${requirements}\n\n${renderReviewAssignment(result)}\nConfirm applicable repository/user policy. If delegation is allowed and needed, call jev_review_select with that confirmed policy before assigning specialists.`});
+  })})));
   registrations.push(await ctx.command.transform(editor => editor.add({
     name:"jev",description:"Jev status, on, off, pin, or doctor",
     execute:guard(async ({sessionID,prompt}) => {
