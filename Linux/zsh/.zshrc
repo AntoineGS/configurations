@@ -184,9 +184,9 @@ git-https-to-ssh() {
 
     if [[ "$url" =~ ^https://([^/]+)/(.+)$ ]]; then
         local host="${match[1]}"
-        local path="${match[2]}"
-        local ssh_url="git@${host}:${path}"
-        git remote set-url "$remote" "$ssh_url"
+        local repo_path="${match[2]}"
+        local ssh_url="git@${host}:${repo_path}"
+        git remote set-url "$remote" "$ssh_url" || return $?
         echo "Converted $remote: $url -> $ssh_url"
     else
         echo "URL is not HTTPS format: $url"
