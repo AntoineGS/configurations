@@ -140,3 +140,18 @@ test("durable interruption boundary also invalidates work when a public event is
     release.resolve();await pending;assert.equal(h.switches(),0);
   }finally{release.resolve();await cleanup();}
 });
+
+test("old context hook cannot publish a newer task's skill hint",async t=>{
+  const h=host({features:{routing:false}});t.mock.method(globalThis,"fetch",h.fetch);const cleanup=await setupJev(h.ctx);
+  const release=deferred(),entered=deferred();
+  try{
+    await h.prompt("s","Fix SQL");
+    const list=h.ctx.skill.list;let first=true;
+    h.ctx.skill.list=async()=>{if(first){first=false;entered.resolve();await release.promise;}return list();};
+    const old={sessionID:"s",system:[]};const pending=h.hooks.get("context")(old);await entered.promise;
+    const next=await h.prompt("s","new task: another SQL task");
+    assert.ok(next.system.some(s=>s.text.startsWith("Jev advisory domain-skill")));
+    release.resolve();await pending;
+    assert.equal(old.system.some(s=>s.text.startsWith("Jev advisory domain-skill")),false);
+  }finally{release.resolve();await cleanup();}
+});

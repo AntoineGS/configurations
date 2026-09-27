@@ -59,6 +59,9 @@ history record. Use `/jev pin` to hold that route. Actual changes to the model o
 agent and explicit initial selections remain protected automatically. Unknown
 selection provenance is treated conservatively. A route stays stable through tool
 iterations and follow-up corrections; ambiguous continuations do not reroute.
+Jev keeps the initial request plus an approximately 8,000-character window of
+complete follow-up messages, always retaining the current request intact. Omitted
+older follow-ups are explicitly counted; OpenCode's full conversation is unchanged.
 
 ## Review integration
 
@@ -190,3 +193,9 @@ billed usage was returned. Reconnect OpenRouter, run `/jev doctor`, then exercis
 small task plus continuation, an oversized-result investigation, and a substantial
 review. Successful live decision quality, downstream outcomes, and savings have
 not yet been established.
+
+The post-restart retry also returned HTTP 401 (144 ms). Restarting alone did not
+refresh the saved credential. Independent code review found three issues—stale
+hint publication, incomplete full-review status, and accumulating follow-up
+context—which were fixed with failing-then-passing regressions. All **43** focused
+tests passed after those fixes.

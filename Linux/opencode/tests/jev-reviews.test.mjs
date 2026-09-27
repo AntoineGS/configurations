@@ -42,3 +42,13 @@ test("scope uses live session directory, preserves missing coverage and changes 
   const missing=await collectReviewScope({ctx,sessionID:"s",scope:{mode:"working",files:["missing.sql"]}});
   assert.equal(missing.complete,false);
 });
+
+test("full review reports incomplete scope and missing required agents as fallback",async()=>{
+  const client={evaluate:()=>{throw Error("full review must bypass inference");}};
+  for(const [complete,requiredAgents] of [[false,[]],[true,["unavailable-reviewer"]]]){
+    const r=await selectReview({client,task:{},scope:{hash:"x",complete},requirements:"full review",
+      policy:{...policy,mode:"full",requiredAgents},agents,config});
+    assert.equal(r.status,"fallback");assert.equal(r.policy.mode,"full");
+    if(requiredAgents.length)assert.deepEqual(r.selection.missingRequired,requiredAgents);
+  }
+});

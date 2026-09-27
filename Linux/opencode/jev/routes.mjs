@@ -34,7 +34,7 @@ export async function selectRoute({client,task,view,context,routing,config,deadl
   if(specialists.length>0 && specialists.length<=254) questions.specialist={type:"choice",instructions:
     "Independently of the model tier, which domain specialist would materially help if delegation is already authorized? Choose none if unnecessary. This does not authorize delegation.",
     criteria:{none:"No specialist needed",...Object.fromEntries(specialists.map(a=>[a.id,a.description.slice(0,400)]))}};
-  const result = await client.evaluate({task,kind:"route",state:context,questions,rubricVersion,deadlineAt});
+  const result = await client.evaluate({task,kind:"route",state:{request:context.request,tail:context.tail,files:context.files},questions,rubricVersion,deadlineAt});
   if (result.status !== "ok") return result;
   const answer = result.answers.route;
   const chosen = candidates.find(c=>c.key===answer.choice);

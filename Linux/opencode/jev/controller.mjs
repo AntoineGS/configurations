@@ -134,17 +134,21 @@ export async function setupJev(ctx) {
   registrations.push(await ctx.session.hook("context",guard(async event => {
     const state = await sessions.get(event.sessionID);
     state.awaitingAdmission = false;
-    if (!state.enabled || !state.task || !sessions.current(state.task)) return;
-    if(state.specialist && state.workflow==="adaptive") event.system.push({type:"text",text:
-      `Jev advisory specialist fit: ${state.specialist}. Consider this through ordinary delegation only if the user and repository already permit it. This is not an instruction to spawn an agent.`});
-    if(config.features.review && state.workflow!=="none" && state.workflow!=="full") event.system.push({type:"text",text:
-      "When your ordinary workflow requires review, use jev_review_select at that review boundary with the actual scope, requirements, and repository/user policy. Keep mandatory correctness reviews. This adds no review phase where review is excluded, authorizes no delegation, and never narrows an explicitly requested full review. On fallback, use your ordinary review workflow."});
-    if (state.hint) {
-      const catalog = unwrap(await ctx.skill.list({location:{directory:state.directory}}));
-      if (state.hint.catalogHash !== skillCatalogHash(catalog)) state.hint = undefined;
-      const text = renderSkillHint(state.hint);
-      if (text && sessions.current(state.task)) event.system.push({type:"text",text});
+    const {task,hint,specialist,workflow}=state;
+    if (!state.enabled || !task || !sessions.current(task)) return;
+    let text="";
+    if (hint) {
+      const catalog = unwrap(await ctx.skill.list({location:{directory:task.directory}}));
+      if (!sessions.current(task) || state.hint!==hint) return;
+      if (hint.catalogHash !== skillCatalogHash(catalog)) state.hint = undefined;
+      else text = renderSkillHint(hint);
     }
+    if (!sessions.current(task)) return;
+    if(specialist && workflow==="adaptive") event.system.push({type:"text",text:
+      `Jev advisory specialist fit: ${specialist}. Consider this through ordinary delegation only if the user and repository already permit it. This is not an instruction to spawn an agent.`});
+    if(config.features.review && workflow!=="none" && workflow!=="full") event.system.push({type:"text",text:
+      "When your ordinary workflow requires review, use jev_review_select at that review boundary with the actual scope, requirements, and repository/user policy. Keep mandatory correctness reviews. This adds no review phase where review is excluded, authorizes no delegation, and never narrows an explicitly requested full review. On fallback, use your ordinary review workflow."});
+    if(text) event.system.push({type:"text",text});
   })));
   const onEvent=guard(async event=>{
       const sessionID = event.data?.sessionID;
