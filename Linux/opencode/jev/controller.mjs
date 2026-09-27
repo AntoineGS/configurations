@@ -2,10 +2,11 @@ import { loadConfig } from "./config.mjs";
 import { createJevClient } from "./client.mjs";
 import { createUsage } from "./usage.mjs";
 import { createSessions } from "./sessions.mjs";
-import { notify, readSessionView, resolveOpenRouter } from "./runtime.mjs";
+import { hash, notify, readSessionView, resolveOpenRouter, unwrap } from "./runtime.mjs";
 import { classifyTask, workflowMode } from "./tasks.mjs";
 import { applyRoute, canRoute, selectRoute } from "./routes.mjs";
 import { readRouting } from "./routing.mjs";
+import { suggestSkills, renderSkillHint, skillCatalogHash } from "./skills.mjs";
 
 export const doctorQuestions = {
   build: {type:"noul",instructions:"Does the state describe a compiler failure?"},
@@ -29,6 +30,7 @@ export async function setupJev(ctx) {
     if (!state.enabled) return;
     if (state.revision === event.messageID) return;
     const oldTaskID = state.task?.taskID;
+    const oldHint = state.hint;
     // Invalidate pending older decisions before joining the admission queue.
     const task = await sessions.beginTask(event.sessionID,oldTaskID ?? event.messageID,event.messageID);
     await sessions.serial(event.sessionID,async () => {
@@ -53,11 +55,27 @@ export async function setupJev(ctx) {
         }
       }
       state.awaitingAdmission = true;
+      if (config.features.skills && sessions.current(task)) {
+        const catalog = unwrap(await ctx.skill.list({location:{directory:task.directory}}));
+        const explicitIDs = (event.prompt.skills ?? []).map(s=>s.id ?? s.name);
+        const explicitHash = hash(explicitIDs);
+        const reuse = classified.kind !== "new" && /^(continue|yes|ok(?:ay)?|go ahead|keep going)[.!\s]*$/i.test(event.prompt.text)
+          && oldHint?.catalogHash === skillCatalogHash(catalog) && oldHint.explicitHash === explicitHash;
+        const suggestion = reuse ? oldHint : await suggestSkills({client,task,context:state.context,catalog,explicitIDs,config});
+        if (sessions.current(task)) state.hint = {...suggestion,taskID:task.taskID,explicitHash};
+      }
     });
   })));
   registrations.push(await ctx.session.hook("context",guard(async event => {
     const state = await sessions.get(event.sessionID);
     state.awaitingAdmission = false;
+    if (!state.enabled || !state.task || !sessions.current(state.task)) return;
+    if (state.hint) {
+      const catalog = unwrap(await ctx.skill.list({location:{directory:state.directory}}));
+      if (state.hint.catalogHash !== skillCatalogHash(catalog)) state.hint = undefined;
+      const text = renderSkillHint(state.hint);
+      if (text && sessions.current(state.task)) event.system.push({type:"text",text});
+    }
   })));
   void (async () => {
     for await (const event of ctx.event.subscribe({signal:abort.signal})) {
