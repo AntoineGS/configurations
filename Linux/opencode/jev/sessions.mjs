@@ -17,7 +17,7 @@ export function createSessions({ storage, readView, enabled = true }) {
           const stored = await storage.get(`session/${sessionID}`);
           const inherited = stored ? undefined : view.parentID ? (await get(view.parentID)).enabled : enabled;
           const state = {sessionID,directory:view.directory,enabled:stored?.enabled ?? inherited,
-            route:stored?.route ?? {mode:"unknown",eventIDs:[]},epoch:0};
+            route:stored?.route ?? {mode:"unknown",eventIDs:[]},epoch:0,idleID:view.messages?.findLast(m=>m.type==="idle")?.id};
           states.set(sessionID,state);
           if (!stored) await persist(state);
           // Eviction cancels transient work; durable controls reload on demand.
@@ -32,12 +32,18 @@ export function createSessions({ storage, readView, enabled = true }) {
       await loading.get(sessionID);
     }
     const state = states.get(sessionID);
-    if (state.directory !== view.directory) { invalidate(sessionID); state.directory = view.directory; state.context = undefined; }
+    const idle=view.messages?.findLast(m=>m.type==="idle");
+    if(idle?.id!==state.idleID) {
+      if(idle?.outcome==="interrupted")invalidate(sessionID);
+      state.idleID=idle?.id;
+    }
+    if (state.directory !== view.directory) { invalidate(sessionID); state.directory = view.directory; state.context = undefined; state.specialist = undefined; }
     states.delete(sessionID); states.set(sessionID,state);
     return state;
   }
   return {
     get, invalidate,
+    has:sessionID=>states.has(sessionID),
     async setEnabled(sessionID,value) {
       const state = await get(sessionID); invalidate(sessionID); state.enabled = value;
       if (value) {
