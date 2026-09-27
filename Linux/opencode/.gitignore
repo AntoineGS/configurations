@@ -28,6 +28,8 @@
 !skills/
 !skills/**
 !plugins/
+!jev/
+!jev/**
 !plugins/agent-provider-routing.js
 !plugins/opencode-tmux-agent-indicator.js
 !plugins/opencode-tmux-agent-indicator.test.mjs
