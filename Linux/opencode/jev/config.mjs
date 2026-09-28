@@ -1,7 +1,7 @@
 export const defaults = Object.freeze({
   enabled: true,
   features: Object.freeze({ routing: true, review: true, context: true, skills: true }),
-  model: "typesafe/jev-1.13", deadlineMs: 2000, concurrency: 2,
+  model: "jev-1.13.0", deadlineMs: 2000, concurrency: 2,
   maxRequestBytes: 48000, maxResponseBytes: 262144,
   cacheEntries: 256, cacheTtlMs: 900000, cooldownFailures: 3, cooldownMs: 30000,
   contextThresholdChars: 16000, contextTargetChars: 8000,
@@ -22,7 +22,7 @@ export function loadConfig(options = {}) {
       if (!Number.isFinite(value) || value < (probability ? 0 : 1) || (probability ? value > 1 : !Number.isInteger(value))) {
         throw new Error("invalid-number");
       }
-    } else if (typeof value !== typeof defaults[key] || (key === "model" && !value.startsWith("typesafe/"))) {
+    } else if (typeof value !== typeof defaults[key] || (key === "model" && !/^jev-[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value))) {
       throw new Error("invalid-option");
     }
   }

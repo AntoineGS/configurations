@@ -1,25 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveOpenRouter, readSessionView, readCatalogs, unwrap } from "../jev/runtime.mjs";
+import { resolveTypeSafe, readSessionView, readCatalogs, unwrap } from "../jev/runtime.mjs";
 
 test("credential rotation changes opaque cache identity without exposing keys", async () => {
   let connection = { type: "credential", id: "one", method: "key" };
   let value = { type: "key", key: "secret-one" };
   const ctx = { integration: { connection: {
-    active: async id => { assert.equal(id, "openrouter"); return connection; },
+    active: async id => { assert.equal(id, "typesafe"); return connection; },
     resolve: async selected => { assert.equal(selected, connection); return value; },
   } } };
-  const first = await resolveOpenRouter(ctx);
+  const first = await resolveTypeSafe(ctx);
   value = { type: "key", key: "secret-two" };
-  assert.notEqual((await resolveOpenRouter(ctx)).identity, first.identity);
+  assert.notEqual((await resolveTypeSafe(ctx)).identity, first.identity);
   assert.equal(first.identity.includes("secret"), false);
-  connection = { type: "env", names: ["OPENROUTER_API_KEY"] };
-  assert.equal((await resolveOpenRouter(ctx)).apiKey, "secret-two");
+  connection = { type: "env", names: ["TYPESAFE_API_KEY"] };
+  assert.equal((await resolveTypeSafe(ctx)).apiKey, "secret-two");
   for (value of [undefined, { type: "key", key: " " }, { type: "oauth", access: "secret" }]) {
-    assert.equal(await resolveOpenRouter(ctx), undefined);
+    assert.equal(await resolveTypeSafe(ctx), undefined);
   }
   connection = undefined;
-  assert.equal(await resolveOpenRouter(ctx), undefined);
+  assert.equal(await resolveTypeSafe(ctx), undefined);
 });
 
 test("session normalization uses live location, explicit selections, and active drain", async () => {

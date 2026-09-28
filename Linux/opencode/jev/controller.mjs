@@ -2,7 +2,7 @@ import { loadConfig } from "./config.mjs";
 import { createJevClient } from "./client.mjs";
 import { createUsage } from "./usage.mjs";
 import { createSessions } from "./sessions.mjs";
-import { hash, notify, readSessionView, resolveOpenRouter, unwrap, textResult } from "./runtime.mjs";
+import { hash, notify, readSessionView, resolveTypeSafe, unwrap, textResult } from "./runtime.mjs";
 import { classifyTask, workflowMode } from "./tasks.mjs";
 import { applyRoute, canRoute, selectRoute } from "./routes.mjs";
 import { readRouting } from "./routing.mjs";
@@ -25,6 +25,11 @@ export async function setupJev(ctx) {
   const client = createJevClient({ctx,config,usage});
   const sessions = createSessions({storage:ctx.storage,readView:id=>readSessionView(ctx,id),enabled:config.enabled});
   const registrations = []; const abort = new AbortController();
+  registrations.push(await ctx.integration.transform(editor=>{
+    editor.method.update({integrationID:"typesafe",method:{type:"key",label:"TypeSafe API key"}});
+    editor.method.update({integrationID:"typesafe",method:{type:"env",names:["TYPESAFE_API_KEY"]}});
+    editor.update("typesafe",integration=>{integration.name="TypeSafe AI";});
+  }));
   const archive = createArchive({retentionMs:config.archiveRetentionDays*86400000});
   const toolTasks = new Map();
   void archive.prune().catch(()=>{});
@@ -191,15 +196,15 @@ export async function setupJev(ctx) {
         const view = await readSessionView(ctx,sessionID); const start = Date.now();
         const result = await client.evaluate({task:{sessionID,taskID:"doctor",directory:view.directory,signal:abort.signal},
           kind:"doctor",rubricVersion:"doctor-1",bypassCooldown:true,state:"Compiler error in example.ts:12: missing semicolon.",questions:doctorQuestions});
-        await notify(ctx,sessionID,JSON.stringify({status:result.status,reason:result.reason,httpStatus:result.httpStatus,model:result.model,
+        await notify(ctx,sessionID,JSON.stringify({backend:"TypeSafe AI",status:result.status,reason:result.reason,httpStatus:result.httpStatus,model:result.model,
           latencyMs:Date.now()-start,usage:result.usage,cached:result.cached},null,2));
         return;
       } else if (command !== "status") {
         await notify(ctx,sessionID,"Usage: /jev status | on | off | pin | doctor"); return;
       }
       const state = await sessions.get(sessionID);
-      const credential = await resolveOpenRouter(ctx).catch(()=>undefined);
-      await notify(ctx,sessionID,JSON.stringify({enabled:state.enabled,features:config.features,backend:"OpenRouter",model:config.model,
+      const credential = await resolveTypeSafe(ctx).catch(()=>undefined);
+      await notify(ctx,sessionID,JSON.stringify({enabled:state.enabled,features:config.features,backend:"TypeSafe AI",model:config.model,
         credentialAvailable:!!credential,routing:state.route.mode,client:client.status(),usage:await usage.snapshot(sessionID)},null,2));
     }),
   })));

@@ -25,7 +25,8 @@ function host(options={}) {
       synthetic:async data=>notes.push(data),prompt:async data=>{calls.push({syntheticPrompt:data});}},
     agent:{list:async()=>({data:agents})},model:{list:async()=>({data:models})},skill:{list:async()=>({data:skills})},
     command:{transform:transform(commands)},tool:{transform:transform(tools),hook:hook(toolHooks)},
-    integration:{connection:{active:async()=>({type:"credential",id:"fixture"}),resolve:async()=>({type:"key",key:"fixture-key"})}},
+    integration:{transform:async fn=>{fn({method:{update(){}},update:(_id,update)=>update({})});return{dispose:async()=>{}};},
+      connection:{active:async id=>id==="typesafe"?{type:"credential",id:"fixture"}:undefined,resolve:async()=>({type:"key",key:"fixture-key"})}},
     event:{async *subscribe({signal}){signal.addEventListener("abort",()=>wake.resolve(),{once:true});while(!signal.aborted){if(!events.length)await wake.promise;while(events.length)yield events.shift();wake=deferred();}}},
     vcs:{diff:async()=>({data:[{file:"db.sql",patch,additions:1,deletions:1,status:"modified"}]}),status:async()=>({data:[{file:"db.sql"}]})},
   };
@@ -37,7 +38,7 @@ function host(options={}) {
       const keys=Object.keys(q.criteria);const choice=keys.includes("direct")?"direct":keys.includes("sql")?"sql":keys[0];
       return[id,{type:"choice",choice,confidence:1,probabilities:Object.fromEntries(keys.map(k=>[k,k===choice?1:0]))}];
     }));
-    return Response.json({model:"typesafe/jev-1.13",answers,usage:{input_tokens:100,cost:0.0000042}});
+    return Response.json({model:"jev-1.13.0",answers,usage:{input_tokens:100,output_tokens:20}});
   };
   async function prompt(id,text,{finish=true,delivery="steer"}={}) {
     const messageID=`u${++sequence}`;await hooks.get("prompt")({sessionID:id,messageID,prompt:{text},delivery});
