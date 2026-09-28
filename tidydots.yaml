@@ -1623,6 +1623,20 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now md-ftp-mount.timer
         name: enable-md-ftp-timer
+      - targets:
+          linux: /etc/libvirt/hooks/qemu.d
+        name: vm-unmount-hook
+        method: copy
+        backup: ./Linux/office-shares
+        files:
+          - office-shares-vm-unmount
+        sudo: true
+      - check:
+          linux: '! systemctl is-active --quiet libvirtd.service || test "$(stat -c %Y /etc/libvirt/hooks/qemu.d/office-shares-vm-unmount)" -lt "$(date -d "$(systemctl show libvirtd.service -p ActiveEnterTimestamp --value)" +%s)"'
+        run:
+          linux: systemctl try-restart libvirtd.service
+        name: reload-libvirt-hooks
+        sudo: true
   - package:
       managers:
         pacman: samba

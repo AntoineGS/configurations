@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# libvirt qemu hook (/etc/libvirt/hooks/qemu.d/office-shares-vm-unmount).
+# Lazily detaches the Windows VM's CIFS mounts as soon as the VM stops, so a
+# powered-off VM never leaves dead mounts behind. The user mount timer
+# remounts them once the VM answers on SMB again. libvirtd only picks up new
+# hook scripts when it starts.
+# Minimum Bash version: 4.4
+
+set -uo pipefail
+
+readonly vm_domain='win11'
+readonly vm_source_prefix='//antoinews.multidev.local/'
+
+# libvirt writes the domain XML on stdin.
+cat >/dev/null
+
+[[ "${1:-}" == "$vm_domain" && "${2:-}" == stopped ]] || exit 0
+
+# Read mountinfo rather than stat-ing the mountpoints, which fails once the
+# server is gone. Deepest mountpoints first so nested shares go before their
+# parent.
+mapfile -t targets < <(
+  awk -v prefix="$vm_source_prefix" '
+    {
+      for (i = 7; i <= NF && $i != "-"; i++) {}
+      if ($(i + 1) == "cifs" && index($(i + 2), prefix) == 1) print length($5) "\t" $5
+    }
+  ' /proc/self/mountinfo | sort -rn | cut -f2-
+)
+
+for target in "${targets[@]}"; do
+  target="$(printf '%b' "$target")"
+  if ! umount --lazy --no-canonicalize -- "$target"; then
+    printf 'office-shares-vm-unmount: failed to detach %s\n' "$target" >&2
+  fi
+done
+
+exit 0
