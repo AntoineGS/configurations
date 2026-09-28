@@ -4,7 +4,8 @@
 # third-party dependency and platform SDK shares live on the Windows VM and are
 # skipped without failure whenever the VM is unreachable. All but the install
 # share are nested inside it, whose empty AppData, Dependencies and SDKs
-# folders provide their mountpoints.
+# folders provide their mountpoints. A libvirt hook
+# (office-shares-vm-unmount) detaches them as soon as the VM stops.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
