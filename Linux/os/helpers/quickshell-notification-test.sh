@@ -13,11 +13,7 @@ for index in "${!urgencies[@]}"; do
   notify-send \
     --app-name "Quickshell Notification Test" \
     --urgency "$urgency" \
-    --expire-time 3000 \
+    --expire-time 5000 \
     "${urgency^} notification" \
     "This is a $urgency urgency notification."
-
-  if ((index < ${#urgencies[@]} - 1)); then
-    sleep 3
-  fi
 done
