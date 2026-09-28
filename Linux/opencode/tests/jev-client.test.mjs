@@ -7,13 +7,13 @@ import { loadConfig } from "../jev/config.mjs";
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const questions = { relevant: { type: "noul", instructions: "Is this about a build failure?" } };
-const good = () => ({ model: "typesafe/jev-1.13", answers: { relevant: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 100, cost: 0.0000042 } });
+const good = () => ({ model: "jev-1.13.0", answers: { relevant: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 100, output_tokens: 20 } });
 const request = (sessionID = "one", state = "build") => ({ task: { sessionID, taskID: "task", epoch: 1, signal: new AbortController().signal }, kind: "test", state, questions, rubricVersion: "1" });
 function fixture(fetchImpl, options = {}, now = Date.now) {
   const data = new Map();
   const usage = createUsage({ storage: { get: async k => data.get(k), set: async (k,v) => { data.set(k,v); } }, now });
   let key = "one";
-  const ctx = { integration: { connection: { active: async () => ({ type: "env" }), resolve: async () => ({ type: "key", key }) } } };
+  const ctx = { integration: { connection: { active: async id => id === "typesafe" ? { type: "env" } : undefined, resolve: async () => ({ type: "key", key }) } } };
   return { usage, rotate: () => { key = "two"; }, client: createJevClient({ ctx, usage, config: loadConfig(options), fetchImpl, now }) };
 }
 
@@ -47,14 +47,22 @@ test("cache expiry and LRU eviction do not retain failed results", async () => {
 
 test("identical sessions share one bill, while rubric and credentials invalidate cache", async () => {
   let calls = 0; const gate = deferred();
-  const f = fixture(async (url, options) => { calls++; assert.equal(options.redirect, "error"); await gate.promise; return Response.json(good()); });
+  const f = fixture(async (url, options) => {
+    calls++; assert.equal(url,"https://api.typesafe.ai/v1/systemone");
+    assert.equal(JSON.parse(options.body).model,"jev-1.13.0");
+    assert.equal(options.headers.Authorization,`Bearer ${calls===3?"two":"one"}`);
+    assert.equal(options.redirect, "error"); await gate.promise; return Response.json(good());
+  });
   const first = f.client.evaluate(request("one")); const second = f.client.evaluate(request("two")); gate.resolve();
   const results = await Promise.all([first,second]);
   assert.ok(results.every(r => r.status === "ok")); assert.equal(calls,1);
-  assert.equal((await f.usage.snapshot("one")).costUSD + (await f.usage.snapshot("two")).costUSD, 0.0000042);
-  await f.client.evaluate(request()); assert.equal(calls,1);
-  await f.client.evaluate({ ...request(), rubricVersion: "2" }); assert.equal(calls,2);
-  f.rotate(); await f.client.evaluate(request()); assert.equal(calls,3);
+  const firstUsage=await f.usage.snapshot("one"),secondUsage=await f.usage.snapshot("two");
+  assert.equal(firstUsage.costUSD+secondUsage.costUSD,0);
+  assert.equal(firstUsage.unknownCostRequests+secondUsage.unknownCostRequests,1);
+  assert.ok(Math.abs(firstUsage.estimatedCostUSD+secondUsage.estimatedCostUSD-0.0000042)<1e-12);
+  assert.equal((await f.client.evaluate(request())).status,"ok"); assert.equal(calls,1);
+  assert.equal((await f.client.evaluate({ ...request(), rubricVersion: "2" })).status,"ok"); assert.equal(calls,2);
+  f.rotate(); assert.equal((await f.client.evaluate(request())).status,"ok"); assert.equal(calls,3);
 });
 
 test("bad answers fail closed but billed invalid responses still count", async () => {
@@ -63,7 +71,7 @@ test("bad answers fail closed but billed invalid responses still count", async (
     assert.equal((await f.client.evaluate(request())).reason, "invalid-response");
     assert.equal((await f.client.evaluate(request())).reason, "invalid-response");
     assert.equal((await f.usage.snapshot("one")).requests, 2);
-    assert.equal((await f.usage.snapshot("one")).costUSD, 0.0000084);
+    assert.ok(Math.abs((await f.usage.snapshot("one")).estimatedCostUSD-0.0000084)<1e-12);
   }
   const q = { x: { type: "choice", instructions: "Choose", criteria: { a:"A", b:"B" } } };
   for (const a of [
@@ -74,6 +82,15 @@ test("bad answers fail closed but billed invalid responses still count", async (
   ]) assert.equal(validateAnswers({ x:a },q),false);
   assert.equal(validateAnswers({ x: { type:"score",score:2,confidence:1,probabilities:{0:0,1:1} } },
     {x:{type:"score",instructions:"Rate",criteria:["low","high"]}}),false);
+});
+
+test("an OpenRouter-only connection cannot supply a direct TypeSafe request",async()=>{
+  let calls=0;
+  const client=createJevClient({config:loadConfig(),usage:{record:async()=>{}},fetchImpl:async()=>{calls++;return Response.json(good());},
+    ctx:{integration:{connection:{active:async id=>id==="openrouter"?{type:"credential",id:"old"}:undefined,
+      resolve:async()=>({type:"key",key:"old-router-key"})}}}});
+  assert.equal((await client.evaluate(request())).reason,"credentials-unavailable");
+  assert.equal(calls,0);
 });
 
 test("cooldown after three failures, doctor bypass and success reset", async () => {

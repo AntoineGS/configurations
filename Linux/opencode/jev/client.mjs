@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { hash, resolveOpenRouter } from "./runtime.mjs";
+import { hash, resolveTypeSafe } from "./runtime.mjs";
 import { createRequestCache } from "./request-cache.mjs";
 
-const ENDPOINT = "https://openrouter.ai/api/v1/systemone";
+const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const probability = value => Number.isFinite(value) && value >= 0 && value <= 1;
 const keysEqual = (object, keys) => object && typeof object === "object" && !Array.isArray(object)
   && Object.keys(object).length === keys.length && keys.every(k => Object.hasOwn(object,k));
@@ -98,7 +98,7 @@ export function createJevClient({ ctx, config, usage, fetchImpl = fetch, now = D
         if (!validQuestions(request.questions)) throw new Error("invalid-questions");
         const body = JSON.stringify({ model: config.model, state: request.state, questions: request.questions });
         if (Buffer.byteLength(body) > config.maxRequestBytes) throw new Error("request-too-large");
-        const credential = await bounded(resolveOpenRouter(ctx),request.task.signal,deadlineAt,now);
+        const credential = await bounded(resolveTypeSafe(ctx),request.task.signal,deadlineAt,now);
         if (!credential) throw new Error("credentials-unavailable");
         const inputHash = hash([ENDPOINT,credential.identity,body,request.rubricVersion]);
         result = await cache.subscribe(inputHash, async signal => {
@@ -118,7 +118,7 @@ export function createJevClient({ ctx, config, usage, fetchImpl = fetch, now = D
             if (Number.isFinite(data.usage?.input_tokens) && data.usage.input_tokens >= 0) cost.inputTokens = data.usage.input_tokens;
             if (Number.isFinite(data.usage?.cost) && data.usage.cost >= 0) cost.costUSD = data.usage.cost;
             else if (cost.inputTokens !== undefined) cost.estimatedCostUSD = cost.inputTokens * 0.042 / 1e6;
-            if (typeof data.model === "string" && data.model.startsWith("typesafe/") && data.model.length < 200) model = data.model;
+            if (typeof data.model === "string" && /^jev-[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(data.model) && data.model.length < 200) model = data.model;
             if (!model || !validateAnswers(data.answers,request.questions)) throw new Error("invalid-response");
             failures = 0; cooldownUntil = 0;
             return {status:"ok",answers:data.answers,model,requestID,usage:cost};

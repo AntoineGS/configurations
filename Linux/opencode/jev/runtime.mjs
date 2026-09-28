@@ -9,8 +9,8 @@ export const hash = value => createHash("sha256").update(JSON.stringify(value, (
   item && typeof item === "object" && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])) : item) ?? "undefined").digest("hex");
 
-export async function resolveOpenRouter(ctx) {
-  const connection = await ctx.integration.connection.active("openrouter");
+export async function resolveTypeSafe(ctx) {
+  const connection = await ctx.integration.connection.active("typesafe");
   if (!connection) return undefined;
   const value = await ctx.integration.connection.resolve(connection);
   if (value?.type !== "key" || typeof value.key !== "string" || !value.key.trim()) return undefined;

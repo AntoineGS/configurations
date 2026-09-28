@@ -19,14 +19,22 @@ decisions fall back to the ordinary workflow.
 
 Ship `plugins/jev.js` and the complete `jev/` directory together through the
 existing OpenCode configuration mapping. `agent-provider-routing.js` also imports
-`jev/routing.mjs`. No additional npm package or separate TypeSafe account is needed.
+`jev/routing.mjs`. No additional npm package is needed. Direct API access requires
+a TypeSafe account and API key from <https://console.typesafe.ai/>.
 The existing regeneration script preserves these paths.
 
-The plugin resolves the active **OpenRouter** API-key connection through OpenCode's
-V2 integration API. Reconnect OpenRouter through OpenCode's integration interface
+The plugin registers **TypeSafe AI** in OpenCode's connections interface. Run
+`/connect`, select **TypeSafe AI**, and enter your TypeSafe API key. It resolves the
+active `typesafe` connection through OpenCode's V2 integration API; the server's
+`TYPESAFE_API_KEY` environment variable is also supported. Reconnect TypeSafe AI
 if `/jev doctor` reports HTTP 401. Keys are never placed in this directory, status
 messages, caches, or command arguments. Coding agents continue using the provider
-selected by `/provider`; only Jev decisions use OpenRouter.
+selected by `/provider`; Jev decisions go directly to TypeSafe AI.
+
+This replaces the previous OpenRouter backend completely. Its saved credential is
+not reused. TypeSafe AI is a decision-service connection, so no Jev chat model is
+added to the coding-model picker. Remove any old `typesafe/jev-1.13` plugin model
+override, or replace it with the direct model ID `jev-1.13.0`.
 
 After installing, open a fresh location or reload configuration at an idle boundary:
 
@@ -142,7 +150,7 @@ and invalid values disable setup with a local configuration error.
 
 | Setting | Default |
 | --- | --- |
-| Model / endpoint | `typesafe/jev-1.13` / OpenRouter `/api/v1/systemone` |
+| Model / endpoint | `jev-1.13.0` / `https://api.typesafe.ai/v1/systemone` |
 | Interactive stage deadline | 2,000 ms, including queue time |
 | Concurrent transport requests | 2 per plugin instance |
 | Serialized request / response guards | 48,000 / 262,144 bytes |
@@ -154,7 +162,8 @@ and invalid values disable setup with a local configuration error.
 | Review omission probability | Below 0.15; uncertain dimensions retained |
 
 Thresholds are initial tunable policy, not calibrated correctness guarantees.
-OpenRouter documents a 32,000-token Jev request limit; the byte guard is a
+TypeSafe documents 64k tokens per request and 32k for state plus the longest
+question; the byte guard is a
 conservative size estimate, not an exact tokenizer. Requirements are never silently
 truncated. Multi-batch stages share one deadline, and incomplete scoring falls back.
 Cached answers are keyed by credentials, backend/model, rubric, and all inputs;
@@ -186,16 +195,15 @@ Verified on Linux with **OpenCode 2.0.14**:
   stale-result handling. Run changed files individually with
   `node --test Linux/opencode/tests/jev-<module>.test.mjs`.
 
-**Live decision validation is blocked:** the saved OpenRouter credential returned
-HTTP **401** from both `/api/v1/systemone` and the non-billable `/api/v1/key` check on
-2026-09-27. Doctor reported authentication fallback in 137 ms; no served model or
-billed usage was returned. Reconnect OpenRouter, run `/jev doctor`, then exercise a
-small task plus continuation, an oversized-result investigation, and a substantial
-review. Successful live decision quality, downstream outcomes, and savings have
-not yet been established.
+**Direct TypeSafe live decision validation is pending:** connect TypeSafe AI and
+run `/jev doctor`, then exercise a small task plus continuation, an oversized-result
+investigation, and a substantial review. Successful live decision quality,
+downstream outcomes, and savings have not yet been established. The earlier
+OpenRouter HTTP 401 results did not validate a direct TypeSafe key.
 
-The post-restart retry also returned HTTP 401 (144 ms). Restarting alone did not
-refresh the saved credential. Independent code review found three issues—stale
+Independent code review found three issues—stale
 hint publication, incomplete full-review status, and accumulating follow-up
 context—which were fixed with failing-then-passing regressions. All **43** focused
-tests passed after those fixes.
+tests passed after those fixes. The direct TypeSafe migration also covers native
+model responses, credential rotation, shared usage estimates, and refusal to use
+an OpenRouter-only connection.
