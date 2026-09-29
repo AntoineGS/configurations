@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew the office share domain Kerberos ticket hourly
+
+[Timer]
+OnStartupSec=5m
+OnUnitActiveSec=1h
+AccuracySec=1m
+Unit=office-shares-ticket-renew.service
+
+[Install]
+WantedBy=timers.target

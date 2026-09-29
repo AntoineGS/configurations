@@ -145,7 +145,7 @@ assert_file_equals "$expected_launch" "$state_dir/systemd-run.log" 'authenticati
 
 rm -f -- "$state_dir/kinit.log" "$state_dir/systemctl.log"
 run_helper --authenticate || fail 'interactive authentication mode failed'
-expected_kinit="KRB5CCNAME=FILE:$cache_dir/krb5cc_${UID} principal=$expected_principal"
+expected_kinit="KRB5CCNAME=FILE:$cache_dir/krb5cc_${UID} principal=-r 7d $expected_principal"
 assert_file_equals "$expected_kinit" "$state_dir/kinit.log" 'Kerberos cache or principal differs'
 assert_file_equals $'--user\nstart\noffice-shares-mount.service' "$state_dir/systemctl.log" \
   'successful authentication did not retry share mounts'

@@ -1667,6 +1667,7 @@ applications:
         files:
           - mount-office-shares
           - check-office-shares-auth
+          - renew-office-shares-ticket
           - mount-md-ftp
       - targets:
           linux: ~/.config/systemd/user
@@ -1677,6 +1678,8 @@ applications:
           - office-shares-mount.timer
           - office-shares-auth-check.service
           - office-shares-auth-check.timer
+          - office-shares-ticket-renew.service
+          - office-shares-ticket-renew.timer
           - md-ftp-mount.service
           - md-ftp-mount.timer
       - check:
@@ -1684,6 +1687,11 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-mount.timer office-shares-auth-check.timer
         name: enable-timer
+      - check:
+          linux: systemctl --user is-enabled --quiet office-shares-ticket-renew.timer && systemctl --user is-active --quiet office-shares-ticket-renew.timer && test "$(systemctl --user show office-shares-ticket-renew.timer --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now office-shares-ticket-renew.timer
+        name: enable-ticket-renew-timer
       - check:
           linux: systemctl --user is-enabled --quiet md-ftp-mount.timer && systemctl --user is-active --quiet md-ftp-mount.timer && test "$(systemctl --user show md-ftp-mount.timer --property=NeedDaemonReload --value)" = no
         run:
