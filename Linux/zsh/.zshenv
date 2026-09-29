@@ -21,10 +21,10 @@ export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
 export PATH="~/.local/bin:$PATH"
 export PATH="$PATH:$(go env GOPATH)/bin"
+export PATH="$HOME/gits/multidev/Tools:$PATH"
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense' # optional
 export RIPGREP_CONFIG_PATH=~/.ripgreprc
 export MERIDIAN_CLAUDE_PATH=/usr/bin/claude
-
 # Load local secrets (not tracked in git)
 if [[ -f ~/.zshenv.local ]]; then
     source ~/.zshenv.local
