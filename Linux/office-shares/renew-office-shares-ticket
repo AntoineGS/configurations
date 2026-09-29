@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Renew the current user's domain Kerberos caches before they expire so the
+# office shares keep re-authenticating without a password prompt. Caches that
+# are expired or past their renewal limit are left for check-office-shares-auth
+# to prompt about.
+# Minimum Bash version: 4.4
+
+set -Eeuo pipefail
+shopt -s inherit_errexit
+
+readonly realm='MULTIDEV.LOCAL'
+
+unix_user="$(id -un)"
+unix_user="${unix_user%@*}"
+expected_principal="${unix_user}@${realm}"
+cache_dir="${OFFICE_SHARES_CACHE_DIR:-/tmp}"
+
+log() {
+  printf 'renew-office-shares-ticket: %s\n' "$*" >&2
+}
+
+main() {
+  local candidate principal command_name output
+  local -a candidates
+
+  for command_name in klist kinit; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      log "required command is unavailable: $command_name"
+      return 1
+    }
+  done
+
+  shopt -s nullglob
+  candidates=("$cache_dir"/"krb5cc_${UID}"*)
+  shopt -u nullglob
+
+  for candidate in "${candidates[@]}"; do
+    [[ -f "$candidate" && -O "$candidate" ]] || continue
+    if ! LC_ALL=C KRB5CCNAME="FILE:$candidate" klist -s >/dev/null 2>&1; then
+      continue
+    fi
+    principal="$(LC_ALL=C KRB5CCNAME="FILE:$candidate" klist 2>/dev/null | awk '/^Default principal:/ { print $3; exit }')"
+    [[ "$principal" == "$expected_principal" ]] || continue
+
+    if output="$(LC_ALL=C kinit -R -c "FILE:$candidate" 2>&1)"; then
+      log "renewed $candidate"
+    else
+      log "could not renew $candidate, a fresh domain authentication will be required: $output"
+    fi
+  done
+}
+
+main "$@"

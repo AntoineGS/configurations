@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew the office share domain Kerberos ticket
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/office-shares/renew-office-shares-ticket
+TimeoutStartSec=60
