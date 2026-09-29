@@ -693,7 +693,7 @@ applications:
       managers:
         pacman: wine
     name: wine
-    description: Windows compatibility layer used to run MDExplorer
+    description: Windows compatibility layer used to run MDExplorer and Superform
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries: []
   - name: mdexplorer
@@ -735,6 +735,35 @@ applications:
         backup: ./Linux/mdexplorer/appdata
         files:
           - MDExplorer_Favorites.json
+  - name: superform
+    description: Superform (SFClient2) under Wine — prefix, InterBase client and Delphi 2010 runtime from the O applications share, launcher and desktop entry (SFClient2.exe and its packages come from the headless Delphi build of the multidev checkout)
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: scripts
+        backup: ./Linux/superform
+        files:
+          - setup-superform-wine
+          - sfclient2-wine
+      - check:
+          linux: s=~/.local/bin/setup-superform-wine; if [ -x "$s" ]; then "$s" --check; else echo 'scripts entry not restored yet' >&2; exit 1; fi
+        run:
+          linux: ~/.local/bin/setup-superform-wine --apply
+        name: wine-prefix
+        check_mode: status
+      - targets:
+          linux: ~/.local/share/applications
+        name: desktop-entry
+        backup: ./Linux/superform
+        files:
+          - sfclient2-wine.desktop
+      - targets:
+          linux: ~/.local/share/icons
+        name: icon
+        backup: ./Linux/superform/icons
+        files:
+          - sfclient2.png
   - package:
       managers:
         pacman: bluetui

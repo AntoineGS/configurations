@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# Prepare the Wine prefix Superform (SFClient2.exe) runs in (see tidydots.yaml,
+# app "superform"). The launcher is sfclient2-wine.
+#
+# --check exit codes follow the tidydots `check_mode: status` protocol:
+#   0  set up            1  needs setup (prefix, symlink or runtime DLL missing)
+#   2  outdated          3  check failed (wine, the multidev checkout or the
+#                            O: applications share is absent; tidydots cannot
+#                            fix that, so --apply is blocked)
+#
+# The check is read-only and fast: it never launches wine, it only inspects the
+# prefix directory, greps user.reg and compares file sizes.
+set -Eeuo pipefail
+
+readonly PREFIX="$HOME/.local/share/wineprefixes/superform"
+readonly MULTIDEV="$HOME/gits/multidev"
+readonly DRIVE_C_LINK="$PREFIX/drive_c/Multidev"
+readonly SYSWOW64="$PREFIX/drive_c/windows/syswow64"
+readonly SERVICES="$PREFIX/drive_c/windows/system32/drivers/etc/services"
+# The InterBase installer registers the default port; the client resolves
+# database paths without an explicit port through it.
+readonly GDS_DB_SERVICE='gds_db           3050/tcp                           #InterBase Server'
+readonly REG_SECTION='[Software\\Wine\\Drivers]'
+readonly REG_VALUE='"Graphics"="x11"'
+# 32-bit InterBase client, and the Delphi 2010 runtime packages that a Delphi
+# 2010 installation puts in SysWOW64. Headless builds produce the other
+# packages SFClient2 loads; sfclient2-wine puts them on WINEPATH.
+readonly SHARE="$HOME/Shares/O-applications"
+readonly -a RUNTIME=(
+  Interbase/gds32.dll
+  HO/Superform/rtl140.bpl HO/Superform/vcl140.bpl HO/Superform/vclx140.bpl
+  HO/Superform/vclimg140.bpl HO/Superform/VclSmp140.bpl HO/Superform/dbrtl140.bpl
+  HO/Superform/vcldb140.bpl HO/Superform/adortl140.bpl HO/Superform/bdertl140.bpl
+  HO/Superform/dsnap140.bpl HO/Superform/inet140.bpl HO/Superform/soaprtl140.bpl
+  HO/Superform/xmlrtl140.bpl HO/Superform/Tee8140.bpl HO/Superform/vclactnband140.bpl
+  HO/Superform/vclie140.bpl HO/Superform/dbxcommondriver140.bpl
+  HO/Superform/pkiectrl14.bpl
+)
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+fail() {
+  printf '%s: %s\n' "${0##*/}" "$*" >&2
+}
+
+require_tools() {
+  if ! command -v wine >/dev/null 2>&1; then
+    fail 'wine is not installed'
+    return 3
+  fi
+  if [[ ! -d $MULTIDEV/Projects/Superform ]]; then
+    fail "multidev checkout is missing: $MULTIDEV (clone it first)"
+    return 3
+  fi
+}
+
+# True when user.reg carries Graphics=x11 under Software\Wine\Drivers.
+graphics_driver_set() {
+  [[ -f $PREFIX/user.reg ]] || return 1
+  # Passed via ENVIRON, not -v: awk -v would unescape the doubled backslashes
+  # that user.reg uses in section names.
+  WANT_SECTION="$REG_SECTION" WANT_VALUE="$REG_VALUE" awk '
+    BEGIN { section = ENVIRON["WANT_SECTION"]; value = ENVIRON["WANT_VALUE"] }
+    index($0, section) == 1 { in_section = 1; next }
+    /^\[/ { in_section = 0 }
+    in_section && $0 == value { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$PREFIX/user.reg"
+}
+
+prefix_initialized() {
+  [[ -f $PREFIX/system.reg && -d $PREFIX/drive_c/windows ]]
+}
+
+# Prints the runtime files whose prefix copy is missing or differs in size
+# from the share. Without the share, only missing copies are reported.
+stale_runtime() {
+  local file target
+  for file in "${RUNTIME[@]}"; do
+    target=$SYSWOW64/${file##*/}
+    if [[ ! -f $target ]]; then
+      printf '%s\n' "$file"
+    elif [[ -f $SHARE/$file ]] &&
+        [[ $(stat -c %s -- "$target") != $(stat -c %s -- "$SHARE/$file") ]]; then
+      printf '%s\n' "$file"
+    fi
+  done
+}
+
+check_setup() {
+  require_tools || return $?
+
+  if ! prefix_initialized; then
+    fail 'wine prefix is not initialized'
+    return 1
+  fi
+  if ! grep -q '^#arch=win64$' "$PREFIX/system.reg"; then
+    fail 'wine prefix is not win64; move it aside and re-run --apply'
+    return 3
+  fi
+  if [[ $(readlink -- "$DRIVE_C_LINK" 2>/dev/null || true) != "$MULTIDEV" ]]; then
+    fail "drive_c/Multidev does not link to $MULTIDEV"
+    return 1
+  fi
+  local stale
+  stale=$(stale_runtime)
+  if [[ -n $stale ]]; then
+    if [[ ! -d $SHARE/HO/Superform ]]; then
+      fail "runtime DLLs are missing and $SHARE is not mounted"
+      return 3
+    fi
+    fail "runtime DLLs missing or outdated: ${stale//$'\n'/ }"
+    return 1
+  fi
+  if ! grep -q '^gds_db[[:space:]]' "$SERVICES"; then
+    fail 'the gds_db service is not registered'
+    return 1
+  fi
+  if ! graphics_driver_set; then
+    fail 'Graphics=x11 is not set in user.reg'
+    return 2
+  fi
+}
+
+run_wine() {
+  WINEPREFIX="$PREFIX" WINEARCH=win64 WINEDEBUG=-all \
+    WINEDLLOVERRIDES='mscoree=d;mshtml=d' "$@"
+}
+
+apply_setup() {
+  require_tools
+
+  if ! prefix_initialized; then
+    mkdir -p -- "$PREFIX"
+    run_wine wineboot -u
+    run_wine wineserver -w
+  fi
+
+  if [[ -e $DRIVE_C_LINK && ! -L $DRIVE_C_LINK ]]; then
+    fail "refusing to replace non-symlink: $DRIVE_C_LINK"
+    return 1
+  fi
+  ln -sfn -- "$MULTIDEV" "$DRIVE_C_LINK"
+
+  local file
+  while IFS= read -r file; do
+    [[ -n $file ]] || continue
+    if [[ ! -f $SHARE/$file ]]; then
+      fail "missing on the share: $SHARE/$file"
+      return 3
+    fi
+    install -m 0644 -- "$SHARE/$file" "$SYSWOW64/${file##*/}"
+  done < <(stale_runtime)
+
+  if ! grep -q '^gds_db[[:space:]]' "$SERVICES"; then
+    printf '%s\r\n' "$GDS_DB_SERVICE" >> "$SERVICES"
+  fi
+
+  if ! graphics_driver_set; then
+    run_wine wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /t REG_SZ \
+      /d 'x11' /f >/dev/null
+    run_wine wineserver -w
+  fi
+
+  check_setup
+}
+
+if (($# != 1)); then
+  usage >&2
+  exit 2
+fi
+
+case $1 in
+  --check) check_setup ;;
+  --apply) apply_setup ;;
+  --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

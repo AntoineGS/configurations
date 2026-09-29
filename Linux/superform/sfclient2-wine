@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Superform client (SFClient2.exe, Delphi 2010 Win32) from the multidev
+# checkout, in its dedicated Wine prefix (X11/XWayland driver). Arguments are
+# passed to SFClient2, e.g. /ALIAS=MDEVAPPS /USER=... /PASSWORD=... /emDev=Y.
+# Prepare the prefix with setup-superform-wine; build SFClient2 and its
+# packages with the headless Delphi tools (headless-make build).
+set -Eeuo pipefail
+
+export WINEPREFIX="$HOME/.local/share/wineprefixes/superform"
+export WINEDEBUG="${WINEDEBUG:--all}"
+export MULTIDEV='C:\Multidev'
+
+headless="${HEADLESS_DELPHI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/Headless-Delphi}"
+# Runtime packages from the headless installation, as the IDE's BPL folder and
+# the third-party installers would put them on PATH.
+package_dirs=(
+  "$headless/state/common/7.0/Bpl"
+  "$headless/files/RAD Studio/7.0/bin"
+  "$headless/files/Dependencies/Woll2Woll/fcstudio2010/bin/windows"
+  "$headless/files/Dependencies/Woll2Woll/ipstudio2010/bin/windows"
+  "$headless/files/Dependencies/Devart/SecureBridge for RAD Studio 2010/Bin"
+)
+winepath=
+for dir in "${package_dirs[@]}"; do
+  if [[ ! -d $dir ]]; then
+    printf 'Package folder is missing (run headless Delphi setup): %s\n' "$dir" >&2
+    exit 1
+  fi
+  winepath+="${winepath:+;}Z:${dir//\//\\}"
+done
+export WINEPATH="$winepath"
+
+exe="$WINEPREFIX/drive_c/Multidev/Projects/Superform/SFClient2.exe"
+if [[ ! -f $exe ]]; then
+    printf 'SFClient2 executable is missing: %s\n' "$exe" >&2
+    exit 1
+fi
+if [[ -z "${DISPLAY:-}" ]]; then
+    printf 'Run this launcher from a desktop session with an X11/XWayland DISPLAY.\n' >&2
+    exit 1
+fi
+command -v wine >/dev/null || { printf 'Wine is not installed.\n' >&2; exit 1; }
+
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/sfclient2"
+mkdir -p "$log_dir"
+# SFClient2 reads DATABASES.ini and SF.ini from its own folder.
+cd "$(dirname "$exe")"
+exec wine 'C:\Multidev\Projects\Superform\SFClient2.exe' "$@" >> "$log_dir/sfclient2.log" 2>&1
