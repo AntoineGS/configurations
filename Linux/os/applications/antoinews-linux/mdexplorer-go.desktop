@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=MD Explorer Go
+Comment=Explore and manage Multidev databases (native Go build)
+Exec=/home/a.simard@multidev.local/gits/mdexplorer/build/bin/mdexplorer-go
+Path=/home/a.simard@multidev.local/gits/mdexplorer
+Icon=/home/a.simard@multidev.local/.local/share/applications/antoinews-linux/icons/MDExplorer.png
+Terminal=false
+StartupNotify=true
+StartupWMClass=mdexplorer-go
+Categories=Development;Database;
+Keywords=database;SQL;InterBase;MySQL;
