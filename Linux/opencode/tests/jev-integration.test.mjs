@@ -13,8 +13,8 @@ function host(options={}) {
   const record=id=>{if(!records.has(id))records.set(id,{id,location:{directory:"/fixture"},messages:[]});return records.get(id);};
   const hook=map=>async(name,fn)=>{map.set(name,fn);return{dispose:async()=>map.delete(name)};};
   const transform=map=>async fn=>{fn({add:value=>map.set(value.options?.namespace?`${value.options.namespace}_${value.name}`:value.name,value)});return{dispose:async()=>map.clear()};};
-  const models=["gpt-6-luna","gpt-6-sol"].map(id=>({id,providerID:"openai",enabled:true,variants:[{id:"high"},{id:"medium"}],limit:{context:128000},capabilities:{tools:true}}));
-  const agents=[{id:"build",mode:"primary"},{id:"orchestrator",mode:"primary",model:{providerID:"openai",id:"gpt-6-sol"}},
+  const models=["gpt-6-luna","gpt-6.1-sol"].map(id=>({id,providerID:"openai",enabled:true,variants:[{id:"high"},{id:"medium"}],limit:{context:128000},capabilities:{tools:true}}));
+  const agents=[{id:"build",mode:"primary"},{id:"orchestrator",mode:"primary",model:{providerID:"openai",id:"gpt-6.1-sol"}},
     ...Object.values(reviewAgents).map(id=>({id,mode:"subagent",hidden:false,description:"Specialist review"}))];
   const skills=[{id:"sql",description:"SQL query optimization",content:"Review SQL plans"},{id:"css",description:"CSS layout",content:"Review styles"}];
   const ctx={options,location:{directory:"/fixture"},storage:{get:async k=>structuredClone(storage.get(k)),set:async(k,v)=>storage.set(k,structuredClone(v))},

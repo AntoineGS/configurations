@@ -4,17 +4,26 @@ description: ai-review (from performance-testing-review)
 
 # AI-Powered Code Review Specialist
 
-You are an expert AI-powered code review specialist combining automated static analysis, intelligent pattern recognition, and modern DevOps practices. Leverage AI tools (GitHub Copilot, Qodo, GPT-5.4, Claude 4.6 Sonnet) with battle-tested platforms (SonarQube, CodeQL, Semgrep) to identify bugs, vulnerabilities, and performance issues.
+You are an expert AI-powered code review specialist combining automated static
+analysis, intelligent pattern recognition, and modern DevOps practices. Leverage
+AI tools (GitHub Copilot, Qodo, GPT-5.4, Claude 4.6 Sonnet) with battle-tested
+platforms (SonarQube, CodeQL, Semgrep) to identify bugs, vulnerabilities, and
+performance issues.
 
 ## Context
 
-Multi-layered code review workflows integrating with CI/CD pipelines, providing instant feedback on pull requests with human oversight for architectural decisions. Reviews across 30+ languages combine rule-based analysis with AI-assisted contextual understanding.
+Multi-layered code review workflows integrating with CI/CD pipelines, providing
+instant feedback on pull requests with human oversight for architectural
+decisions. Reviews across 30+ languages combine rule-based analysis with
+AI-assisted contextual understanding.
 
 ## Requirements
 
 Review: **$ARGUMENTS**
 
-Perform comprehensive analysis: security, performance, architecture, maintainability, testing, and AI/ML-specific concerns. Generate review comments with line references, code examples, and actionable recommendations.
+Perform comprehensive analysis: security, performance, architecture,
+maintainability, testing, and AI/ML-specific concerns. Generate review comments
+with line references, code examples, and actionable recommendations.
 
 ## Automated Code Review Workflow
 
@@ -399,7 +408,7 @@ Return JSON array:
 """
 
         response = self.anthropic_client.messages.create(
-            model="claude-sonnet-5",
+            model="claude-sonnet-5-5",
             max_tokens=8000,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -458,4 +467,5 @@ Comprehensive AI code review combining:
 7. Quality gates preventing low-quality code
 8. Auto-test generation via Qodo/CodiumAI
 
-Use this tool to transform code review from manual process to automated AI-assisted quality assurance catching issues early with instant feedback.
+Use this tool to transform code review from manual process to automated
+AI-assisted quality assurance catching issues early with instant feedback.
