@@ -27,7 +27,6 @@ ffmpegthumbnailer
 fprintd
 freecad
 gdu
-ghostty
 gimp
 github-cli
 gitui
