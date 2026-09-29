@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+prepare_monitor() {
+  local monitors lock_fd
+
+  # The picker and connection watcher can run together. Serialize layout changes.
+  exec {lock_fd}>"${XDG_RUNTIME_DIR:?}/rustdesk-wake-monitor.lock"
+  flock --wait 10 "$lock_fd"
+
+  monitors=$(hyprctl monitors -j)
+  jq -e 'type == "array"' <<<"$monitors" >/dev/null
+  if ! jq -e 'any(.[];
+    .name == "DP-1" and .disabled == false and .mirrorOf == "none"
+    and (.activeWorkspace.id // 0) > 0
+  )' <<<"$monitors" >/dev/null; then
+    # Use the same Single monitor preset as the QuickShell monitor panel.
+    desktop-hardware-action monitor set-layout single DP-1
+  fi
+
+  hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on", monitor="DP-1"}))'
+}
+
+watch_connections() {
+  local line
+  local log_file="${XDG_DATA_HOME:-$HOME/.local/share}/logs/RustDesk/server/rustdesk_rCURRENT.log"
+
+  # Follow rotations, and ignore historical connections when the service starts.
+  # RustDesk emits this for desktop connections, including restored portal sessions.
+  tail --lines=0 --follow=name --retry "$log_file" | while IFS= read -r line; do
+    case $line in
+      *'] new wakelock, require display on: true')
+        if ! "$0" --prepare-monitor; then
+          printf '%s\n' 'rustdesk-wake-monitor: unable to prepare DP-1 for this connection' >&2
+        fi
+        ;;
+    esac
+  done
+}
+
+case ${1:-} in
+  --prepare-monitor) prepare_monitor ;;
+  --watch) watch_connections ;;
+  *)
+    printf '%s\n' 'Usage: rustdesk-wake-monitor --prepare-monitor|--watch' >&2
+    exit 2
+    ;;
+esac

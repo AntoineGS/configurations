@@ -671,6 +671,27 @@ applications:
         run:
           linux: ~/.local/bin/rustdesk-cm-marker --apply
         name: enable-service
+  - name: rustdesk-wake-monitor
+    description: Wake DP-1 for RustDesk and recover its desktop with the Single monitor layout
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: script
+        backup: ./Linux/rustdesk
+        files:
+          - rustdesk-wake-monitor
+      - targets:
+          linux: ~/.config/systemd/user
+        name: service
+        backup: ./Linux/rustdesk
+        files:
+          - rustdesk-wake-monitor.service
+      - check:
+          linux: systemctl --user is-enabled --quiet rustdesk-wake-monitor.service && systemctl --user is-active --quiet rustdesk-wake-monitor.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now rustdesk-wake-monitor.service
+        name: enable-service
   - name: rustdesk-wayland
     description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
     when: '{{ eq .Hostname "antoinews-linux" }}'
