@@ -2,6 +2,7 @@
 require("apps.1password")
 require("apps.bitwarden")
 require("apps.browser")
+require("apps.delphi")
 require("apps.hyprshot")
 require("apps.jetbrains")
 require("apps.localsend")
