@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Superform (Wine)
+Comment=SFClient2 on MDEVAPPS, developer mode — dedicated Wine prefix
+Exec=/home/a.simard@multidev.local/.local/bin/sfclient2-wine /ALIAS=MDEVAPPS /USER=ANS /PASSWORD=ANS /emDev=Y
+Icon=/home/a.simard@multidev.local/.local/share/icons/sfclient2.png
+Terminal=false
+Categories=Office;Development;
+StartupNotify=false
