@@ -8,8 +8,11 @@ fi
 command -v hyprctl >/dev/null
 command -v jq >/dev/null
 
-if ! hyprctl monitors -j | jq -e 'any(.[]; .name == "DP-2" and .disabled == false)' >/dev/null; then
+# Prepare synchronously so source selection cannot race the connection watcher.
+rustdesk-wake-monitor --prepare-monitor >&2
+
+if ! hyprctl monitors -j | jq -e 'any(.[]; .name == "DP-1" and .disabled == false)' >/dev/null; then
   exit 1
 fi
 
-printf '%s\n' '[SELECTION]r/screen:DP-2'
+printf '%s\n' '[SELECTION]r/screen:DP-1'
