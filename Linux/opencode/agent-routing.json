@@ -4,17 +4,17 @@
   "tiers": {
     "orchestration": {
       "openai": {
-        "id": "gpt-6-sol",
+        "id": "gpt-6.1-sol",
         "variant": "medium"
       },
       "anthropic": {
-        "id": "claude-sonnet-5",
+        "id": "claude-sonnet-5-5",
         "variant": "high"
       }
     },
     "reasoning": {
       "openai": {
-        "id": "gpt-6-sol",
+        "id": "gpt-6.1-sol",
         "variant": "high"
       },
       "anthropic": {
@@ -24,7 +24,7 @@
     },
     "review": {
       "openai": {
-        "id": "gpt-6-sol",
+        "id": "gpt-6.1-sol",
         "variant": "medium"
       },
       "anthropic": {
@@ -38,7 +38,7 @@
         "variant": "high"
       },
       "anthropic": {
-        "id": "claude-sonnet-5",
+        "id": "claude-sonnet-5-5",
         "variant": "high"
       }
     },
