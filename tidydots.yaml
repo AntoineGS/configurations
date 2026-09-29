@@ -764,6 +764,22 @@ applications:
         backup: ./Linux/superform/icons
         files:
           - sfclient2.png
+  - name: wine-fonts
+    description: Microsoft UI fonts (Tahoma, Verdana, Arial, Courier New, Times New Roman, Segoe UI) and ClearType smoothing in every Wine prefix under ~/.local/share/wineprefixes, without exposing the fonts to Linux; after the apps that create prefixes
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: script
+        backup: ./Linux/wine
+        files:
+          - setup-wine-fonts
+      - check:
+          linux: s=~/.local/bin/setup-wine-fonts; if [ -x "$s" ]; then "$s" --check; else echo 'script entry not restored yet' >&2; exit 1; fi
+        run:
+          linux: ~/.local/bin/setup-wine-fonts --apply
+        name: prefixes
+        check_mode: status
   - package:
       managers:
         pacman: bluetui

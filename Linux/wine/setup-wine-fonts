@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# Give every Wine prefix under ~/.local/share/wineprefixes the Microsoft UI
+# fonts Windows apps are designed for, and ClearType-style font smoothing
+# (see tidydots.yaml, app "wine-fonts"). The fonts go into each prefix's
+# C:\Windows\Fonts only: Linux fontconfig never sees them.
+#
+# Downloads use winetricks' URLs, checksums and cache (corefonts, tahoma);
+# Segoe UI comes from the O: applications share. Families a prefix replaces
+# (HKCU\Software\Wine\Fonts\Replacements) are left out, since Wine ignores a
+# replacement once the real family is installed.
+#
+# --check exit codes follow the tidydots `check_mode: status` protocol:
+#   0  set up            1  needs setup (a prefix lacks fonts or smoothing)
+#   3  check failed (wine or cabextract is missing)
+#
+# The check is read-only and fast: it never launches wine, it only inspects
+# each prefix's Fonts folder and greps user.reg.
+set -Eeuo pipefail
+
+readonly PREFIXES="$HOME/.local/share/wineprefixes"
+readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/winetricks"
+readonly SEGOE_DIR="$HOME/Shares/O-applications/Tools/StoreBudgets/Fonts"
+readonly COREFONTS='https://github.com/pushcx/corefonts/raw/master'
+# family|file installed in the prefix|cache folder|URL|sha256|font files in the archive
+readonly -a FONTS=(
+  "Arial|arial.ttf|corefonts|$COREFONTS/arial32.exe|85297a4d146e9c87ac6f74822734bdee5f4b2a722d7eaa584b7f2cbf76f478f6|Arial*.TTF"
+  "Courier New|cour.ttf|corefonts|$COREFONTS/courie32.exe|bb511d861655dde879ae552eb86b134d6fae67cb58502e6ff73ec5d9151f3384|cour*.ttf"
+  "Times New Roman|times.ttf|corefonts|$COREFONTS/times32.exe|db56595ec6ef5d3de5c24994f001f03b2a13e37cee27bc25c58f6f43e8f807ab|Times*.TTF"
+  "Verdana|verdana.ttf|corefonts|$COREFONTS/verdan32.exe|c1cb61255e363166794e47664e2f21af8e3a26cb6346eb8d2ae2fa85dd5aad96|Verdana*.TTF"
+  "Tahoma|tahoma.ttf|tahoma|https://downloads.sourceforge.net/corefonts/OldFiles/IELPKTH.CAB|c1be3fb8f0042570be76ec6daa03a99142c88367c1bc810240b85827c715961a|*.TTF"
+  "Segoe UI|segoeui.ttf|||||"
+)
+readonly -a SEGOE_FILES=(segoeui.ttf segoeuib.ttf segoeuii.ttf segoeuiz.ttf)
+# As winetricks fontsmooth=rgb sets them.
+readonly DESKTOP_SECTION='[Control Panel\\Desktop]'
+readonly -a SMOOTHING=(
+  '"FontSmoothing"="2"'
+  '"FontSmoothingGamma"=dword:00000578'
+  '"FontSmoothingOrientation"=dword:00000001'
+  '"FontSmoothingType"=dword:00000002'
+)
+readonly REPLACEMENTS_SECTION='[Software\\Wine\\Fonts\\Replacements]'
+
+usage() {
+  printf 'Usage: %s --check|--apply|--help\n' "${0##*/}"
+}
+
+fail() {
+  printf '%s: %s\n' "${0##*/}" "$*" >&2
+}
+
+require_tools() {
+  local tool
+  for tool in wine wineserver cabextract; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      fail "$tool is not installed"
+      return 3
+    fi
+  done
+}
+
+# Initialized prefixes, one per line.
+prefixes() {
+  local prefix
+  for prefix in "$PREFIXES"/*/; do
+    prefix=${prefix%/}
+    [[ -f $prefix/system.reg && -d $prefix/drive_c/windows ]] && printf '%s\n' "$prefix"
+  done
+  return 0
+}
+
+# Prints the lines of a user.reg section. Passed via ENVIRON, not -v: awk -v
+# would unescape the doubled backslashes that user.reg uses in section names.
+reg_section() {
+  [[ -f $1/user.reg ]] || return 0
+  WANT_SECTION="$2" awk '
+    BEGIN { section = ENVIRON["WANT_SECTION"] }
+    index($0, section) == 1 { in_section = 1; next }
+    /^\[/ { in_section = 0 }
+    in_section { print }
+  ' "$1/user.reg"
+}
+
+replaced() {
+  reg_section "$1" "$REPLACEMENTS_SECTION" | grep -q -F "\"$2\"="
+}
+
+# Families the prefix lacks, one per line.
+missing_fonts() {
+  local spec family file
+  for spec in "${FONTS[@]}"; do
+    IFS='|' read -r family file _ <<< "$spec"
+    replaced "$1" "$family" && continue
+    [[ -f $1/drive_c/windows/Fonts/$file ]] || printf '%s\n' "$family"
+  done
+  return 0
+}
+
+smoothing_set() {
+  local section value
+  section=$(reg_section "$1" "$DESKTOP_SECTION")
+  for value in "${SMOOTHING[@]}"; do
+    grep -q -x -F "$value" <<< "$section" || return 1
+  done
+}
+
+check_setup() {
+  require_tools || return $?
+  local prefix missing status=0
+  while IFS= read -r prefix; do
+    missing=$(missing_fonts "$prefix")
+    if [[ -n $missing ]]; then
+      fail "${prefix##*/}: missing fonts: ${missing//$'\n'/, }"
+      status=1
+    fi
+    if ! smoothing_set "$prefix"; then
+      fail "${prefix##*/}: font smoothing is not ClearType RGB"
+      status=1
+    fi
+  done < <(prefixes)
+  return "$status"
+}
+
+# Downloads (or reuses) an archive in winetricks' cache and extracts its fonts
+# into $2, with lowercase names as winetricks installs them.
+extract_archive() {
+  local folder=$1 url=$2 sha=$3 pattern=$4 staging=$5
+  local archive="$CACHE/$folder/${url##*/}" work file name
+  if [[ ! -f $archive ]] || ! sha256sum --status -c <<< "$sha  $archive"; then
+    mkdir -p -- "$CACHE/$folder"
+    curl -fsSL --retry 3 -o "$archive.part" -- "$url"
+    if ! sha256sum --status -c <<< "$sha  $archive.part"; then
+      rm -f -- "$archive.part"
+      fail "checksum mismatch for $url"
+      return 1
+    fi
+    mv -- "$archive.part" "$archive"
+  fi
+  work=$(mktemp -d -p "$staging")
+  # IELPKTH.CAB carries trailing bytes that cabextract warns about.
+  cabextract -q -d "$work" -- "$archive" >/dev/null 2>&1
+  # Archive file name case varies (tahoma.ttf, Verdana.TTF).
+  shopt -s nocaseglob
+  for file in "$work"/$pattern; do
+    [[ -f $file ]] || continue
+    name=${file##*/}
+    install -m 0644 -- "$file" "$staging/${name,,}"
+  done
+  shopt -u nocaseglob
+  rm -rf -- "$work"
+}
+
+# Font files of a family: every staged file its archive provides.
+family_files() {
+  local spec family file folder url sha pattern
+  for spec in "${FONTS[@]}"; do
+    IFS='|' read -r family file folder url sha pattern <<< "$spec"
+    [[ $family == "$1" ]] || continue
+    if [[ $family == 'Segoe UI' ]]; then
+      printf '%s\n' "${SEGOE_FILES[@]}"
+    else
+      printf '%s\n' "$file"
+      # Bold/italic companions carry the same stem (arialbd.ttf, tahomabd.ttf).
+      (cd "$2" && compgen -G "${file%.ttf}*.ttf") || true
+    fi
+  done | sort -u
+}
+
+stage_family() {
+  local staging=$2 spec family file folder url sha pattern
+  for spec in "${FONTS[@]}"; do
+    IFS='|' read -r family file folder url sha pattern <<< "$spec"
+    [[ $family == "$1" ]] || continue
+    if [[ $family == 'Segoe UI' ]]; then
+      for file in "${SEGOE_FILES[@]}"; do
+        if [[ ! -f $SEGOE_DIR/$file ]]; then
+          fail "Segoe UI is missing on the share: $SEGOE_DIR/$file"
+          return 3
+        fi
+        install -m 0644 -- "$SEGOE_DIR/$file" "$staging/$file"
+      done
+    else
+      extract_archive "$folder" "$url" "$sha" "$pattern" "$staging"
+    fi
+  done
+}
+
+# Wine keeps the registry in memory while a prefix runs, so user.reg is
+# rewritten only when its wineserver saves. Only wait for idle prefixes: a
+# running app would keep `wineserver -w` waiting until it exits.
+server_running() {
+  local id
+  id=$(stat -c '%d %i' -- "$1")
+  # shellcheck disable=SC2086 # device and inode, as two printf arguments
+  [[ -S /tmp/.wine-$(id -u)/server-$(printf '%x-%x' $id)/socket ]]
+}
+
+set_smoothing() {
+  local prefix=$1 running=0
+  server_running "$prefix" && running=1
+  local -a reg=(env WINEPREFIX="$prefix" WINEDEBUG=-all wine reg add 'HKCU\Control Panel\Desktop' /f)
+  "${reg[@]}" /v FontSmoothing /t REG_SZ /d 2 >/dev/null
+  "${reg[@]}" /v FontSmoothingGamma /t REG_DWORD /d 1400 >/dev/null
+  "${reg[@]}" /v FontSmoothingOrientation /t REG_DWORD /d 1 >/dev/null
+  "${reg[@]}" /v FontSmoothingType /t REG_DWORD /d 2 >/dev/null
+  if ((running)); then
+    printf '%s: %s is running; restart its apps to apply font smoothing\n' \
+      "${0##*/}" "${prefix##*/}" >&2
+  else
+    WINEPREFIX="$prefix" wineserver -w
+  fi
+}
+
+apply_setup() {
+  require_tools || return $?
+  local staging prefix family file
+  local -A staged=()
+  staging=$(mktemp -d)
+  trap 'rm -rf -- "$staging"' RETURN
+  while IFS= read -r prefix; do
+    local -a missing=()
+    mapfile -t missing < <(missing_fonts "$prefix")
+    for family in "${missing[@]}"; do
+      if [[ -z ${staged[$family]:-} ]]; then
+        stage_family "$family" "$staging"
+        staged[$family]=1
+      fi
+      while IFS= read -r file; do
+        install -m 0644 -- "$staging/$file" "$prefix/drive_c/windows/Fonts/$file"
+      done < <(family_files "$family" "$staging")
+    done
+    smoothing_set "$prefix" || set_smoothing "$prefix"
+  done < <(prefixes)
+}
+
+if (($# != 1)); then
+  usage >&2
+  exit 2
+fi
+
+case $1 in
+  --check) check_setup ;;
+  --apply) apply_setup ;;
+  --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
