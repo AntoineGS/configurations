@@ -21,6 +21,7 @@ ffmpegthumbnailer
 gdu
 ghostty
 gimp
+git-cliff
 git-delta
 gnome-calculator
 gnome-disk-utility
