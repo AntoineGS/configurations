@@ -16,7 +16,24 @@ config.mux_enable_ssh_agent = false
 
 config.window_decorations = "RESIZE"
 config.color_scheme = "Catppuccin Mocha"
-config.font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Bold" })
+config.font = wezterm.font("JetBrainsMono Nerd Font", { weight = "DemiBold" })
+config.font_rules = {
+	{
+		intensity = "Bold",
+		italic = false,
+		font = wezterm.font("JetBrainsMono Nerd Font", { weight = "ExtraBold" }),
+	},
+	{
+		intensity = "Bold",
+		italic = true,
+		font = wezterm.font("JetBrainsMono Nerd Font", { weight = "ExtraBold", italic = true }),
+	},
+	{
+		intensity = "Normal",
+		italic = true,
+		font = wezterm.font("JetBrainsMono Nerd Font", { weight = "DemiBold", italic = true }),
+	},
+}
 config.font_size = 11
 config.use_dead_keys = true
 config.scrollback_lines = 5000
