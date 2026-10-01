@@ -72,7 +72,7 @@
             {
                 "face": "JetBrainsMono Nerd Font",
                 "size": 11,
-                "weight": "bold"
+                "weight": "semi-bold"
             },
             "opacity": 95,
             "useAcrylic": true
@@ -84,7 +84,7 @@
                 "font": 
                 {
                     "face": "JetBrainsMono Nerd Font",
-                    "weight": "bold"
+                    "weight": "semi-bold"
                 },
                 "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
                 "hidden": true,
