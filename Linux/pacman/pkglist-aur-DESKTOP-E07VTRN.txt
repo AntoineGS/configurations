@@ -2,6 +2,7 @@
 1password-cli
 adbmanager
 asdcontrol
+backlog.md
 balena-cli-bin
 brave-bin
 caffeine-ng-git
@@ -12,7 +13,6 @@ elegoo-slicer-bin
 fstl-git
 fzf-tab-completion-git
 ghostty-nightly-bin
-ghostty-nightly-bin-debug
 github-copilot-cli
 golangci-lint-bin
 google-cloud-cli
@@ -26,6 +26,7 @@ libfprint-cs9711-git-debug
 limine-snapper-sync
 localsend-bin
 nvidia-580xx-dkms
+oci-cli
 oh-my-zsh-git
 opencode-beta
 openssl-1.1
