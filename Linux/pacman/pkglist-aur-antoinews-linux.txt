@@ -10,7 +10,6 @@ claude-code
 codexbar-cli-bin
 fzf-tab-completion-git
 golangci-lint-bin
-golangci-lint-bin-debug
 hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
