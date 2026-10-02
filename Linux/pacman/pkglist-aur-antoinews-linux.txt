@@ -2,6 +2,7 @@
 1password-cli
 aether
 asbru-cm-git
+backlog.md
 brave-bin
 bruno-bin
 carapace-bin
