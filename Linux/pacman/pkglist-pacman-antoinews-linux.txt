@@ -28,7 +28,6 @@ gnome-disk-utility
 gnome-themes-extra
 gopls
 gpu-screen-recorder
-gradle
 guestfs-tools
 gum
 hypridle
