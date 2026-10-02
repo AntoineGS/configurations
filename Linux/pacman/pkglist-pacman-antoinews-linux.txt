@@ -64,6 +64,7 @@ quickshell
 rebuild-detector
 rust
 satty
+sccache
 sd
 sddm
 shellcheck
@@ -83,6 +84,7 @@ uwsm
 virt-manager
 waypipe
 whois
+wild
 winetricks
 wiremix
 woff2-font-awesome
