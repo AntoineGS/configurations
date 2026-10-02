@@ -12,6 +12,15 @@ export HERDR_NAV_PASSTHROUGH_RE='^(shell-picker|fzf)$'
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+# SSH logins skip environment.d; import the input method variables so apps started here (Wine) reach fcitx5
+if [[ -z "${XMODIFIERS:-}" ]] && (( $+commands[systemctl] )); then
+    for _env_line in ${(f)"$(systemctl --user show-environment 2>/dev/null)"}; do
+        case ${_env_line%%=*} in
+            INPUT_METHOD|GTK_IM_MODULE|QT_IM_MODULE|SDL_IM_MODULE|XMODIFIERS|XCOMPOSEFILE) export "$_env_line" ;;
+        esac
+    done
+    unset _env_line
+fi
 export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
 export ADZUNA_APP_ID=4bb9d1ce
 export ADZUNA_APP_KEY=3801f98eb7fd7d72a8e98db8afd25df9
