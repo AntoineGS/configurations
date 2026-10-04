@@ -19,6 +19,9 @@ hl.env("XDG_SESSION_DESKTOP", "Hyprland")
 hl.config({
     xwayland = {
         force_zero_scaling = true,
+        -- Without the abstract socket, Xvfb -displayfd treats :0 as free and
+        -- deletes /tmp/.X11-unix/X0 when it exits.
+        create_abstract_socket = true,
     },
 })
 
