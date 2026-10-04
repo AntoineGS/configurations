@@ -5,15 +5,15 @@ hash = "f9b76184511c983db7c6f719eea1e14d"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:git"
-rev = "f703392"
+rev = "33dde28"
 hash = "347cc6b190eb0c2fd60513cc7ae37412"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:piper"
-rev = "f703392"
+rev = "33dde28"
 hash = "d1e0499cae5f3aeb628c267616d4b682"
 
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-mocha"
-rev = "20b47bf"
+rev = "1183892"
 hash = "ce320f877fe709b189433941aba747c4"
