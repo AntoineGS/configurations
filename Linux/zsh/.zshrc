@@ -34,6 +34,7 @@ zvm_after_init() {
     source /usr/share/fzf/key-bindings.zsh
     shell-picker-bind-zsh
     bindkey '^P' autosuggest-accept
+    bindkey '^[p' forward-word
     bindkey '^[k' clear-screen
 }
 
