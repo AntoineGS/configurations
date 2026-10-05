@@ -692,6 +692,30 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now rustdesk-wake-monitor.service
         name: enable-service
+  - package:
+      managers:
+        pacman: inotify-tools
+    name: x0-guard
+    description: Relink Xwayland's X0 socket when an Xvfb removes it and log the culprit
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: script
+        backup: ./Linux/x0-guard
+        files:
+          - x0-guard
+      - targets:
+          linux: ~/.config/systemd/user
+        name: service
+        backup: ./Linux/x0-guard
+        files:
+          - x0-guard.service
+      - check:
+          linux: systemctl --user is-enabled --quiet x0-guard.service && systemctl --user is-active --quiet x0-guard.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now x0-guard.service
+        name: enable-service
   - name: rustdesk-wayland
     description: Give the RustDesk system service access to the antoinews-linux Wayland clipboard
     when: '{{ eq .Hostname "antoinews-linux" }}'

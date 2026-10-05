@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Hyprland's Xwayland without an abstract socket also listens on X0_. An Xvfb
+# started with -displayfd alone probes :0, replaces X0 and deletes it on exit.
+# Log the X servers around every X0 change and relink X0 to the live X0_.
+set -uo pipefail
+
+dir=/tmp/.X11-unix
+state=${XDG_STATE_HOME:-$HOME/.local/state}/x0-guard
+mkdir -p "$state"
+exec >>"$state/x0-guard.log" 2>&1
+
+stamp() { date '+%F %T.%3N'; }
+
+snapshot() {
+  local pid p
+  printf '=== %s %s\n' "$(stamp)" "$1"
+  ps -eo pid,ppid,user:12,lstart,args | grep -E '[X]vfb|[x]vfb-run|[X]wayland|[X]org|[X]vnc'
+  for pid in $(pgrep -x Xvfb); do
+    printf -- '--- Xvfb %s ancestry:\n' "$pid"
+    p=$pid
+    while [[ -n $p && $p -gt 1 ]]; do
+      printf '  %s [%s] %s\n' "$p" "$(readlink "/proc/$p/cwd" 2>/dev/null)" \
+        "$(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | cut -c1-200)"
+      p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+    done
+    tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -E '^(OPENCODE_SESSION_ID|PWD|USER|SUDO_USER)='
+  done
+}
+
+restore() {
+  [[ -e $dir/X0 ]] && return
+  # Never link a stale X0_ left behind by an exited Xwayland.
+  grep -q " $dir/X0_\$" /proc/net/unix || return
+  ln "$dir/X0_" "$dir/X0" && printf '%s restored X0 from X0_\n' "$(stamp)"
+}
+
+printf '%s guard started\n' "$(stamp)"
+restore
+inotifywait -m -q -e create,delete,moved_from,moved_to --format '%e %f' "$dir" |
+  while read -r event name; do
+    [[ $name == X0 ]] || continue
+    snapshot "$event X0"
+    case $event in
+      DELETE* | MOVED_FROM*)
+        sleep 0.2
+        restore
+        ;;
+    esac
+  done

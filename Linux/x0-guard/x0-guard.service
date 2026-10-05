@@ -1,0 +1,14 @@
+[Unit]
+Description=Relink Xwayland's X0 socket and log what removes it
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionHost=antoinews-linux
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/x0-guard
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
