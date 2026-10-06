@@ -3,6 +3,7 @@
 aether
 asbru-cm-git
 backlog.md
+beads-bin
 brave-bin
 bruno-bin
 carapace-bin
