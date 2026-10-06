@@ -12,6 +12,7 @@ insync
 limine-snapper-sync
 localsend-bin
 oh-my-zsh-git
+opencode-beta
 posting
 python-terminaltexteffects
 rustdesk-drm-preview-bin
@@ -21,7 +22,6 @@ tpack-bin
 ttf-ia-writer
 tzupdate
 ufw-docker
-xdg-terminal-exec
 yaru-icon-theme
 yay-bin
 zsh-transient-prompt-git
