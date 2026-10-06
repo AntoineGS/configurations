@@ -9,6 +9,7 @@ bun
 clang
 cups-pdf
 docker-compose
+dolt
 dos2unix
 dotnet-runtime-9.0
 dust
