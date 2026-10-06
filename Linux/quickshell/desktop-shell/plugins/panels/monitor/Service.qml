@@ -35,6 +35,7 @@ SharedService {
   readonly property var stateData: hardwareState && hardwareState.data ? hardwareState.data : ({})
   readonly property var brightness: stateData.brightness || ({ available: false, percent: 1 })
   readonly property var keyboardBrightness: stateData.keyboardBrightness || ({ available: false, percent: 0 })
+  readonly property var screenPrivacy: stateData.screenPrivacy || ({ available: false, enabled: false, mode: "" })
   readonly property var rawMonitorInventory: Array.isArray(stateData.monitors) ? stateData.monitors : []
   readonly property var monitorInventory: Model.normalizeMonitorInventory(rawMonitorInventory)
   readonly property bool monitorInventoryFresh: hardwareState && hardwareState.available === true
@@ -261,6 +262,11 @@ SharedService {
 
   function setKeyboardBrightness(action) {
     root.runAction(["monitor", "set-keyboard-brightness", String(action)])
+  }
+
+  function setScreenPrivacy(enabled) {
+    if (enabled !== true && enabled !== false) return false
+    return root.runAction(["monitor", "set-privacy", enabled ? "on" : "off"])
   }
 
   function setScale(monitorName, scale) {

@@ -46,6 +46,8 @@ Panel {
   readonly property var displays: displayRows
   readonly property var brightness: stateData.brightness || ({ available: false, percent: 1 })
   readonly property var keyboardBrightness: stateData.keyboardBrightness || ({ available: false, percent: 0 })
+  readonly property var screenPrivacy: monitorService
+    ? monitorService.screenPrivacy : ({ available: false, enabled: false, mode: "" })
   readonly property string internalMonitor: nativeTopology.internalMonitor
   readonly property bool internalEnabled: nativeTopology.internalEnabled
   readonly property string focusedMonitor: nativeTopology.focusedMonitor
@@ -216,6 +218,11 @@ Panel {
     monitorService.setKeyboardBrightness(action)
   }
 
+  function toggleScreenPrivacy() {
+    if (monitorService && screenPrivacy.available === true)
+      monitorService.setScreenPrivacy(screenPrivacy.enabled !== true)
+  }
+
   function toggleInternal() {
     if (monitorService && monitorActionsAvailable) monitorService.runAction(["monitor", "toggle-internal"])
   }
@@ -309,7 +316,8 @@ Panel {
     bar: root.bar
     iconText: Model.displayIcon(root.displays.length)
     valueText: root.presetLayoutsAvailable ? root.modeLetter : ""
-    active: root.presetLayoutsAvailable && (root.layoutMode === "headless" || root.layoutMode === "single")
+    active: (root.presetLayoutsAvailable && (root.layoutMode === "headless" || root.layoutMode === "single"))
+      || root.screenPrivacy.enabled === true
     tooltipText: root.presetLayoutsAvailable
       ? root.modeLabel + "; click to configure " + (root.barMonitor || "this monitor")
       : "Configure " + (root.barMonitor || "this monitor")
@@ -460,6 +468,20 @@ Panel {
               foreground: root.foreground
               enabled: root.monitorActionsAvailable
               onClicked: root.applyGenericLayout("all")
+            }
+            Button {
+              width: parent.width
+              visible: root.screenPrivacy.available === true
+              iconText: "󰈉"
+              text: root.screenPrivacy.enabled !== true ? "Hide physical screens"
+                : root.screenPrivacy.mode === "auto" ? "Show physical screens (hidden for RustDesk)"
+                : "Show physical screens"
+              leftAlign: true
+              bordered: true
+              foreground: root.foreground
+              active: root.screenPrivacy.enabled === true
+              enabled: root.monitorService !== null
+              onClicked: root.toggleScreenPrivacy()
             }
           }
 

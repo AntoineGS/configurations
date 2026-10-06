@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Power the physical panels off over DDC/CI. The compositor keeps rendering, so
+# remote sessions (RustDesk DRM capture) still see the desktop.
+
+readonly STATE_FILE="${SCREEN_PRIVACY_STATE_FILE:-${XDG_RUNTIME_DIR:-/run/user/$UID}/screen-privacy}"
+readonly POWER_ON=1
+readonly POWER_OFF=4
+
+usage() {
+  printf 'usage: %s on [--auto]|off [--if-auto]|toggle|status\n' "${0##*/}" >&2
+  exit 2
+}
+
+die() {
+  printf '%s: %s\n' "${0##*/}" "$*" >&2
+  exit 1
+}
+
+ddc() {
+  local line output status=0
+
+  output=$(ddcutil "$@" 2>&1) || status=$?
+  [[ -n $output ]] || return "$status"
+  # ddcutil 3.0 prints sysfs probe noise on stdout.
+  while IFS= read -r line; do
+    [[ $line == 'Nothing to read from /sys/class' ]] || printf '%s\n' "$line"
+  done <<<"$output"
+  return "$status"
+}
+
+ddc_buses() {
+  ddc detect --terse | awk '
+    /^Display [0-9]+/ { valid = 1; next }
+    /^[^ ]/ { valid = 0 }
+    valid && $1 == "I2C" && $2 == "bus:" { sub("/dev/i2c-", "", $3); print $3 }
+  '
+}
+
+current_mode() {
+  local mode=''
+
+  [[ -r $STATE_FILE ]] && read -r mode <"$STATE_FILE"
+  case $mode in
+    auto|manual) printf '%s\n' "$mode" ;;
+    *) printf '\n' ;;
+  esac
+}
+
+set_power() {
+  local value=$1
+  local expected attempt bus current failed=0
+  local -a buses
+
+  printf -v expected 'VCP D6 SNC x%02x' "$value"
+  mapfile -t buses < <(ddc_buses)
+  ((${#buses[@]} > 0)) || die 'no DDC/CI display found'
+
+  for bus in "${buses[@]}"; do
+    current=''
+    for ((attempt = 0; attempt < 3; attempt++)); do
+      ddc --bus "$bus" setvcp D6 "$value" >/dev/null || true
+      current=$(ddc --bus "$bus" getvcp D6 --terse) || current=''
+      [[ $current == "$expected" ]] && break
+      sleep 0.5
+    done
+    if [[ $current != "$expected" ]]; then
+      printf '%s: /dev/i2c-%s did not switch power mode\n' "${0##*/}" "$bus" >&2
+      failed=1
+    fi
+  done
+
+  return "$failed"
+}
+
+enable_privacy() {
+  local mode=$1
+
+  printf '%s\n' "$mode" >"$STATE_FILE"
+  set_power "$POWER_OFF"
+}
+
+disable_privacy() {
+  rm -f -- "$STATE_FILE"
+  set_power "$POWER_ON"
+}
+
+main() {
+  local lock_fd mode
+
+  (($# == 1 || $# == 2)) || usage
+  command -v ddcutil >/dev/null 2>&1 || die 'ddcutil is required'
+
+  # The panel and the RustDesk watcher can switch at the same time.
+  exec {lock_fd}>"$STATE_FILE.lock"
+  flock --wait 30 "$lock_fd" || die 'timed out waiting for another screen-privacy call'
+
+  mode=$(current_mode)
+  case $1:${2:-} in
+    on:) enable_privacy manual ;;
+    # Keep a manual hide manual so a disconnect does not reveal the screens.
+    on:--auto) enable_privacy "${mode:-auto}" ;;
+    off:) disable_privacy ;;
+    off:--if-auto) [[ $mode != auto ]] || disable_privacy ;;
+    toggle:)
+      if [[ -n $mode ]]; then
+        disable_privacy
+      else
+        enable_privacy manual
+      fi
+      ;;
+    status:) printf '%s\n' "${mode:-off}" ;;
+    *) usage ;;
+  esac
+}
+
+main "$@"

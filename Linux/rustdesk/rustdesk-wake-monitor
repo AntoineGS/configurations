@@ -26,12 +26,23 @@ watch_connections() {
   local log_file="${XDG_DATA_HOME:-$HOME/.local/share}/logs/RustDesk/server/rustdesk_rCURRENT.log"
 
   # Follow rotations, and ignore historical connections when the service starts.
-  # RustDesk emits this for desktop connections, including restored portal sessions.
+  # RustDesk holds one wakelock while any desktop connection is open, including
+  # restored portal sessions, and drops it after the last one closes.
   tail --lines=0 --follow=name --retry "$log_file" | while IFS= read -r line; do
     case $line in
       *'] new wakelock, require display on: true')
         if ! "$0" --prepare-monitor; then
           printf '%s\n' 'rustdesk-wake-monitor: unable to prepare DP-1 for this connection' >&2
+        fi
+        # Let the panels resync after the layout change so they stay off.
+        sleep 2
+        if ! screen-privacy on --auto; then
+          printf '%s\n' 'rustdesk-wake-monitor: unable to hide the physical screens' >&2
+        fi
+        ;;
+      *'] drop wakelock')
+        if ! screen-privacy off --if-auto; then
+          printf '%s\n' 'rustdesk-wake-monitor: unable to restore the physical screens' >&2
         fi
         ;;
     esac

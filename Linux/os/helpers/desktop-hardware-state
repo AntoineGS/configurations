@@ -269,12 +269,32 @@ read_keyboard_backlight() {
   printf '%s\n' '{"available":false,"device":"","percent":0}'
 }
 
+read_screen_privacy() {
+  local state_file=${SCREEN_PRIVACY_STATE_FILE:-${XDG_RUNTIME_DIR:-/run/user/$UID}/screen-privacy}
+  local available=false
+  local mode=''
+
+  if resolve_command ddcutil >/dev/null && resolve_command screen-privacy >/dev/null; then
+    available=true
+  fi
+  if [[ -r $state_file ]]; then
+    read -r mode <"$state_file" || true
+  fi
+  case $mode in
+    auto|manual) ;;
+    *) mode='' ;;
+  esac
+  jq -cn --argjson available "$available" --arg mode "$mode" \
+    '{available: $available, enabled: ($mode != ""), mode: $mode}'
+}
+
 state_monitor() {
   local hyprctl_command
   local raw_monitors
   local monitors
   local brightness
   local keyboard_brightness
+  local screen_privacy
   local focused_monitor
   local internal_monitor
   local internal_enabled
@@ -308,6 +328,7 @@ state_monitor() {
 
   brightness=$(read_backlight)
   keyboard_brightness=$(read_keyboard_backlight)
+  screen_privacy=$(read_screen_privacy)
   focused_monitor=$(jq -r '[.[] | select(.focused == true) | .name][0] // ""' <<<"$monitors")
   internal_monitor=$(jq -r '[.[] | select(.name | test("^(eDP|LVDS|DSI)-"; "i")) | .name][0] // ""' <<<"$monitors")
   internal_enabled=$(jq -r --arg name "$internal_monitor" 'any(.[]; .name == $name and .enabled)' <<<"$monitors")
@@ -317,11 +338,12 @@ state_monitor() {
     --argjson monitors "$monitors" \
     --argjson brightness "$brightness" \
     --argjson keyboardBrightness "$keyboard_brightness" \
+    --argjson screenPrivacy "$screen_privacy" \
     --arg focusedMonitor "$focused_monitor" \
     --arg internalMonitor "$internal_monitor" \
     --argjson internalEnabled "$internal_enabled" \
     --argjson mirrorEnabled "$mirror_enabled" \
-    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness}')
+    '{monitors: $monitors, focusedMonitor: $focusedMonitor, internalMonitor: $internalMonitor, internalEnabled: $internalEnabled, mirrorEnabled: $mirrorEnabled, brightness: $brightness, keyboardBrightness: $keyboardBrightness, screenPrivacy: $screenPrivacy}')
 
   if [[ $available == true ]]; then
     emit_available "$data"

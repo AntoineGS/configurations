@@ -533,6 +533,15 @@ case $domain in
         command -v jq >/dev/null 2>&1 || exit 1
         set_monitor_scale "$3" "$4"
         ;;
+      set-privacy)
+        (($# == 3)) || usage
+        case $3 in
+          on|off) ;;
+          *) usage ;;
+        esac
+        privacy_helper=$(resolve_helper screen-privacy) || exit 1
+        "$privacy_helper" "$3"
+        ;;
       set-layout)
         case ${3:-} in
           only)
