@@ -13,6 +13,7 @@ elegoo-slicer-bin
 fstl-git
 fzf-tab-completion-git
 ghostty-nightly-bin
+ghostty-nightly-bin-debug
 github-copilot-cli
 golangci-lint-bin
 google-cloud-cli
@@ -21,6 +22,7 @@ hyprland-preview-share-picker-git
 icu74
 insync
 lazysql-bin
+lazysql-bin-debug
 lazysys-git
 libfprint-cs9711-git-debug
 limine-snapper-sync
@@ -30,6 +32,7 @@ oci-cli
 oh-my-zsh-git
 opencode-beta
 openssl-1.1
+openssl-1.1-debug
 outlook-for-linux
 posting
 python-curl-cffi-git
