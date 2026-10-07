@@ -469,19 +469,61 @@ Panel {
               enabled: root.monitorActionsAvailable
               onClicked: root.applyGenericLayout("all")
             }
-            Button {
+            CursorSurface {
               width: parent.width
               visible: root.screenPrivacy.available === true
-              iconText: "󰈉"
-              text: root.screenPrivacy.enabled !== true ? "Hide physical screens"
-                : root.screenPrivacy.mode === "auto" ? "Show physical screens (hidden for RustDesk)"
-                : "Show physical screens"
-              leftAlign: true
-              bordered: true
               foreground: root.foreground
-              active: root.screenPrivacy.enabled === true
-              enabled: root.monitorService !== null
-              onClicked: root.toggleScreenPrivacy()
+              outline: true
+              implicitHeight: Style.space(50)
+
+              Row {
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(8)
+                anchors.rightMargin: Style.space(8)
+                spacing: Style.space(8)
+
+                Text {
+                  id: privacyIcon
+                  text: "󰈉"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+                Column {
+                  width: Math.max(0, parent.width - privacyIcon.implicitWidth
+                    - privacyToggle.implicitWidth - Style.space(16))
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(1)
+
+                  Text {
+                    width: parent.width
+                    text: "Hide physical screens"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: root.screenPrivacy.enabled !== true ? "Panels on"
+                      : root.screenPrivacy.mode === "auto" ? "Hidden for RustDesk" : "Hidden"
+                    color: root.panelSecondary
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+                ToggleSwitch {
+                  id: privacyToggle
+                  checked: root.screenPrivacy.enabled === true
+                  busy: root.monitorService && root.monitorService.operationPending
+                  cursorRing: false
+                  foreground: root.foreground
+                  anchors.verticalCenter: parent.verticalCenter
+                  onToggled: root.toggleScreenPrivacy()
+                }
+              }
             }
           }
 

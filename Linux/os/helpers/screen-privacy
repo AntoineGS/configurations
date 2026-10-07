@@ -3,10 +3,18 @@ set -Eeuo pipefail
 
 # Power the physical panels off over DDC/CI. The compositor keeps rendering, so
 # remote sessions (RustDesk DRM capture) still see the desktop.
+#
+# The VA2431 panels are unreliable over DDC/CI: they ignore commands for a few
+# seconds while waking, sometimes drop a command sent mid-transition, and the
+# power readback can lag one command behind. Each change is therefore written
+# twice, then a background reconciler resends the wanted state until every
+# panel reports it.
 
 readonly STATE_FILE="${SCREEN_PRIVACY_STATE_FILE:-${XDG_RUNTIME_DIR:-/run/user/$UID}/screen-privacy}"
 readonly POWER_ON=1
 readonly POWER_OFF=4
+readonly RECONCILE_INTERVAL=3
+readonly RECONCILE_TIMEOUT=60
 
 usage() {
   printf 'usage: %s on [--auto]|off [--if-auto]|toggle|status\n' "${0##*/}" >&2
@@ -48,42 +56,103 @@ current_mode() {
   esac
 }
 
-set_power() {
-  local value=$1
-  local expected attempt bus current failed=0
+wanted_power() {
+  if [[ -n $(current_mode) ]]; then
+    printf '%s\n' "$POWER_OFF"
+  else
+    printf '%s\n' "$POWER_ON"
+  fi
+}
+
+write_power() {
+  ddc --bus "$1" setvcp D6 "$2" --noverify >/dev/null
+}
+
+bus_reports() {
+  local bus=$1
+  local value=$2
+  local current
+
+  current=$(ddc --bus "$bus" getvcp D6 --terse) || return 1
+  if ((value == POWER_OFF)); then
+    [[ $current == 'VCP D6 SNC x04' ]]
+  else
+    # A panel without a signal (output disabled in Hyprland) reports standby.
+    [[ $current == 'VCP D6 SNC x'* && $current != 'VCP D6 SNC x04' ]]
+  fi
+}
+
+notify_failure() {
+  local message=$1
+
+  printf '%s: %s\n' "${0##*/}" "$message" >&2
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u critical 'Screen privacy' "$message" || true
+  fi
+}
+
+reconcile() {
+  local bus deadline lock_fd pending stamp value
+  local last_stamp=''
   local -a buses
 
-  printf -v expected 'VCP D6 SNC x%02x' "$value"
+  # Queue behind a running reconciler; it follows the state file meanwhile.
+  exec {lock_fd}>"$STATE_FILE.reconcile"
+  flock "$lock_fd"
+
+  mapfile -t buses < <(ddc_buses)
+  ((${#buses[@]} > 0)) || return 0
+
+  while :; do
+    stamp=$(date -r "$STATE_FILE" +%s%N 2>/dev/null) || stamp=''
+    if [[ $stamp != "$last_stamp" ]]; then
+      last_stamp=$stamp
+      deadline=$((SECONDS + RECONCILE_TIMEOUT))
+    fi
+
+    value=$(wanted_power)
+    pending=0
+    for bus in "${buses[@]}"; do
+      if ! bus_reports "$bus" "$value"; then
+        pending=1
+        write_power "$bus" "$value" || true
+      fi
+    done
+    ((pending)) || return 0
+
+    if ((SECONDS >= deadline)); then
+      if ((value == POWER_OFF)); then
+        notify_failure 'Physical screens did not report off'
+      else
+        notify_failure 'Physical screens did not report on'
+      fi
+      return 1
+    fi
+    sleep "$RECONCILE_INTERVAL"
+  done
+}
+
+apply_mode() {
+  local mode=$1
+  local lock_fd=$2
+  local bus value
+  local -a buses
+
   mapfile -t buses < <(ddc_buses)
   ((${#buses[@]} > 0)) || die 'no DDC/CI display found'
 
+  # The state file is the wanted state; its mtime restarts the reconciler timeout.
+  printf '%s\n' "${mode:-off}" >"$STATE_FILE"
+  value=$(wanted_power)
   for bus in "${buses[@]}"; do
-    current=''
-    for ((attempt = 0; attempt < 3; attempt++)); do
-      ddc --bus "$bus" setvcp D6 "$value" >/dev/null || true
-      current=$(ddc --bus "$bus" getvcp D6 --terse) || current=''
-      [[ $current == "$expected" ]] && break
-      sleep 0.5
-    done
-    if [[ $current != "$expected" ]]; then
-      printf '%s: /dev/i2c-%s did not switch power mode\n' "${0##*/}" "$bus" >&2
-      failed=1
-    fi
+    write_power "$bus" "$value" || true
+  done
+  sleep 0.3
+  for bus in "${buses[@]}"; do
+    write_power "$bus" "$value" || true
   done
 
-  return "$failed"
-}
-
-enable_privacy() {
-  local mode=$1
-
-  printf '%s\n' "$mode" >"$STATE_FILE"
-  set_power "$POWER_OFF"
-}
-
-disable_privacy() {
-  rm -f -- "$STATE_FILE"
-  set_power "$POWER_ON"
+  setsid -f "$0" reconcile {lock_fd}>&- </dev/null >/dev/null 2>&1
 }
 
 main() {
@@ -92,22 +161,28 @@ main() {
   (($# == 1 || $# == 2)) || usage
   command -v ddcutil >/dev/null 2>&1 || die 'ddcutil is required'
 
+  if [[ $1 == reconcile ]]; then
+    (($# == 1)) || usage
+    reconcile
+    return
+  fi
+
   # The panel and the RustDesk watcher can switch at the same time.
   exec {lock_fd}>"$STATE_FILE.lock"
   flock --wait 30 "$lock_fd" || die 'timed out waiting for another screen-privacy call'
 
   mode=$(current_mode)
   case $1:${2:-} in
-    on:) enable_privacy manual ;;
+    on:) apply_mode manual "$lock_fd" ;;
     # Keep a manual hide manual so a disconnect does not reveal the screens.
-    on:--auto) enable_privacy "${mode:-auto}" ;;
-    off:) disable_privacy ;;
-    off:--if-auto) [[ $mode != auto ]] || disable_privacy ;;
+    on:--auto) apply_mode "${mode:-auto}" "$lock_fd" ;;
+    off:) apply_mode '' "$lock_fd" ;;
+    off:--if-auto) [[ $mode != auto ]] || apply_mode '' "$lock_fd" ;;
     toggle:)
       if [[ -n $mode ]]; then
-        disable_privacy
+        apply_mode '' "$lock_fd"
       else
-        enable_privacy manual
+        apply_mode manual "$lock_fd"
       fi
       ;;
     status:) printf '%s\n' "${mode:-off}" ;;
