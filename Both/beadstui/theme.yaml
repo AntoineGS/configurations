@@ -1,0 +1,64 @@
+# Catppuccin: Mocha for dark terminals, Latte for light terminals.
+# Managed by tidydots as ~/.config/bt.
+colors:
+  bg:           { dark: "#1e1e2e", light: "#eff1f5" }
+  bg_dark:      { dark: "#181825", light: "#e6e9ef" }
+  bg_subtle:    { dark: "#313244", light: "#ccd0da" }
+  bg_highlight: { dark: "#45475a", light: "#bcc0cc" }
+  text:         { dark: "#cdd6f4", light: "#4c4f69" }
+  subtext:      { dark: "#bac2de", light: "#5c5f77" }
+  muted:        { dark: "#a6adc8", light: "#6c6f85" }
+
+  primary:   { dark: "#cba6f7", light: "#8839ef" }
+  secondary: { dark: "#f5c2e7", light: "#ea76cb" }
+  info:      { dark: "#89b4fa", light: "#1e66f5" }
+  success:   { dark: "#a6e3a1", light: "#40a02b" }
+  warning:   { dark: "#f9e2af", light: "#df8e1d" }
+  danger:    { dark: "#f38ba8", light: "#d20f39" }
+
+  text_secondary: { dark: "#cdd6f4", light: "#4c4f69" }
+  bg_contrast:    { dark: "#11111b", light: "#dce0e8" }
+
+  status:
+    open:        { dark: "#a6e3a1", light: "#40a02b" }
+    in_progress: { dark: "#89b4fa", light: "#1e66f5" }
+    blocked:     { dark: "#f38ba8", light: "#d20f39" }
+    deferred:    { dark: "#f9e2af", light: "#df8e1d" }
+    pinned:      { dark: "#b4befe", light: "#7287fd" }
+    hooked:      { dark: "#94e2d5", light: "#179299" }
+    review:      { dark: "#cba6f7", light: "#8839ef" }
+    closed:      { dark: "#a6adc8", light: "#6c6f85" }
+    tombstone:   { dark: "#6c7086", light: "#9ca0b0" }
+
+  status_bg:
+    open:        { dark: "#313244", light: "#e6e9ef" }
+    in_progress: { dark: "#313244", light: "#e6e9ef" }
+    blocked:     { dark: "#313244", light: "#e6e9ef" }
+    deferred:    { dark: "#313244", light: "#e6e9ef" }
+    pinned:      { dark: "#313244", light: "#e6e9ef" }
+    hooked:      { dark: "#313244", light: "#e6e9ef" }
+    review:      { dark: "#313244", light: "#e6e9ef" }
+    closed:      { dark: "#181825", light: "#e6e9ef" }
+    tombstone:   { dark: "#1e1e2e", light: "#eff1f5" }
+
+  priority:
+    critical: { dark: "#f38ba8", light: "#d20f39" }
+    high:     { dark: "#fab387", light: "#fe640b" }
+    medium:   { dark: "#f9e2af", light: "#df8e1d" }
+    low:      { dark: "#a6e3a1", light: "#40a02b" }
+
+  priority_bg:
+    critical: { dark: "#313244", light: "#e6e9ef" }
+    high:     { dark: "#313244", light: "#e6e9ef" }
+    medium:   { dark: "#313244", light: "#e6e9ef" }
+    low:      { dark: "#313244", light: "#e6e9ef" }
+
+  type:
+    bug:     { dark: "#f38ba8", light: "#d20f39" }
+    feature: { dark: "#fab387", light: "#fe640b" }
+    task:    { dark: "#89b4fa", light: "#1e66f5" }
+    epic:    { dark: "#cba6f7", light: "#8839ef" }
+    chore:   { dark: "#94e2d5", light: "#179299" }
+
+  border:    { dark: "#585b70", light: "#9ca0b0" }
+  highlight: { dark: "#45475a", light: "#bcc0cc" }

@@ -2162,6 +2162,14 @@ applications:
     name: 1password
     when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
     entries: []
+  - name: beadstui
+    description: Catppuccin theme for the bt issue viewer
+    entries:
+      - name: config
+        backup: ./Both/beadstui
+        targets:
+          linux: ~/.config/bt
+          windows: ~/.config/bt
   - package:
       managers:
         pacman: btop
