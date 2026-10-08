@@ -1,11 +1,13 @@
 1password
 1password-cli
 aether
+aether-debug
 asbru-cm-git
 backlog.md
 beads-bin
 brave-bin
 bruno-bin
+bruno-bin-debug
 carapace-bin
 catppuccin-gtk-theme-mocha
 claude-code
@@ -16,6 +18,8 @@ hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
 meridian
+meridian-debug
+neovim-nightly-bin-debug
 oh-my-zsh-git
 onedrive-abraunegg
 opencode-beta
