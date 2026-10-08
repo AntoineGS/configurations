@@ -25,7 +25,6 @@ gnome-disk-utility
 gnome-themes-extra
 gopls
 gpu-screen-recorder
-gradle
 gsimplecal
 gum
 hypridle
@@ -39,7 +38,6 @@ inxi
 kdenlive
 lazydocker
 lazygit
-libayatana-indicator
 libmspack
 libqalculate
 libreoffice-fresh
@@ -58,9 +56,6 @@ pinta
 playerctl
 plymouth
 power-profiles-daemon
-python-build
-python-hatchling
-python-installer
 python-poetry-core
 quickshell
 rebuild-detector
