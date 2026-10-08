@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -27,11 +28,11 @@ Panel {
   readonly property string tailscaleActionStatus: tailscale ? tailscale.actionStatus : ""
   readonly property string tailscaleLastError: tailscale ? tailscale.lastError : ""
   readonly property color foreground: panelForeground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool capabilityAvailable: !!tailscale && tailscale.available
   readonly property color dim: Qt.darker(foreground, 1.5)
-  readonly property color barIconForeground: bar ? bar.foreground : Color.foreground
+  readonly property color barIconForeground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color barIconDim: Qt.darker(barIconForeground, 1.5)
 
   function reportCapability() {
@@ -96,7 +97,7 @@ Panel {
         iconSize: Style.space(12)
         color: button.contentColor
         badgeColor: root.urgent
-        badgeBackground: Color.bar.background
+        badgeBackground: Commons.Color.bar.background
         crossed: !root.tailscaleActive
         warning: root.tailscaleNeedsLogin
       }
@@ -155,7 +156,7 @@ Panel {
               TailscaleIcon {
                 iconSize: Style.font.display
                 color: root.tailscaleActive ? root.panelSecondary : root.dim
-                badgeBackground: Color.barPanels.background
+                badgeBackground: Commons.Color.barPanels.background
                 crossed: !root.tailscaleActive
                 warning: root.tailscaleNeedsLogin
               }

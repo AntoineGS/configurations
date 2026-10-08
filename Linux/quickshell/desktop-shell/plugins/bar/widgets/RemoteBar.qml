@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../../panels/vm/Model.js" as VmModel
 
@@ -31,8 +32,8 @@ BarWidget {
   readonly property var hostMemory: vm && vm.hostMemory ? vm.hostMemory : ({})
   readonly property var hostCpu: vm && vm.hostCpu ? vm.hostCpu : ({})
   readonly property var guest: vm && vm.vm ? vm.vm : ({})
-  readonly property color statForeground: root.bar ? root.bar.barForeground : Color.foreground
-  readonly property color urgent: root.bar ? root.bar.urgent : Color.urgent
+  readonly property color statForeground: root.bar ? root.bar.barForeground : Commons.Color.foreground
+  readonly property color urgent: root.bar ? root.bar.urgent : Commons.Color.urgent
   readonly property bool guestMemoryCritical: VmModel.memoryCritical(root.guest.memoryPercent)
   readonly property string guestTooltip: root.guest.stale
     ? String(root.guest.name || "VM") + " (stale): " + String(root.guest.error || "")
@@ -50,7 +51,7 @@ BarWidget {
       bar: root.bar
       text: root.remoteSelected ? "Remote" : "Local"
       tooltipText: root.service ? root.service.modeTooltip(root.screenName) : ""
-      foreground: root.remoteSelected ? root.remoteColor : (root.bar ? root.bar.barForeground : Color.foreground)
+      foreground: root.remoteSelected ? root.remoteColor : (root.bar ? root.bar.barForeground : Commons.Color.foreground)
       horizontalMargin: 6
       onPressed: function(button) {
         if (button === Qt.LeftButton && root.service)
@@ -63,7 +64,7 @@ BarWidget {
       bar: root.bar
       text: "!"
       tooltipText: root.service ? root.service.modeTooltip(root.screenName) : ""
-      foreground: root.bar ? root.bar.urgent : Color.urgent
+      foreground: root.bar ? root.bar.urgent : Commons.Color.urgent
       horizontalMargin: 2
       pressable: false
     }

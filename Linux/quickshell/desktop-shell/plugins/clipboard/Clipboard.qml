@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "ClipboardHistory.js" as ClipboardHistory
 
@@ -27,9 +28,9 @@ Item {
   property string historyPath: root.stateRoot + "/clipboard-history.json"
   property string imageDir: root.stateRoot + "/clipboard-images"
   property string captureScript: root.shellPath + "/plugins/clipboard/capture.sh"
-  property color foreground: Color.barPanels.text
-  property color secondaryForeground: Color.barPanels.secondaryText
-  property color accent: Color.accent
+  property color foreground: Commons.Color.barPanels.text
+  property color secondaryForeground: Commons.Color.barPanels.secondaryText
+  property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
   property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
@@ -577,7 +578,7 @@ Item {
       confirmText: "Delete"
       foreground: root.foreground
       secondaryForeground: root.secondaryForeground
-      scrim: Color.modal.scrim
+      scrim: Commons.Color.modal.scrim
       fontFamily: root.fontFamily
       onCanceled: root.cancelClearHistory()
       onConfirmed: root.confirmClearHistory()

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -366,8 +367,8 @@ Panel {
     hasCursor: root.cursorActive && root.focusSection === "wifi" && root.selectedIndex === rowIndex
     current: isCurrent
     foreground: root.foreground
-    fill: Style.hoverFillFor(root.foreground, Color.accent)
-    currentFill: Style.selectedFillFor(root.foreground, Color.accent)
+    fill: Style.hoverFillFor(root.foreground, Commons.Color.accent)
+    currentFill: Style.selectedFillFor(root.foreground, Commons.Color.accent)
     implicitHeight: Style.space(42)
 
     Text {

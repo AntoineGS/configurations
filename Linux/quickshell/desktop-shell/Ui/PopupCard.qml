@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Hyprland
 import qs.Commons
+import qs.Commons as Commons
 
 PopupWindow {
   id: root
@@ -17,9 +18,9 @@ PopupWindow {
   property int shadowPadding: 24
   property int shadowBottomPadding: shadowPadding + 4
   property real surfaceOffsetY: 0
-  property color borderColor: Color.barPanels.border
+  property color borderColor: Commons.Color.barPanels.border
   property var borderSpec: Border.localOrSurfaceSpec("bar-panels", "border", borderColor,
-    Color.barPanels.border, Math.max(1, Style.space(2)))
+    Commons.Color.barPanels.border, Math.max(1, Style.space(2)))
   property bool open: false
   property bool centerOnBar: false
   // "click" — uses HyprlandFocusGrab so clicking outside dismisses the popup.
@@ -29,7 +30,7 @@ PopupWindow {
   property bool attached: true
   property bool coordinateWithBar: true
   property bool inputEnabled: root.open
-  property color surfaceColor: Color.barPanels.background
+  property color surfaceColor: Commons.Color.barPanels.background
   property Gradient surfaceGradient: null
   property color shoulderGradientStartColor: root.surfaceColor
   property color shoulderGradientEndColor: root.surfaceColor

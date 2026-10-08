@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell.Bluetooth
 import qs.Ui
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 Panel {
@@ -358,8 +359,8 @@ Panel {
     hasCursor: root.cursorActive && root.focusSection === sectionName && root.selectedIndex === rowIndex
     current: connected
     foreground: root.foreground
-    fill: Style.hoverFillFor(root.foreground, Color.accent)
-    currentFill: Style.selectedFillFor(root.foreground, Color.accent)
+    fill: Style.hoverFillFor(root.foreground, Commons.Color.accent)
+    currentFill: Style.selectedFillFor(root.foreground, Commons.Color.accent)
     implicitHeight: Style.space(42)
 
     Text {

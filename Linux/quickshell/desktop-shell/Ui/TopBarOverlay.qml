@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 
 PanelWindow {
   id: root
@@ -242,7 +243,7 @@ PanelWindow {
       left: parent.left
       right: parent.right
     }
-    color: Color.modal.scrim
+    color: Commons.Color.modal.scrim
     opacity: root._scrimOpacity
 
     MouseArea {
@@ -337,7 +338,7 @@ PanelWindow {
       z: 1
       visible: root.topBarHeight > 0
       bodyWidth: root.cardWidth
-      surfaceColor: Color.barPanels.background
+      surfaceColor: Commons.Color.barPanels.background
       revealProgress: root._materialYScale
     }
   }

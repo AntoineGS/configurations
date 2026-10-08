@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "../NotificationLogic.js" as NotificationLogic
 
@@ -42,14 +43,14 @@ Item {
   readonly property bool hasSmallIcon: smallIconSource.length > 0
   readonly property string sanitizedBody: sanitizeBody(renderedBody)
   readonly property string styledBody: sanitizedBody.replace(/\r\n|\r|\n/g, "<br/>")
-  readonly property color surfaceColor: Color.notifications.background
+  readonly property color surfaceColor: Commons.Color.notifications.background
   readonly property color urgencyColor: renderedUrgency === 0
-    ? Color.notifications.low : renderedUrgency === 2
-      ? Color.notifications.critical : Color.notifications.normal
+    ? Commons.Color.notifications.low : renderedUrgency === 2
+      ? Commons.Color.notifications.critical : Commons.Color.notifications.normal
   readonly property real contentTopInset: attachedMode
     ? Math.max(0, attachedContentTopInset) : 0
-  readonly property color inkColor: Color.notifications.text
-  readonly property color secondaryInkColor: Color.notifications.secondaryText
+  readonly property color inkColor: Commons.Color.notifications.text
+  readonly property color secondaryInkColor: Commons.Color.notifications.secondaryText
   readonly property string sourceLabel: String(renderedApp || "SYSTEM").toUpperCase()
   readonly property string timeLabel: formatTime(renderedTimestamp)
 
@@ -249,7 +250,7 @@ Item {
             required property var modelData
             text: modelData.text
             foreground: root.inkColor
-            accent: Color.notifications.action
+            accent: Commons.Color.notifications.action
             color: "transparent"
             bordered: true
             borderSpec: Border.flat(Util.alpha(accent, hot ? 1 : 0.5), Math.max(1, Style.space(1)))

@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 
 // Small-caps-style label that introduces a panel section ("DNS provider",
 // "Wi-Fi networks", "Output device", "Paired devices"). Sits between a
@@ -7,8 +8,8 @@ import qs.Commons
 Text {
   id: root
 
-  property color foreground: Color.foreground
-  property color secondaryForeground: Color.barPanels.secondaryText
+  property color foreground: Commons.Color.foreground
+  property color secondaryForeground: Commons.Color.barPanels.secondaryText
   property string fontFamily: Style.font.family
   property real fontSize: Style.font.caption
 

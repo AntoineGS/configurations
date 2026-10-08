@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import Quickshell.Services.Polkit
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "PolkitModel.js" as PolkitModel
 
@@ -25,12 +26,12 @@ Item {
   }
 
   property string fontFamily: Style.font.family
-  property color accent: Color.polkit.accent
-  property color foreground: Color.barPanels.text
-  property color borderError: Color.polkit.borderError
+  property color accent: Commons.Color.polkit.accent
+  property color foreground: Commons.Color.barPanels.text
+  property color borderError: Commons.Color.polkit.borderError
   property var borderSpec: root.errorFlash
     ? Border.surfaceSpec("polkit", "border-error", root.borderError, Math.max(1, Style.space(2)), "border-alpha")
-    : Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, Math.max(1, Style.space(2)))
+    : Border.surfaceSpec("bar-panels", "border", Commons.Color.barPanels.border, Math.max(1, Style.space(2)))
   property int fieldHeight: Math.max(Style.space(42), Style.spacing.controlHeight)
 
   property var screenList: Quickshell.screens
@@ -549,7 +550,7 @@ Item {
         text: "\udb80\ude37"
         fontFamily: root.fontFamily
         fontSize: Math.round(root.fieldHeight * 0.7)
-        color: root.errorFlash ? Color.polkit.textError : root.accent
+        color: root.errorFlash ? Commons.Color.polkit.textError : root.accent
       }
 
       Row {
@@ -559,7 +560,7 @@ Item {
 
         Text {
           text: "\uf023"
-          color: root.errorFlash ? Color.polkit.textError : root.accent
+          color: root.errorFlash ? Commons.Color.polkit.textError : root.accent
           font.family: root.fontFamily
           font.pixelSize: Style.font.iconLarge
           width: Style.space(26)
@@ -576,8 +577,8 @@ Item {
             id: passwordInput
             anchors.fill: parent
             cornerRadius: Style.cornerRadius
-            foreground: root.errorFlash ? Color.polkit.textError : root.foreground
-            accent: root.errorFlash ? Color.polkit.textError : root.accent
+            foreground: root.errorFlash ? Commons.Color.polkit.textError : root.foreground
+            accent: root.errorFlash ? Commons.Color.polkit.textError : root.accent
             placeholderText: root.errorFlash ? "Wrong" : (root.submitted ? "Checking..." : "Enter password")
             echoMode: root.responseVisible ? TextInput.Normal : TextInput.Password
             readOnly: root.submitted || root.errorFlash

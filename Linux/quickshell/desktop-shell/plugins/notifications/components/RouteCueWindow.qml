@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 PanelWindow {
@@ -53,7 +54,7 @@ PanelWindow {
     y: 0
     width: root.bodyWidth
     height: Style.space(48)
-    color: Color.notifications.background
+    color: Commons.Color.notifications.background
     radius: Style.popupOuterRadius
     topLeftRadius: 0
     topRightRadius: 0
@@ -78,7 +79,7 @@ PanelWindow {
     Text {
       anchors.centerIn: parent
       text: root._displayGlyph
-      color: Color.notifications.text
+      color: Commons.Color.notifications.text
       font.family: Style.font.family
       font.pixelSize: Style.font.display
     }
@@ -90,9 +91,9 @@ PanelWindow {
     x: root.elevationInset - Style.popupOuterRadius
     y: 0
     bodyWidth: root.bodyWidth
-    surfaceColor: Color.notifications.background
-    gradientStartColor: Color.notifications.background
-    gradientEndColor: Color.notifications.background
+    surfaceColor: Commons.Color.notifications.background
+    gradientStartColor: Commons.Color.notifications.background
+    gradientEndColor: Commons.Color.notifications.background
     gradientExtent: Style.popupOuterRadius
     revealProgress: cueBody.revealProgress
     onClicked: button => {

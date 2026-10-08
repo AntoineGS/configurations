@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "BarModel.js" as BarModel
 
@@ -33,13 +34,13 @@ Item {
   readonly property int barSize:28 
   readonly property real moduleGap: 0
 
-  property color themeForeground: Color.bar.text
-  property color themeContrastForeground: Color.background
+  property color themeForeground: Commons.Color.bar.text
+  property color themeContrastForeground: Commons.Color.background
   property color foreground: themeForeground
   property color barForeground: themeForeground
-  property color background: Color.bar.background
-  property color activeColor: Color.bar.active
-  property color urgent: Color.urgent
+  property color background: Commons.Color.bar.background
+  property color activeColor: Commons.Color.bar.active
+  property color urgent: Commons.Color.urgent
   property bool foregroundAnimationEnabled: true
   property string fontFamily: Style.font.family
   property real fontSize: 14
@@ -511,8 +512,8 @@ Item {
           x: tooltipWindow.elevationInset
           implicitWidth: tooltipWindow.snapUp(tooltipLabel.implicitWidth + 20)
           implicitHeight: tooltipWindow.snapUp(tooltipLabel.implicitHeight + 14)
-          color: Color.barPanels.background
-          borderSpec: Border.surfaceSpec("bar-panels", "border", Color.barPanels.border, 1)
+          color: Commons.Color.barPanels.background
+          borderSpec: Border.surfaceSpec("bar-panels", "border", Commons.Color.barPanels.border, 1)
           radius: Style.popupOuterRadius
           topLeftRadius: 0
           topRightRadius: 0
@@ -528,7 +529,7 @@ Item {
             id: tooltipLabel
             anchors.centerIn: parent
             text: BarModel.tooltipDisplayText(root.tooltipText)
-            color: Color.tooltip.text
+            color: Commons.Color.tooltip.text
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             horizontalAlignment: Text.AlignHCenter

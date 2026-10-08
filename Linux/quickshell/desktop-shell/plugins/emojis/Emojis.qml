@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "EmojiSearch.js" as EmojiSearch
 
@@ -30,9 +31,9 @@ Item {
     || Quickshell.env("HOME") + "/.local/state") + "/desktop-shell"
   readonly property string recentPath: root.stateRoot + "/emoji-history.json"
 
-  property color foreground: Color.barPanels.text
-  property color secondaryForeground: Color.barPanels.secondaryText
-  property color accent: Color.accent
+  property color foreground: Commons.Color.barPanels.text
+  property color secondaryForeground: Commons.Color.barPanels.secondaryText
+  property color accent: Commons.Color.accent
   property string fontFamily: Style.font.family
   property int contentMargin: Style.spacing.popupPadding
   property int headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)

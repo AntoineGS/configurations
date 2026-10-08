@@ -4,10 +4,10 @@ const Helper = require("../../../os/helpers/desktop-remote-bar")
 assert.equal(Helper.sshDestination(["ssh", "antoinews-linux"]), "antoinews-linux")
 assert.equal(Helper.sshDestination(["ssh", "-p", "22", "user@antoinews-linux"]), "user@antoinews-linux")
 assert.equal(Helper.sshDestination([
-  "ssh", "-t", "-R", "/tmp/server.sock:/tmp/client.sock", "Multidev\\a.simard@antoinews-linux",
+  "ssh", "-t", "-R", "/tmp/server.sock:/tmp/client.sock", "a.simard@multidev.local@antoinews-linux",
   "--", "waypipe", "server",
-]), "Multidev\\a.simard@antoinews-linux")
-assert.equal(Helper.destinationHost("Multidev\\a.simard@antoinews-linux"), "antoinews-linux")
+]), "a.simard@multidev.local@antoinews-linux")
+assert.equal(Helper.destinationHost("a.simard@multidev.local@antoinews-linux"), "antoinews-linux")
 assert.equal(Helper.isSshConnection(["ssh", "antoinews-linux"]), true)
 assert.equal(Helper.isSshConnection(["ssh", "-N", "antoinews-linux"]), true)
 assert.equal(Helper.isSshConnection(["ssh", "-G", "antoinews-linux"]), false)
@@ -131,7 +131,7 @@ async function testDetect() {
       if (name.endsWith("/comm")) return pid >= 100 ? "ssh" : "ghostty"
       if (name.endsWith("/children")) return pid === 60 ? "601" : ""
       if (name.endsWith("/cmdline")) return Buffer.from(pid === 601
-        ? "ssh\0Multidev\\a.simard@ANTOINEWS-LINUX\0" : "ghostty\0")
+        ? "ssh\0a.simard@multidev.local@ANTOINEWS-LINUX\0" : "ghostty\0")
       throw new Error(`unexpected read ${name}`)
     },
   }
@@ -155,7 +155,7 @@ async function testDetect() {
   vm.runInContext(source, sandbox)
   await vm.runInContext('main(["detect", "antoinews-linux", "DESKTOP-E07VTRN"])', sandbox)
   assert.deepEqual(JSON.parse(output), { screens: [
-    { screen: "DP-2", host: targets[0], sshTarget: "Multidev\\a.simard@ANTOINEWS-LINUX" },
+    { screen: "DP-2", host: targets[0], sshTarget: "a.simard@multidev.local@ANTOINEWS-LINUX" },
     { screen: "eDP-1", host: targets[1], sshTarget: "ssh://user@desktop-e07vtrn" },
   ] })
   assert.equal(sessionReads, 1)

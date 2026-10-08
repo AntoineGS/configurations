@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
@@ -20,8 +21,8 @@ Panel {
   readonly property bool resizePending: stateService ? stateService.resizePending : false
   readonly property string actionError: stateService ? stateService.actionError : ""
   readonly property color foreground: panelForeground
-  readonly property color statForeground: bar ? bar.barForeground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color statForeground: bar ? bar.barForeground : Commons.Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool canResize: vmState.canResize && !resizePending
   readonly property bool hostMemoryCritical: Model.memoryCritical(root.hostMemoryState.percent)
@@ -220,7 +221,7 @@ Panel {
             width: parent.width
             visible: root.vmState.stale
             text: root.vmState.error || ""
-            color: Color.urgent
+            color: Commons.Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
@@ -239,8 +240,8 @@ Panel {
               width: visible ? (metricCards.width - metricCards.spacing) / 2 : 0
               implicitHeight: Style.space(72)
               radius: Style.popupInnerRadius
-              color: Style.normalFillFor(root.foreground, Color.accent)
-              borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+              color: Style.normalFillFor(root.foreground, Commons.Color.accent)
+              borderSpec: Border.controlSpec("normal", root.foreground, Commons.Color.accent)
 
               Column {
                 anchors.fill: parent
@@ -278,8 +279,8 @@ Panel {
                 ? (metricCards.width - metricCards.spacing) / 2 : metricCards.width
               implicitHeight: Style.space(72)
               radius: Style.popupInnerRadius
-              color: Style.normalFillFor(root.foreground, Color.accent)
-              borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+              color: Style.normalFillFor(root.foreground, Commons.Color.accent)
+              borderSpec: Border.controlSpec("normal", root.foreground, Commons.Color.accent)
 
               Column {
                 anchors.fill: parent
@@ -390,7 +391,7 @@ Panel {
             width: parent.width
             visible: root.resizePending || root.actionError !== ""
             text: root.resizePending ? "Updating memory..." : root.actionError
-            color: root.actionError !== "" ? Color.urgent : root.panelSecondary
+            color: root.actionError !== "" ? Commons.Color.urgent : root.panelSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap

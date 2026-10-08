@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 BarWidget {
@@ -8,8 +9,8 @@ BarWidget {
   moduleName: "desktop.configuration-updates"
 
   readonly property var updates: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
 
   function refresh() {
     if (updates) updates.refresh()

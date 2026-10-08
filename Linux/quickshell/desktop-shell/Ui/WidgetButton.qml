@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 
 Item {
   id: root
@@ -9,9 +10,9 @@ Item {
   property string fontFamily: bar ? bar.fontFamily : Style.font.family
   property real fontSize: bar && bar.fontSize ? bar.fontSize : Style.font.body
   property int fontWeight: bar && bar.fontWeight ? bar.fontWeight : Font.Normal
-  property color foreground: bar ? bar.barForeground : Color.foreground
-  property color activeColor: bar ? bar.activeColor : Color.bar.active
-  property color accent: Color.accent
+  property color foreground: bar ? bar.barForeground : Commons.Color.foreground
+  property color activeColor: bar ? bar.activeColor : Commons.Color.bar.active
+  property color accent: Commons.Color.accent
   property bool active: false
   property real horizontalMargin: 8.5
   property real verticalPadding: 6

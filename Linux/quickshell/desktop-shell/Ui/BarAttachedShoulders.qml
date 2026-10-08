@@ -1,13 +1,14 @@
 import QtQuick
 import QtQuick.Shapes
 import qs.Commons
+import qs.Commons as Commons
 
 Item {
   id: root
 
   property real bodyWidth: 0
   property real radius: Style.popupOuterRadius
-  property color surfaceColor: Color.barPanels.background
+  property color surfaceColor: Commons.Color.barPanels.background
   property color gradientStartColor: root.surfaceColor
   property color gradientEndColor: root.surfaceColor
   property real gradientExtent: root.radius

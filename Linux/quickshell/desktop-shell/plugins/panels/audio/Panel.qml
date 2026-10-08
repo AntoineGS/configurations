@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import qs.Ui
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 Panel {
@@ -492,8 +493,8 @@ Panel {
       && root.selectedIndex === rowIndex
     current: nodeRow.isCurrent
     foreground: root.foreground
-    fill: Style.hoverFillFor(root.foreground, Color.accent)
-    currentFill: Style.selectedFillFor(root.foreground, Color.accent)
+    fill: Style.hoverFillFor(root.foreground, Commons.Color.accent)
+    currentFill: Style.selectedFillFor(root.foreground, Commons.Color.accent)
     implicitHeight: Style.space(38)
 
     Text {

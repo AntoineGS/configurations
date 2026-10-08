@@ -2459,16 +2459,16 @@ applications:
         when: '{{ and (eq .OS "linux") (ne .Hostname "desktop-e07vtrn") (ne .Hostname "DESKTOP-E07VTRN") (ne .Hostname "antoinews-linux") }}'
         check_mode: status
       - check:
-          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://MULTIDEV\\a.simard@antoinews-linux" and .session == "default")' >/dev/null
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@antoinews-linux" and .session == "default")' >/dev/null
         run:
-          linux: herdr machine add 'ssh://MULTIDEV\a.simard@antoinews-linux' --label antoinews-linux --remote-session default
+          linux: herdr machine add 'ssh://a.simard%40multidev.local@antoinews-linux' --label antoinews-linux --remote-session default
         name: machine-workstation
         when: '{{ and (eq .OS "linux") (ne .Hostname "antoinews-linux") }}'
         check_mode: status
       - check:
-          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://MULTIDEV\\a.simard@ubuntu-server" and .session == "default")' >/dev/null
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@ubuntu-server" and .session == "default")' >/dev/null
         run:
-          linux: herdr machine add 'ssh://MULTIDEV\a.simard@ubuntu-server' --label ubuntu-server --remote-session default
+          linux: herdr machine add 'ssh://a.simard%40multidev.local@ubuntu-server' --label ubuntu-server --remote-session default
         name: machine-ubuntu-server
         when: '{{ (eq .Hostname "antoinews-linux") }}'
         check_mode: status

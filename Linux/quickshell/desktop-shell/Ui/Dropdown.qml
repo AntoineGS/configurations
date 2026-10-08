@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Commons
+import qs.Commons as Commons
 
 // Themed single-select dropdown. Options may be strings or { value, label }
 // objects; changed() always emits the selected value as a string.
@@ -11,12 +12,12 @@ Item {
   property string value: ""
   property var options: []
 
-  property color foreground: Color.popups.text
-  property color background: Color.popups.background
-  property color popupBorder: Color.popups.border
-  property color accent: Color.accent
+  property color foreground: Commons.Color.popups.text
+  property color background: Commons.Color.popups.background
+  property color popupBorder: Commons.Color.popups.border
+  property color accent: Commons.Color.accent
   readonly property var popupBorderSpec: Border.localOrSurfaceSpec(
-    "popups", "border", popupBorder, Color.popups.border, Style.normalBorderWidth)
+    "popups", "border", popupBorder, Commons.Color.popups.border, Style.normalBorderWidth)
   property string fontFamily: Style.font.family
   property int rowHeight: Style.spacing.controlHeight
   property int popupRowHeight: Style.spacing.popupRowHeight

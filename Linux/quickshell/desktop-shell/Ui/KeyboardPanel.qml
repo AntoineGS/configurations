@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
+import qs.Commons as Commons
 
 // Layer-shell popup attached to a bar widget icon, designed for
 // click-driven AND keyboard-driven panels (e.g. SUPER+CTRL+W summon).
@@ -138,7 +139,7 @@ PanelWindow {
     anchors.rightMargin: root.barPos === "right" ? root._barStripSize : 0
     anchors.bottomMargin: root.barPos === "bottom" ? root._barStripSize : 0
     anchors.leftMargin: root.barPos === "left" ? root._barStripSize : 0
-    color: Color.modal.scrim
+    color: Commons.Color.modal.scrim
     opacity: card.revealProgress
   }
 
@@ -394,7 +395,7 @@ PanelWindow {
           anchors.rightMargin: root.barPos === "right" ? root._barStripSize : 0
           anchors.bottomMargin: root.barPos === "bottom" ? root._barStripSize : 0
           anchors.leftMargin: root.barPos === "left" ? root._barStripSize : 0
-          color: Color.modal.scrim
+          color: Commons.Color.modal.scrim
           opacity: card.revealProgress
         }
 

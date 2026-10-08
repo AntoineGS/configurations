@@ -1,14 +1,15 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 Item {
   id: root
 
   property real iconSize: Style.font.icon
-  property color color: Color.foreground
-  property color badgeColor: Color.urgent
-  property color badgeBackground: Color.bar.background
+  property color color: Commons.Color.foreground
+  property color badgeColor: Commons.Color.urgent
+  property color badgeBackground: Commons.Color.bar.background
   property bool crossed: false
   property bool warning: false
 
@@ -58,7 +59,7 @@ Item {
     Text {
       anchors.centerIn: parent
       text: "!"
-      color: Color.background
+      color: Commons.Color.background
       font.family: Style.font.family
       font.pixelSize: Math.max(6, parent.height * 0.72)
       font.bold: true

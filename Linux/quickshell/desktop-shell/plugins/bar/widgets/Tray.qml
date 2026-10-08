@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell.Services.SystemTray
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "TrayModel.js" as TrayModel
 
@@ -12,7 +13,7 @@ BarWidget {
 
   property var activeMenuAnchor: null
   readonly property bool expanded: drawerHover.hovered || activeMenuAnchor !== null
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var drawerItems: bucket()
   readonly property int drawerCount: drawerItems.length
@@ -148,10 +149,10 @@ BarWidget {
     readonly property bool hot: mouseArea.containsMouse
 
     color: mouseArea.pressed
-      ? Style.pressedFillFor(root.foreground, Color.accent)
-      : (hot ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent")
+      ? Style.pressedFillFor(root.foreground, Commons.Color.accent)
+      : (hot ? Style.hoverFillFor(root.foreground, Commons.Color.accent) : "transparent")
     borderSpec: hot
-      ? Border.controlSpec("hover-cursor", root.foreground, Color.accent)
+      ? Border.controlSpec("hover-cursor", root.foreground, Commons.Color.accent)
       : Border.none()
     radius: Style.cornerRadius
 
@@ -197,9 +198,9 @@ BarWidget {
       height: Style.space(16)
       icon: trayItemRoot.modelData.icon
       tint: mouseArea.pressed
-        ? Style.pressedStateColor(root.foreground, Color.accent)
+        ? Style.pressedStateColor(root.foreground, Commons.Color.accent)
         : (trayItemRoot.hot
-          ? Style.hoverStateColor(root.foreground, Color.accent)
+          ? Style.hoverStateColor(root.foreground, Commons.Color.accent)
           : root.foreground)
     }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 TopBarOverlay {
@@ -60,7 +61,7 @@ TopBarOverlay {
     width: parent.width
     height: Style.space(24)
     text: "NOTIFICATIONS  " + root.currentPosition + "/" + root.modelCount
-    color: Color.barPanels.text
+    color: Commons.Color.barPanels.text
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
     font.bold: true
@@ -203,7 +204,7 @@ TopBarOverlay {
         anchors.centerIn: parent
         visible: root.modelCount === 0
         text: "No notification history"
-        color: Color.barPanels.text
+        color: Commons.Color.barPanels.text
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         font.bold: true

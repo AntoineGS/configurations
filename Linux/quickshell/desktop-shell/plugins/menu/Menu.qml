@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "MenuModel.js" as MenuModel
 import "../../services/CalculatorProvider.js" as CalculatorProvider
@@ -77,9 +78,9 @@ Item {
     root.shell && root.shell.barConfig ? root.shell.barConfig.layout : null,
     root.routeWidgets)
 
-  readonly property color foreground: Color.barPanels.text
-  readonly property color secondaryForeground: Color.barPanels.secondaryText
-  readonly property color accent: Color.accent
+  readonly property color foreground: Commons.Color.barPanels.text
+  readonly property color secondaryForeground: Commons.Color.barPanels.secondaryText
+  readonly property color accent: Commons.Color.accent
   readonly property string fontFamily: Style.font.family
   readonly property int contentMargin: Style.spacing.popupPadding
   readonly property int rowHeight: Math.max(Style.space(42), Style.font.body + Style.spacing.rowPaddingX * 2)
