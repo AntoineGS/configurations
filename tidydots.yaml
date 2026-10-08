@@ -2296,12 +2296,14 @@ applications:
     name: limine-snapper-sync
     when: '{{ eq .OS "linux" }}'
     entries: []
-  - name: limine-current-desktop-config
-    when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
+  - name: limine-config
+    description: Machine-specific Limine defaults; partition UUIDs and kernel cmdline are gated per hostname in limine.tmpl
+    when: '{{ or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "antoinews-linux") }}'
     entries:
       - targets:
           linux: /etc/
         name: limine-snapper-sync.conf
+        when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
         backup: ./Linux/limine/
         files:
           - limine-snapper-sync.conf
@@ -2309,15 +2311,23 @@ applications:
       - targets:
           linux: /etc/default/
         name: limine
+        method: copy
         backup: ./Linux/limine/
         files:
-          - limine
+          - limine.tmpl
+        sudo: true
+      - check:
+          linux: test -r /boot/limine.conf && p=$(lsblk -nso PARTUUID /dev/mapper/root | grep .) && grep -Eq '^ *cmdline:' /boot/limine.conf && ! grep -E '^ *cmdline:' /boot/limine.conf | grep -qv "cryptdevice=PARTUUID=$p:root"
+        run:
+          linux: limine-update
+        name: rebuild-boot-config
         sudo: true
       - check:
           linux: test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf
         run:
           linux: limine-update
-        name: rebuild-boot-config
+        name: rebuild-boot-config-without-resume
+        when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
         sudo: true
   - name: snapper-laptop-config
     description: Provide the root config required by pre-update snapshots without enabling automatic snapshots

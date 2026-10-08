@@ -85,7 +85,7 @@ tidydots --dir "$REPO_DIR" restore antoinews-linux-network -n
 # Limine and Snapper
 tidydots --dir "$REPO_DIR" install limine -n
 tidydots --dir "$REPO_DIR" install limine-snapper-sync -n
-tidydots --dir "$REPO_DIR" restore limine-current-desktop-config -n
+tidydots --dir "$REPO_DIR" restore limine-config -n
 tidydots --dir "$REPO_DIR" install snapper -n
 tidydots --dir "$REPO_DIR" restore snapper -n
 ```
