@@ -29,8 +29,8 @@ gui:
       - "#f38ba8" # red
     defaultFgColor:
       - "#cdd6f4" # text
-  authorColors:
-    "*": "#b4befe" # lavender
+    authorColors:
+      "*": "#b4befe" # lavender
 git:
   diffRenderers:
     # lazygit (Windows pty) reports a fixed width to the pager, so side-by-side
