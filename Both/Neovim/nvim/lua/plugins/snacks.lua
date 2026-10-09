@@ -67,6 +67,11 @@ return {
       replace_netrw = true,
     },
     input = { enabled = true }, -- Enhances opencode.nvim's Ask
+    image = {
+      enabled = true,
+      doc = { enabled = true, inline = true },
+      math = { enabled = false }, -- Let render-markdown handle math.
+    },
     picker = {
       explorer = {
         hidden = true,
