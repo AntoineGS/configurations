@@ -1,3 +1,13 @@
+# Quick Setup (Ubuntu)
+
+Run as your normal user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AntoineGS/configurations/main/setup.sh | bash
+```
+
+See [Ubuntu Server Installation](#ubuntu-server-installation) for details and next steps.
+
 `sudo pacman -S texlive-basic texlive-xetex texlive-latexextra texlive-fontsextra`
 `texlive-fontsrecommended texlive-bin texlive-doc sudo pacman -S`
 `texlive-fontsrecommended texlive-latexextra texlive-fontsextra sudo pacman -S`
@@ -41,6 +51,75 @@
 
 # Linux
 
+## Ubuntu Server Installation
+
+Download the bootstrap and preview it as your normal user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AntoineGS/configurations/main/setup.sh -o setup.sh
+bash setup.sh --dry-run
+bash setup.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+`setup.sh` installs missing apt prerequisites, clones the two repositories into
+`~/gits/configurations` and `~/gits/tidydots`, and reuses existing checkouts without
+pulling or resetting them. It reads tidydots' minimum Go version from `go.mod`.
+When necessary, it downloads a stable Go release for amd64/arm64, verifies its
+published SHA-256, and installs it under `~/.local/share/go` with commands in
+`~/.local/bin`. It then builds `~/.local/bin/tidydots` and runs
+`tidydots init ~/gits/configurations`.
+
+Install Homebrew first, then start a new installation preview so tidydots can
+discover it. Review each preview before running the following apply command:
+
+```bash
+tidydots install homebrew -n
+tidydots install homebrew
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+tidydots install -n
+tidydots install
+tidydots restore -n
+tidydots restore
+```
+
+New Linux hostnames receive this terminal baseline:
+
+- Homebrew, Bash, Zsh, Starship, tmux, Neovim, Herdr.
+- fzf, zoxide, ripgrep, fd, bat, eza, jq.
+- Git, Git LFS, lazygit, delta, Yazi, btop, gdu.
+- Supporting Zsh plugins, Carapace, tpack, and Catppuccin bat/delta themes.
+
+Ubuntu uses apt for system tools and Homebrew for current CLI versions (including
+Neovim, tmux and fzf). Homebrew's apt prerequisites include a C compiler/make;
+the bootstrap also installs Go for building tidydots. Language toolchains and
+coding agents are otherwise opt-in. The source-building tidydots updater and
+shell-picker are workstation-only; server shells use native fzf bindings.
+Herdr retains its SSH attachment and Vim navigation, with desktop notifications
+and workstation connection profiles restricted to workstations.
+
+### Adding an application to a server
+
+Edit that application's `when` condition in `tidydots.yaml` to include the server
+hostname, preserving its existing workstation conditions. For example, to add
+`gopls` on `ubuntu-server`:
+
+```yaml
+when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "ubuntu-server")) }}'
+```
+
+Also add an Ubuntu-compatible package mapping (for example, `brew: gopls`) and
+any required dependencies, then preview `tidydots install gopls -n`. Targeting an
+application by name does **not** bypass its condition. Add individual service
+entries rather than enabling the whole workstation service bundle.
+
+The `hostnames:` list supplies TUI choices only. YAML anchors centralize the
+shared workstation conditions; expanding an anchor's host list opts that host
+into every application using it. The existing `server` hostname still has its
+explicit Tailscale installation, service and subnet-router configuration.
+Excluding an application skips future management;
+it does not uninstall previously installed packages or disable existing services.
+
 ## Arch Installation
 
 - Follow the [reproducible Arch installation guide](Linux/install/archinstall/README.md) for the ISO workflow.
@@ -54,8 +133,12 @@
 
 `tidydots.yaml` is desired package state.
 `pkglist-pacman-<hostname>.txt` and `pkglist-aur-<hostname>.txt` are generated audit snapshots.
-- Graphical shared packages/configs require real Linux, a display, and non-WSL execution, except `antoinews-linux` is explicitly allowed headless.
-- Machine-wide shared services use real Linux/non-WSL conditions.
+- Graphical packages/configs and shared system services target `omarchbook`,
+  `antoinews-linux`, and `DESKTOP-E07VTRN` on non-WSL Linux. Hostname selection works
+  over SSH and does not depend on an active display or forwarded X11.
+- Extra terminal/development tools target known workstations, including
+  `antoinews`; other Linux hosts receive the server baseline above.
+- Pacman maintenance and boot/snapshot packages additionally require Arch.
 Hardware and machine policy use exact hostname conditions.
 `antoinews-linux` is the Intel desktop profile.
 

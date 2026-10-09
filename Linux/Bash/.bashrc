@@ -8,6 +8,10 @@ case $- in
       *) return;;
 esac
 
+if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi
+
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
 HISTCONTROL=ignoreboth
@@ -115,7 +119,7 @@ if ! shopt -oq posix; then
     . /etc/bash_completion
   fi
 fi
-. "$HOME/.cargo/env"
+[ -r "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -125,10 +129,7 @@ alias op_win="/mnt/c/Users/antoi/AppData/Local/Microsoft/WinGet/Packages/AgileBi
 export WARP_ENABLE_WAYLAND=1
 export BROWSER=google-chrome
 export WGPU_BACKEND=nvidia
-. "$HOME/.cargo/env"
-
 eval "$(starship init bash)"
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
 # Created by `pipx` on 2024-11-06 18:08:41
-export PATH="$PATH:/home/antoinegs/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"

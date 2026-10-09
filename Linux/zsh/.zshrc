@@ -1,3 +1,8 @@
+# Include Homebrew's functions and completions before compinit on Ubuntu.
+if (( $+commands[brew] )); then
+    eval "$(brew shellenv zsh)"
+fi
+
 # Default: hide preview, dynamically show for files/directories
 zstyle ':completion:*' fzf-completion-opts \
     --preview-window='right:50%:wrap:hidden' \
@@ -26,13 +31,16 @@ zvm_config() {
 source /usr/share/zsh/plugins/zsh-vi-mode/zsh-vi-mode.plugin.zsh
 source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh
 source /usr/share/fzf-tab-completion/zsh/fzf-zsh-completion.sh
-source /usr/share/fzf/completion.zsh
-source "$HOME/.config/shell-picker/shell-picker.plugin.zsh"
+if (( $+commands[shell-picker] )) && [[ -r "$HOME/.config/shell-picker/shell-picker.plugin.zsh" ]]; then
+    source "$HOME/.config/shell-picker/shell-picker.plugin.zsh"
+fi
 
 # Bind fzf completion after zsh-vi-mode initializes
 zvm_after_init() {
-    source /usr/share/fzf/key-bindings.zsh
-    shell-picker-bind-zsh
+    source <(fzf --zsh)
+    if (( $+functions[shell-picker-bind-zsh] )); then
+        shell-picker-bind-zsh
+    fi
     bindkey '^P' autosuggest-accept
     bindkey '^[p' forward-word
     bindkey '^[k' clear-screen
@@ -70,8 +78,10 @@ alias occ="opencode -c"
 alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
-if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]]; then
-    herdr-waypipe-env publish 2>/dev/null || true
+if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]] && (( $+commands[herdr] )); then
+    if (( $+commands[herdr-waypipe-env] )); then
+        herdr-waypipe-env publish 2>/dev/null || true
+    fi
     if [[ -r "$HOME/.config/herdr/ssh-session.sh" ]]; then
         sh "$HOME/.config/herdr/ssh-session.sh"
     else
@@ -80,7 +90,7 @@ if [[ $- =~ i ]] && [[ -n "$SSH_TTY" ]] && [[ -z "$HERDR_ENV" ]]; then
 fi
 
 # Pull fresh Waypipe variables into existing Herdr panes after an SSH reconnect.
-if [[ "${HERDR_ENV:-}" == 1 ]]; then
+if [[ "${HERDR_ENV:-}" == 1 ]] && (( $+commands[herdr-waypipe-env] )); then
     if [[ "${HERDR_LOCAL_WAYLAND_ENV_CAPTURED:-}" != 1 ]]; then
         export HERDR_LOCAL_WAYLAND_ENV_CAPTURED=1
         export HERDR_LOCAL_WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
@@ -210,11 +220,11 @@ headless-ssh() {
     fi
 }
 
-# needs to be here or 1password changes it after zshenv
-export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/ssh-agent.socket"
-export PATH="/home/antoinegs/.ocv/bin:$PATH"
+# Use the workstation agent locally, but preserve an SSH-forwarded agent.
+if [[ -S "${XDG_RUNTIME_DIR}/ssh-agent.socket" && ( -z "${SSH_CONNECTION:-}" || -z "${SSH_AUTH_SOCK:-}" ) ]]; then
+    export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR}/ssh-agent.socket"
+fi
+[[ -d "$HOME/.ocv/bin" ]] && export PATH="$HOME/.ocv/bin:$PATH"
 
 # bun completions
 [ -s "/tmp/opencode/bun-latest/_bun" ] && source "/tmp/opencode/bun-latest/_bun"
-
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv zsh)"

@@ -21,15 +21,19 @@ if [[ -z "${XMODIFIERS:-}" ]] && (( $+commands[systemctl] )); then
     done
     unset _env_line
 fi
-export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
+export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml"
+if [[ -r "$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml" ]]; then
+    export LG_CONFIG_FILE="$LG_CONFIG_FILE,$HOME/.local/share/catppuccin/lazygit/themes/mocha/mauve.yml"
+fi
 export ADZUNA_APP_ID=4bb9d1ce
 export ADZUNA_APP_KEY=3801f98eb7fd7d72a8e98db8afd25df9
 export PATH="$HOME/.local/share/helpers:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-export PATH="~/.local/bin:$PATH"
-export PATH="$PATH:$(go env GOPATH)/bin"
+if (( $+commands[go] )); then
+    export PATH="$PATH:$(go env GOPATH)/bin"
+fi
 export PATH="$HOME/gits/multidev/Tools:$PATH"
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense' # optional
 export RIPGREP_CONFIG_PATH=~/.ripgreprc
@@ -38,4 +42,4 @@ export MERIDIAN_CLAUDE_PATH=/usr/bin/claude
 if [[ -f ~/.zshenv.local ]]; then
     source ~/.zshenv.local
 fi
-. "$HOME/.cargo/env"
+[[ -r "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"

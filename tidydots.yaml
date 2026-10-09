@@ -1,4 +1,7 @@
 version: 3
+# Unknown Linux hosts get the terminal/server baseline. These anchors describe
+# known workstations; hostnames below are only TUI choices, not profile membership.
+# Add a server to an individual application's `when` to opt into that application.
 hostnames:
   - omarchbook
   - antoinews
@@ -29,7 +32,7 @@ applications:
         pacman: shellcheck
     name: shellcheck
     description: Static analysis for shell scripts
-    when: '{{ eq .OS "linux" }}'
+    when: &linux-workstation '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -37,6 +40,13 @@ applications:
           command:
             linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           binary: brew
+        apt:
+          deps:
+            - build-essential
+            - curl
+            - file
+            - git
+            - procps
     name: homebrew
     when: '{{ eq .OS "linux" }}'
     entries: []
@@ -73,6 +83,7 @@ applications:
         yay: opencode-beta
     name: opencode
     description: AI coding agent — Claude Max subscription via Meridian
+    when: &workstation '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries:
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
@@ -218,7 +229,7 @@ applications:
         name: enable-service
   - package:
       managers:
-        apt: neovim
+        # Ubuntu's distro version can lag behind this Neovim configuration.
         brew: neovim
         pacman: neovim
         winget: Neovim.Neovim
@@ -297,7 +308,6 @@ applications:
           - .wezterm.lua
   - package:
       managers:
-        apt: zoxide
         brew: zoxide
         pacman: zoxide
         winget: ajeetdsouza.zoxide
@@ -362,6 +372,7 @@ applications:
       custom:
         windows: uv tool install --python 3.13 posting
     name: posting
+    when: *workstation
     entries:
       - targets:
           linux: ~/.config/posting
@@ -369,7 +380,7 @@ applications:
         name: config
         backup: ./Both/posting
   - name: xcompose
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: &linux-desktop '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: "~"
@@ -460,9 +471,9 @@ applications:
         name: completions
         backup: ./Linux/zsh/completions
       - check:
-          linux: 'test "$(getent passwd "$USER" | cut -d: -f7)" = /usr/bin/zsh'
+          linux: 'test "$(getent passwd "${SUDO_USER:-$USER}" | cut -d: -f7)" = /usr/bin/zsh'
         run:
-          linux: chsh -s /usr/bin/zsh "$SUDO_USER"
+          linux: chsh -s /usr/bin/zsh "${SUDO_USER:-$USER}"
         name: default-shell
         sudo: true
   - package:
@@ -519,7 +530,6 @@ applications:
         name: zsh-completion
   - package:
       managers:
-        apt: tmux
         brew: tmux
         pacman: tmux
     name: tmux
@@ -561,7 +571,7 @@ applications:
         pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/hypr
@@ -637,7 +647,7 @@ applications:
     entries: []
   - name: rustdesk-drm-preview
     description: Install the temporary RustDesk DRM preview package
-    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.local/bin
@@ -652,7 +662,7 @@ applications:
         name: package
   - name: rustdesk-server-keepalive
     description: Suppress RustDesk's timed Linux server recycling
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) (ne .Hostname "omarchbook") }}'
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.local/bin
@@ -832,91 +842,91 @@ applications:
       managers:
         pacman: bluetui
     name: bluetui
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: brightnessctl
     name: brightnessctl
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: evince
     name: evince
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: ffmpeg
     name: ffmpeg
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: gpu-screen-recorder
     name: gpu-screen-recorder
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: grim
     name: grim
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: hypridle
     name: hypridle
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: hyprlock
     name: hyprlock
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: hyprpicker
     name: hyprpicker
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: impala
     name: impala
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: lazydocker
     name: lazydocker
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: libnotify
     name: libnotify
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: mpv
     name: mpv
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: nautilus
     name: nautilus
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: playerctl
     name: playerctl
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
@@ -928,103 +938,103 @@ applications:
       managers:
         pacman: power-profiles-daemon
     name: power-profiles-daemon
-    when: '{{ and (eq .OS "linux") .HasDisplay (not .IsWSL) (ne .Hostname "antoinews-linux") }}'
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: python-gobject
     name: python-gobject
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: satty
     name: satty
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: slurp
     name: slurp
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: socat
     name: socat
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: swaybg
     name: swaybg
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: v4l-utils
     name: v4l-utils
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: waypipe
     name: waypipe
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: wl-clipboard
     name: wl-clipboard
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: wtype
     name: wtype
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: xdg-desktop-portal-gtk
     name: xdg-desktop-portal-gtk
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: xdg-desktop-portal-hyprland
     name: xdg-desktop-portal-hyprland
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: xdg-utils
     name: xdg-utils
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: pipewire
     name: pipewire-audio
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: pipewire-alsa
     name: pipewire-alsa
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: pipewire-pulse
     name: pipewire-pulse
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: wireplumber
     name: wireplumber
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
@@ -1073,25 +1083,25 @@ applications:
       managers:
         pacman: libqalculate
     name: libqalculate
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: curl
     name: desktop-shell-curl
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: coreutils
     name: desktop-shell-coreutils
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: openssh
     name: desktop-shell-openssh
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
@@ -1100,7 +1110,7 @@ applications:
             - inotify-tools
           name: quickshell
     name: desktop-shell
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/quickshell/desktop-shell
@@ -1130,13 +1140,13 @@ applications:
       managers:
         yay: codexbar-cli-bin
     name: codexbar-cli-bin
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: uwsm
     name: uwsm
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/uwsm/default
@@ -1146,13 +1156,13 @@ applications:
       managers:
         pacman: gtk3
     name: gtk3
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: sddm
     name: sddm
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: /etc/sddm.conf.d
@@ -1241,10 +1251,12 @@ applications:
       managers:
         pacman: perl
     name: perl
+    when: *workstation
     entries: []
   - name: tidydots
     description: Cross-platform dotfile manager
-    when: '{{ eq .OS "linux" }}'
+    # The source updater requires Go; servers keep their preinstalled binary.
+    when: *linux-workstation
     entries:
       - targets:
           linux: ~/.config/tidydots
@@ -1260,6 +1272,8 @@ applications:
         check_mode: status
   - name: shell-picker
     description: Cross-platform fzf backend and shell adapters
+    # Source-built with Go. Server shells use native fzf bindings instead.
+    when: *workstation
     entries:
       - targets:
           linux: ~/.config/shell-picker
@@ -1277,7 +1291,7 @@ applications:
       managers:
         pacman: ghostty
     name: ghostty
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/ghostty
@@ -1291,6 +1305,7 @@ applications:
           - xdg-terminals.list
   - package:
       managers:
+        brew: gdu
         pacman: gdu
     name: gdu
     when: '{{ eq .OS "linux" }}'
@@ -1300,7 +1315,7 @@ applications:
         name: config
         backup: ./Linux/gdu
   - name: fastfetch
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-workstation
     entries:
       - targets:
           linux: ~/.config/fastfetch
@@ -1311,7 +1326,7 @@ applications:
         pacman: fcitx5
     name: fcitx5
     description: Input method framework
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/fcitx5/conf
@@ -1320,7 +1335,7 @@ applications:
         files:
           - unicode.conf
   - name: fontconfig
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/fontconfig
@@ -1330,7 +1345,7 @@ applications:
       managers:
         yay: hyprland-preview-share-picker-git
     name: hyprland-preview-share-picker
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/hyprland-preview-share-picker
@@ -1340,20 +1355,20 @@ applications:
       managers:
         yay: xdg-terminal-exec
     name: xdg-terminal-exec
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         yay: localsend-bin
     name: localsend
     description: LocalSend file sharing application used by cmd-share
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: imv
     name: imv
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/imv
@@ -1363,7 +1378,7 @@ applications:
       managers:
         pacman: mise
     name: mise
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-workstation
     entries:
       - targets:
           linux: ~/.config/mise
@@ -1372,7 +1387,7 @@ applications:
         files:
           - config.toml
   - name: typora
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/Typora/themes
@@ -1382,21 +1397,21 @@ applications:
       managers:
         pacman: wiremix
     name: wiremix
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/wiremix
         name: config
         backup: ./Linux/wiremix
   - name: autostart
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config/autostart
         name: config
         backup: ./Linux/autostart
   - name: browser-flags
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config
@@ -1551,7 +1566,7 @@ applications:
         sudo: true
   - name: yay
     description: AUR helper config (7-day minimum release-age hook)
-    when: '{{ eq .OS "linux" }}'
+    when: &arch-workstation '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/yay
@@ -1560,7 +1575,7 @@ applications:
         files:
           - init.lua
   - name: os-files
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.config
@@ -1760,7 +1775,7 @@ applications:
         name: enable-smb
         sudo: true
   - name: nvim-open
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: ~/.local/bin
@@ -1772,7 +1787,7 @@ applications:
       managers:
         pacman: pacman-contrib
     name: pacman-hooks
-    when: '{{ eq .OS "linux" }}'
+    when: *arch-workstation
     entries:
       - targets:
           linux: /usr/share/libalpm/hooks
@@ -1788,11 +1803,11 @@ applications:
       managers:
         pacman: rebuild-detector
     name: rebuild-detector
-    when: '{{ eq .OS "linux" }}'
+    when: *arch-workstation
     entries: []
   - name: ssh-agent
     description: SSH agent with 4-hour key lifetime (replaces 1Password agent)
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-workstation
     entries:
       - targets:
           linux: ~/.config/systemd/user/ssh-agent.service.d
@@ -1816,7 +1831,7 @@ applications:
           linux: systemctl --user daemon-reload && systemctl --user enable --now ssh-agent.socket
         name: enable-socket
   - name: systemd-units
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-desktop
     entries:
       - targets:
           linux: /etc/systemd/system
@@ -1850,7 +1865,7 @@ applications:
         sudo: true
   - name: enable-desktop-services
     description: Enable services that only make sense on a graphical Linux host
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries:
       - check:
           linux: systemctl is-enabled --quiet sddm.service
@@ -1871,8 +1886,8 @@ applications:
         name: enable-avahi
         sudo: true
   - name: enable-linux-services
-    description: Enable services wanted on every real (non-WSL) Linux machine
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    description: Enable firewall, Docker, Tailscale and Bluetooth on known Linux workstations
+    when: *linux-desktop
     entries:
       - check:
           linux: systemctl is-enabled --quiet ufw.service
@@ -1903,44 +1918,54 @@ applications:
       managers:
         pacman: ufw
     name: linux-services-packages
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: avahi
     name: avahi
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: bluez
     name: bluez
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: cups
     name: cups
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: cups-browsed
     name: cups-browsed
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: docker
     name: docker
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
         pacman: tailscale
+      custom:
+        linux: curl -fsSL https://tailscale.com/install.sh | sh
     name: tailscale
-    when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
-    entries: []
+    # `server` already has an explicit subnet-router role below.
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "server")) }}'
+    entries:
+      - name: enable-server-tailscaled
+        when: '{{ eq .Hostname "server" }}'
+        check:
+          linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service
+        run:
+          linux: systemctl enable --now tailscaled.service
+        sudo: true
   - name: tailmix
     description: Simultaneous personal and work tailnets on the desktop and laptop
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
@@ -2089,7 +2114,6 @@ applications:
         name: configure RIPGREP_CONFIG_PATH
   - package:
       managers:
-        apt: fd-find
         brew: fd
         pacman: fd
         winget: sharkdp.fd
@@ -2123,6 +2147,15 @@ applications:
           windows: ~/.config/git
         name: config
         backup: ./Both/Git
+  - name: git-lfs
+    description: Required by the shared Git LFS filters
+    package:
+      managers:
+        apt: git-lfs
+        brew: git-lfs
+        pacman: git-lfs
+        winget: GitHub.GitLFS
+    entries: []
   - package:
       managers:
         apt: gh
@@ -2131,13 +2164,14 @@ applications:
         winget: GitHub.cli
     name: gh
     description: GitHub CLI
+    when: *workstation
     entries: []
   - package:
       custom:
         linux: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     name: rustup-non-arch
     description: Rust toolchain installer fallback
-    when: '{{ and (eq .OS "linux") (ne .Distro "arch") }}'
+    when: '{{ and (eq .OS "linux") (ne .Distro "arch") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -2153,12 +2187,14 @@ applications:
         pacman: go
         winget: GoLang.Go
     name: go
+    when: *workstation
     entries: []
   - package:
       managers:
         pacman: nodejs
         winget: OpenJS.NodeJS
     name: nodejs
+    when: *workstation
     entries: []
   - package:
       managers:
@@ -2166,6 +2202,7 @@ applications:
         pacman: python
         winget: Python.Python.3.14
     name: python
+    when: *workstation
     entries: []
   - package:
       managers:
@@ -2178,6 +2215,7 @@ applications:
         winget: GolangCI.golangci-lint
         yay: golangci-lint-bin
     name: golangci-lint
+    when: *workstation
     entries: []
   - package:
       managers:
@@ -2189,7 +2227,7 @@ applications:
       managers:
         yay: brave-bin
     name: brave
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - package:
       managers:
@@ -2201,10 +2239,11 @@ applications:
       managers:
         pacman: 1password
     name: 1password
-    when: '{{ and (eq .OS "linux") (or .HasDisplay (eq .Hostname "antoinews-linux")) (not .IsWSL) }}'
+    when: *linux-desktop
     entries: []
   - name: beadstui
     description: Catppuccin theme for the bt issue viewer
+    when: *workstation
     entries:
       - name: config
         backup: ./Both/beadstui
@@ -2213,6 +2252,7 @@ applications:
           windows: ~/.config/bt
   - package:
       managers:
+        brew: btop
         pacman: btop
     name: btop
     when: '{{ eq .OS "linux" }}'
@@ -2254,7 +2294,7 @@ applications:
       managers:
         pacman: gopls
     name: gopls
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-workstation
     entries: []
   - package:
       managers:
@@ -2281,7 +2321,7 @@ applications:
         backup: ~/.local/share/catppuccin/bat/themes
   - package:
       managers:
-        apt: bat
+        brew: bat
         pacman: bat
         winget: sharkdp.bat
     name: bat
@@ -2293,6 +2333,11 @@ applications:
         backup: ./Linux/bat
         files:
           - config
+      - name: theme-cache
+        check:
+          linux: bat --list-themes --color=never | grep -Fxq 'Catppuccin Mocha'
+        run:
+          linux: bat cache --build
   - package:
       managers:
         apt: sd
@@ -2300,6 +2345,7 @@ applications:
       custom:
         windows: cargo install sd
     name: sd
+    when: *workstation
     entries: []
   - package:
       managers:
@@ -2329,13 +2375,13 @@ applications:
       managers:
         pacman: limine
     name: limine
-    when: '{{ eq .OS "linux" }}'
+    when: *arch-workstation
     entries: []
   - package:
       managers:
         yay: limine-snapper-sync
     name: limine-snapper-sync
-    when: '{{ eq .OS "linux" }}'
+    when: *arch-workstation
     entries: []
   - name: limine-config
     description: Machine-specific Limine defaults; partition UUIDs and kernel cmdline are gated per hostname in limine.tmpl
@@ -2382,13 +2428,13 @@ applications:
           targets:
             linux: ~/.local/share/zsh/zsh-claudecode-completion
     name: zsh-claudecode-completion
-    when: '{{ eq .OS "linux" }}'
+    when: *linux-workstation
     entries: []
   - package:
       managers:
         pacman: snapper
     name: snapper
-    when: '{{ eq .OS "linux" }}'
+    when: *arch-workstation
     entries: []
   - name: snapper-current-desktop-config
     when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
@@ -2411,8 +2457,8 @@ applications:
           - snapper
         sudo: true
   - name: snapshots-enabled
-    description: Enable btrfs snapshots + limine boot-menu sync on every Linux host except the laptop (omarchbook keeps them off for disk space)
-    when: '{{ and (eq .OS "linux") (ne .Hostname "omarchbook") }}'
+    description: Enable btrfs snapshots + limine boot-menu sync on the two Arch desktops
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - check:
           linux: systemctl is-enabled --quiet snapper-timeline.timer && systemctl is-enabled --quiet snapper-cleanup.timer
@@ -2524,25 +2570,27 @@ applications:
       - targets:
           linux: ~/.config/herdr/plugins/local/actionable-notifications
         name: actionable-notifications-config
+        when: *linux-desktop
         backup: ./Linux/herdr/actionable-notifications
       - check:
           linux: canonical_plugin_root="$(realpath -- "$HOME/.config/herdr/plugins/local/actionable-notifications")" && herdr plugin list --json | jq -e --arg plugin_root "$canonical_plugin_root" '.result.plugins[] | select(.plugin_id == "local.actionable-notifications" and .enabled == true and .plugin_root == $plugin_root and ((.warnings // []) | length == 0))' >/dev/null
         run:
           linux: herdr plugin link "$HOME/.config/herdr/plugins/local/actionable-notifications" --enabled
         name: actionable-notifications-plugin
+        when: *linux-desktop
       - check:
           linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://antoinegs@desktop-e07vtrn" and .session == "default")' >/dev/null
         run:
           linux: herdr machine add 'ssh://antoinegs@desktop-e07vtrn' --label desktop-e07vtrn --remote-session default
         name: machine-desktop
-        when: '{{ and (eq .OS "linux") (ne .Hostname "desktop-e07vtrn") (ne .Hostname "DESKTOP-E07VTRN") (ne .Hostname "antoinews-linux") }}'
+        when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews")) }}'
         check_mode: status
       - check:
           linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@antoinews-linux" and .session == "default")' >/dev/null
         run:
           linux: herdr machine add 'ssh://a.simard%40multidev.local@antoinews-linux' --label antoinews-linux --remote-session default
         name: machine-workstation
-        when: '{{ and (eq .OS "linux") (ne .Hostname "antoinews-linux") }}'
+        when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         check_mode: status
       - check:
           linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@ubuntu-server" and .session == "default")' >/dev/null
