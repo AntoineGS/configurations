@@ -2298,7 +2298,7 @@ applications:
     entries: []
   - name: limine-config
     description: Machine-specific Limine defaults; partition UUIDs and kernel cmdline are gated per hostname in limine.tmpl
-    when: '{{ or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "antoinews-linux") }}'
+    when: '{{ or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "antoinews-linux") (eq .Hostname "omarchbook") }}'
     entries:
       - targets:
           linux: /etc/
@@ -2317,7 +2317,7 @@ applications:
           - limine.tmpl
         sudo: true
       - check:
-          linux: test -r /boot/limine.conf && p=$(lsblk -nso PARTUUID /dev/mapper/root | grep .) && grep -Eq '^ *cmdline:' /boot/limine.conf && ! grep -E '^ *cmdline:' /boot/limine.conf | grep -qv "cryptdevice=PARTUUID=$p:root"
+          linux: test -r /boot/limine.conf && p=$(lsblk -nso PARTUUID /dev/mapper/root | grep .) && u=$(lsblk -ndo UUID "/dev/disk/by-partuuid/$p") && grep -Eq '^ *cmdline:' /boot/limine.conf && ! grep -E '^ *cmdline:' /boot/limine.conf | grep -qFv -e "cryptdevice=PARTUUID=$p:root" -e "rd.luks.name=$u=root"
         run:
           linux: limine-update
         name: rebuild-boot-config

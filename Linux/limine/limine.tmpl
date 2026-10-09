@@ -1,11 +1,14 @@
 {{ if eq .Hostname "DESKTOP-E07VTRN" -}}
+KERNEL_CMDLINE[default]+=" rd.luks.name=63d5107f-7ac4-4290-998b-2d4041682b1d=root root=/dev/mapper/root rootflags=subvol=@ rw rootfstype=btrfs"
+{{ else -}}
+{{ if eq .Hostname "omarchbook" -}}
 TARGET_OS_NAME="Arch Linux"
 {{- else if eq .Hostname "antoinews-linux" -}}
 TARGET_OS_NAME="Omarchy"
 {{- end }}
 
 ESP_PATH="/boot"
-{{ if eq .Hostname "DESKTOP-E07VTRN" }}
+{{ if eq .Hostname "omarchbook" }}
 KERNEL_CMDLINE[default]+="cryptdevice=PARTUUID=d3583d22-8d21-4361-ad85-e204822ae5cd:root root=/dev/mapper/root zswap.enabled=0 rootflags=subvol=@ rw rootfstype=btrfs"
 KERNEL_CMDLINE[default]+=" quiet splash"
 {{- else if eq .Hostname "antoinews-linux" }}
@@ -14,7 +17,7 @@ KERNEL_CMDLINE[default]+=" quiet splash loglevel=0 systemd.show_status=false rd.
 {{- end }}
 
 ENABLE_UKI=yes
-{{- if eq .Hostname "DESKTOP-E07VTRN" }}
+{{- if eq .Hostname "omarchbook" }}
 CUSTOM_UKI_NAME="arch"
 {{- else if eq .Hostname "antoinews-linux" }}
 CUSTOM_UKI_NAME="omarchy"
@@ -26,7 +29,7 @@ ENABLE_LIMINE_FALLBACK=yes
 FIND_BOOTLOADERS=yes
 
 BOOT_ORDER="*, *fallback, Snapshots"
-{{- if eq .Hostname "DESKTOP-E07VTRN" }}
+{{- if eq .Hostname "omarchbook" }}
 
 MAX_SNAPSHOT_ENTRIES=2
 
@@ -47,3 +50,4 @@ MAX_SNAPSHOT_ENTRIES=5
 SNAPSHOT_FORMAT_CHOICE=5
 KERNEL_CMDLINE[default]+=" resume=/dev/mapper/root resume_offset=3679488"
 {{- end }}
+{{ end -}}
