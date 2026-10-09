@@ -2317,17 +2317,10 @@ applications:
           - limine.tmpl
         sudo: true
       - check:
-          linux: test -r /boot/limine.conf && p=$(lsblk -nso PARTUUID /dev/mapper/root | grep .) && u=$(lsblk -ndo UUID "/dev/disk/by-partuuid/$p") && grep -Eq '^ *cmdline:' /boot/limine.conf && ! grep -E '^ *cmdline:' /boot/limine.conf | grep -qFv -e "cryptdevice=PARTUUID=$p:root" -e "rd.luks.name=$u=root"
+          linux: sha256sum --status -c /var/lib/tidydots/limine-default.sha256
         run:
-          linux: limine-update
+          linux: p=$(lsblk -nso PARTUUID /dev/mapper/root | grep .); u=$(lsblk -ndo UUID "/dev/disk/by-partuuid/$p"); grep -qF -e "cryptdevice=PARTUUID=$p:root" -e "rd.luks.name=$u=root" /etc/default/limine || { echo "refusing limine-update, /etc/default/limine does not unlock this machine's root partition $p" >&2; exit 1; }; chmod 644 /etc/default/limine && limine-update && mkdir -p /var/lib/tidydots && sha256sum /etc/default/limine > /var/lib/tidydots/limine-default.sha256
         name: rebuild-boot-config
-        sudo: true
-      - check:
-          linux: test -r /boot/EFI/Linux/arch_linux.efi && test -r /boot/limine.conf && lsinitcpio -a /boot/EFI/Linux/arch_linux.efi >/dev/null && ! lsinitcpio -a /boot/EFI/Linux/arch_linux.efi | grep -qw resume && ! grep -Eq '^  cmdline:.*(resume=|resume_offset=)' /boot/limine.conf
-        run:
-          linux: limine-update
-        name: rebuild-boot-config-without-resume
-        when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
         sudo: true
   - name: snapper-laptop-config
     description: Provide the root config required by pre-update snapshots without enabling automatic snapshots
