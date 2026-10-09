@@ -1891,6 +1891,7 @@ applications:
         run:
           linux: systemctl enable --now tailscaled.service
         name: enable-tailscaled
+        when: '{{ not (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
         sudo: true
       - check:
           linux: systemctl is-enabled --quiet bluetooth.service
@@ -1940,6 +1941,46 @@ applications:
     name: tailscale
     when: '{{ and (eq .OS "linux") (not .IsWSL) }}'
     entries: []
+  - name: tailmix
+    description: Simultaneous personal and work tailnets on the desktop and laptop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
+    package:
+      url:
+        linux:
+          url: https://github.com/maisem/tailmix/releases/download/v0.1.15/install.sh
+          command: test -x /usr/local/bin/tailmix && test -x /usr/local/bin/tailmixd && test -f /etc/systemd/system/tailmixd.service || sudo sh {file} --version v0.1.15 --no-start
+    entries:
+      - name: service-conflict
+        backup: ./Linux/tailmix/tailmixd.service.d
+        targets:
+          linux: /etc/systemd/system/tailmixd.service.d
+        files:
+          - tailscaled.conf
+        sudo: true
+      - name: enable-tailmixd
+        check:
+          linux: systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl is-enabled --quiet tailscaled.service && ! systemctl is-active --quiet tailscaled.service && systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service
+        run:
+          linux: test -x /usr/local/bin/tailmixd && systemctl daemon-reload && systemctl disable --now tailscaled.service && systemctl enable --now tailmixd.service
+        sudo: true
+      - name: personal-profile
+        check:
+          linux: /usr/local/bin/tailmix profiles show personal --json >/dev/null
+        run:
+          linux: /usr/local/bin/tailmix profiles add personal --hostname "$(hostname)-tailmix"
+        sudo: true
+      - name: work-profile
+        check:
+          linux: /usr/local/bin/tailmix profiles show work --json >/dev/null
+        run:
+          linux: /usr/local/bin/tailmix profiles add work --hostname "$(hostname)-tailmix"
+        sudo: true
+      - name: personal-dns-search
+        check:
+          linux: /usr/local/bin/tailmix dns search list --json | jq -e '.desired | index("tail0fcf84.ts.net") != null' >/dev/null
+        run:
+          linux: /usr/local/bin/tailmix dns search add tail0fcf84.ts.net
+        sudo: true
   - package:
       managers:
         yay: oh-my-zsh-git
