@@ -1179,7 +1179,7 @@ applications:
         name: config
         backup: ./Linux/sddm
         files:
-          - autologin.conf
+          - autologin.conf.tmpl
         sudo: true
   - name: qmk
     when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
