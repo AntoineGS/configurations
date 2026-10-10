@@ -1,0 +1,17 @@
+[Unit]
+Description=Beads shared Dolt server (127.0.0.1:3308)
+ConditionFileIsExecutable=/usr/bin/dolt
+ConditionPathExists=%h/.beads/shared-server/dolt-server-config.yaml
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.beads/shared-server/dolt
+ExecStart=/usr/bin/dolt sql-server --config %h/.beads/shared-server/dolt-server-config.yaml
+ExecStartPost=/bin/sh -c 'echo $MAINPID > %h/.beads/shared-server/dolt-server.pid'
+ExecStopPost=/bin/rm -f %h/.beads/shared-server/dolt-server.pid
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

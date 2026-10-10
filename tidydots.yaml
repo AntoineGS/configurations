@@ -227,6 +227,26 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable interbase-mcp.service && systemctl --user restart interbase-mcp.service
         name: enable-service
+  - name: beads-dolt
+    description: Start the beads shared Dolt server (127.0.0.1:3308) at boot
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    entries:
+      - name: user-service
+        backup: ./Linux/beads-dolt/systemd
+        targets:
+          linux: ~/.config/systemd/user
+        files:
+          - beads-dolt.service
+      - name: enable-user-lingering
+        check:
+          linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
+        run:
+          linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
+      - name: enable-service
+        check:
+          linux: systemctl --user is-enabled --quiet beads-dolt.service && systemctl --user is-active --quiet beads-dolt.service && test "$(systemctl --user show beads-dolt.service --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now beads-dolt.service
   - package:
       managers:
         # Ubuntu's distro version can lag behind this Neovim configuration.
