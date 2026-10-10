@@ -4,7 +4,8 @@
 # Requirements: hyprctl, socat, jq
 set -Eeuo pipefail
 
-readonly SUPPORTED_NOTIFICATION_OUTPUTS_JSON='["HDMI-A-1","DP-3","DP-2","DP-1","eDP-1"]'
+# Connector numbers shift with GPU probe order, so accept any well-formed name.
+readonly NOTIFICATION_OUTPUT_PATTERN='^[A-Za-z0-9_.:@+-]+$'
 readonly NOTIFICATION_ROUTE_REWRITE_INTERVAL=30
 readonly NOTIFICATION_LEASE_MAX_AGE_MS=15000
 readonly NOTIFICATION_LEASE_RENEW_INTERVAL=5
@@ -107,7 +108,7 @@ notification_route_state() {
   jq -rnc \
     --argjson monitors "$monitors_json" \
     --argjson clients "$clients_json" \
-    --argjson supported "$SUPPORTED_NOTIFICATION_OUTPUTS_JSON" \
+    --arg output_pattern "$NOTIFICATION_OUTPUT_PATTERN" \
     --arg routing_hostname "$routing_hostname" '
       def center: {
         x: (.x + (.width / 2)),
@@ -117,7 +118,8 @@ notification_route_state() {
       [$monitors[]
         | select((.disabled // false) == false)
         | select((if has("dpmsStatus") then .dpmsStatus else true end) == true)
-        | select(.name as $name | ($supported | index($name)) != null)
+        | select((.name | type) == "string" and (.name | test($output_pattern)))
+        | select(.name | test("^headless"; "i") | not)
       ] as $active
       | (if ($routing_hostname | ascii_downcase) == "desktop-e07vtrn" then
            [$clients[]
@@ -175,21 +177,16 @@ parse_notification_route_state() {
     return 1
   fi
 
-  case $route_mode_ref in
-    rustdesk-route-HDMI-A-1|rustdesk-route-DP-3|rustdesk-route-DP-2|rustdesk-route-DP-1|rustdesk-route-eDP-1|rustdesk-route-hidden) ;;
-    *)
-      printf 'invalid notification route mode: %s\n' "$route_mode_ref" >&2
-      return 1
-      ;;
-  esac
+  if [[ $route_mode_ref != rustdesk-route-hidden ]] &&
+    ! [[ $route_mode_ref == rustdesk-route-* && ${route_mode_ref#rustdesk-route-} =~ $NOTIFICATION_OUTPUT_PATTERN ]]; then
+    printf 'invalid notification route mode: %s\n' "$route_mode_ref" >&2
+    return 1
+  fi
 
-  case $cue_output_ref in
-    HDMI-A-1|DP-3|DP-2|DP-1|eDP-1|none) ;;
-    *)
-      printf 'invalid notification cue output: %s\n' "$cue_output_ref" >&2
-      return 1
-      ;;
-  esac
+  if [[ $cue_output_ref != none && ! $cue_output_ref =~ $NOTIFICATION_OUTPUT_PATTERN ]]; then
+    printf 'invalid notification cue output: %s\n' "$cue_output_ref" >&2
+    return 1
+  fi
   case $direction_ref in
     left|right|up|down|none) ;;
     *)
@@ -382,12 +379,8 @@ write_notification_route_state() {
   fi
 
   case $route_mode in
-    rustdesk-route-HDMI-A-1) visible=true; output=HDMI-A-1 ;;
-    rustdesk-route-DP-3) visible=true; output=DP-3 ;;
-    rustdesk-route-DP-2) visible=true; output=DP-2 ;;
-    rustdesk-route-DP-1) visible=true; output=DP-1 ;;
-    rustdesk-route-eDP-1) visible=true; output=eDP-1 ;;
     rustdesk-route-hidden) visible=false; output="" ;;
+    *) visible=true; output=${route_mode#rustdesk-route-} ;;
   esac
 
   route_dir=$NOTIFICATION_ROUTE_DIR

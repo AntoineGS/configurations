@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Print the connector Hyprland assigned to a physical monitor role this boot.
+# Connector numbers follow GPU driver probe order, so roles are keyed by EDID
+# serial. Keep Linux/hypr/monitors.lua in sync with these monitors.
+set -Eeuo pipefail
+
+usage() {
+  printf 'usage: %s <primary|secondary|left|center|right>\n' "${0##*/}" >&2
+  exit 2
+}
+
+role_serial() {
+  case "$(hostname):$1" in
+    antoinews-linux:primary) printf '%s\n' RPX114940764 ;;
+    antoinews-linux:secondary) printf '%s\n' RPX123140384 ;;
+    DESKTOP-E07VTRN:left) printf '%s\n' 21211221211 ;;
+    DESKTOP-E07VTRN:center) printf '%s\n' W3LMTF015220 ;;
+    DESKTOP-E07VTRN:right) printf '%s\n' LW9AA0078534 ;;
+    *) return 1 ;;
+  esac
+}
+
+(($# == 1)) || usage
+serial=$(role_serial "$1") || usage
+
+hyprctl -j monitors all | jq -er --arg serial "$serial" '
+  [.[] | select(.serial == $serial) | .name]
+  | if length == 1 and (.[0] | test("^[A-Za-z0-9_.:@+-]+$")) then .[0] else empty end
+'

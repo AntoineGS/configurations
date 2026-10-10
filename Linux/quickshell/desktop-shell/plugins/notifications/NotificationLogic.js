@@ -581,8 +581,7 @@ function invalidLease(error) {
 
 function validRouteOutput(value) {
   return value === null || value === undefined ||
-    value === "DVI-D-1" || value === "HDMI-A-1" || value === "DP-3" ||
-    value === "DP-2" || value === "DP-1" || value === "eDP-1"
+    (typeof value === "string" && /^[A-Za-z0-9_.:@+-]+$/.test(value) && !/^headless/i.test(value))
 }
 
 function validRouteDirection(value) {

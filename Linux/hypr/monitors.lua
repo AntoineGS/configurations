@@ -17,8 +17,12 @@ if hostname == "omarchbook" then
 	hl.monitor({ output = "eDP-1", mode = "preferred", position = "auto", scale = 1 })
 	hl.monitor({ output = "", mode = "1920x1080@60", position = "auto", scale = 1, mirror = "eDP-1" })
 elseif hostname == "antoinews-linux" then
-	hl.monitor({ output = "DP-1", mode = "1920x1080@60", position = "0x0", scale = 1 })
-	hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "1920x0", scale = 1 })
+	-- Match by EDID description: DP connector numbers shift with GPU driver probe order.
+	-- Keep in sync with the primary/secondary serials in os/helpers/monitor-connector.
+	local primary = "desc:ViewSonic Corporation VA2431 Series RPX114940764"
+	local secondary = "desc:ViewSonic Corporation VA2431 Series RPX123140384"
+	hl.monitor({ output = primary, mode = "1920x1080@60", position = "0x0", scale = 1 })
+	hl.monitor({ output = secondary, mode = "1920x1080@60", position = "1920x0", scale = 1 })
 	hl.monitor({ output = "HEADLESS-1", mode = "2560x1440@60", position = "3840x0", scale = 1 })
 	hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
@@ -38,29 +42,33 @@ elseif hostname == "antoinews-linux" then
 	hl.window_rule({ name = "windowrule-5", match = { class = "org.maximized.lazygit" }, workspace = "6", maximize = true })
 elseif hostname == "DESKTOP-E07VTRN" then
 	-- Desktop: 1080p side displays around a 4K center display at 1.5x scale.
-	hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "0x180", scale = 1 })
+	-- Keep in sync with the left/center/right serials in os/helpers/monitor-connector.
+	local left = "desc:BNQ BenQ GW2760 21211221211"
+	local center = "desc:ASUSTek COMPUTER INC XG32UCG W3LMTF015220"
+	local right = "desc:Acer Technologies G276HL LW9AA0078534"
+	hl.monitor({ output = left, mode = "1920x1080@60", position = "0x180", scale = 1 })
 	hl.monitor({
-		output = "DP-3",
+		output = center,
 		mode = "3840x2160@143.85",
 		position = "1920x0",
 		scale = 1.5,
 		bitdepth = 10,
 		cm = "srgb",
 	})
-	hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4480x180", scale = 1 })
+	hl.monitor({ output = right, mode = "1920x1080@60", position = "4480x180", scale = 1 })
 	hl.monitor({ output = "", mode = "preferred", position = "auto", scale = 1 })
 
 	-- Keep workspace layouts pinned to dwindle so they cannot silently drift into master/scrolling.
-	hl.workspace_rule({ workspace = "1", monitor = "HDMI-A-1", layout = "dwindle", persistent = true, default = true })
-	hl.workspace_rule({ workspace = "2", monitor = "DP-3", layout = "dwindle", persistent = true, default = true })
-	hl.workspace_rule({ workspace = "3", monitor = "DP-2", layout = "dwindle", persistent = true, default = true })
-	hl.workspace_rule({ workspace = "4", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "5", monitor = "DP-3", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "6", monitor = "DP-2", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "7", monitor = "HDMI-A-1", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "8", monitor = "DP-3", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "9", monitor = "DP-2", layout = "dwindle", persistent = true })
-	hl.workspace_rule({ workspace = "10", monitor = "DP-2", layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "1", monitor = left, layout = "dwindle", persistent = true, default = true })
+	hl.workspace_rule({ workspace = "2", monitor = center, layout = "dwindle", persistent = true, default = true })
+	hl.workspace_rule({ workspace = "3", monitor = right, layout = "dwindle", persistent = true, default = true })
+	hl.workspace_rule({ workspace = "4", monitor = left, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "5", monitor = center, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "6", monitor = right, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "7", monitor = left, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "8", monitor = center, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "9", monitor = right, layout = "dwindle", persistent = true })
+	hl.workspace_rule({ workspace = "10", monitor = right, layout = "dwindle", persistent = true })
 
 	-- Default workspace for applications
 	hl.window_rule({ name = "windowrule-1", match = { class = "teams-for-linux" }, workspace = "1" })

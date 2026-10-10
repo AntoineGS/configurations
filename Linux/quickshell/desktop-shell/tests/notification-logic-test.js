@@ -1041,9 +1041,9 @@ for (const raw of [
   JSON.stringify({ version: 1, visible: "true", output: "DP-1", updatedAt: 1786930000 }),
   JSON.stringify({ version: 1, visible: true, output: "DP-1", updatedAt: 1786930000.5 }),
   JSON.stringify({ version: 1, visible: true, output: "DP/1", updatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, visible: true, output: "DP-9", updatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, visible: true, output: "HEADLESS-1", updatedAt: 1786930000 }),
   JSON.stringify({ version: 1, visible: false, output: null, cueOutput: "DP/2", updatedAt: 1786930000 }),
-  JSON.stringify({ version: 1, visible: false, output: null, cueOutput: "HDMI-A-9", updatedAt: 1786930000 }),
+  JSON.stringify({ version: 1, visible: false, output: null, cueOutput: "HEADLESS-1", updatedAt: 1786930000 }),
   JSON.stringify({ version: 1, visible: false, output: null, direction: "diagonal", updatedAt: 1786930000 }),
   JSON.stringify({ version: 1, visible: true, output: null, updatedAt: 1786930000 }),
   JSON.stringify({ version: 1, visible: true, output: "DP-1", updatedAt: 1786930050 }),
@@ -1057,6 +1057,10 @@ for (const raw of [
   assert.equal(result.updatedAt, null)
   assert.notEqual(result.error, "")
 }
+// Connector numbers shift with GPU probe order; renumbered outputs stay routable.
+assert.equal(logic.normalizeRoute(JSON.stringify({
+  version: 1, visible: true, output: "DP-5", cueOutput: "DP-6", updatedAt: 1786930000,
+}), 1786930040000).output, "DP-5")
 
 const timed = logic.withPopupTiming({ identity: "1:1", remainingLifetime: 7 }, 1500)
 assert.equal(timed.duration, 1500)

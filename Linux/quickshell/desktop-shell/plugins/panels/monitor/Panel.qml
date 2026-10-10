@@ -67,11 +67,12 @@ Panel {
   readonly property bool presetLayoutsAvailable: hostname === "antoinews-linux"
   readonly property string layoutMode: {
     if (activeMonitors.length === 1) return "single"
-    var right = activeMonitors.indexOf("DP-1") !== -1
-    var left = activeMonitors.indexOf("DP-2") !== -1
+    // Connector names shift with GPU probe order; match serials from os/helpers/monitor-connector.
+    var primary = hasActiveSerial("RPX114940764")
+    var secondary = hasActiveSerial("RPX123140384")
     var headless = activeMonitors.indexOf("HEADLESS-1") !== -1
-    if (right && left && !headless && activeMonitors.length === 2) return "physical"
-    if (right && !left && headless && activeMonitors.length === 2) return "headless"
+    if (primary && secondary && !headless && activeMonitors.length === 2) return "physical"
+    if (primary && !secondary && headless && activeMonitors.length === 2) return "headless"
     return "mixed"
   }
   readonly property string modeLetter: layoutMode === "physical" ? "P"
@@ -86,6 +87,14 @@ Panel {
     { mode: "headless", letter: "H", label: "Headless + right physical" },
     { mode: "single", letter: "S", label: "Single monitor: " + (barMonitor || "current") }
   ]
+
+  function hasActiveSerial(serial) {
+    for (var i = 0; i < nativeTopology.monitors.length; i++) {
+      var description = nativeTopology.monitors[i].description
+      if (description.slice(-serial.length - 1) === " " + serial) return true
+    }
+    return false
+  }
 
   function displayForMonitor(name) {
     for (var i = 0; i < displays.length; i++)

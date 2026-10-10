@@ -30,23 +30,23 @@ hl.on("hyprland.start", function()
 		hl.exec_cmd("signal-desktop")
 		hl.exec_cmd("teams-for-linux")
 		hl.exec_cmd(
-			[[sleep 1 && hyprctl eval 'hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor="HDMI-A-1"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor="DP-3"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor="DP-2"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor="DP-2"})); hl.dispatch(hl.dsp.focus({workspace=2}))']]
+			[[sleep 1 && l=$(monitor-connector left) && c=$(monitor-connector center) && r=$(monitor-connector right) && hyprctl eval "hl.dispatch(hl.dsp.workspace.move({workspace=1, monitor=\"$l\"})); hl.dispatch(hl.dsp.workspace.move({workspace=4, monitor=\"$l\"})); hl.dispatch(hl.dsp.workspace.move({workspace=7, monitor=\"$l\"})); hl.dispatch(hl.dsp.workspace.move({workspace=2, monitor=\"$c\"})); hl.dispatch(hl.dsp.workspace.move({workspace=5, monitor=\"$c\"})); hl.dispatch(hl.dsp.workspace.move({workspace=8, monitor=\"$c\"})); hl.dispatch(hl.dsp.workspace.move({workspace=3, monitor=\"$r\"})); hl.dispatch(hl.dsp.workspace.move({workspace=6, monitor=\"$r\"})); hl.dispatch(hl.dsp.workspace.move({workspace=9, monitor=\"$r\"})); hl.dispatch(hl.dsp.workspace.move({workspace=10, monitor=\"$r\"})); hl.dispatch(hl.dsp.focus({workspace=2}))"]]
 		)
 	end
 
-	-- Hyprland 0.55 regression: cursor cannot enter DP-2's region until the monitor is re-applied.
+	-- Hyprland 0.55 regression: cursor cannot enter the secondary/right monitor's region until it is re-applied.
 	-- `hyprctl keyword` is disabled under the Lua parser, so route the nudge through `hyprctl eval` instead.
 	if hostname == "antoinews-linux" then
-		-- Preserve the selected layout instead of forcing DP-2 back to the left.
+		-- Preserve the selected layout instead of forcing the secondary monitor back to the left.
 		hl.exec_cmd(
-			[[sleep 2 && code=$(hyprctl -j monitors all | jq -r '
-				.[] | select(.name == "DP-2" and .disabled != true)
-				| "hl.monitor({ output = \"DP-2\", mode = \"1920x1080@60\", position = \"\(.x + 1)x\(.y)\", scale = \(.scale) }); hl.monitor({ output = \"DP-2\", mode = \"1920x1080@60\", position = \"\(.x)x\(.y)\", scale = \(.scale) })"
+			[[sleep 2 && m=$(monitor-connector secondary) && code=$(hyprctl -j monitors all | jq -r --arg m "$m" '
+				.[] | select(.name == $m and .disabled != true)
+				| "hl.monitor({ output = \"\($m)\", mode = \"1920x1080@60\", position = \"\(.x + 1)x\(.y)\", scale = \(.scale) }); hl.monitor({ output = \"\($m)\", mode = \"1920x1080@60\", position = \"\(.x)x\(.y)\", scale = \(.scale) })"
 			') && [ -n "$code" ] && hyprctl eval "$code"]]
 		)
 	elseif hostname == "DESKTOP-E07VTRN" then
 		hl.exec_cmd(
-			[[sleep 2 && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4481x180", scale = 1 })' && hyprctl eval 'hl.monitor({ output = "DP-2", mode = "1920x1080@60", position = "4480x180", scale = 1 })']]
+			[[sleep 2 && m=$(monitor-connector right) && hyprctl eval "hl.monitor({ output = \"$m\", mode = \"1920x1080@60\", position = \"4481x180\", scale = 1 })" && hyprctl eval "hl.monitor({ output = \"$m\", mode = \"1920x1080@60\", position = \"4480x180\", scale = 1 })"]]
 		)
 	end
 end)

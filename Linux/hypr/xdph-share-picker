@@ -11,8 +11,9 @@ command -v jq >/dev/null
 # Prepare synchronously so source selection cannot race the connection watcher.
 rustdesk-wake-monitor --prepare-monitor >&2
 
-if ! hyprctl monitors -j | jq -e 'any(.[]; .name == "DP-1" and .disabled == false)' >/dev/null; then
+primary=$(monitor-connector primary)
+if ! hyprctl monitors -j | jq -e --arg primary "$primary" 'any(.[]; .name == $primary and .disabled == false)' >/dev/null; then
   exit 1
 fi
 
-printf '%s\n' '[SELECTION]r/screen:DP-1'
+printf '[SELECTION]r/screen:%s\n' "$primary"

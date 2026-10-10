@@ -2,23 +2,24 @@
 set -Eeuo pipefail
 
 prepare_monitor() {
-  local monitors lock_fd
+  local monitors lock_fd primary
 
   # The picker and connection watcher can run together. Serialize layout changes.
   exec {lock_fd}>"${XDG_RUNTIME_DIR:?}/rustdesk-wake-monitor.lock"
   flock --wait 10 "$lock_fd"
 
+  primary=$(monitor-connector primary)
   monitors=$(hyprctl monitors -j)
   jq -e 'type == "array"' <<<"$monitors" >/dev/null
-  if ! jq -e 'any(.[];
-    .name == "DP-1" and .disabled == false and .mirrorOf == "none"
+  if ! jq -e --arg primary "$primary" 'any(.[];
+    .name == $primary and .disabled == false and .mirrorOf == "none"
     and (.activeWorkspace.id // 0) > 0
   )' <<<"$monitors" >/dev/null; then
     # Use the same Single monitor preset as the QuickShell monitor panel.
-    desktop-hardware-action monitor set-layout single DP-1
+    desktop-hardware-action monitor set-layout single "$primary"
   fi
 
-  hyprctl eval 'hl.dispatch(hl.dsp.dpms({action="on", monitor="DP-1"}))'
+  hyprctl eval "hl.dispatch(hl.dsp.dpms({action=\"on\", monitor=\"$primary\"}))"
 }
 
 watch_connections() {
@@ -32,7 +33,7 @@ watch_connections() {
     case $line in
       *'] new wakelock, require display on: true')
         if ! "$0" --prepare-monitor; then
-          printf '%s\n' 'rustdesk-wake-monitor: unable to prepare DP-1 for this connection' >&2
+          printf '%s\n' 'rustdesk-wake-monitor: unable to prepare the primary monitor for this connection' >&2
         fi
         # Let the panels resync after the layout change so they stay off.
         sleep 2
