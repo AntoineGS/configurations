@@ -765,7 +765,7 @@ applications:
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries: []
   - name: mdexplorer
-    description: MDExplorer under Wine — prefix, database aliases, settings, client DLLs and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout)
+    description: MDExplorer under Wine — prefix, database aliases, settings, client DLLs and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout). Database aliases, favorites and ibclient64.dll are gitignored work data kept only in the local checkout
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:

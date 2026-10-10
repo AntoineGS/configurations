@@ -31,3 +31,8 @@ Windows/Komorebi/bridge/target/
 /Linux/install/archinstall/*.local.json
 /.superpowers
 /docs/superpowers
+
+# Work data (database inventory, favorites, proprietary InterBase client): local only
+/Linux/mdexplorer/multidev/
+/Linux/mdexplorer/appdata/
+/Linux/mdexplorer/DBExplorer/ibclient64.dll
