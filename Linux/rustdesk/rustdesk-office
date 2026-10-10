@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Own the tunnels for one Office PC window, not RustDesk's shared GUI process.
+set -Eeuo pipefail
+
+readonly OFFICE_HOST=antoinews-linux.tail0b6859.ts.net
+readonly OFFICE_USER=a.simard@multidev.local
+readonly OFFICE_ENDPOINT=127.0.0.1:21120
+run_dir=''
+ssh_pid=''
+listener_pid=''
+
+report() {
+  printf 'rustdesk-office: %s\n' "$*" >&2
+  if command -v notify-send >/dev/null; then
+    notify-send --app-name='Office PC' 'RustDesk Office PC' "$*" || true
+  fi
+}
+
+cleanup() {
+  local status=$? pid
+  trap - EXIT
+  for pid in "$ssh_pid" "$listener_pid"; do
+    [[ -z $pid ]] || kill "$pid" 2>/dev/null || true
+  done
+  for pid in "$ssh_pid" "$listener_pid"; do
+    [[ -z $pid ]] || wait "$pid" 2>/dev/null || true
+  done
+  [[ -z $run_dir ]] || rm -rf -- "$run_dir"
+  return "$status"
+}
+
+office_window() {
+  hyprctl clients -j | jq -r --arg endpoint "$OFFICE_ENDPOINT" '
+    first(.[] | select((.class // "") | test("rustdesk"; "i"))
+      | select((.title // "") | startswith($endpoint + " - ") or startswith($endpoint + "@"))
+      | select(.title | contains("Remote Desktop")) | .address) // empty'
+}
+
+focus_window() {
+  local address=$1
+  [[ $address =~ ^0x[0-9a-fA-F]+$ ]] || return 1
+  hyprctl eval "hl.dispatch(hl.dsp.focus({ window = \"address:$address\" }))" >/dev/null
+}
+
+watch_window() {
+  local address=$1 clients
+  while :; do
+    clients=$(hyprctl clients -j) || return 1
+    jq -e --arg address "$address" 'any(.[]; .address == $address)' <<<"$clients" >/dev/null || return 0
+    if ! kill -0 "$ssh_pid" 2>/dev/null || ! kill -0 "$listener_pid" 2>/dev/null; then
+      report 'The Office PC tunnel disconnected. Launch Office PC again to reconnect.'
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+main() {
+  local dependency address log_file helper control ready attempt
+  [[ $# == 0 ]] || { printf 'Usage: %s\n' "${0##*/}" >&2; return 2; }
+  for dependency in ssh ncat rustdesk hyprctl jq socat flock; do
+    command -v "$dependency" >/dev/null || { report "Missing command: $dependency"; return 1; }
+  done
+  [[ -n ${XDG_RUNTIME_DIR:-} && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || {
+    report 'Launch Office PC from your Hyprland session.'; return 1;
+  }
+  helper="$HOME/.config/hypr/rustdesk-focus-handoff.sh"
+  [[ -x $helper ]] || { report "Missing handoff helper: $helper"; return 1; }
+
+  umask 077
+  # Keep the lock inode in place. Children must not inherit ownership of it.
+  exec 9>"$XDG_RUNTIME_DIR/rustdesk-office.lock"
+  if ! flock -n 9; then
+    address=$(office_window)
+    if [[ -n $address ]]; then
+      focus_window "$address"
+    else
+      report 'The Office PC connection is already opening.'
+    fi
+    return
+  fi
+  run_dir=$(mktemp -d "$XDG_RUNTIME_DIR/rustdesk-office.XXXXXXXX")
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/rustdesk-office"
+  log_file="${XDG_STATE_HOME:-$HOME/.local/state}/rustdesk-office/session.log"
+  : > "$log_file"
+  control="$run_dir/ssh"
+
+  "$helper" listen "$run_dir/handoff.sock" >>"$log_file" 2>&1 9>&- &
+  listener_pid=$!
+  ready=false
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    kill -0 "$listener_pid" 2>/dev/null || break
+    if [[ -S $run_dir/handoff.sock ]]; then ready=true; break; fi
+    sleep 0.1
+  done
+  if [[ $ready != true ]]; then
+    report "Could not start focus-handoff. See $log_file"; return 1;
+  fi
+
+  # A dedicated master keeps this launch independent of Herdr and other SSH sessions.
+  /usr/bin/ssh -M -S "$control" -NT -o ControlPersist=no -o BatchMode=yes \
+    -o ClearAllForwardings=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+    -o 'ProxyCommand=exec ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-dns remote %h %p' \
+    -l "$OFFICE_USER" "$OFFICE_HOST" >>"$log_file" 2>&1 9>&- &
+  ssh_pid=$!
+  ready=false
+  for ((attempt = 0; attempt < 150; attempt++)); do
+    kill -0 "$ssh_pid" 2>/dev/null || break
+    if [[ -S $control ]] && /usr/bin/ssh -S "$control" -O check -l "$OFFICE_USER" "$OFFICE_HOST" 9>&- >/dev/null 2>&1; then
+      ready=true; break
+    fi
+    sleep 0.1
+  done
+  if [[ $ready != true ]]; then
+    report "SSH could not connect. Check Tailmix and your unlocked SSH key. See $log_file"; return 1;
+  fi
+  # This control request waits for forwarding approval before opening RustDesk.
+  if ! /usr/bin/ssh -S "$control" -O forward -o ClearAllForwardings=no -o ExitOnForwardFailure=yes \
+    -L "$OFFICE_ENDPOINT:127.0.0.1:21118" \
+    -R "127.0.0.1:45973:$run_dir/handoff.sock" \
+    -l "$OFFICE_USER" "$OFFICE_HOST" >>"$log_file" 2>&1 9>&-; then
+    report "Could not open the tunnels. Close any manual tunnel or Office PC launcher on another machine. See $log_file"
+    return 1
+  fi
+
+  address=$(office_window)
+  if [[ -z $address ]]; then
+    rustdesk --connect "$OFFICE_ENDPOINT" >>"$log_file" 2>&1 9>&- &
+    for ((attempt = 0; attempt < 120; attempt++)); do
+      address=$(office_window)
+      [[ -z $address ]] || break
+      kill -0 "$ssh_pid" 2>/dev/null || break
+      sleep 0.25
+    done
+  fi
+  if [[ -z $address ]]; then
+    report "RustDesk did not open the Office PC window. See $log_file"; return 1;
+  fi
+  focus_window "$address"
+  watch_window "$address"
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi

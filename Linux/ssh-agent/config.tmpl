@@ -21,7 +21,16 @@ Host ubuntu-small
 Host *
 	AddKeysToAgent yes
 
-Host antoinews-linux
+{{ if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
+Host antoinews-linux *.tail0b6859.ts.net
+	ProxyCommand exec ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-dns remote %h %p
+{{ end }}
+
+Host antoinews-linux antoinews-linux.tail0b6859.ts.net
+{{ if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
+	HostName antoinews-linux.tail0b6859.ts.net
+	User a.simard@multidev.local
+{{ end }}
 	ControlMaster auto
 	ControlPath ~/.ssh/cm-%C
 	ControlPersist 60

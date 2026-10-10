@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Office PC
+Comment=RustDesk to antoinews-linux through the work tailnet
+Exec=rustdesk-office
+Icon=rustdesk
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=RustDesk;work;antoinews-linux;
+StartupNotify=false

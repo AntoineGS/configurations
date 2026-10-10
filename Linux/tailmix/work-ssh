@@ -1,0 +1,2 @@
+#!/bin/sh
+exec ssh -o 'ProxyCommand=exec ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-dns remote %h %p' "$@"

@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Build as the user; elevate only the upstream binary installer.
+set -Eeuo pipefail
+
+readonly VERSION=v0.1.15-socksfix.1
+readonly REVISION=5b94b5754fe081f7dfc34e2e0b9dbf7a51029152
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/tailmix/$VERSION/$(uname -m)"
+readonly SCRIPT_DIR CACHE_DIR
+build_dir=''
+
+cleanup() {
+  [[ -z $build_dir ]] || rm -rf -- "$build_dir"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+check_installation() {
+  [[ $(readlink /usr/local/lib/tailmix/current) == "versions/$VERSION" &&
+    -x /usr/local/lib/tailmix/current/tailmix &&
+    -x /usr/local/lib/tailmix/current/tailmixd &&
+    $(readlink -f /usr/local/bin/tailmix) == "/usr/local/lib/tailmix/versions/$VERSION/tailmix" &&
+    $(readlink -f /usr/local/bin/tailmixd) == "/usr/local/lib/tailmix/versions/$VERSION/tailmixd" &&
+    -f /etc/systemd/system/tailmixd.service ]]
+}
+
+build_package() {
+  local build_id command_name ldflags
+  if ((EUID == 0)); then
+    printf '%s\n' 'Run this helper as your normal user; it invokes sudo only for installation.' >&2
+    exit 1
+  fi
+  for command_name in git go tar sha256sum; do
+    command -v "$command_name" >/dev/null || {
+      printf 'Required command not found: %s\n' "$command_name" >&2
+      exit 1
+    }
+  done
+  build_id=$(cat "$SCRIPT_DIR/socks-nil-tun.patch" "$SCRIPT_DIR/install-patched-tailmix" | sha256sum)
+  mkdir -p -- "$CACHE_DIR"
+  if [[ -f $CACHE_DIR/build-id && $(cat "$CACHE_DIR/build-id") == "$build_id" ]] &&
+    (cd -- "$CACHE_DIR" && sha256sum --check --status SHA256SUMS); then
+    printf 'Using verified cached build: %s\n' "$CACHE_DIR"
+    return
+  fi
+
+  build_dir=$(mktemp -d "$CACHE_DIR/.build.XXXXXXXX")
+  git clone --quiet --depth 1 --branch v0.1.15 https://github.com/maisem/tailmix.git "$build_dir/source"
+  [[ $(git -C "$build_dir/source" rev-parse HEAD) == "$REVISION" ]] || {
+    printf '%s\n' 'Upstream tag no longer matches the pinned revision.' >&2
+    exit 1
+  }
+  git -C "$build_dir/source" apply --check "$SCRIPT_DIR/socks-nil-tun.patch"
+  git -C "$build_dir/source" apply "$SCRIPT_DIR/socks-nil-tun.patch"
+  mkdir -p "$build_dir/package/service"
+  ldflags="-X github.com/maisem/tailmix/version.shortStamp=$VERSION"
+  ldflags+=" -X github.com/maisem/tailmix/version.longStamp=$VERSION-base${REVISION:0:9}"
+  (
+    cd -- "$build_dir/source"
+    go test ./cmd/tailmixd -run '^TestTSNetConfigTun$' -count=1
+    go build -trimpath -ldflags "$ldflags" -o "$build_dir/package/" ./cmd/tailmix ./cmd/tailmixd
+    cp systemd/tailmixd.service.in launchd/io.github.maisem.tailmixd.plist.in "$build_dir/package/service/"
+    cp scripts/install.sh "$build_dir/install.sh"
+  )
+  tar -czf "$build_dir/tailmix.tar.gz" -C "$build_dir/package" tailmix tailmixd service
+  mv -- "$build_dir/tailmix.tar.gz" "$build_dir/install.sh" "$CACHE_DIR/"
+  (cd -- "$CACHE_DIR" && sha256sum tailmix.tar.gz install.sh > SHA256SUMS)
+  printf '%s\n' "$build_id" > "$CACHE_DIR/build-id"
+  printf 'Built %s in %s\n' "$VERSION" "$CACHE_DIR"
+}
+
+case ${1:-} in
+  --check) check_installation ;;
+  --build) build_package ;;
+  --dry-run)
+    printf 'Build %s from %s plus socks-nil-tun.patch; cache in %s.\n' "$VERSION" "$REVISION" "$CACHE_DIR"
+    printf '%s\n' 'Install both binaries with sudo via the pinned upstream installer (--no-start).'
+    ;;
+  --apply)
+    if check_installation; then
+      printf '%s is already installed.\n' "$VERSION"
+      exit 0
+    fi
+    build_package
+    sudo sh "$CACHE_DIR/install.sh" --version "$VERSION" --archive "$CACHE_DIR/tailmix.tar.gz" --no-start
+    check_installation
+    ;;
+  *) printf 'Usage: %s --check|--build|--dry-run|--apply\n' "${0##*/}" >&2; exit 2 ;;
+esac

@@ -179,8 +179,8 @@ on another host; that is the expected exclusion behavior.
 ## Tailmix
 
 `DESKTOP-E07VTRN` and `omarchbook` use the host-scoped `tailmix` application
-for simultaneous personal and work tailnets. See
-[setup, login, and rollback instructions](Linux/tailmix/README.md).
+for a work SOCKS proxy alongside the existing personal Tailscale client. See
+[setup, login, and connection instructions](Linux/tailmix/README.md).
 
 ## Systemd Units Backup
 

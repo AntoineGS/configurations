@@ -1,0 +1,53 @@
+diff --git a/cmd/tailmixd/main.go b/cmd/tailmixd/main.go
+index d1762e3..6b8c07f 100644
+--- a/cmd/tailmixd/main.go
++++ b/cmd/tailmixd/main.go
+@@ -515,7 +515,10 @@ func tsnetConfig(rp runtimeProfile, stderr io.Writer, verbose, logUpload bool, l
+ 		UserLogf:       prefixedLogf(stderr, rp.State.ID),
+ 		LogUpload:      logUpload,
+ 		LogUploadURL:   logUploadURL,
+-		Tun:            rp.Tun,
++	}
++	// Leave the interface nil in SOCKS mode so tsnet uses its userspace TUN.
++	if rp.Tun != nil {
++		cfg.Tun = rp.Tun
+ 	}
+ 	if verbose {
+ 		cfg.Logf = prefixedLogf(stderr, rp.State.ID)
+diff --git a/cmd/tailmixd/tsnetconfig_test.go b/cmd/tailmixd/tsnetconfig_test.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/tailmixd/tsnetconfig_test.go
+@@ -0,0 +1,32 @@
++package main
++
++import (
++	"io"
++	"testing"
++
++	"github.com/maisem/tailmix/tunmux"
++)
++
++func TestTSNetConfigTun(t *testing.T) {
++	t.Run("socks uses nil interface for userspace networking", func(t *testing.T) {
++		cfg, err := tsnetConfig(runtimeProfile{}, io.Discard, false, false, "")
++		if err != nil {
++			t.Fatal(err)
++		}
++		if cfg.Tun != nil {
++			t.Fatalf("SOCKS TUN = %T, want a nil interface so tsnet selects userspace networking", cfg.Tun)
++		}
++	})
++
++	t.Run("tun retains the supplied device", func(t *testing.T) {
++		device := tunmux.NewChanTUN("test-tun")
++		t.Cleanup(func() { _ = device.Close() })
++		cfg, err := tsnetConfig(runtimeProfile{Tun: device}, io.Discard, false, false, "")
++		if err != nil {
++			t.Fatal(err)
++		}
++		if cfg.Tun != device {
++			t.Fatal("TUN mode did not retain its supplied device")
++		}
++	})
++}

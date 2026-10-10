@@ -606,20 +606,30 @@ applications:
           linux: systemctl --user daemon-reload && systemctl --user enable --now watch-external-keyboard.service
         name: enable-external-keyboard-service
   - name: rustdesk-focus-handoff
-    description: Return host-edge focus navigation to the RustDesk client
-    when: '{{ and (eq .OS "linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
+    description: Office PC focus handoff through the launcher's SSH return tunnel
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
     entries:
-      - targets:
-          linux: ~/.config/systemd/user
-        name: service
-        backup: ./Linux/hypr
-        files:
-          - rustdesk-focus-handoff.service
       - check:
-          linux: ~/.config/hypr/setup-rustdesk-focus-handoff --check
+          linux: '! systemctl --user is-enabled --quiet rustdesk-focus-handoff.service && ! systemctl --user is-active --quiet rustdesk-focus-handoff.service'
         run:
-          linux: ~/.config/hypr/setup-rustdesk-focus-handoff --apply
-        name: enable-service
+          linux: systemctl --user disable --now rustdesk-focus-handoff.service
+        name: disable-legacy-service
+  - name: rustdesk-office
+    description: Window-scoped Office PC RustDesk connection over Tailmix
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
+    entries:
+      - name: launcher
+        backup: ./Linux/rustdesk
+        targets:
+          linux: ~/.local/bin
+        files:
+          - rustdesk-office
+      - name: desktop
+        backup: ./Linux/rustdesk
+        targets:
+          linux: ~/.local/share/applications
+        files:
+          - rustdesk-office.desktop
   - package:
       managers:
         yay: sunshine-bin
@@ -1906,7 +1916,6 @@ applications:
         run:
           linux: systemctl enable --now tailscaled.service
         name: enable-tailscaled
-        when: '{{ not (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
         sudo: true
       - check:
           linux: systemctl is-enabled --quiet bluetooth.service
@@ -1967,15 +1976,33 @@ applications:
           linux: systemctl enable --now tailscaled.service
         sudo: true
   - name: tailmix
-    description: Simultaneous personal and work tailnets on the desktop and laptop
+    description: Work tailnet SOCKS proxy alongside the existing personal Tailscale client
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
     package:
+      managers:
+        pacman:
+          deps:
+            - nmap
+            - go
+            - git
       url:
         linux:
           url: https://github.com/maisem/tailmix/releases/download/v0.1.15/install.sh
           command: test -x /usr/local/bin/tailmix && test -x /usr/local/bin/tailmixd && test -f /etc/systemd/system/tailmixd.service || sudo sh {file} --version v0.1.15 --no-start
     entries:
-      - name: service-conflict
+      - name: patched-build-files
+        backup: ./Linux/tailmix
+        targets:
+          linux: ~/.config/tailmix-build
+        files:
+          - install-patched-tailmix
+          - socks-nil-tun.patch
+      - name: patched-binaries
+        check:
+          linux: ~/.config/tailmix-build/install-patched-tailmix --check
+        run:
+          linux: ~/.config/tailmix-build/install-patched-tailmix --apply
+      - name: socks-service
         backup: ./Linux/tailmix/tailmixd.service.d
         targets:
           linux: /etc/systemd/system/tailmixd.service.d
@@ -1984,15 +2011,15 @@ applications:
         sudo: true
       - name: enable-tailmixd
         check:
-          linux: systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl is-enabled --quiet tailscaled.service && ! systemctl is-active --quiet tailscaled.service && systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service
+          linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service && systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && ps -p "$(systemctl show -p MainPID --value tailmixd.service)" -o args= | grep -Fq -- '-mode=socks -socks=127.0.0.1:1080 -auto-update=false' && /usr/local/bin/tailmix status --json >/dev/null
         run:
-          linux: test -x /usr/local/bin/tailmixd && systemctl daemon-reload && systemctl disable --now tailscaled.service && systemctl enable --now tailmixd.service
+          linux: test "$(readlink /usr/local/lib/tailmix/current)" = versions/v0.1.15-socksfix.1 && systemctl daemon-reload && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && systemctl enable --now tailscaled.service && systemctl enable tailmixd.service && systemctl restart tailmixd.service
         sudo: true
-      - name: personal-profile
+      - name: disable-legacy-personal-profile
         check:
-          linux: /usr/local/bin/tailmix profiles show personal --json >/dev/null
+          linux: /usr/local/bin/tailmix profiles list --json | jq -e 'all(.profiles[]; .name != "personal" or .enabled == false)' >/dev/null
         run:
-          linux: /usr/local/bin/tailmix profiles add personal --hostname "$(hostname)-tailmix"
+          linux: /usr/local/bin/tailmix profiles disable personal
         sudo: true
       - name: work-profile
         check:
@@ -2000,12 +2027,18 @@ applications:
         run:
           linux: /usr/local/bin/tailmix profiles add work --hostname "$(hostname)-tailmix"
         sudo: true
-      - name: personal-dns-search
+      - name: remove-legacy-personal-dns-search
         check:
-          linux: /usr/local/bin/tailmix dns search list --json | jq -e '.desired | index("tail0fcf84.ts.net") != null' >/dev/null
+          linux: /usr/local/bin/tailmix dns search list --json | jq -e '(.desired // []) | index("tail0fcf84.ts.net") == null' >/dev/null
         run:
-          linux: /usr/local/bin/tailmix dns search add tail0fcf84.ts.net
+          linux: /usr/local/bin/tailmix dns search remove tail0fcf84.ts.net
         sudo: true
+      - name: work-ssh
+        backup: ./Linux/tailmix
+        targets:
+          linux: ~/.local/bin
+        files:
+          - work-ssh
   - package:
       managers:
         yay: oh-my-zsh-git
@@ -2586,10 +2619,17 @@ applications:
         when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews")) }}'
         check_mode: status
       - check:
-          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@antoinews-linux" and .session == "default")' >/dev/null
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@antoinews-linux.tail0b6859.ts.net" and .session == "default" and .enabled) and (any(.[]; .label == "antoinews-linux" and .target == "ssh://a.simard%40multidev.local@antoinews-linux" and .session == "default") | not)' >/dev/null
         run:
-          linux: herdr machine add 'ssh://a.simard%40multidev.local@antoinews-linux' --label antoinews-linux --remote-session default
-        name: machine-workstation
+          linux: herdr machine add 'ssh://a.simard%40multidev.local@antoinews-linux.tail0b6859.ts.net' --label antoinews-linux --remote-session default
+        name: machine-antoinews-linux
+        when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+        check_mode: status
+      - check:
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@ubuntusrv01.tail0b6859.ts.net" and .session == "default" and .enabled)' >/dev/null
+        run:
+          linux: herdr machine add 'ssh://a.simard%40multidev.local@ubuntusrv01.tail0b6859.ts.net' --label ubuntusrv01 --remote-session default
+        name: machine-ubuntusrv01
         when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         check_mode: status
       - check:
