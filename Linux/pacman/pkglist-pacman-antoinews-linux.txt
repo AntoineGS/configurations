@@ -24,6 +24,7 @@ ghostty
 gimp
 git-cliff
 git-delta
+git-filter-repo
 gnome-calculator
 gnome-disk-utility
 gnome-themes-extra
