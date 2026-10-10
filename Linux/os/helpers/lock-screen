@@ -12,4 +12,7 @@ fi
 
 # Keep the locker attached so Quickshell keeps its output pipes open until unlock.
 # Backgrounding it lets the menu action exit early and kills hyprlock with SIGPIPE.
-pidof hyprlock >/dev/null || exec hyprlock
+log="${XDG_RUNTIME_DIR:-/tmp}/hyprlock-debug.log"
+echo "=== $(date -Is) lock-screen invoked (ppid=$PPID: $(ps -o args= -p $PPID))" >>"$log"
+pidof hyprlock >/dev/null && echo "hyprlock already running: $(pidof hyprlock)" >>"$log"
+pidof hyprlock >/dev/null || exec hyprlock --verbose > >(while IFS= read -r l; do echo "$(date +%T.%3N) $l"; done | tee -a "$log") 2>&1
