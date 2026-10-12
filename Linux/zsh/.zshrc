@@ -44,6 +44,8 @@ zvm_after_init() {
     bindkey '^P' autosuggest-accept
     bindkey '^[p' forward-word
     bindkey '^[k' clear-screen
+    # Enter insert mode and type a literal colon from normal mode.
+    bindkey -M vicmd -s ':' 'i:'
 }
 
 # Carapace
