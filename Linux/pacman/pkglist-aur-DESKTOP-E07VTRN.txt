@@ -2,7 +2,6 @@
 1password-cli
 adbmanager
 asdcontrol
-backlog.md
 balena-cli-bin
 beads-bin
 brave-bin
