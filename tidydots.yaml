@@ -1,7 +1,4 @@
 version: 3
-# Unknown Linux hosts get the terminal/server baseline. These anchors describe
-# known workstations; hostnames below are only TUI choices, not profile membership.
-# Add a server to an individual application's `when` to opt into that application.
 hostnames:
   - omarchbook
   - antoinews
@@ -32,14 +29,10 @@ applications:
         pacman: shellcheck
     name: shellcheck
     description: Static analysis for shell scripts
-    when: &linux-workstation '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
-        installer:
-          command:
-            linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          binary: brew
         apt:
           deps:
             - build-essential
@@ -47,6 +40,10 @@ applications:
             - file
             - git
             - procps
+        installer:
+          command:
+            linux: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          binary: brew
     name: homebrew
     when: '{{ eq .OS "linux" }}'
     entries: []
@@ -83,7 +80,7 @@ applications:
         yay: opencode-beta
     name: opencode
     description: AI coding agent — Claude Max subscription via Meridian
-    when: &workstation '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries:
       - check:
           linux: '[ "$(readlink ~/.local/bin/opencode-v)" = "$HOME/.ocv/bin/ocv" ]'
@@ -116,91 +113,90 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
-  - name: meridian
-    description: Standalone Claude Max proxy and OpenCode prompt scrubber
-    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
-    package:
+  - package:
       managers:
         yay:
-          name: meridian
           deps:
             - claude-code
             - npm
+          name: meridian
+    name: meridian
+    description: Standalone Claude Max proxy and OpenCode prompt scrubber
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
-      # Retain the existing filename so deployed environment.d links stay valid.
-      - name: environment
-        backup: ./Linux/opencode/environment
-        targets:
+      - targets:
           linux: ~/.config/environment.d
+        name: environment
+        backup: ./Linux/opencode/environment
         files:
           - opencode-with-claude.conf
-      - name: plugins
-        backup: ./Linux/meridian
-        targets:
+      - targets:
           linux: ~/.config/meridian
+        name: plugins
+        backup: ./Linux/meridian
         files:
           - plugins.json.tmpl
-      - name: opencode-scrub
-        check:
+      - check:
           linux: 'test -r "$HOME/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/dist/index.js" && node -e ''process.exit(require(process.env.HOME + "/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/package.json").version === "0.2.0" ? 0 : 1)'''
         run:
           linux: npm install --prefix "$HOME/.config/meridian" --no-save --package-lock=false @rynfar/meridian-plugin-opencode-scrub@0.2.0
-      - name: user-service
-        backup: ./Linux/meridian/systemd
-        targets:
+        name: opencode-scrub
+      - targets:
           linux: ~/.config/systemd/user
+        name: user-service
+        backup: ./Linux/meridian/systemd
         files:
           - meridian.service
-      - name: enable-user-lingering
-        check:
+      - check:
           linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
         run:
           linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
-      - name: enable-service
-        check:
+        name: enable-user-lingering
+      - check:
           linux: systemctl --user is-enabled --quiet meridian.service && systemctl --user is-active --quiet meridian.service && test "$(systemctl --user show meridian.service --property=NeedDaemonReload --value)" = no && started=$(date --date="$(systemctl --user show meridian.service --property=ExecMainStartTimestamp --value)" +%s) && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/systemd/user/meridian.service")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/environment.d/opencode-with-claude.conf")" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/meridian/plugins.json")" && test "$started" -ge "$(stat -Lc %Y /usr/lib/meridian/package.json)" && test "$started" -ge "$(stat -Lc %Y "$HOME/.config/meridian/node_modules/@rynfar/meridian-plugin-opencode-scrub/package.json")"
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable meridian.service && systemctl --user restart meridian.service
+        name: enable-service
   - name: home-assistant-review
     description: Daily Astra log review, local reports, and phone notifications
     when: '{{ and (eq .OS "linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
-      - name: project-config
-        backup: ./Linux/home-assistant-review/project
-        targets:
+      - targets:
           linux: ~/gits/home-assistant
+        name: project-config
         method: copy
+        backup: ./Linux/home-assistant-review/project
         files:
           - .review-config.json.tmpl
           - .opencode/opencode.json
-      - name: review-agent
-        backup: ./Linux/home-assistant-review/agents
-        targets:
+      - targets:
           linux: ~/gits/home-assistant/.opencode/agents
+        name: review-agent
+        backup: ./Linux/home-assistant-review/agents
         files:
           - daily-ha-review.md
-      - name: user-units
-        backup: ./Linux/home-assistant-review
-        targets:
+      - targets:
           linux: ~/.config/systemd/user
+        name: user-units
+        backup: ./Linux/home-assistant-review
         files:
           - home-assistant-review.service
           - home-assistant-review.timer
-      - name: private-settings
-        check:
-          linux: 'test "$(stat -c %a "$HOME/gits/home-assistant/.review-config.json")" = 600'
+      - check:
+          linux: test "$(stat -c %a "$HOME/gits/home-assistant/.review-config.json")" = 600
         run:
           linux: chmod 600 "$HOME/gits/home-assistant/.review-config.json"
-      - name: enable-user-lingering
-        check:
+        name: private-settings
+      - check:
           linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
         run:
           linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
-      - name: enable-timer
-        check:
+        name: enable-user-lingering
+      - check:
           linux: systemctl --user is-enabled --quiet home-assistant-review.timer && systemctl --user is-active --quiet home-assistant-review.timer && test "$(systemctl --user show home-assistant-review.service --property=NeedDaemonReload --value)" = no && test "$(systemctl --user show home-assistant-review.timer --property=NeedDaemonReload --value)" = no
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now home-assistant-review.timer
+        name: enable-timer
   - name: interbase-mcp
     description: Keep the local InterBase MCP endpoints available
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
@@ -227,29 +223,40 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable interbase-mcp.service && systemctl --user restart interbase-mcp.service
         name: enable-service
-  - name: beads-dolt
+  - package:
+      managers:
+        pacman:
+          deps:
+            - dolt
+        yay: beads-bin
+    name: beads-dolt
     description: Start the beads shared Dolt server (127.0.0.1:3308) at boot
     when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
-      - name: user-service
-        backup: ./Linux/beads-dolt/systemd
-        targets:
+      - targets:
           linux: ~/.config/systemd/user
+        name: user-service
+        backup: ./Linux/beads-dolt/systemd
         files:
           - beads-dolt.service
-      - name: enable-user-lingering
-        check:
+      - check:
           linux: target_user=${SUDO_USER:-$USER}; test "$(loginctl show-user "$target_user" --property=Linger --value)" = yes
         run:
           linux: target_user=${SUDO_USER:-$USER}; loginctl enable-linger "$target_user"
-      - name: enable-service
-        check:
+        name: enable-user-lingering
+      - check:
           linux: systemctl --user is-enabled --quiet beads-dolt.service && systemctl --user is-active --quiet beads-dolt.service && test "$(systemctl --user show beads-dolt.service --property=NeedDaemonReload --value)" = no
         run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now beads-dolt.service
+          linux: |
+            server_dir="$HOME/.beads/shared-server"
+            mkdir -p "$server_dir/dolt" || exit 1
+            if [ ! -e "$server_dir/dolt-server-config.yaml" ] && [ ! -L "$server_dir/dolt-server-config.yaml" ]; then
+              (umask 077; set -C; printf '%s\n' 'log_level: warning' 'listener:' '  host: 127.0.0.1' '  port: 3308' > "$server_dir/dolt-server-config.yaml") || exit 1
+            fi
+            systemctl --user daemon-reload && systemctl --user enable --now beads-dolt.service
+        name: enable-service
   - package:
       managers:
-        # Ubuntu's distro version can lag behind this Neovim configuration.
         brew: neovim
         pacman: neovim
         winget: Neovim.Neovim
@@ -392,7 +399,7 @@ applications:
       custom:
         windows: uv tool install --python 3.13 posting
     name: posting
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries:
       - targets:
           linux: ~/.config/posting
@@ -400,7 +407,7 @@ applications:
         name: config
         backup: ./Both/posting
   - name: xcompose
-    when: &linux-desktop '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: "~"
@@ -591,7 +598,7 @@ applications:
         pacman: hyprland
     name: hyprland
     description: Dynamic tiling Wayland compositor
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/hypr
@@ -638,16 +645,16 @@ applications:
     description: Window-scoped Office PC RustDesk connection over Tailmix
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
     entries:
-      - name: launcher
-        backup: ./Linux/rustdesk
-        targets:
+      - targets:
           linux: ~/.local/bin
+        name: launcher
+        backup: ./Linux/rustdesk
         files:
           - rustdesk-office
-      - name: desktop
-        backup: ./Linux/rustdesk
-        targets:
+      - targets:
           linux: ~/.local/share/applications
+        name: desktop
+        backup: ./Linux/rustdesk
         files:
           - rustdesk-office.desktop
   - package:
@@ -872,91 +879,91 @@ applications:
       managers:
         pacman: bluetui
     name: bluetui
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: brightnessctl
     name: brightnessctl
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: evince
     name: evince
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: ffmpeg
     name: ffmpeg
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: gpu-screen-recorder
     name: gpu-screen-recorder
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: grim
     name: grim
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: hypridle
     name: hypridle
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: hyprlock
     name: hyprlock
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: hyprpicker
     name: hyprpicker
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: impala
     name: impala
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: lazydocker
     name: lazydocker
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: libnotify
     name: libnotify
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: mpv
     name: mpv
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: nautilus
     name: nautilus
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: playerctl
     name: playerctl
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -974,97 +981,97 @@ applications:
       managers:
         pacman: python-gobject
     name: python-gobject
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: satty
     name: satty
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: slurp
     name: slurp
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: socat
     name: socat
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: swaybg
     name: swaybg
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: v4l-utils
     name: v4l-utils
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: waypipe
     name: waypipe
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: wl-clipboard
     name: wl-clipboard
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: wtype
     name: wtype
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: xdg-desktop-portal-gtk
     name: xdg-desktop-portal-gtk
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: xdg-desktop-portal-hyprland
     name: xdg-desktop-portal-hyprland
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: xdg-utils
     name: xdg-utils
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: pipewire
     name: pipewire-audio
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: pipewire-alsa
     name: pipewire-alsa
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: pipewire-pulse
     name: pipewire-pulse
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: wireplumber
     name: wireplumber
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -1113,25 +1120,25 @@ applications:
       managers:
         pacman: libqalculate
     name: libqalculate
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: curl
     name: desktop-shell-curl
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: coreutils
     name: desktop-shell-coreutils
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: openssh
     name: desktop-shell-openssh
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -1140,7 +1147,7 @@ applications:
             - inotify-tools
           name: quickshell
     name: desktop-shell
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/quickshell/desktop-shell
@@ -1170,13 +1177,13 @@ applications:
       managers:
         yay: codexbar-cli-bin
     name: codexbar-cli-bin
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: uwsm
     name: uwsm
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/uwsm/default
@@ -1186,13 +1193,13 @@ applications:
       managers:
         pacman: gtk3
     name: gtk3
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: sddm
     name: sddm
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: /etc/sddm.conf.d
@@ -1281,12 +1288,11 @@ applications:
       managers:
         pacman: perl
     name: perl
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - name: tidydots
     description: Cross-platform dotfile manager
-    # The source updater requires Go; servers keep their preinstalled binary.
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/tidydots
@@ -1302,8 +1308,7 @@ applications:
         check_mode: status
   - name: shell-picker
     description: Cross-platform fzf backend and shell adapters
-    # Source-built with Go. Server shells use native fzf bindings instead.
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries:
       - targets:
           linux: ~/.config/shell-picker
@@ -1321,7 +1326,7 @@ applications:
       managers:
         pacman: ghostty
     name: ghostty
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/ghostty
@@ -1345,7 +1350,7 @@ applications:
         name: config
         backup: ./Linux/gdu
   - name: fastfetch
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/fastfetch
@@ -1356,7 +1361,7 @@ applications:
         pacman: fcitx5
     name: fcitx5
     description: Input method framework
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/fcitx5/conf
@@ -1365,7 +1370,7 @@ applications:
         files:
           - unicode.conf
   - name: fontconfig
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/fontconfig
@@ -1375,7 +1380,7 @@ applications:
       managers:
         yay: hyprland-preview-share-picker-git
     name: hyprland-preview-share-picker
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/hyprland-preview-share-picker
@@ -1385,20 +1390,20 @@ applications:
       managers:
         yay: xdg-terminal-exec
     name: xdg-terminal-exec
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         yay: localsend-bin
     name: localsend
     description: LocalSend file sharing application used by cmd-share
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: imv
     name: imv
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/imv
@@ -1408,7 +1413,7 @@ applications:
       managers:
         pacman: mise
     name: mise
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/mise
@@ -1417,7 +1422,7 @@ applications:
         files:
           - config.toml
   - name: typora
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/Typora/themes
@@ -1427,21 +1432,21 @@ applications:
       managers:
         pacman: wiremix
     name: wiremix
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/wiremix
         name: config
         backup: ./Linux/wiremix
   - name: autostart
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/autostart
         name: config
         backup: ./Linux/autostart
   - name: browser-flags
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config
@@ -1596,7 +1601,7 @@ applications:
         sudo: true
   - name: yay
     description: AUR helper config (7-day minimum release-age hook)
-    when: &arch-workstation '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/yay
@@ -1605,7 +1610,7 @@ applications:
         files:
           - init.lua
   - name: os-files
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config
@@ -1805,7 +1810,7 @@ applications:
         name: enable-smb
         sudo: true
   - name: nvim-open
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.local/bin
@@ -1817,7 +1822,7 @@ applications:
       managers:
         pacman: pacman-contrib
     name: pacman-hooks
-    when: *arch-workstation
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: /usr/share/libalpm/hooks
@@ -1833,11 +1838,11 @@ applications:
       managers:
         pacman: rebuild-detector
     name: rebuild-detector
-    when: *arch-workstation
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - name: ssh-agent
     description: SSH agent with 4-hour key lifetime (replaces 1Password agent)
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: ~/.config/systemd/user/ssh-agent.service.d
@@ -1861,7 +1866,7 @@ applications:
           linux: systemctl --user daemon-reload && systemctl --user enable --now ssh-agent.socket
         name: enable-socket
   - name: systemd-units
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
           linux: /etc/systemd/system
@@ -1895,7 +1900,7 @@ applications:
         sudo: true
   - name: enable-desktop-services
     description: Enable services that only make sense on a graphical Linux host
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - check:
           linux: systemctl is-enabled --quiet sddm.service
@@ -1917,7 +1922,7 @@ applications:
         sudo: true
   - name: enable-linux-services
     description: Enable firewall, Docker, Tailscale and Bluetooth on known Linux workstations
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - check:
           linux: systemctl is-enabled --quiet ufw.service
@@ -1947,37 +1952,37 @@ applications:
       managers:
         pacman: ufw
     name: linux-services-packages
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: avahi
     name: avahi
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: bluez
     name: bluez
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: cups
     name: cups
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: cups-browsed
     name: cups-browsed
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: docker
     name: docker
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -1985,20 +1990,16 @@ applications:
       custom:
         linux: curl -fsSL https://tailscale.com/install.sh | sh
     name: tailscale
-    # `server` already has an explicit subnet-router role below.
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "server")) }}'
     entries:
-      - name: enable-server-tailscaled
-        when: '{{ eq .Hostname "server" }}'
-        check:
+      - check:
           linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service
         run:
           linux: systemctl enable --now tailscaled.service
+        name: enable-server-tailscaled
+        when: '{{ eq .Hostname "server" }}'
         sudo: true
-  - name: tailmix
-    description: Work tailnet SOCKS proxy alongside the existing personal Tailscale client
-    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
-    package:
+  - package:
       managers:
         pacman:
           deps:
@@ -2009,54 +2010,57 @@ applications:
         linux:
           url: https://github.com/maisem/tailmix/releases/download/v0.1.15/install.sh
           command: test -x /usr/local/bin/tailmix && test -x /usr/local/bin/tailmixd && test -f /etc/systemd/system/tailmixd.service || sudo sh {file} --version v0.1.15 --no-start
+    name: tailmix
+    description: Work tailnet SOCKS proxy alongside the existing personal Tailscale client
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
     entries:
-      - name: patched-build-files
-        backup: ./Linux/tailmix
-        targets:
+      - targets:
           linux: ~/.config/tailmix-build
+        name: patched-build-files
+        backup: ./Linux/tailmix
         files:
           - install-patched-tailmix
           - socks-nil-tun.patch
-      - name: patched-binaries
-        check:
+      - check:
           linux: ~/.config/tailmix-build/install-patched-tailmix --check
         run:
           linux: ~/.config/tailmix-build/install-patched-tailmix --apply
-      - name: socks-service
-        backup: ./Linux/tailmix/tailmixd.service.d
-        targets:
+        name: patched-binaries
+      - targets:
           linux: /etc/systemd/system/tailmixd.service.d
+        name: socks-service
+        backup: ./Linux/tailmix/tailmixd.service.d
         files:
           - tailscaled.conf
         sudo: true
-      - name: enable-tailmixd
-        check:
+      - check:
           linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service && systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && ps -p "$(systemctl show -p MainPID --value tailmixd.service)" -o args= | grep -Fq -- '-mode=socks -socks=127.0.0.1:1080 -auto-update=false' && /usr/local/bin/tailmix status --json >/dev/null
         run:
           linux: test "$(readlink /usr/local/lib/tailmix/current)" = versions/v0.1.15-socksfix.1 && systemctl daemon-reload && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && systemctl enable --now tailscaled.service && systemctl enable tailmixd.service && systemctl restart tailmixd.service
+        name: enable-tailmixd
         sudo: true
-      - name: disable-legacy-personal-profile
-        check:
+      - check:
           linux: /usr/local/bin/tailmix profiles list --json | jq -e 'all(.profiles[]; .name != "personal" or .enabled == false)' >/dev/null
         run:
           linux: /usr/local/bin/tailmix profiles disable personal
+        name: disable-legacy-personal-profile
         sudo: true
-      - name: work-profile
-        check:
+      - check:
           linux: /usr/local/bin/tailmix profiles show work --json >/dev/null
         run:
           linux: /usr/local/bin/tailmix profiles add work --hostname "$(hostname)-tailmix"
+        name: work-profile
         sudo: true
-      - name: remove-legacy-personal-dns-search
-        check:
+      - check:
           linux: /usr/local/bin/tailmix dns search list --json | jq -e '(.desired // []) | index("tail0fcf84.ts.net") == null' >/dev/null
         run:
           linux: /usr/local/bin/tailmix dns search remove tail0fcf84.ts.net
+        name: remove-legacy-personal-dns-search
         sudo: true
-      - name: work-ssh
-        backup: ./Linux/tailmix
-        targets:
+      - targets:
           linux: ~/.local/bin
+        name: work-ssh
+        backup: ./Linux/tailmix
         files:
           - work-ssh
   - package:
@@ -2200,14 +2204,14 @@ applications:
           windows: ~/.config/git
         name: config
         backup: ./Both/Git
-  - name: git-lfs
-    description: Required by the shared Git LFS filters
-    package:
+  - package:
       managers:
         apt: git-lfs
         brew: git-lfs
         pacman: git-lfs
         winget: GitHub.GitLFS
+    name: git-lfs
+    description: Required by the shared Git LFS filters
     entries: []
   - package:
       managers:
@@ -2217,7 +2221,7 @@ applications:
         winget: GitHub.cli
     name: gh
     description: GitHub CLI
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       custom:
@@ -2240,14 +2244,14 @@ applications:
         pacman: go
         winget: GoLang.Go
     name: go
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
         pacman: nodejs
         winget: OpenJS.NodeJS
     name: nodejs
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
@@ -2255,7 +2259,7 @@ applications:
         pacman: python
         winget: Python.Python.3.14
     name: python
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
@@ -2268,7 +2272,7 @@ applications:
         winget: GolangCI.golangci-lint
         yay: golangci-lint-bin
     name: golangci-lint
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
@@ -2280,7 +2284,7 @@ applications:
       managers:
         yay: brave-bin
     name: brave
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -2292,17 +2296,17 @@ applications:
       managers:
         pacman: 1password
     name: 1password
-    when: *linux-desktop
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - name: beadstui
     description: Catppuccin theme for the bt issue viewer
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries:
-      - name: config
-        backup: ./Both/beadstui
-        targets:
+      - targets:
           linux: ~/.config/bt
           windows: ~/.config/bt
+        name: config
+        backup: ./Both/beadstui
   - package:
       managers:
         brew: btop
@@ -2347,7 +2351,7 @@ applications:
       managers:
         pacman: gopls
     name: gopls
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
@@ -2386,11 +2390,11 @@ applications:
         backup: ./Linux/bat
         files:
           - config
-      - name: theme-cache
-        check:
+      - check:
           linux: bat --list-themes --color=never | grep -Fxq 'Catppuccin Mocha'
         run:
           linux: bat cache --build
+        name: theme-cache
   - package:
       managers:
         apt: sd
@@ -2398,7 +2402,7 @@ applications:
       custom:
         windows: cargo install sd
     name: sd
-    when: *workstation
+    when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
@@ -2428,13 +2432,13 @@ applications:
       managers:
         pacman: limine
     name: limine
-    when: *arch-workstation
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         yay: limine-snapper-sync
     name: limine-snapper-sync
-    when: *arch-workstation
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - name: limine-config
     description: Machine-specific Limine defaults; partition UUIDs and kernel cmdline are gated per hostname in limine.tmpl
@@ -2481,13 +2485,13 @@ applications:
           targets:
             linux: ~/.local/share/zsh/zsh-claudecode-completion
     name: zsh-claudecode-completion
-    when: *linux-workstation
+    when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
         pacman: snapper
     name: snapper
-    when: *arch-workstation
+    when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - name: snapper-current-desktop-config
     when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
@@ -2623,14 +2627,14 @@ applications:
       - targets:
           linux: ~/.config/herdr/plugins/local/actionable-notifications
         name: actionable-notifications-config
-        when: *linux-desktop
+        when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         backup: ./Linux/herdr/actionable-notifications
       - check:
           linux: canonical_plugin_root="$(realpath -- "$HOME/.config/herdr/plugins/local/actionable-notifications")" && herdr plugin list --json | jq -e --arg plugin_root "$canonical_plugin_root" '.result.plugins[] | select(.plugin_id == "local.actionable-notifications" and .enabled == true and .plugin_root == $plugin_root and ((.warnings // []) | length == 0))' >/dev/null
         run:
           linux: herdr plugin link "$HOME/.config/herdr/plugins/local/actionable-notifications" --enabled
         name: actionable-notifications-plugin
-        when: *linux-desktop
+        when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
       - check:
           linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://antoinegs@desktop-e07vtrn" and .session == "default")' >/dev/null
         run:
@@ -2650,6 +2654,13 @@ applications:
         run:
           linux: herdr machine add 'ssh://a.simard%40multidev.local@ubuntusrv01.tail0b6859.ts.net' --label ubuntusrv01 --remote-session default
         name: machine-ubuntusrv01
+        when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+        check_mode: status
+      - check:
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a_simard@md-webapps.tail0b6859.ts.net" and .session == "default" and .enabled)' >/dev/null
+        run:
+          linux: herdr machine add 'ssh://a_simard@md-webapps.tail0b6859.ts.net' --label shipping-staging --remote-session default
+        name: machine-md-webapps
         when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         check_mode: status
       - check:
