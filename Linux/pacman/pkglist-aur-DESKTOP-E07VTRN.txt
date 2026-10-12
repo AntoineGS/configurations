@@ -4,6 +4,7 @@ adbmanager
 asdcontrol
 backlog.md
 balena-cli-bin
+beads-bin
 brave-bin
 caffeine-ng-git
 carapace-bin
