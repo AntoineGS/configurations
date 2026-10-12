@@ -75,3 +75,5 @@ sync:
     remote: "git+ssh://git@github.com/AntoineGS/configurations.git"
 dolt:
     shared-server: true
+    auto-commit: "on"
+    auto-push: true
