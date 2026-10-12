@@ -1,5 +1,4 @@
 base
-bat
 bluetui
 bolt
 brightnessctl
@@ -7,6 +6,7 @@ btop
 cups-pdf
 delve
 docker-compose
+dolt
 dotnet-runtime-9.0
 expac
 eza
@@ -19,6 +19,7 @@ gdu
 ghostty
 gimp
 git-delta
+git-lfs
 github-cli
 gnome-calculator
 gnome-disk-utility
@@ -49,6 +50,7 @@ moonlight-qt
 mpv
 nautilus-python
 ncdu
+nmap
 obsidian
 openai-codex
 perl-image-exiftool

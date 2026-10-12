@@ -1,6 +1,7 @@
 1password
 1password-cli
 asdcontrol
+beads-bin
 brave-bin
 carapace-bin
 codexbar-cli-bin
@@ -13,6 +14,8 @@ limine-snapper-sync
 localsend-bin
 oh-my-zsh-git
 opencode-beta
+paru-bin
+paru-bin-debug
 posting
 python-terminaltexteffects
 rustdesk-drm-preview-bin
