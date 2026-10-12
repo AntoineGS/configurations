@@ -2030,32 +2030,21 @@ applications:
           linux: /etc/systemd/system/tailmixd.service.d
         name: socks-service
         backup: ./Linux/tailmix/tailmixd.service.d
+        method: copy
         files:
           - tailscaled.conf
+        sudo: true
+      - check:
+          linux: test "$(stat -c %a /etc/systemd/system/tailmixd.service.d/tailscaled.conf)" = 644
+        run:
+          linux: chmod 644 /etc/systemd/system/tailmixd.service.d/tailscaled.conf
+        name: socks-service-permissions
         sudo: true
       - check:
           linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service && systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && ps -p "$(systemctl show -p MainPID --value tailmixd.service)" -o args= | grep -Fq -- '-mode=socks -socks=127.0.0.1:1080 -auto-update=false' && /usr/local/bin/tailmix status --json >/dev/null
         run:
           linux: test "$(readlink /usr/local/lib/tailmix/current)" = versions/v0.1.15-socksfix.1 && systemctl daemon-reload && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && systemctl enable --now tailscaled.service && systemctl enable tailmixd.service && systemctl restart tailmixd.service
         name: enable-tailmixd
-        sudo: true
-      - check:
-          linux: /usr/local/bin/tailmix profiles list --json | jq -e 'all(.profiles[]; .name != "personal" or .enabled == false)' >/dev/null
-        run:
-          linux: /usr/local/bin/tailmix profiles disable personal
-        name: disable-legacy-personal-profile
-        sudo: true
-      - check:
-          linux: /usr/local/bin/tailmix profiles show work --json >/dev/null
-        run:
-          linux: /usr/local/bin/tailmix profiles add work --hostname "$(hostname)-tailmix"
-        name: work-profile
-        sudo: true
-      - check:
-          linux: /usr/local/bin/tailmix dns search list --json | jq -e '(.desired // []) | index("tail0fcf84.ts.net") == null' >/dev/null
-        run:
-          linux: /usr/local/bin/tailmix dns search remove tail0fcf84.ts.net
-        name: remove-legacy-personal-dns-search
         sudo: true
       - targets:
           linux: ~/.local/bin

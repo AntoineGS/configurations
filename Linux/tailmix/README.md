@@ -62,6 +62,8 @@ systemd, ensures personal Tailscale is running, and starts/restarts Tailmix
 when its service configuration needs applying. Its start command waits up to
 30 seconds for the control API before profile setup proceeds. Both services
 run together.
+The service override is copied into `/etc/systemd/system` so systemd can read
+the SOCKS settings during boot, before the separate `/home` filesystem mounts.
 The existing `tailscaled.conf` filename is retained to replace already
 deployed symlinks.
 
