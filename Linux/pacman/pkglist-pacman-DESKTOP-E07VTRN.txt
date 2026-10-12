@@ -16,6 +16,7 @@ deno
 discord
 docker-compose
 doctest
+dolt
 dotnet-runtime-9.0
 dust
 electron
