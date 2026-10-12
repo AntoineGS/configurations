@@ -36,3 +36,10 @@ Windows/Komorebi/bridge/target/
 /Linux/mdexplorer/multidev/
 /Linux/mdexplorer/appdata/
 /Linux/mdexplorer/DBExplorer/ibclient64.dll
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
