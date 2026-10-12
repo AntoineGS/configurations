@@ -1,0 +1,6 @@
+plugins:
+  - name: tsk
+    command: ["tsk", "plugin"]
+    options:
+      roots: ["~/gits"]
+      model: "anthropic/claude-opus-5-5"
