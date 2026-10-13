@@ -35,7 +35,7 @@ Windows/Komorebi/bridge/target/
 # Work data (database inventory, favorites, proprietary InterBase client): local only
 /Linux/mdexplorer/multidev/
 /Linux/mdexplorer/appdata/
-/Linux/mdexplorer/DBExplorer/ibclient64.dll
+/Linux/wine/system32/ibclient64.dll
 
 # Beads / Dolt files (added by bd init)
 .dolt/

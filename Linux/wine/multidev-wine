@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Run wine in the shared multidev prefix (prepared by setup-multidev-wine).
+# Arguments are passed to wine, e.g. multidev-wine MDExplorer.exe or
+# multidev-wine 'C:\Multidev\Projects\Superform\SFClient2.exe' /ALIAS=...
+# The runtime packages of the headless Delphi installation are put on WINEPATH,
+# as the IDE's BPL folder and the third-party installers would.
+set -Eeuo pipefail
+
+export WINEPREFIX="$HOME/.local/share/wineprefixes/multidev"
+export WINEDEBUG="${WINEDEBUG:--all}"
+export MULTIDEV='C:\Multidev'
+
+headless="${HEADLESS_DELPHI_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/Headless-Delphi}"
+package_dirs=(
+  "$headless/state/common/7.0/Bpl"
+  "$headless/files/RAD Studio/7.0/bin"
+  "$headless/files/Dependencies/Woll2Woll/fcstudio2010/bin/windows"
+  "$headless/files/Dependencies/Woll2Woll/ipstudio2010/bin/windows"
+  "$headless/files/Dependencies/Devart/SecureBridge for RAD Studio 2010/Bin"
+)
+winepath=
+for dir in "${package_dirs[@]}"; do
+  if [[ ! -d $dir ]]; then
+    printf 'multidev-wine: package folder is missing (run headless Delphi setup): %s\n' "$dir" >&2
+    continue
+  fi
+  winepath+="${winepath:+;}Z:${dir//\//\\}"
+done
+export WINEPATH="$winepath"
+
+if [[ ! -f $WINEPREFIX/system.reg ]]; then
+  printf 'multidev-wine: the prefix is not set up (run setup-multidev-wine --apply): %s\n' "$WINEPREFIX" >&2
+  exit 1
+fi
+command -v wine >/dev/null || { printf 'multidev-wine: Wine is not installed.\n' >&2; exit 1; }
+
+exec wine "$@"

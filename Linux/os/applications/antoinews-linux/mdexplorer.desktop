@@ -3,7 +3,7 @@ Version=1.0
 Type=Application
 Name=MD Explorer
 Comment=Explore and manage Multidev databases
-Exec=env WINEPREFIX=/home/a.simard@multidev.local/.local/share/wineprefixes/mdexplorer wine MDExplorer.exe
+Exec=/home/a.simard@multidev.local/.local/bin/multidev-wine MDExplorer.exe
 Path=/home/a.simard@multidev.local/gits/multidev/DBExplorer
 Icon=/home/a.simard@multidev.local/.local/share/applications/antoinews-linux/icons/MDExplorer.png
 Terminal=false

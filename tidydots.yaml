@@ -791,22 +791,33 @@ applications:
     description: Windows compatibility layer used to run MDExplorer and Superform
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries: []
-  - name: mdexplorer
-    description: MDExplorer under Wine — prefix, database aliases, settings, client DLLs and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout). Database aliases, favorites and ibclient64.dll are gitignored work data kept only in the local checkout
+  - name: multidev-wine
+    description: Shared Wine prefix for MDExplorer, Superform and other multidev executables — 64-bit InterBase client in system32, 32-bit InterBase client and Delphi 2010 runtime from the O applications share in syswow64, and the multidev-wine launcher. ibclient64.dll is gitignored work data kept only in the local checkout
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:
           linux: ~/.local/bin
-        name: setup-script
-        backup: ./Linux/mdexplorer
+        name: scripts
+        backup: ./Linux/wine
         files:
-          - setup-mdexplorer-wine
+          - setup-multidev-wine
+          - multidev-wine
       - check:
-          linux: s=~/.local/bin/setup-mdexplorer-wine; if [ -x "$s" ]; then "$s" --check; else echo 'setup-script entry not restored yet' >&2; exit 1; fi
+          linux: s=~/.local/bin/setup-multidev-wine; if [ -x "$s" ]; then "$s" --check; else echo 'scripts entry not restored yet' >&2; exit 1; fi
         run:
-          linux: ~/.local/bin/setup-mdexplorer-wine --apply
+          linux: ~/.local/bin/setup-multidev-wine --apply
         name: wine-prefix
         check_mode: status
+      - targets:
+          linux: ~/.local/share/wineprefixes/multidev/drive_c/windows/system32
+        name: ibclient64
+        backup: ./Linux/wine/system32
+        files:
+          - ibclient64.dll
+  - name: mdexplorer
+    description: MDExplorer in the multidev Wine prefix — database aliases, settings, MariaDB client and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout). Database aliases and favorites are gitignored work data kept only in the local checkout
+    when: '{{ eq .Hostname "antoinews-linux" }}'
+    entries:
       - targets:
           linux: ~/gits/multidev/DBExplorer
         name: app-folder
@@ -814,7 +825,6 @@ applications:
         files:
           - settings.ini
           - libmariadb.dll
-          - ibclient64.dll
       - targets:
           linux: ~/gits/multidev
         name: database-aliases
@@ -825,13 +835,13 @@ applications:
           - databases.configs.ini
           - databases.oprefs.ini
       - targets:
-          linux: ~/.local/share/wineprefixes/mdexplorer/drive_c/users/a.simard@multidev.local/AppData/Local/MDExplorer
+          linux: ~/.local/share/wineprefixes/multidev/drive_c/users/a.simard@multidev.local/AppData/Local/MDExplorer
         name: favorites
         backup: ./Linux/mdexplorer/appdata
         files:
           - MDExplorer_Favorites.json
   - name: superform
-    description: Superform (SFClient2) under Wine — prefix, InterBase client and Delphi 2010 runtime from the O applications share, launcher and desktop entry (SFClient2.exe and its packages come from the headless Delphi build of the multidev checkout)
+    description: Superform (SFClient2) in the multidev Wine prefix — launcher and desktop entry (SFClient2.exe and its packages come from the headless Delphi build of the multidev checkout)
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:
@@ -839,14 +849,7 @@ applications:
         name: scripts
         backup: ./Linux/superform
         files:
-          - setup-superform-wine
           - sfclient2-wine
-      - check:
-          linux: s=~/.local/bin/setup-superform-wine; if [ -x "$s" ]; then "$s" --check; else echo 'scripts entry not restored yet' >&2; exit 1; fi
-        run:
-          linux: ~/.local/bin/setup-superform-wine --apply
-        name: wine-prefix
-        check_mode: status
       - targets:
           linux: ~/.local/share/applications
         name: desktop-entry

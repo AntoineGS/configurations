@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Prepare the Wine prefix Superform (SFClient2.exe) runs in (see tidydots.yaml,
-# app "superform"). The launcher is sfclient2-wine.
+# Prepare the shared Wine prefix the multidev applications (MDExplorer,
+# SFClient2, and any other .exe from the checkout) run in (see tidydots.yaml,
+# app "multidev-wine"). The launcher is multidev-wine.
 #
 # --check exit codes follow the tidydots `check_mode: status` protocol:
-#   0  set up            1  needs setup (prefix, symlink or runtime DLL missing)
+#   0  set up            1  needs setup (prefix, symlink, folder or runtime DLL
+#                            missing)
 #   2  outdated          3  check failed (wine, the multidev checkout or the
 #                            O: applications share is absent; tidydots cannot
 #                            fix that, so --apply is blocked)
@@ -12,11 +14,13 @@
 # prefix directory, greps user.reg and compares file sizes.
 set -Eeuo pipefail
 
-readonly PREFIX="$HOME/.local/share/wineprefixes/superform"
+readonly PREFIX="$HOME/.local/share/wineprefixes/multidev"
 readonly MULTIDEV="$HOME/gits/multidev"
 readonly DRIVE_C_LINK="$PREFIX/drive_c/Multidev"
 readonly SYSWOW64="$PREFIX/drive_c/windows/syswow64"
 readonly SERVICES="$PREFIX/drive_c/windows/system32/drivers/etc/services"
+# MDExplorer keeps its favorites, history and state here.
+readonly APPDATA_DIR="$PREFIX/drive_c/users/$USER/AppData/Local/MDExplorer"
 # The InterBase installer registers the default port; the client resolves
 # database paths without an explicit port through it.
 readonly GDS_DB_SERVICE='gds_db           3050/tcp                           #InterBase Server'
@@ -24,7 +28,8 @@ readonly REG_SECTION='[Software\\Wine\\Drivers]'
 readonly REG_VALUE='"Graphics"="x11"'
 # 32-bit InterBase client, and the Delphi 2010 runtime packages that a Delphi
 # 2010 installation puts in SysWOW64. Headless builds produce the other
-# packages SFClient2 loads; sfclient2-wine puts them on WINEPATH.
+# packages SFClient2 loads; multidev-wine puts them on WINEPATH. The 64-bit
+# InterBase client (system32/ibclient64.dll) is linked in by tidydots.
 readonly SHARE="$HOME/Shares/O-applications"
 readonly -a RUNTIME=(
   Interbase/gds32.dll
@@ -50,7 +55,7 @@ require_tools() {
     fail 'wine is not installed'
     return 3
   fi
-  if [[ ! -d $MULTIDEV/Projects/Superform ]]; then
+  if [[ ! -d $MULTIDEV/DBExplorer || ! -d $MULTIDEV/Projects/Superform ]]; then
     fail "multidev checkout is missing: $MULTIDEV (clone it first)"
     return 3
   fi
@@ -104,6 +109,10 @@ check_setup() {
     fail "drive_c/Multidev does not link to $MULTIDEV"
     return 1
   fi
+  if [[ ! -d $APPDATA_DIR ]]; then
+    fail "missing $APPDATA_DIR"
+    return 1
+  fi
   local stale
   stale=$(stale_runtime)
   if [[ -n $stale ]]; then
@@ -143,6 +152,8 @@ apply_setup() {
     return 1
   fi
   ln -sfn -- "$MULTIDEV" "$DRIVE_C_LINK"
+
+  mkdir -p -- "$APPDATA_DIR"
 
   local file
   while IFS= read -r file; do

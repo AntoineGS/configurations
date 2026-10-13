@@ -15,6 +15,10 @@ launch = [
 admin = [
   { run = 'gsudo %*', orphan = true, for = "windows" },
 ]
+# Windows programs in the shared multidev Wine prefix, from their own folder
+wine = [
+  { run = 'cd -- %d1 && exec "$HOME/.local/bin/multidev-wine" %s1', orphan = true, desc = "Wine (multidev)", for = "linux" },
+]
 
 [open]
 prepend_rules = [
@@ -24,6 +28,8 @@ prepend_rules = [
   { url = "*.{js,jsx,ts,tsx,mjs,cjs,vue,svelte,astro,json,jsonc,json5,yaml,yml,toml,ini,cfg,conf,properties,xml,xsl,xslt,html,htm,xhtml,css,scss,sass,less,styl,md,markdown,mdx,rst,adoc,tex,bib,sql,sh,bash,zsh,fish,nu,ps1,psm1,psd1,bat,cmd,vbs,wsf,awk,sed,lua,py,pyw,rb,pl,pm,php,go,rs,c,h,cpp,hpp,cc,cxx,cs,java,kt,kts,scala,swift,m,mm,dart,ex,exs,erl,hrl,hs,clj,cljs,cljc,ml,mli,fs,fsx,fsi,vb,pas,pp,dpr,dpk,asm,s,nim,zig,d,jl,r,lisp,el,scm,rkt,tcl,gd,patch,diff,env,hcl,tf,tfvars,nix,svg,csv,tsv,log,txt}", use = [ "edit", "launch", "admin" ] },
   # Common extensionless filenames
   { url = "{Makefile,makefile,GNUmakefile,Dockerfile,Containerfile,Jenkinsfile,Rakefile,Gemfile,Vagrantfile,Procfile,Justfile,Taskfile,CMakeLists.txt,BUILD,WORKSPACE,LICENSE,LICENCE,README,CHANGELOG,AUTHORS,CONTRIBUTORS,NOTICE,TODO,COPYING,INSTALL,VERSION}", use = [ "edit", "launch", "admin" ] },
+  # Windows executables → multidev Wine prefix on Linux, start on Windows
+  { url = "*.exe", use = [ "wine", "launch", "edit" ] },
   # Everything else → Windows default app (edit available as fallback via O menu)
   { url = "*", use = [ "launch", "edit", "admin" ] },
 ]
