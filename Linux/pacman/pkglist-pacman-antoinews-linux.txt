@@ -80,7 +80,6 @@ system-config-printer
 tailscale
 tcpdump
 termscp
-thunderbird
 tldr
 tree-sitter-cli
 uwsm
