@@ -12,6 +12,7 @@ claude-code
 codexbar-cli-bin
 fzf-tab-completion-git
 golangci-lint-bin
+gridcraft-bin
 hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
@@ -20,6 +21,7 @@ oh-my-zsh-git
 onedrive-abraunegg
 opencode-beta
 outlook-for-linux
+pdfcraft-bin
 posting
 python-evtx
 python-terminaltexteffects
@@ -34,6 +36,8 @@ tpack-bin
 ttf-ia-writer
 tzupdate
 ufw-docker
+vectorcraft-bin
+wordcraft-bin
 yaru-icon-theme
 yay
 zsh-transient-prompt-git
