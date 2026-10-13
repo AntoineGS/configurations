@@ -166,6 +166,7 @@ expected_mounts_for() {
     "$directory/J-fichierscommuns" \
     "$directory/O-applications" \
     "$directory/Z-QA" \
+    "$directory/helpdesk" \
     "$directory/Embarcadero" \
     "${vm_nested_links[@]/#/$directory/}"
 }
@@ -229,7 +230,8 @@ expected_offline_mounts="$(printf '%s\n' \
   "$offline_shares/G-serveurgdb" \
   "$offline_shares/J-fichierscommuns" \
   "$offline_shares/O-applications" \
-  "$offline_shares/Z-QA")"
+  "$offline_shares/Z-QA" \
+  "$offline_shares/helpdesk")"
 actual_offline_mounts="$(awk -F ' path=' '{ print $2 }' "$offline_state/mount.log")"
 [[ "$actual_offline_mounts" == "$expected_offline_mounts" ]] || fail 'offline VM changed the office share mounts'
 for link_name in Embarcadero "${vm_nested_links[@]}"; do
@@ -325,6 +327,7 @@ expected_failure_mounts="$(printf '%s\n' \
   "$failure_shares/G-serveurgdb" \
   "$failure_shares/J-fichierscommuns" \
   "$failure_shares/Z-QA" \
+  "$failure_shares/helpdesk" \
   "$failure_shares/Embarcadero" \
   "${vm_nested_links[@]/#/$failure_shares/}")"
 actual_failure_mounts="$(awk -F ' path=' '{ print $2 }' "$failure_state/mount.log")"
@@ -335,7 +338,7 @@ if grep -Fq -- "$failure_shares/O-applications" "$failure_state/mount.log"; then
 fi
 grep -Fq -- "path=$failure_shares/O-applications" "$failure_state/attempt.log" || \
   fail 'failed mount was not attempted'
-for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA Embarcadero "${vm_nested_links[@]}"; do
+for link_name in G-serveurgdb J-fichierscommuns O-applications Z-QA helpdesk Embarcadero "${vm_nested_links[@]}"; do
   [[ -d "$failure_shares/$link_name" ]] || fail "mountpoint directory missing after isolated failure: $link_name"
 done
 

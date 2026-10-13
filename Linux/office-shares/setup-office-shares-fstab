@@ -106,6 +106,7 @@ resolve_settings() {
     "//md-fs01.multidev.local/fichierscommuns $home_path/Shares/J-fichierscommuns cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//md-fs01.multidev.local/applications $home_path/Shares/O-applications cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//md-fs01.multidev.local/qa $home_path/Shares/Z-QA cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
+    "//md-fs01.multidev.local/helpdesk $home_path/Shares/helpdesk cifs noauto,user,_netdev,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//antoinews.multidev.local/Embarcadero $home_path/Shares/Embarcadero cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//antoinews.multidev.local/CodeGear-BDS $home_path/Shares/Embarcadero/AppData/CodeGear/BDS cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
     "//antoinews.multidev.local/Embarcadero-BDS $home_path/Shares/Embarcadero/AppData/Embarcadero/BDS cifs noauto,user,_netdev,ro,sec=krb5,cruid=$uid_value,uid=$uid_value,gid=$gid_value,vers=3.1.1 0 0"
