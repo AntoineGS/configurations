@@ -16,6 +16,7 @@ ghostty-nightly-bin
 github-copilot-cli
 golangci-lint-bin
 google-cloud-cli
+gridcraft-bin
 gstreamermm
 hyprland-preview-share-picker-git
 icu74
