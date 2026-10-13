@@ -32,6 +32,7 @@ oh-my-zsh-git
 opencode-beta
 openssl-1.1
 outlook-for-linux
+pdfcraft-bin
 posting
 python-curl-cffi-git
 python-lnxlink
