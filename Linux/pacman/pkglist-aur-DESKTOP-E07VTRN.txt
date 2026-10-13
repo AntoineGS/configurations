@@ -48,7 +48,9 @@ tpack-bin
 ttf-ia-writer
 tzupdate
 ufw-docker
+vectorcraft-bin
 wol-systemd
+wordcraft-bin
 yaru-icon-theme
 yay
 zsh-transient-prompt-git
