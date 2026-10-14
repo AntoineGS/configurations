@@ -98,6 +98,7 @@ M.defaults = function()
   vim.lsp.enable "marksman"
   vim.lsp.enable "clangd"
   vim.lsp.enable "gopls"
+  vim.lsp.enable "golangci_lint_ls"
   vim.lsp.enable "rust_analyzer"
   vim.lsp.enable "vtsls"
   if vim.fn.has "linux" == 1 then
