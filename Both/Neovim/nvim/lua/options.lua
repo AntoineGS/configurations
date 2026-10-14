@@ -13,6 +13,7 @@ opt.foldlevelstart = 99
 o.laststatus = 3
 o.showmode = false
 o.splitkeep = "screen"
+o.winborder = "single"
 
 o.clipboard = vim.env.HERDR_ENV == "1" and "" or "unnamedplus"
 o.cursorline = true
