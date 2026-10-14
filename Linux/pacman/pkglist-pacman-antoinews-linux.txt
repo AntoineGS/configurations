@@ -8,6 +8,7 @@ btop
 bun
 clang
 cups-pdf
+ddcutil
 docker-compose
 dolt
 dos2unix
@@ -73,6 +74,7 @@ sddm
 shellcheck
 sof-firmware
 starship
+staticcheck
 stylua
 sushi
 swaybg
