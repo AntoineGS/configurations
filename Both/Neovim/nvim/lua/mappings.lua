@@ -39,6 +39,9 @@ end, { desc = "general format file" })
 
 -- global lsp mappings
 map("n", "<leader>fs", vim.diagnostic.setloclist, { desc = "LSP diagnostic loclist" })
+map("n", "<leader>sG", function()
+  require("project_lint").run()
+end, { desc = "Lint project" })
 
 -- buffers
 map("n", "<leader>b", "<cmd>enew<CR>", { desc = "buffer new" })
