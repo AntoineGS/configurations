@@ -2671,7 +2671,7 @@ applications:
         when: '{{ (eq .Hostname "antoinews-linux") }}'
         check_mode: status
       - check:
-          linux: herdr plugin action list --plugin vim-herdr-navigation | jq -e '.result.actions | length == 4' >/dev/null
+          linux: herdr plugin list --json | jq -e '.result.plugins[] | select(.plugin_id == "vim-herdr-navigation" and .enabled == true and (.actions | length == 4))' >/dev/null
         run:
           linux: herdr plugin install paulbkim-dev/vim-herdr-navigation --yes
         name: vim-navigation-plugin

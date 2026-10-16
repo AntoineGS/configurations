@@ -1,8 +1,10 @@
 onboarding = false
 
-{{ if eq .OS "windows" -}}
 [terminal]
+{{ if eq .OS "windows" -}}
 default_shell = 'C:\Program Files\PowerShell\7\pwsh.exe'
+{{ else -}}
+default_shell = "/usr/bin/zsh"
 {{ end -}}
 
 [ui]
