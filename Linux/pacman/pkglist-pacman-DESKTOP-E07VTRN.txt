@@ -81,7 +81,9 @@ pinta
 plymouth
 pnpm
 power-profiles-daemon
+python-hatchling
 python-langchain
+python-openapi-spec-validator
 python-pylint
 quickshell
 rapidfuzz-cpp
