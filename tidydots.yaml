@@ -1734,6 +1734,14 @@ applications:
           linux: /usr/local/libexec/antoinews-linux/setup-office-shares-fstab --apply
         name: setup-fstab
         sudo: true
+      - targets:
+          linux: /etc
+        name: krb5-config
+        method: copy
+        backup: ./Linux/office-shares
+        files:
+          - krb5.conf
+        sudo: true
       - check:
           linux: test ! -e /usr/local/libexec/antoinews-linux/refresh-office-shares-credentials && test ! -e /usr/share/polkit-1/actions/local.multidev.office-shares.policy && test ! -e /etc/polkit-1/rules.d/10-office-shares.rules
         run:
