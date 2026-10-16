@@ -16,38 +16,38 @@
 -- printed before the menu; add trusted packages to AGE_EXEMPTIONS to bypass
 -- the age gate on future upgrades.
 
-local MIN_AGE_DAYS = 7
-local AGE_EXEMPTIONS = {
-  ["opencode-beta"] = true,
-  ["claude-code"] = true,
-}
+-- local MIN_AGE_DAYS = 0
+-- local AGE_EXEMPTIONS = {
+-- 	["opencode-beta"] = true,
+-- 	["claude-code"] = true,
+-- }
 
-yay.create_autocmd("UpgradeSelect", {
-  desc = "hold back AUR packages modified in the last " .. MIN_AGE_DAYS .. " days",
-  callback = function(event)
-    local exclude = {}
-    local cutoff = os.time() - (MIN_AGE_DAYS * 24 * 60 * 60)
-
-    for _, pkg in ipairs(event.data.upgrades) do
-      if
-        pkg.repository == "aur"
-        and pkg.last_modified ~= nil
-        and pkg.last_modified >= cutoff
-        and not AGE_EXEMPTIONS[pkg.name]
-      then
-        table.insert(exclude, pkg.name)
-      end
-    end
-
-    if #exclude > 0 then
-      print("AUR packages held back by the " .. MIN_AGE_DAYS .. "-day age gate:")
-      for _, name in ipairs(exclude) do
-        print("  " .. name)
-      end
-    end
-
-    -- skip_menu = false: still show yay's native selection menu so a held-back
-    -- package can be re-included manually if you've verified it yourself.
-    return { exclude = exclude, skip_menu = false }
-  end,
-})
+-- yay.create_autocmd("UpgradeSelect", {
+-- 	desc = "hold back AUR packages modified in the last " .. MIN_AGE_DAYS .. " days",
+-- 	callback = function(event)
+-- 		local exclude = {}
+-- 		local cutoff = os.time() - (MIN_AGE_DAYS * 24 * 60 * 60)
+--
+-- 		for _, pkg in ipairs(event.data.upgrades) do
+-- 			if
+-- 				pkg.repository == "aur"
+-- 				and pkg.last_modified ~= nil
+-- 				and pkg.last_modified >= cutoff
+-- 				and not AGE_EXEMPTIONS[pkg.name]
+-- 			then
+-- 				table.insert(exclude, pkg.name)
+-- 			end
+-- 		end
+--
+-- 		if #exclude > 0 then
+-- 			print("AUR packages held back by the " .. MIN_AGE_DAYS .. "-day age gate:")
+-- 			for _, name in ipairs(exclude) do
+-- 				print("  " .. name)
+-- 			end
+-- 		end
+--
+-- 		-- skip_menu = false: still show yay's native selection menu so a held-back
+-- 		-- package can be re-included manually if you've verified it yourself.
+-- 		return { exclude = exclude, skip_menu = false }
+-- 	end,
+-- })
