@@ -35,6 +35,7 @@ if (( $+commands[go] )); then
     export PATH="$PATH:$(go env GOPATH)/bin"
 fi
 export PATH="$HOME/gits/multidev/Tools:$PATH"
+[[ -d "$HOME/gits/lint4d/target/release" ]] && export PATH="$HOME/gits/lint4d/target/release:$PATH"
 export CARAPACE_BRIDGES='zsh,fish,bash,inshellisense' # optional
 export RIPGREP_CONFIG_PATH=~/.ripgreprc
 export MERIDIAN_CLAUDE_PATH=/usr/bin/claude
