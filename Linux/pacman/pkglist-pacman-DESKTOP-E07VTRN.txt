@@ -81,6 +81,7 @@ pinta
 plymouth
 pnpm
 power-profiles-daemon
+python-hatchling
 python-langchain
 python-pylint
 quickshell
