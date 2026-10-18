@@ -151,7 +151,7 @@ create_stubs() {
   write_executable "$STUB_BIN/sync" 'exit 0'
   write_executable "$STUB_BIN/systemctl" 'exit 0'
   write_executable "$STUB_BIN/tee" 'exit 0'
-  write_executable "$STUB_BIN/yay" 'exit 0'
+  write_executable "$STUB_BIN/paru" 'exit 0'
   write_executable "$STUB_BIN/git" 'exit 0'
 
   # shellcheck disable=SC2016

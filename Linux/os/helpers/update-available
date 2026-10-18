@@ -19,8 +19,8 @@ fi
 official_count=$(printf '%s\n' "$official_updates" | count_updates)
 aur_count=0
 
-if command -v yay >/dev/null 2>&1; then
-  aur_updates=$(yay -Qua)
+if command -v paru >/dev/null 2>&1; then
+  aur_updates=$(paru -Qua)
   aur_count=$(printf '%s\n' "$aur_updates" | count_updates)
 fi
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Weekly clean of yay/AUR and Go caches
+Description=Weekly clean of paru/AUR and Go caches
 
 [Timer]
 OnCalendar=weekly

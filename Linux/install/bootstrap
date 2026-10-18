@@ -246,40 +246,40 @@ cleanup_prerequisite_temp() {
   fi
 }
 
-install_yay_bin() {
-  PREREQUISITE_TEMP_DIR="$(mktemp -d)" || die 'failed to create temporary yay-bin build directory'
-  [[ -d "$PREREQUISITE_TEMP_DIR" ]] || die 'failed to create temporary yay-bin build directory'
+install_paru() {
+  PREREQUISITE_TEMP_DIR="$(mktemp -d)" || die 'failed to create temporary paru build directory'
+  [[ -d "$PREREQUISITE_TEMP_DIR" ]] || die 'failed to create temporary paru build directory'
   trap cleanup_prerequisite_temp EXIT
 
-  if ! git clone https://aur.archlinux.org/yay-bin.git "$PREREQUISITE_TEMP_DIR/yay-bin"; then
-    die 'failed to clone yay-bin'
+  if ! git clone https://aur.archlinux.org/paru.git "$PREREQUISITE_TEMP_DIR/paru"; then
+    die 'failed to clone paru'
   fi
 
-  if ! (cd -- "$PREREQUISITE_TEMP_DIR/yay-bin" && makepkg -si --needed --noconfirm); then
-    die 'failed to build yay-bin'
+  if ! (cd -- "$PREREQUISITE_TEMP_DIR/paru" && makepkg -si --needed --noconfirm); then
+    die 'failed to build paru'
   fi
 }
 
 install_prerequisites() {
-  local need_yay=false
+  local need_paru=false
   local need_tidydots=false
 
-  command_available yay || need_yay=true
+  command_available paru || need_paru=true
   command_available tidydots || need_tidydots=true
 
-  if [[ "$need_yay" == false && "$need_tidydots" == false ]]; then
+  if [[ "$need_paru" == false && "$need_tidydots" == false ]]; then
     printf 'bootstrap prerequisites already installed\n'
     return 0
   fi
 
   printf 'Prerequisite installation plan:\n'
-  if [[ "$need_yay" == true ]]; then
+  if [[ "$need_paru" == true ]]; then
     printf '  mktemp -d\n'
-    printf '  git clone https://aur.archlinux.org/yay-bin.git <temporary-directory>/yay-bin\n'
-    printf '  (cd <temporary-directory>/yay-bin && makepkg -si --needed --noconfirm)\n'
+    printf '  git clone https://aur.archlinux.org/paru.git <temporary-directory>/paru\n'
+    printf '  (cd <temporary-directory>/paru && makepkg -si --needed --noconfirm)\n'
   fi
   if [[ "$need_tidydots" == true ]]; then
-    printf '  yay -S --needed --noconfirm tidydots-git\n'
+    printf '  paru -S --needed --noconfirm tidydots-git\n'
   fi
 
   if [[ "$DRY_RUN" == true ]]; then
@@ -289,12 +289,12 @@ install_prerequisites() {
   confirm
   confirm_privileged_operations
 
-  if [[ "$need_yay" == true ]]; then
-    install_yay_bin
+  if [[ "$need_paru" == true ]]; then
+    install_paru
   fi
 
   if [[ "$need_tidydots" == true ]]; then
-    if ! yay -S --needed --noconfirm tidydots-git; then
+    if ! paru -S --needed --noconfirm tidydots-git; then
       die 'failed to install tidydots-git'
     fi
   fi

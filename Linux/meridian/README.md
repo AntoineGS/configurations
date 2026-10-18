@@ -1,7 +1,7 @@
 # Meridian
 
 Standalone Claude Max proxy on `antoinews-linux`, installed from the AUR with
-`yay`. OpenCode loads Meridian's bundled V2 plugin directly from
+`paru`. OpenCode loads Meridian's bundled V2 plugin directly from
 `/usr/lib/meridian/dist/meridian-v2`; updating the `meridian` package updates both
 the proxy and its OpenCode integration.
 
@@ -41,12 +41,12 @@ The Windows host retains its existing wrapper configuration.
 
 ## Updates and diagnostics
 
-Update Meridian through normal yay upgrades, then restart the service when
+Update Meridian through normal paru upgrades, then restart the service when
 active requests have finished. Restart OpenCode as well to load any updated
 integration code:
 
 ```sh
-yay -S meridian
+paru -S meridian
 systemctl --user restart meridian.service
 opencode service restart
 ```

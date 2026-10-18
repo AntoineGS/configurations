@@ -7,7 +7,6 @@ hostnames:
   - server
 manager_priority:
   - pacman
-  - yay
   - paru
   - apt
   - brew
@@ -77,7 +76,7 @@ applications:
   - package:
       managers:
         brew: opencode
-        yay: opencode-beta
+        paru: opencode-beta
     name: opencode
     description: AI coding agent — Claude Max subscription via Meridian
     when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
@@ -115,7 +114,7 @@ applications:
         name: enable-temp-cleanup-timer
   - package:
       managers:
-        yay:
+        paru:
           deps:
             - claude-code
             - npm
@@ -228,7 +227,7 @@ applications:
         pacman:
           deps:
             - dolt
-        yay: beads-bin
+        paru: beads-bin
     name: beads-dolt
     description: Start the beads shared Dolt server (127.0.0.1:3308) at boot
     when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
@@ -352,7 +351,7 @@ applications:
       managers:
         brew: carapace
         winget: rsteube.Carapace
-        yay: carapace-bin
+        paru: carapace-bin
     name: carapace
     entries:
       - targets:
@@ -395,7 +394,7 @@ applications:
   - package:
       managers:
         brew: posting
-        yay: posting
+        paru: posting
       custom:
         windows: uv tool install --python 3.13 posting
     name: posting
@@ -659,7 +658,7 @@ applications:
           - rustdesk-office.desktop
   - package:
       managers:
-        yay: sunshine-bin
+        paru: sunshine-bin
     name: sunshine
     description: Low-latency Moonlight host using a Hyprland headless output
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
@@ -1178,7 +1177,7 @@ applications:
         name: plugin-marketplace
   - package:
       managers:
-        yay: codexbar-cli-bin
+        paru: codexbar-cli-bin
     name: codexbar-cli-bin
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
@@ -1234,7 +1233,7 @@ applications:
       managers:
         apt: teams-for-linux
         brew: teams-for-linux
-        yay: teams-for-linux
+        paru: teams-for-linux
     name: teams-for-linux
     when: '{{ or (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries:
@@ -1381,7 +1380,7 @@ applications:
         backup: ./Linux/fontconfig
   - package:
       managers:
-        yay: hyprland-preview-share-picker-git
+        paru: hyprland-preview-share-picker-git
     name: hyprland-preview-share-picker
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
@@ -1391,13 +1390,13 @@ applications:
         backup: ./Linux/hyprland-preview-share-picker
   - package:
       managers:
-        yay: xdg-terminal-exec
+        paru: xdg-terminal-exec
     name: xdg-terminal-exec
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
   - package:
       managers:
-        yay: localsend-bin
+        paru: localsend-bin
     name: localsend
     description: LocalSend file sharing application used by cmd-share
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
@@ -1460,7 +1459,7 @@ applications:
           - chromium-flags.conf
   - package:
       managers:
-        yay: python-lnxlink
+        paru: python-lnxlink
     name: lnxlink
     when: '{{ eq .Hostname "DESKTOP-E07VTRN" }}'
     entries:
@@ -1552,7 +1551,7 @@ applications:
       managers:
         apt: tzupdate
         brew: tzupdate
-        yay: tzupdate
+        paru: tzupdate
     name: tzupdate
     description: Auto-set the system timezone from IP geolocation. Timer polls on boot + hourly; the system-sleep resume hook (in system-sleep-hooks) fires it promptly after travel. iwd exposes no connection-up hook and NetworkManager isn't used on this host, hence polling.
     when: '{{ eq .Hostname "omarchbook" }}'
@@ -1602,16 +1601,16 @@ applications:
           linux: rm -f /etc/systemd/logind.conf.d/hibernate-on-lid.conf
         name: remove-obsolete-lid-drop-in
         sudo: true
-  - name: yay
-    description: AUR helper config (7-day minimum release-age hook)
+  - name: paru
+    description: AUR helper config with delta diff review
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
       - targets:
-          linux: ~/.config/yay
+          linux: ~/.config/paru
         name: config
-        backup: ./Linux/yay
+        backup: ./Linux/paru
         files:
-          - init.lua
+          - paru.conf
   - name: os-files
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries:
@@ -2065,7 +2064,7 @@ applications:
           - work-ssh
   - package:
       managers:
-        yay: oh-my-zsh-git
+        paru: oh-my-zsh-git
     name: oh-my-zsh
     description: Zsh framework (Arch package)
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
@@ -2082,7 +2081,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: zsh-vi-mode
+        paru: zsh-vi-mode
     name: zsh-vi-mode
     description: Zsh vi mode plugin (Arch package)
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
@@ -2099,7 +2098,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: zsh-autosuggestions
+        paru: zsh-autosuggestions
     name: zsh-autosuggestions
     description: Zsh autosuggestions plugin (Arch package)
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
@@ -2116,7 +2115,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: fzf-tab-completion-git
+        paru: fzf-tab-completion-git
     name: fzf-tab-completion
     description: Fzf tab completion for various shells (Arch package)
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
@@ -2133,7 +2132,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: zsh-transient-prompt-git
+        paru: zsh-transient-prompt-git
     name: zsh-transient-prompt
     description: Zsh transient prompt plugin (Arch package)
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") }}'
@@ -2270,19 +2269,19 @@ applications:
   - package:
       managers:
         winget: GolangCI.golangci-lint
-        yay: golangci-lint-bin
+        paru: golangci-lint-bin
     name: golangci-lint
     when: '{{ or (eq .OS "windows") (and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN"))) }}'
     entries: []
   - package:
       managers:
-        yay: insync
+        paru: insync
     name: insync
     when: '{{ or (eq .Hostname "omarchbook") (eq .Hostname "DESKTOP-E07VTRN") }}'
     entries: []
   - package:
       managers:
-        yay: brave-bin
+        paru: brave-bin
     name: brave
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
@@ -2414,7 +2413,7 @@ applications:
   - package:
       managers:
         brew: tmuxpack/tpack/tpack
-        yay: tpack-bin
+        paru: tpack-bin
     name: tpack
     entries: []
   - package:
@@ -2436,7 +2435,7 @@ applications:
     entries: []
   - package:
       managers:
-        yay: limine-snapper-sync
+        paru: limine-snapper-sync
     name: limine-snapper-sync
     when: '{{ and (eq .OS "linux") (eq .Distro "arch") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
     entries: []
@@ -2568,7 +2567,7 @@ applications:
           linux: ~/.local/share/helpers/setup-subnet-router.sh
         name: advertise-subnet-route
   - name: cache-cleanup
-    description: Weekly reclamation of pacman, yay/AUR and Go caches (laptop disk-pressure mitigation)
+    description: Weekly reclamation of pacman, paru/AUR and Go caches (laptop disk-pressure mitigation)
     when: '{{ eq .Hostname "omarchbook" }}'
     entries:
       - targets:

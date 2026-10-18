@@ -1,5 +1,5 @@
 [Unit]
-Description=Clean yay/AUR and Go build/module caches
+Description=Clean paru/AUR and Go build/module caches
 
 [Service]
 Type=oneshot

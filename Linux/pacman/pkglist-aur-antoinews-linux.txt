@@ -39,6 +39,6 @@ ufw-docker
 vectorcraft-bin
 wordcraft-bin
 yaru-icon-theme
-yay
+paru
 zsh-transient-prompt-git
 zsh-vi-mode
