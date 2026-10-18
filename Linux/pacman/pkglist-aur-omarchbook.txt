@@ -15,7 +15,6 @@ localsend-bin
 oh-my-zsh-git
 opencode-beta
 paru
-paru-bin-debug
 posting
 python-terminaltexteffects
 rustdesk-drm-preview-bin
