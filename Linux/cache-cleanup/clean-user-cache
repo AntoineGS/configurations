@@ -2,8 +2,9 @@
 # Reclaim disk space from user-owned build caches: paru (AUR) and Go.
 # Invoked weekly by the user-cache-clean.timer systemd --user unit.
 #
-# paru: ~/.cache/paru/clone holds cloned AUR sources + built package tarballs; they
-#       are re-created on the next AUR build, so the whole tree is safe to drop.
+# paru: remove untracked build directories and package tarballs, keeping clones
+#       and review state so subsequent updates can show diffs. Git also protects
+#       tracked files and nested source repositories from this cleanup.
 # go:   the build cache (GOCACHE) is rebuilt on demand; the module cache
 #       (GOMODCACHE) is re-downloaded on the next build. Both are safe to drop.
 set -euo pipefail
@@ -13,8 +14,11 @@ log() { printf '%s clean-user-cache: %s\n' "$(date -Is)" "$*"; }
 # --- paru / AUR build cache -----------------------------------------------
 paru_cache="${XDG_CACHE_HOME:-$HOME/.cache}/paru/clone"
 if [ -d "$paru_cache" ]; then
-  log "clearing paru build cache ($paru_cache)"
-  find "$paru_cache" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  log "cleaning paru build artifacts ($paru_cache)"
+  for clone in "$paru_cache"/*; do
+    [[ -d "$clone/.git" && ! -L "$clone" ]] || continue
+    git -C "$clone" clean -fdx -- src pkg '*.pkg.tar.*'
+  done
 else
   log "no paru build cache at $paru_cache, skipping"
 fi

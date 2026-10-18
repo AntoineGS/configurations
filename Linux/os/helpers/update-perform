@@ -21,7 +21,12 @@ exec > >(stdbuf -o0 tee "/tmp/update.log") 2>&1
 update-keyring
 update-system-pkgs
 # migrate
-update-aur-pkgs
+# Give paru and its diff pager a terminal while tee still captures their output.
+if [[ -t 0 ]]; then
+  script --quiet --return --flush --command update-aur-pkgs /dev/null
+else
+  update-aur-pkgs
+fi
 update-orphan-pkgs
 if command -v ya &>/dev/null; then
   ya pkg upgrade
