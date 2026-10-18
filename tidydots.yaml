@@ -97,6 +97,12 @@ applications:
           linux: ~/.config/opencode/setup-config-dir-env.sh --apply
         name: config-dir-env
       - check:
+          linux: '[ -s ~/.config/mdexplorer-go/mcp-token ]'
+        run:
+          linux: 'mkdir -p ~/.config/mdexplorer-go && (umask 077 && openssl rand -hex 32 | tr -d "\n" > ~/.config/mdexplorer-go/mcp-token)'
+        name: mdexplorer-mcp-token
+        when: '{{ eq .Hostname "antoinews-linux" }}'
+      - check:
           linux: 'herdr integration status | grep -q ''^opencode: current '''
         run:
           linux: herdr integration install opencode
