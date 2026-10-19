@@ -1,6 +1,5 @@
 alsa-utils
 base
-bat
 bluetui
 bolt
 brightnessctl
