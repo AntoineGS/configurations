@@ -21,6 +21,8 @@ oh-my-zsh-git
 onedrive-abraunegg
 opencode-beta
 outlook-for-linux
+paru
+paru-debug
 pdfcraft-bin
 posting
 python-evtx
