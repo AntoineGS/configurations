@@ -33,7 +33,6 @@ opencode-beta
 openssl-1.1
 outlook-for-linux
 paru
-paru-debug
 pdfcraft-bin
 posting
 python-curl-cffi-git
@@ -54,6 +53,5 @@ vectorcraft-bin
 wol-systemd
 wordcraft-bin
 yaru-icon-theme
-yay
 zsh-transient-prompt-git
 zsh-vi-mode
