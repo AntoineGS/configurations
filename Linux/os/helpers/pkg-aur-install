@@ -2,6 +2,8 @@
 
 # Show a fuzzy-finder TUI for picking new AUR packages to install.
 
+set -o pipefail
+
 fzf_args=(
   --multi
   --layout=reverse
@@ -17,7 +19,8 @@ fzf_args=(
   --color 'pointer:green,marker:green'
 )
 
-pkg_names=$(paru -Slqa | fzf "${fzf_args[@]}")
+# Paru 2.1.0 emits compressed data from packages.gz; decode the list explicitly.
+pkg_names=$(curl -fsSL https://aur.archlinux.org/packages.gz | gzip -dc | sed '/^#/d; /^$/d' | sort | fzf "${fzf_args[@]}") || exit $?
 
 if [[ -n $pkg_names ]]; then
   # Prefix AUR selections and reopen terminal input for paru's prompts.
