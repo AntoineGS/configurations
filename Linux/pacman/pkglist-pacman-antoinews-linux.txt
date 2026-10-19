@@ -41,6 +41,7 @@ hyprsunset
 icoutils
 impala
 imv
+innoextract
 intel-ucode
 inxi
 kdenlive
