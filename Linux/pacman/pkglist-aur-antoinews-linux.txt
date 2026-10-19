@@ -22,7 +22,6 @@ onedrive-abraunegg
 opencode-beta
 outlook-for-linux
 paru
-paru-debug
 pdfcraft-bin
 posting
 python-evtx
@@ -41,6 +40,5 @@ ufw-docker
 vectorcraft-bin
 wordcraft-bin
 yaru-icon-theme
-paru
 zsh-transient-prompt-git
 zsh-vi-mode
