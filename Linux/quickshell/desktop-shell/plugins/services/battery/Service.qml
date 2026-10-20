@@ -22,15 +22,7 @@ Item {
     property bool criticalNotified: false
   }
 
-  function reportCapability(available) {
-    if (!pluginRegistry) return
-    var scope = "capability:service:desktop.battery"
-    if (available) pluginRegistry.clearPluginError("desktop.battery", scope)
-    else pluginRegistry.recordPluginError("desktop.battery", "Battery capability unavailable", scope)
-  }
-
   function checkBattery() {
-    reportCapability(PowerState.batteryAvailable)
     if (!PowerState.batteryAvailable || PowerState.batteryOnBattery === false) {
       var reset = BatteryModel.warningDeliveryTransition(deliveryState, "ac-reset")
       deliveryState = reset.state

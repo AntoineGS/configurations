@@ -154,7 +154,9 @@ function deckOpacityProjection(phase, progress, incomingVisible) {
   return { outgoing: projection.outgoing, selected: projection.outgoing }
 }
 function releaseTrackedNotification(notification) {
-  if (notification) notification.tracked = false
+  // Quickshell logs "Cannot close destroyed notification" for any tracked
+  // write once the sender has closed, so only untrack live notifications.
+  if (notification && notification.tracked) notification.tracked = false
   return notification
 }
 function closingOwnershipPlanInitialState() { return { owners: {} } }

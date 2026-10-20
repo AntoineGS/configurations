@@ -588,18 +588,6 @@ Panel {
               }
             }
           }
-
-          Text {
-            visible: text !== ""
-            width: parent.width
-            topPadding: Style.space(2)
-            text: root.footerText()
-            color: root.secondary
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-          }
         }
       }
     }

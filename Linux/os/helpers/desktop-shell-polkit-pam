@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 readonly PAM_ROOT_DEFAULT="/etc/pam.d"
+readonly PAM_VENDOR_ROOT_DEFAULT="/usr/lib/pam.d"
 readonly MAX_DEPTH=16
 readonly MAX_SERVICE_LENGTH=128
 readonly MAX_FILE_BYTES=1048576
@@ -25,11 +26,28 @@ validate_service_name() {
 
 path_under_root() {
   local candidate=$1
-  if [[ $pam_root == / ]]; then
-    [[ $candidate == /* ]]
-    return
-  fi
-  [[ $candidate == "$pam_root" || $candidate == "$pam_root/"* ]]
+  local root
+  for root in "${pam_roots[@]}"; do
+    if [[ $root == / ]]; then
+      [[ $candidate == /* ]] && return 0
+      continue
+    fi
+    [[ $candidate == "$root" || $candidate == "$root/"* ]] && return 0
+  done
+  return 1
+}
+
+# PAM reads /etc/pam.d/<service> first and falls back to the vendor directory.
+service_path() {
+  local service=$1
+  local root
+  for root in "${pam_roots[@]}"; do
+    if [[ -e $root/$service ]]; then
+      printf '%s' "$root/$service"
+      return
+    fi
+  done
+  printf '%s' "${pam_roots[0]}/$service"
 }
 
 resolve_existing_path() {
@@ -49,7 +67,7 @@ resolve_existing_path() {
 resolve_service_file() {
   local service=$1
   validate_service_name "$service"
-  resolve_existing_path "$pam_root/$service" "PAM service"
+  resolve_existing_path "$(service_path "$service")" "PAM service"
 }
 
 resolve_at_include_file() {
@@ -66,7 +84,7 @@ resolve_at_include_file() {
     requested=$target
   else
     validate_service_name "$target"
-    requested="$pam_root/$target"
+    requested=$(service_path "$target")
   fi
   resolve_existing_path "$requested" "PAM include"
 }
@@ -177,8 +195,23 @@ pam_root_input=${DESKTOP_SHELL_PAM_DIR:-$PAM_ROOT_DEFAULT}
 [[ -d $pam_root_input && -r $pam_root_input ]] || fail "PAM root is not readable: $pam_root_input"
 pam_root=$(realpath -e -- "$pam_root_input" 2>/dev/null) || fail "unable to resolve PAM root: $pam_root_input"
 [[ -d $pam_root ]] || fail "PAM root is not a directory: $pam_root"
+pam_roots=("$pam_root")
 
-parse_file "$pam_root/polkit-1" 0
+# An explicit PAM root (tests) only gets a vendor root when one is also given.
+if [[ -n ${DESKTOP_SHELL_PAM_DIR:-} ]]; then
+  pam_vendor_input=${DESKTOP_SHELL_PAM_VENDOR_DIR:-}
+else
+  pam_vendor_input=${DESKTOP_SHELL_PAM_VENDOR_DIR:-$PAM_VENDOR_ROOT_DEFAULT}
+fi
+if [[ -n $pam_vendor_input && -d $pam_vendor_input && -r $pam_vendor_input ]]; then
+  [[ $pam_vendor_input == /* ]] || fail 'PAM vendor root must be an absolute path'
+  [[ $pam_vendor_input != *$'\n'* && $pam_vendor_input != *$'\r'* ]] || fail 'PAM vendor root contains a line break'
+  pam_vendor_root=$(realpath -e -- "$pam_vendor_input" 2>/dev/null) || \
+    fail "unable to resolve PAM vendor root: $pam_vendor_input"
+  [[ $pam_vendor_root == "$pam_root" ]] || pam_roots+=("$pam_vendor_root")
+fi
+
+parse_file "$(service_path polkit-1)" 0
 if [[ $fingerprint_found == true ]]; then
   printf '%s\n' true
 else

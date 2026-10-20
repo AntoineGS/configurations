@@ -194,8 +194,8 @@ Item {
     if (service.consumeAdmission()) return true
 
     try {
-      notification.tracked = false
-      if (notification && typeof notification.dismiss === "function") notification.dismiss()
+      // Untracking closes the notification as Dismissed.
+      NotificationLogic.releaseTrackedNotification(notification)
     } catch (error) {
       // The rejected sender may already be closed.
     }
@@ -509,7 +509,7 @@ Item {
     }
     try {
       if (dismiss && notification.tracked && typeof notification.dismiss === "function") notification.dismiss()
-      notification.tracked = false
+      NotificationLogic.releaseTrackedNotification(notification)
     } catch (error) {
       // The notification object was already destroyed.
     }
@@ -534,7 +534,7 @@ Item {
       service.markHistoryUnavailable(snapshot.originalId, liveGenerations[snapshot.originalId])
       delete pendingSilencedRefreshes[String(snapshot.originalId)]
       delete silencedDirty[snapshot.originalId]
-      try { previous.tracked = false } catch (error) {}
+      try { NotificationLogic.releaseTrackedNotification(previous) } catch (error) {}
     }
     var source = snapshot.transient ? "none"
       : (service.doNotDisturb && !shouldBypassDnd(notification) ? "history" : "popup")
@@ -686,7 +686,7 @@ Item {
       delete silencedDirty[originalId]
     }
     try {
-      notification.tracked = false
+      NotificationLogic.releaseTrackedNotification(notification)
     } catch (error) {
       // The notification object was already destroyed.
     }

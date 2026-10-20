@@ -62,12 +62,23 @@ QtObject {
     return String(id || "")
   }
 
-  // Best-effort base64 decode. Returns "" on parse failure rather than
-  // surfacing garbage downstream.
+  // Best-effort base64 decode to a Latin-1 byte string, like the deprecated
+  // Qt.atob(string), which logs a warning on every call. Returns "" on parse
+  // failure rather than surfacing garbage downstream.
   function decodeBase64(value) {
     var s = String(value || "")
-    if (!s) return ""
-    try { return Qt.atob(s) } catch (e) { return "" }
+    if (!s || s.length % 4 !== 0 || !/^[A-Za-z0-9+\/]*={0,2}$/.test(s)) return ""
+    var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    var out = []
+    for (var i = 0; i < s.length; i += 4) {
+      var a = alphabet.indexOf(s[i]), b = alphabet.indexOf(s[i + 1])
+      var c = s[i + 2] === "=" ? -1 : alphabet.indexOf(s[i + 2])
+      var d = s[i + 3] === "=" ? -1 : alphabet.indexOf(s[i + 3])
+      out.push(String.fromCharCode((a << 2) | (b >> 4)))
+      if (c >= 0) out.push(String.fromCharCode(((b & 15) << 4) | (c >> 2)))
+      if (d >= 0) out.push(String.fromCharCode(((c & 3) << 6) | d))
+    }
+    return out.join("")
   }
 
   function cloneJson(value) {

@@ -112,7 +112,10 @@ SharedService {
     if (!worker) return
     worker.running = false
     var staleWorker = worker
-    Qt.callLater(function() { if (staleWorker) staleWorker.destroy() })
+    // A config reload can tear the worker down before this runs.
+    Qt.callLater(function() {
+      if (staleWorker && typeof staleWorker.destroy === "function") staleWorker.destroy()
+    })
   }
 
   function destroyCompactWorkers() {

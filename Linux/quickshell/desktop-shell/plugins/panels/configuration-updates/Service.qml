@@ -110,7 +110,7 @@ SharedService {
       waitForEnd: true
     }
     onStarted: statusStartCheckTimer.stop()
-    onExited: root.finishRefresh(exitCode, false)
+    onExited: function(exitCode) { root.finishRefresh(exitCode, false) }
     onRunningChanged: {
       if (!statusProcess.running && root.refreshInFlight
           && root.finalizedGeneration !== root.refreshGeneration) {
