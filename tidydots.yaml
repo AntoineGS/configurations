@@ -899,6 +899,7 @@ applications:
         backup: ./Linux/superform
         files:
           - sfclient2-wine.desktop
+          - sfclient2-helpdesk-wine.desktop
       - targets:
           linux: ~/.local/share/icons
         name: icon
