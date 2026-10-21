@@ -72,7 +72,6 @@ socat
 starship
 swaybg
 system-config-printer
-tailscale
 thermald
 tldr
 tree-sitter-cli
