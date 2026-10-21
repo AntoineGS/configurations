@@ -118,6 +118,22 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
+  - name: delphi-gdb-mcp
+    description: Enable the globally configured Delphi GDB MCP only in selected repositories
+    when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
+    entries:
+      - name: debugger-project
+        backup: ./Linux/opencode/project-overrides/delphi-gdb
+        targets:
+          linux: ~/gits/delphi-gdb-mcp
+        files:
+          - opencode.jsonc
+      - name: multidev-project
+        backup: ./Linux/opencode/project-overrides/delphi-gdb
+        targets:
+          linux: ~/gits/multidev
+        files:
+          - opencode.jsonc
   - package:
       managers:
         paru:

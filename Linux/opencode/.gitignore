@@ -3,6 +3,10 @@
 !.gitignore
 !opencode.json
 !opencode.jsonc
+!launch-delphi-gdb.sh
+!project-overrides/
+!project-overrides/delphi-gdb/
+!project-overrides/delphi-gdb/opencode.jsonc
 !opencode.json.tmpl
 !cli.json
 !commit-exclusions.md

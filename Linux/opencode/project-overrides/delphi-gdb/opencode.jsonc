@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // V2 replaces whole server entries; keep the command/profile in the global launcher.
+  "mcp": {
+    "servers": {
+      "delphi_gdb": {
+        "type": "local",
+        "command": ["/bin/sh", "{env:HOME}/.config/opencode/launch-delphi-gdb.sh"],
+        "disabled": false
+      }
+    }
+  }
+}
