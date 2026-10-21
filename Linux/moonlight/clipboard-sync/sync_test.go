@@ -26,6 +26,10 @@ func (c *memoryClipboard) Watch(context.Context) (<-chan Observation, <-chan err
 }
 func (c *memoryClipboard) Apply(_ context.Context, s Selection) error {
 	c.mu.Lock()
+	if c.value.MIME == s.MIME && bytes.Equal(c.value.Data, s.Data) {
+		c.mu.Unlock()
+		return nil
+	}
 	c.value = s
 	c.mu.Unlock()
 	c.applied <- s
@@ -108,7 +112,8 @@ func TestSyncAgentKeepsNewerLocalCopy(t *testing.T) {
 	defer b.Close()
 	cb := newMemoryClipboard("initial")
 	done := make(chan error, 1)
-	go func() { done <- runSync(ctx, cb, pipeTransport{a}, false, nil) }()
+	ready := make(chan struct{})
+	go func() { done <- runSync(ctx, cb, pipeTransport{a}, false, func() { close(ready) }) }()
 	peer := pipeTransport{b}
 	if f, err := peer.Read(); err != nil || f.Kind != "hello" {
 		t.Fatal("missing hello")
@@ -121,6 +126,11 @@ func TestSyncAgentKeepsNewerLocalCopy(t *testing.T) {
 	}
 	if err := peer.Write(Frame{Kind: "ready"}); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-ready:
+	case <-ctx.Done():
+		t.Fatal("not ready")
 	}
 	cb.copy("newer")
 	proposal, err := peer.Read()

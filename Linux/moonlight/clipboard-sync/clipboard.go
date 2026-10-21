@@ -29,6 +29,7 @@ type Clipboard interface {
 }
 
 var errOversized = errors.New("clipboard exceeds 20 MiB limit")
+var errAmbiguous = errors.New("clipboard ownership ambiguous; reconnect with fresh baseline")
 
 func ReadLimited(r io.Reader, limit int64) ([]byte, error) {
 	b, err := io.ReadAll(io.LimitReader(r, limit+1))
@@ -78,27 +79,50 @@ func SelectionHash(s Selection) [32]byte {
 }
 
 type WaylandClipboard struct {
-	socket   string
-	conn     *net.UnixConn
-	events   chan Observation
-	errs     chan error
-	stop     chan struct{}
-	once     sync.Once
-	mu       sync.Mutex
-	pending  *[32]byte
-	applied  chan struct{}
-	seq      uint64
-	lastHash [32]byte
-	hasLast  bool
+	socket       string
+	conn         *net.UnixConn
+	events       chan Observation
+	errs         chan error
+	stop         chan struct{}
+	once         sync.Once
+	mu           sync.Mutex
+	pending      *[32]byte
+	applied      chan struct{}
+	seq          uint64
+	lastHash     [32]byte
+	hasLast      bool
+	injected     map[[32]byte]struct{}
+	activeRead   *os.File
+	captures     chan captureResult
+	generation   uint64
+	confirmID    uint32
+	confirmation *captureResult
+}
+
+type captureResult struct {
+	generation uint64
+	selection  Selection
+	err        error
+}
+type wlEvent struct {
+	id   uint32
+	op   uint16
+	data []byte
+	err  error
 }
 
 func NewWaylandClipboard(socket string) *WaylandClipboard {
-	return &WaylandClipboard{socket: socket, events: make(chan Observation, 1), errs: make(chan error, 1), stop: make(chan struct{})}
+	return &WaylandClipboard{socket: socket, events: make(chan Observation, 1), errs: make(chan error, 1), stop: make(chan struct{}), injected: make(map[[32]byte]struct{}), captures: make(chan captureResult, 1), confirmID: 7}
 }
 func (c *WaylandClipboard) Close() error {
 	var err error
 	c.once.Do(func() {
 		close(c.stop)
+		c.mu.Lock()
+		if c.activeRead != nil {
+			c.activeRead.Close()
+		}
+		c.mu.Unlock()
 		if c.conn != nil {
 			err = c.conn.Close()
 		}
@@ -188,12 +212,51 @@ func (c *WaylandClipboard) Watch(ctx context.Context) (<-chan Observation, <-cha
 		case <-c.stop:
 		}
 	}()
+	wireEvents := make(chan wlEvent, 1)
+	go func() {
+		for {
+			id, op, b, err := readWL(conn)
+			select {
+			case wireEvents <- wlEvent{id, op, b, err}:
+			case <-c.stop:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 	go func() {
 		defer c.Close()
 		for {
-			id, op, b, err := readWL(conn)
-			if err == nil {
-				err = c.event(id, op, b, offers, true)
+			var err error
+			select {
+			case <-c.stop:
+				return
+			case e := <-wireEvents:
+				err = e.err
+				if err == nil {
+					err = c.event(e.id, e.op, e.data, offers, true)
+				}
+			case result := <-c.captures:
+				if result.generation != c.generation {
+					continue
+				}
+				if result.err != nil {
+					if errors.Is(result.err, errOversized) {
+						notify("Clipboard copy exceeds 20 MiB; skipped.")
+					}
+					continue
+				}
+				// Process source/selection lifetime events before accepting EOF as
+				// a complete value. In particular, nil invalidates empty captures.
+				c.confirmID++
+				if c.confirmID >= 0xff000000 {
+					err = errAmbiguous
+				} else {
+					c.confirmation = &result
+					err = writeWL(conn, 1, 0, wlUint(c.confirmID), -1)
+				}
 			}
 			if err != nil {
 				select {
@@ -208,6 +271,14 @@ func (c *WaylandClipboard) Watch(ctx context.Context) (<-chan Observation, <-cha
 }
 
 func (c *WaylandClipboard) event(id uint32, op uint16, b []byte, offers map[uint32][]string, armed bool) error {
+	if c.confirmation != nil && id == c.confirmID && op == 0 {
+		result := c.confirmation
+		c.confirmation = nil
+		if result.generation == c.generation {
+			return c.observe(result.selection)
+		}
+		return nil
+	}
 	if id == 1 && op == 0 {
 		return errors.New("Wayland data-control error")
 	}
@@ -229,6 +300,14 @@ func (c *WaylandClipboard) event(id uint32, op uint16, b []byte, offers map[uint
 			offers[offer] = nil
 			return nil
 		}
+		c.generation++
+		c.confirmation = nil
+		c.mu.Lock()
+		if c.activeRead != nil {
+			c.activeRead.Close()
+			c.activeRead = nil
+		}
+		c.mu.Unlock()
 		if offer == 0 {
 			return nil
 		}
@@ -246,27 +325,39 @@ func (c *WaylandClipboard) event(id uint32, op uint16, b []byte, offers map[uint
 		if err != nil {
 			return err
 		}
-		defer r.Close()
 		err = writeWL(c.conn, offer, 0, wlString(mime), int(w.Fd()))
 		w.Close()
 		if err != nil {
+			r.Close()
 			return err
 		}
 		r.SetReadDeadline(time.Now().Add(5 * time.Second))
-		data, err := ReadLimited(r, MaxPayload)
-		if err != nil {
-			if errors.Is(err, errOversized) {
-				notify("Clipboard copy exceeds 20 MiB; skipped.")
-			}
-			return nil
+		c.mu.Lock()
+		select {
+		case <-c.stop:
+			c.mu.Unlock()
+			r.Close()
+			return context.Canceled
+		default:
 		}
-		if mime != pngMIME {
-			if !utf8.Valid(data) {
-				return nil
+		c.activeRead = r
+		c.mu.Unlock()
+		generation := c.generation
+		go func() {
+			defer r.Close()
+			data, err := ReadLimited(r, MaxPayload)
+			if mime != pngMIME {
+				if !utf8.Valid(data) {
+					err = errors.New("invalid UTF-8 clipboard")
+				}
+				mime = textMIME
 			}
-			mime = textMIME
-		}
-		c.observe(Selection{MIME: mime, Data: data})
+			result := captureResult{generation, Selection{mime, data}, err}
+			select {
+			case c.captures <- result:
+			case <-c.stop:
+			}
+		}()
 		return nil
 	}
 	if types, ok := offers[id]; ok && op == 0 {
@@ -282,18 +373,22 @@ func (c *WaylandClipboard) event(id uint32, op uint16, b []byte, offers map[uint
 	return nil
 }
 
-func (c *WaylandClipboard) observe(s Selection) {
+func (c *WaylandClipboard) observe(s Selection) error {
 	hash := SelectionHash(s)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.pending != nil && *c.pending == hash {
 		c.pending = nil
 		c.lastHash, c.hasLast = hash, true
+		c.injected[hash] = struct{}{}
 		close(c.applied)
-		return
+		return nil
 	}
 	if c.hasLast && c.lastHash == hash {
-		return
+		return nil
+	}
+	if _, old := c.injected[hash]; old {
+		return errAmbiguous
 	}
 	c.lastHash, c.hasLast = hash, true
 	c.seq++
@@ -307,6 +402,7 @@ func (c *WaylandClipboard) observe(s Selection) {
 		}
 		c.events <- e
 	}
+	return nil
 }
 
 func (c *WaylandClipboard) Apply(ctx context.Context, s Selection) error {
@@ -314,6 +410,14 @@ func (c *WaylandClipboard) Apply(ctx context.Context, s Selection) error {
 	defer cancel()
 	hash := SelectionHash(s)
 	c.mu.Lock()
+	if c.hasLast && c.lastHash == hash && c.pending == nil {
+		c.mu.Unlock()
+		return nil
+	}
+	if len(c.injected) >= 1024 {
+		c.mu.Unlock()
+		return errAmbiguous
+	}
 	c.pending = &hash
 	c.applied = make(chan struct{})
 	done := c.applied

@@ -18,6 +18,11 @@ Clipboard failures do not stop video streaming.
   clipboard clears and history are not synchronized.
 - Identical copies can be suppressed. Concurrent copies use client acceptance
   order; a newer unacknowledged local copy survives an older incoming update.
+- If an older injected value reappears after a different copy, the helper cannot
+  distinguish an intentional recopy from a delayed clipboard-manager echo. It
+  reconnects with a fresh baseline instead of sending potentially stale content;
+  copy the desired content again after reconnection. Echo history is bounded to
+  1024 injected values per connection, after which it also reconnects.
 - Only one client may sync with the office host at a time. Other clients can
   still stream and will report clipboard unavailability.
 - Transient failures retry with capped backoff and fresh baselines. Five

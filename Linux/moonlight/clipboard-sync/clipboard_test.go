@@ -150,7 +150,7 @@ func TestClipboardNativeBaselineAndBinary(t *testing.T) {
 	}
 }
 
-func fakeCompositor(l *net.UnixListener, ready, copyNow chan struct{}, payload []byte) error {
+func fakeCompositor(l *net.UnixListener, ready, copyNow chan struct{}, payload []byte, mode ...string) error {
 	c, err := l.AcceptUnix()
 	if err != nil {
 		return err
@@ -208,8 +208,10 @@ func fakeCompositor(l *net.UnixListener, ready, copyNow chan struct{}, payload [
 	if err = send(0xff000002, 0, wlString("text/plain")); err != nil {
 		return err
 	}
-	if err = send(0xff000002, 0, wlString("image/png")); err != nil {
-		return err
+	if len(mode) == 0 {
+		if err = send(0xff000002, 0, wlString("image/png")); err != nil {
+			return err
+		}
 	}
 	if err = send(6, 1, wlUint(0xff000002)); err != nil {
 		return err
@@ -236,6 +238,15 @@ func fakeCompositor(l *net.UnixListener, ready, copyNow chan struct{}, payload [
 			}
 			for _, fd := range fds {
 				f := os.NewFile(uintptr(fd), "capture")
+				if len(mode) > 0 && (mode[0] == "stalled-owner" || mode[0] == "clear-during-capture") {
+					defer f.Close()
+					if mode[0] == "clear-during-capture" {
+						if _, err = f.Write([]byte("partial")); err != nil {
+							return err
+						}
+					}
+					continue
+				}
 				_, err = f.Write(payload)
 				f.Close()
 				if err != nil {
@@ -243,11 +254,28 @@ func fakeCompositor(l *net.UnixListener, ready, copyNow chan struct{}, payload [
 				}
 			}
 		}
-		// Remain connected until the adapter closes.
-		_, err = io.Copy(io.Discard, c)
-		if err != nil && !strings.Contains(err.Error(), "reset") {
-			return err
+		if len(mode) > 0 {
+			if err = send(6, 1, wlUint(0)); err != nil {
+				return err
+			}
+			if err = send(6, 2, nil); err != nil {
+				return err
+			}
 		}
-		return nil
+		// Answer lifetime barriers, then remain connected until the adapter closes.
+		for {
+			id, op, data, err := readWL(c)
+			if err != nil {
+				if err == io.EOF || strings.Contains(err.Error(), "reset") {
+					return nil
+				}
+				return err
+			}
+			if id == 1 && op == 0 {
+				if err = send(binary.NativeEndian.Uint32(data), 0, wlUint(3)); err != nil {
+					return err
+				}
+			}
+		}
 	}
 }

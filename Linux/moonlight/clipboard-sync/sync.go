@@ -120,6 +120,11 @@ func runSync(parent context.Context, cb Clipboard, t Transport, coordinator bool
 				continue
 			}
 			if coordinator {
+				// A capture queued during Apply may no longer own the local
+				// clipboard. Reassert it before making it authoritative remotely.
+				if err = cb.Apply(ctx, e.Selection); err != nil {
+					return err
+				}
 				revision++
 				latest = e.Selection
 				dirty = true
