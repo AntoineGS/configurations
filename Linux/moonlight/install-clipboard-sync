@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+source_dir="$script_dir/clipboard-sync"
+case $(uname -m) in
+  x86_64) arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) printf 'Unsupported architecture\n' >&2; exit 1 ;;
+esac
+source_hash=$(cd "$source_dir" && find . -maxdepth 1 -type f \( -name '*.go' -o -name go.mod \) -print0 |
+  sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1)
+build_id="$source_hash-linux-$arch"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/moonlight-clipboard/$build_id"
+destination="$HOME/.local/bin/moonlight-clipboard"
+temporary=''
+trap '[[ -z $temporary ]] || rm -rf -- "$temporary"' EXIT
+
+check() {
+  [[ -x $destination ]] && [[ $("$destination" version) == "$build_id" ]]
+}
+
+build() {
+  if [[ -f $cache/package.tar.gz && -f $cache/package.tar.gz.sha256 ]] &&
+    (cd "$cache" && sha256sum --check --status package.tar.gz.sha256); then return; fi
+  command -v go >/dev/null || { printf 'Go is required to build; alternatively use --install-archive.\n' >&2; return 1; }
+  mkdir -p "$cache"
+  temporary=$(mktemp -d "$cache/.build.XXXXXXXX")
+  (cd "$source_dir" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false \
+    -ldflags "-X main.buildID=$build_id" -o "$temporary/moonlight-clipboard" .)
+  printf '%s\n' "$build_id" > "$temporary/build-id"
+  tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$temporary" -cf - build-id moonlight-clipboard |
+    gzip -n > "$cache/package.tar.gz"
+  (cd "$cache" && sha256sum package.tar.gz > package.tar.gz.sha256)
+  rm -rf -- "$temporary"
+  temporary=''
+}
+
+install_archive() {
+  local archive=$1 expected actual
+  read -r expected _ < "$archive.sha256"
+  [[ $expected =~ ^[a-f0-9]{64}$ ]] || { printf 'Invalid archive checksum\n' >&2; return 1; }
+  actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
+  [[ $actual == "$expected" ]] || { printf 'Archive checksum mismatch\n' >&2; return 1; }
+  [[ $(tar -xOzf "$archive" build-id) == "$build_id" ]] || { printf 'Archive source or platform mismatch\n' >&2; return 1; }
+  mkdir -p "$(dirname "$destination")"
+  temporary=$(mktemp -d "$(dirname "$destination")/.clipboard-install.XXXXXXXX")
+  tar -xOzf "$archive" moonlight-clipboard > "$temporary/moonlight-clipboard"
+  chmod 0755 "$temporary/moonlight-clipboard"
+  [[ $("$temporary/moonlight-clipboard" version) == "$build_id" ]] || return 1
+  mv -f -- "$temporary/moonlight-clipboard" "$destination"
+  rm -rf -- "$temporary"
+  temporary=''
+}
+
+case ${1:-} in
+  --check) [[ $# == 1 ]] && check ;;
+  --dry-run) printf 'Build %s; install into %s (user-local, no sudo).\n' "$build_id" "$destination" ;;
+  --build) build; printf '%s\n' "$cache/package.tar.gz" ;;
+  --apply) if ! check; then build; install_archive "$cache/package.tar.gz"; fi ;;
+  --install-archive) [[ $# == 2 ]] || exit 2; install_archive "$2" ;;
+  *) printf 'Usage: %s --check|--dry-run|--build|--apply|--install-archive FILE\n' "${0##*/}" >&2; exit 2 ;;
+esac

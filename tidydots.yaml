@@ -662,6 +662,25 @@ applications:
         backup: ./Linux/rustdesk
         files:
           - rustdesk-office.desktop
+  - name: moonlight-clipboard
+    description: Session-scoped text and PNG clipboard synchronization over SSH
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux")) }}'
+    package:
+      managers:
+        pacman: wl-clipboard
+    entries:
+      - name: build-source
+        backup: ./Linux/moonlight
+        targets:
+          linux: ~/.config/moonlight-clipboard
+        files:
+          - install-clipboard-sync
+          - clipboard-sync
+      - name: binary
+        check:
+          linux: ~/.config/moonlight-clipboard/install-clipboard-sync --check
+        run:
+          linux: ~/.config/moonlight-clipboard/install-clipboard-sync --apply
   - name: moonlight-office
     description: Office PC streaming over Tailmix with H.264 and absolute mouse input
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'

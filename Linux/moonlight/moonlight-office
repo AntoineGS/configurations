@@ -13,5 +13,33 @@ fi
 
 # Capture is required for Moonlight to forward the Win modifier. The Hyprland
 # no_shortcuts_inhibit rule keeps the clean submap's Win+Shift+Q escape local.
-exec moonlight stream "$address" Desktop --1080 --fps 60 --bitrate 10000 \
-  --display-mode windowed --video-codec H.264 --absolute-mouse --capture-system-keys always "$@"
+clipboard_pid=''
+moonlight_pid=''
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
+cleanup() {
+  local pid
+  for pid in "$clipboard_pid" "$moonlight_pid"; do
+    [[ -z $pid ]] || kill "$pid" 2>/dev/null || true
+  done
+  for pid in "$clipboard_pid" "$moonlight_pid"; do
+    [[ -z $pid ]] || wait "$pid" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+if command -v moonlight-clipboard >/dev/null; then
+  moonlight-clipboard client --host antoinews-linux &
+  clipboard_pid=$!
+else
+  notify-send 'Office PC (Moonlight)' 'Clipboard helper is not installed; streaming without clipboard sync.' || true
+fi
+moonlight stream "$address" Desktop --1080 --fps 60 --bitrate 10000 \
+  --display-mode windowed --video-codec H.264 --absolute-mouse --capture-system-keys always "$@" &
+moonlight_pid=$!
+status=0
+wait "$moonlight_pid" || status=$?
+moonlight_pid=''
+exit "$status"
