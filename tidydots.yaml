@@ -662,6 +662,25 @@ applications:
         backup: ./Linux/rustdesk
         files:
           - rustdesk-office.desktop
+  - name: moonlight-office
+    description: Office PC streaming over Tailmix with H.264 and absolute mouse input
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
+    package:
+      managers:
+        pacman: moonlight-qt
+    entries:
+      - targets:
+          linux: ~/.local/bin
+        name: launcher
+        backup: ./Linux/moonlight
+        files:
+          - moonlight-office
+      - targets:
+          linux: ~/.local/share/applications
+        name: desktop
+        backup: ./Linux/moonlight
+        files:
+          - moonlight-office.desktop
   - package:
       managers:
         paru: sunshine-bin
@@ -1957,6 +1976,7 @@ applications:
         run:
           linux: systemctl enable --now tailscaled.service
         name: enable-tailscaled
+        when: '{{ eq .Hostname "antoinews-linux" }}'
         sudo: true
       - check:
           linux: systemctl is-enabled --quiet bluetooth.service
@@ -2027,7 +2047,7 @@ applications:
           url: https://github.com/maisem/tailmix/releases/download/v0.1.15/install.sh
           command: test -x /usr/local/bin/tailmix && test -x /usr/local/bin/tailmixd && test -f /etc/systemd/system/tailmixd.service || sudo sh {file} --version v0.1.15 --no-start
     name: tailmix
-    description: Work tailnet SOCKS proxy alongside the existing personal Tailscale client
+    description: Personal and work tailnets through Tailmix TUN networking
     when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook")) }}'
     entries:
       - targets:
@@ -2036,7 +2056,6 @@ applications:
         backup: ./Linux/tailmix
         files:
           - install-patched-tailmix
-          - socks-nil-tun.patch
       - check:
           linux: ~/.config/tailmix-build/install-patched-tailmix --check
         run:
@@ -2044,7 +2063,7 @@ applications:
         name: patched-binaries
       - targets:
           linux: /etc/systemd/system/tailmixd.service.d
-        name: socks-service
+        name: tun-service
         backup: ./Linux/tailmix/tailmixd.service.d
         method: copy
         files:
@@ -2054,13 +2073,19 @@ applications:
           linux: test "$(stat -c %a /etc/systemd/system/tailmixd.service.d/tailscaled.conf)" = 644
         run:
           linux: chmod 644 /etc/systemd/system/tailmixd.service.d/tailscaled.conf
-        name: socks-service-permissions
+        name: tun-service-permissions
         sudo: true
       - check:
-          linux: systemctl is-enabled --quiet tailscaled.service && systemctl is-active --quiet tailscaled.service && systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && ps -p "$(systemctl show -p MainPID --value tailmixd.service)" -o args= | grep -Fq -- '-mode=socks -socks=127.0.0.1:1080 -auto-update=false' && /usr/local/bin/tailmix status --json >/dev/null
+          linux: '! systemctl is-enabled --quiet tailscaled.service && ! systemctl is-active --quiet tailscaled.service && systemctl is-enabled --quiet tailmixd.service && systemctl is-active --quiet tailmixd.service && systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && test ! -e /run/systemd/system/tailmixd.service.d/zz-sunshine-trial.conf && ps -p "$(systemctl show -p MainPID --value tailmixd.service)" -o args= | grep -Fq -- ''-mode=tun -auto-update=false'' && /usr/local/bin/tailmix status --json >/dev/null'
         run:
-          linux: test "$(readlink /usr/local/lib/tailmix/current)" = versions/v0.1.15-socksfix.1 && systemctl daemon-reload && ! systemctl show -p Conflicts --value tailmixd.service | grep -qw tailscaled.service && systemctl enable --now tailscaled.service && systemctl enable tailmixd.service && systemctl restart tailmixd.service
+          linux: test "$(readlink /usr/local/lib/tailmix/current)" = versions/v0.1.18 && systemctl disable --now tailscaled.service && rm -f /run/systemd/system/tailmixd.service.d/zz-sunshine-trial.conf && systemctl daemon-reload && systemctl enable tailmixd.service && systemctl restart tailmixd.service
         name: enable-tailmixd
+        sudo: true
+      - check:
+          linux: tailmix dns search list --json | jq -e '.desired == ["tail0fcf84.ts.net"]' >/dev/null
+        run:
+          linux: tailmix dns search set tail0fcf84.ts.net
+        name: personal-search-domain
         sudo: true
       - targets:
           linux: ~/.local/bin

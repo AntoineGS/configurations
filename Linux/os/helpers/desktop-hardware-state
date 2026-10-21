@@ -736,12 +736,62 @@ state_bluetooth() {
   emit_available "$(jq -cn --argjson devices "$devices" '{devices: $devices}')"
 }
 
+state_tailmix() {
+  local tailmix_command=$1 raw_status=$2 profile details peers profiles='[]' data
+  while IFS= read -r profile; do
+    local id name error=''
+    id=$(jq -r '.id' <<<"$profile")
+    name=$(jq -r '.name' <<<"$profile")
+    details='{}'
+    if [[ $(jq -r '.runtimeState' <<<"$profile") == running ]]; then
+      if ! details=$(timeout 5 "$tailmix_command" ts -p "$name" status --json 2>/dev/null) ||
+        ! jq -e 'type == "object"' <<<"$details" >/dev/null 2>&1; then
+        details='{}'
+        error='Peer status unavailable'
+      fi
+    fi
+    peers=$(jq -c --arg id "$id" --arg name "$name" '
+      [(.Peer // {} | to_entries[]) | .value as $peer | {
+        id: ($id + ":" + .key), profileId: $id, profileName: $name,
+        name: ($peer.HostName // $peer.DNSName // ""),
+        dnsName: (($peer.DNSName // "") | sub("\\.$"; "")),
+        addresses: [($peer.TailscaleIPs // [])[] | select(startswith("100."))],
+        online: ($peer.Online == true), os: ($peer.OS // ""),
+        exitNodeOption: false, exitNode: ($peer.ExitNode == true)
+      }] | sort_by(.name | ascii_downcase)
+    ' <<<"$details")
+    profile=$(jq -c --arg error "$error" --argjson peers "$peers" '
+      {id, name, enabled, dnsName: (.selfDnsName // ""),
+       running: (.runtimeState == "running" and .backendState == "Running"),
+       needsLogin: (.backendState == "NeedsLogin"),
+       backendState: (if .enabled == false then "Disabled" else (.backendState // .runtimeState // "Unknown") end),
+       addresses: [(.selfIps // [])[] | select(startswith("100."))],
+       peers: $peers, error: $error}
+    ' <<<"$profile")
+    profiles=$(jq -c --argjson profile "$profile" '. + [$profile]' <<<"$profiles")
+  done < <(jq -c '.profiles[] | select(.removed != true)' <<<"$raw_status")
+  data=$(jq -cn --argjson status "$raw_status" --argjson profiles "$profiles" '
+    {backend: "tailmix", backendState: $status.state,
+     running: any($profiles[]; .running), needsLogin: any($profiles[]; .needsLogin),
+     self: {name: "Tailmix", addresses: []}, profiles: $profiles,
+     peers: [$profiles[].peers[]]}
+  ')
+  emit_available "$data"
+}
+
 state_tailscale() {
   local tailscale_command
   local raw_status=''
   local status=0
   local data
   local available
+
+  local tailmix_command tailmix_status
+  if tailmix_command=$(resolve_command tailmix) &&
+    tailmix_status=$(timeout 5 "$tailmix_command" status --json 2>/dev/null) &&
+    jq -e 'type == "object" and (.profiles | type == "array")' <<<"$tailmix_status" >/dev/null 2>&1; then
+    state_tailmix "$tailmix_command" "$tailmix_status"
+  fi
 
   if ! tailscale_command=$(resolve_command tailscale); then
     emit_unavailable '{}'

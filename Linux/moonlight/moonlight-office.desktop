@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Office PC (Moonlight)
+Comment=Stream antoinews-linux with H.264 and desktop mouse control
+Exec=moonlight-office
+Icon=moonlight
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=Moonlight;Sunshine;work;antoinews-linux;
+StartupNotify=false

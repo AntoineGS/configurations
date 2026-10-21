@@ -25,6 +25,8 @@ Panel {
   readonly property string tailscaleSelfName: tailscale ? tailscale.selfName : ""
   readonly property var tailscaleAddresses: tailscale ? tailscale.selfAddresses : []
   readonly property var tailscalePeers: tailscale ? tailscale.peers : []
+  readonly property var networks: tailscale ? tailscale.networks : []
+  readonly property bool usesTailmix: tailscale && tailscale.backend === "tailmix"
   readonly property string tailscaleActionStatus: tailscale ? tailscale.actionStatus : ""
   readonly property string tailscaleLastError: tailscale ? tailscale.lastError : ""
   readonly property color foreground: panelForeground
@@ -135,11 +137,26 @@ Panel {
       }
 
       Flickable {
+        id: networkScroll
         anchors.fill: parent
         contentWidth: width
         contentHeight: column.implicitHeight
         clip: true
         interactive: contentHeight > height
+
+        WheelHandler {
+          target: null
+          acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+          enabled: networkScroll.interactive
+          onWheel: function(event) {
+            var delta = event.pixelDelta.y !== 0 ? event.pixelDelta.y * 3 : event.angleDelta.y
+            if (delta === 0) return
+            networkScroll.cancelFlick()
+            networkScroll.contentY = Math.max(0, Math.min(
+              networkScroll.contentHeight - networkScroll.height, networkScroll.contentY - delta))
+            event.accepted = true
+          }
+        }
 
         Column {
           id: column
@@ -182,121 +199,165 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          Column {
-            width: parent.width
-            spacing: Style.space(6)
-            PanelSectionHeader {
-              text: "LOCAL ADDRESSES"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-            Text {
-              width: parent.width
-              text: root.tailscaleAddresses.length > 0
-                ? root.tailscaleAddresses.join(" · ") : "No Tailscale address"
-              color: root.panelSecondary
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
-            }
-          }
+          Repeater {
+            model: root.networks
+            Column {
+              id: network
+              required property var modelData
+              width: column.width
+              spacing: Style.space(12)
 
-          Column {
-            visible: root.tailscalePeers.length > 0
-            width: parent.width
-            spacing: Style.space(6)
-            PanelSeparator { foreground: root.foreground }
-            PanelSectionHeader {
-              text: "PEERS"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-            Repeater {
-              model: root.tailscalePeers
-              CursorSurface {
-                required property var modelData
-                required property int index
-                width: column.width
-                foreground: root.foreground
-                hasCursor: root.cursorActive && root.selectedIndex === index
-                implicitHeight: row.implicitHeight + Style.space(14)
-
-                MouseArea {
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  acceptedButtons: Qt.LeftButton | Qt.RightButton
-                  onContainsMouseChanged: if (containsMouse) {
-                    root.cursorActive = true
-                    root.selectedIndex = index
-                  }
-                  onClicked: function(mouse) {
-                    if (mouse.button === Qt.RightButton) root.setExitNode(modelData)
-                    else root.copyPeerAddress(modelData)
-                  }
-                }
-
-                Row {
-                  id: row
-                  anchors.left: parent.left
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  anchors.leftMargin: Style.space(8)
-                  anchors.rightMargin: Style.space(8)
-                  spacing: Style.space(8)
-
+              PanelSeparator { foreground: root.foreground }
+              Row {
+                visible: root.usesTailmix
+                width: parent.width
+                spacing: Style.space(8)
+                Column {
+                  width: parent.width - profileToggle.width - Style.space(8)
+                  spacing: Style.space(3)
                   Text {
-                    text: Model.osIcon(modelData.os)
-                    color: root.panelSecondary
+                    width: parent.width
+                    text: String(network.modelData.name || "Network").toUpperCase()
+                    color: root.foreground
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.icon
-                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: Style.font.body
+                    elide: Text.ElideRight
                   }
-                  Column {
-                    width: parent.width - copyAddress.implicitWidth - copyName.implicitWidth - Style.space(28)
-                    spacing: Style.space(1)
-                    Text {
-                      width: parent.width
-                      text: Model.peerLabel(modelData)
-                      color: root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.body
-                      elide: Text.ElideRight
-                    }
-                    Text {
-                      width: parent.width
-                      text: Model.peerAddress(modelData) + (modelData.exitNode ? " · EXIT NODE" : "")
-                      color: root.panelSecondary
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.caption
-                      elide: Text.ElideRight
-                    }
-                  }
-                  Button {
-                    id: copyName
-                    text: "N"
-                    tooltipText: "Copy name"
-                    foreground: root.foreground
-                    onClicked: root.copyPeerName(modelData)
-                  }
-                  Button {
-                    id: copyAddress
-                    text: "C"
-                    tooltipText: "Copy address"
-                    foreground: root.foreground
-                    onClicked: root.copyPeerAddress(modelData)
+                  Text {
+                    width: parent.width
+                    text: network.modelData.error || (network.modelData.running ? "Connected" : network.modelData.backendState)
+                    color: network.modelData.error ? root.urgent : root.panelSecondary
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    wrapMode: Text.WordWrap
                   }
                 }
+                ToggleSwitch {
+                  id: profileToggle
+                  checked: network.modelData.enabled === true
+                  busy: root.tailscaleBusy
+                  foreground: root.foreground
+                  onToggled: if (root.tailscale) root.tailscale.toggleProfile(network.modelData)
+                }
+              }
 
+              Column {
+                width: parent.width
+                spacing: Style.space(6)
+                PanelSectionHeader {
+                  text: "LOCAL ADDRESSES"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+                Text {
+                  width: parent.width
+                  text: (network.modelData.addresses || []).length > 0
+                    ? network.modelData.addresses.join(" · ") : "No Tailscale address"
+                  color: root.panelSecondary
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  elide: Text.ElideRight
+                }
+              }
+
+              Column {
+                visible: (network.modelData.peers || []).length > 0
+                width: parent.width
+                spacing: Style.space(6)
+                PanelSeparator { foreground: root.foreground }
+                PanelSectionHeader {
+                  text: "PEERS"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+                Repeater {
+                  model: network.modelData.peers || []
+                  CursorSurface {
+                    required property var modelData
+                    required property int index
+                    readonly property int cursorIndex: root.tailscale ? root.tailscale.peerIndex(network.modelData.id, index) : index
+                    width: column.width
+                    foreground: root.foreground
+                    hasCursor: root.cursorActive && root.selectedIndex === cursorIndex
+                    implicitHeight: row.implicitHeight + Style.space(14)
+
+                    MouseArea {
+                      anchors.fill: parent
+                      hoverEnabled: true
+                      acceptedButtons: Qt.LeftButton | Qt.RightButton
+                      onContainsMouseChanged: if (containsMouse) {
+                        root.cursorActive = true
+                        root.selectedIndex = cursorIndex
+                      }
+                      onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton && !root.usesTailmix) root.setExitNode(modelData)
+                        else root.copyPeerAddress(modelData)
+                      }
+                    }
+
+                    Row {
+                      id: row
+                      anchors.left: parent.left
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      anchors.leftMargin: Style.space(8)
+                      anchors.rightMargin: Style.space(8)
+                      spacing: Style.space(8)
+
+                      Text {
+                        text: Model.osIcon(modelData.os)
+                        color: modelData.online === false ? root.dim : root.panelSecondary
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.icon
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+                      Column {
+                        width: parent.width - copyAddress.implicitWidth - copyName.implicitWidth - Style.space(28)
+                        spacing: Style.space(1)
+                        Text {
+                          width: parent.width
+                          text: Model.peerLabel(modelData)
+                          color: root.foreground
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.body
+                          elide: Text.ElideRight
+                        }
+                        Text {
+                          width: parent.width
+                          text: Model.peerAddress(modelData) + (modelData.exitNode ? " · EXIT NODE" : "")
+                          color: root.panelSecondary
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.caption
+                          elide: Text.ElideRight
+                        }
+                      }
+                      Button {
+                        id: copyName
+                        text: "N"
+                        tooltipText: "Copy name"
+                        foreground: root.foreground
+                        onClicked: root.copyPeerName(modelData)
+                      }
+                      Button {
+                        id: copyAddress
+                        text: "C"
+                        tooltipText: root.usesTailmix ? "Copy full DNS name" : "Copy address"
+                        foreground: root.foreground
+                        onClicked: root.copyPeerAddress(modelData)
+                      }
+                    }
+                  }
+                }
+              }
+
+              Text {
+                visible: (network.modelData.peers || []).length === 0
+                text: "No peers found on this tailnet"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
               }
             }
-          }
-
-          Text {
-            visible: root.tailscalePeers.length === 0
-            text: "No peers found on this tailnet"
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
           }
         }
       }

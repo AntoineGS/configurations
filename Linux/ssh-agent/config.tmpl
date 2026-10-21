@@ -23,7 +23,13 @@ Host *
 
 {{ if or (eq .Hostname "DESKTOP-E07VTRN") (eq .Hostname "omarchbook") }}
 Host antoinews-linux *.tail0b6859.ts.net
-	ProxyCommand exec ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-dns remote %h %p
+	ProxyCommand none
+	AddressFamily inet
+
+Host desktop-e07vtrn desktop-e07vtrn.tail0fcf84.ts.net
+	HostName desktop-e07vtrn.tail0fcf84.ts.net
+	HostKeyAlias desktop-e07vtrn
+	AddressFamily inet
 {{ end }}
 
 Host antoinews-linux antoinews-linux.tail0b6859.ts.net

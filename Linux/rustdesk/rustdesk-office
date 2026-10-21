@@ -104,7 +104,7 @@ main() {
   /usr/bin/ssh -M -S "$control" -NT -o ControlPersist=no -o BatchMode=yes \
     -o ClearAllForwardings=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 \
     -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
-    -o 'ProxyCommand=exec ncat --proxy 127.0.0.1:1080 --proxy-type socks5 --proxy-dns remote %h %p' \
+    -o ProxyCommand=none \
     -l "$OFFICE_USER" "$OFFICE_HOST" >>"$log_file" 2>&1 9>&- &
   ssh_pid=$!
   ready=false

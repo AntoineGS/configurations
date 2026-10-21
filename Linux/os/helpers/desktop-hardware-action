@@ -10,7 +10,7 @@ primary_monitor=''
 secondary_monitor=''
 
 usage() {
-  printf 'usage: %s <power|monitor|tailscale|vm> <action> [args...]\n' "${0##*/}" >&2
+  printf 'usage: %s <power|monitor|tailscale|tailmix|vm> <action> [args...]\n' "${0##*/}" >&2
   exit 2
 }
 
@@ -613,6 +613,26 @@ case $domain in
       *)
         usage
         ;;
+    esac
+    ;;
+  tailmix)
+    tailmix_command=$(resolve_command tailmix) || exit 1
+    pkexec_command=$(resolve_command pkexec) || exit 1
+    case $action in
+      up|down)
+        (($# == 2)) || usage
+        run_command "$pkexec_command" "$tailmix_command" "$action"
+        ;;
+      enable-profile|disable-profile)
+        (($# == 3)) || usage
+        valid_profile "$3" || usage
+        if [[ $action == enable-profile ]]; then
+          run_command "$pkexec_command" "$tailmix_command" profiles enable "$3"
+        else
+          run_command "$pkexec_command" "$tailmix_command" profiles disable "$3"
+        fi
+        ;;
+      *) usage ;;
     esac
     ;;
   tailscale)

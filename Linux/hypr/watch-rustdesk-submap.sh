@@ -615,9 +615,10 @@ handle_hyprland_event() {
     fi
   fi
 
-  # Switch to clean submap when a RustDesk Remote Desktop window is focused.
+  # Let remote sessions receive shortcuts instead of the local compositor.
   if printf '%s\n' "$evline" | grep -qi "^activewindow>>"; then
-    if is_rustdesk_remote "$evline"; then
+    if is_rustdesk_remote "$evline" ||
+      [[ $evline == 'activewindow>>com.moonlight_stream.Moonlight,'*' - Moonlight' ]]; then
       hyprctl eval 'hl.dispatch(hl.dsp.submap("clean"))'
       clean_state=true
     elif [ "$clean_state" = true ]; then

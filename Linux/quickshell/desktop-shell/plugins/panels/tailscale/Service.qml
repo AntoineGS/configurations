@@ -17,6 +17,12 @@ SharedService {
   property string actionStatus: ""
   property var self: ({})
   property var peers: []
+  property string backend: "tailscale"
+  property var profiles: []
+  readonly property var networks: backend === "tailmix" ? profiles : [{
+    id: "", name: selfName || "Tailscale", running: running, enabled: running,
+    backendState: statusText, addresses: selfAddresses, peers: peers, error: ""
+  }]
 
   property string stateExecutable: "desktop-hardware-state"
   property string actionExecutable: "desktop-hardware-action"
@@ -59,6 +65,7 @@ SharedService {
       lastError = "Invalid hardware state"
       self = ({})
       peers = []
+      profiles = []
       reportCapability()
       return false
     }
@@ -69,8 +76,15 @@ SharedService {
     backendState = parsed.backendState
     self = parsed.self || ({})
     peers = parsed.peers || []
+    backend = parsed.backend
+    profiles = parsed.profiles
     lastError = actionError !== "" ? actionError : parsed.error
-    if (needsLogin) statusText = "Needs login"
+    if (backend === "tailmix") {
+      var connected = profiles.filter(function(profile) { return profile.running }).length
+      statusText = connected + "/" + profiles.length + " networks connected"
+      if (needsLogin) statusText += " · Needs login"
+    }
+    else if (needsLogin) statusText = "Needs login"
     else if (running) statusText = parsed.stale ? "Connected (stale)" : "Connected"
     else if (backendState === "Stopped") statusText = "Disconnected"
     else statusText = backendState
@@ -112,28 +126,47 @@ SharedService {
   }
 
   function toggleTailscale() {
-    return active ? runAction(["tailscale", "down"], "Stopping Tailscale")
-      : runAction(["tailscale", "up"], "Starting Tailscale")
+    return active ? down() : up()
   }
 
   function up() {
-    return runAction(["tailscale", "up"], "Starting Tailscale")
+    return runAction([backend, "up"], backend === "tailmix" ? "Starting Tailmix" : "Starting Tailscale")
   }
 
   function down() {
-    return runAction(["tailscale", "down"], "Stopping Tailscale")
+    return runAction([backend, "down"], backend === "tailmix" ? "Stopping Tailmix" : "Stopping Tailscale")
+  }
+
+  function toggleProfile(profile) {
+    if (backend !== "tailmix") return toggleTailscale()
+    if (!profile || !profile.name) return false
+    return runAction(["tailmix", profile.enabled ? "disable-profile" : "enable-profile", profile.name],
+      (profile.enabled ? "Disabling " : "Enabling ") + profile.name)
+  }
+
+  function peerIndex(profileId, index) {
+    if (backend !== "tailmix") return index
+    var offset = 0
+    for (var i = 0; i < profiles.length; i++) {
+      if (profiles[i].id === profileId) return offset + index
+      offset += (profiles[i].peers || []).length
+    }
+    return -1
   }
 
   function logout() {
+    if (backend === "tailmix") return false
     return runAction(["tailscale", "logout"], "Logging out")
   }
 
   function switchAccount(id) {
+    if (backend === "tailmix") return false
     var accountId = String(id || "")
     return accountId !== "" && runAction(["tailscale", "switch-account", accountId], "Switching account")
   }
 
   function setExitNode(peer) {
+    if (backend === "tailmix") return false
     if (!peer) return false
     if (peer.exitNode === true) return runAction(["tailscale", "clear-exit-node"], "Clearing exit node")
     var target = Model.peerAddress(peer)

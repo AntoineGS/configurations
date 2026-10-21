@@ -1,163 +1,157 @@
-# Tailmix: work proxy alongside personal Tailscale
+# Tailmix: personal and work tailnets
 
-Managed by the `tailmix` application in `tidydots.yaml`, only on
-`DESKTOP-E07VTRN` and `omarchbook`.
+Managed by the `tailmix` application in `tidydots.yaml` on `omarchbook` and
+`DESKTOP-E07VTRN`.
 
-- `tailscaled` keeps the existing personal device identity, IP, DNS, routes,
-  inbound connections, and desktop widget.
-- `tailmixd` runs in **SOCKS mode** on `127.0.0.1:1080`, with a `work`
-  profile. This mode provides outbound TCP through the proxy and does not
-  install host routes or DNS configuration. Work authentication state lives
-  in `/var/lib/tailmix`, outside this repository.
+- `tailmixd` uses **TUN mode**, providing TCP and UDP for the `personal` and
+  `work` profiles through `tailmix0`.
+- Regular `tailscaled` is disabled on these clients to avoid competing routes
+  and DNS. Its old identity remains on disk, but is not used by Tailmix.
+- Authentication state lives in `/var/lib/tailmix`, outside this repository.
+- Personal short names use `tail0fcf84.ts.net`. Work connections use full names
+  such as `antoinews-linux.tail0b6859.ts.net`, avoiding the old offline personal
+  device with the same short name.
 
-The initial TUN-mode experiment registered a second personal identity.
-Restore disables that Tailmix `personal` profile if present and removes its
-saved DNS search suffix. The original identity stays managed by `tailscaled`.
+Tailmix assigns stable synthetic addresses per client. Resolve peer names
+instead of copying `100.127.x.x` addresses between machines. Logging in creates
+a new personal identity: check device approvals and identity/tag-based grants.
+Retain or rename the old device while validating the migration.
 
-## Install and activate on each machine
+## Install and activate on each client
 
 ```sh
 REPO_DIR="$HOME/gits/configurations"
 tidydots --dir "$REPO_DIR" install tailmix -n
 tidydots --dir "$REPO_DIR" restore tailmix -n
+tidydots --dir "$REPO_DIR" restore ssh-agent ssh-config -n
 ```
 
-Review the previews, then apply:
+Review the previews, then run those commands without `-n`. The daemon restart
+interrupts existing connections. On a fresh installation the package bootstrap
+installs v0.1.15 with `--no-start`; restore installs **v0.1.18** before enabling
+TUN mode. Normal Tailscale is disabled; Tailmix is enabled at boot.
+
+Existing profiles are retained. Inspect `tailmix profiles list --all` first.
+Add only missing profiles, or enable an existing disabled profile, then log in:
 
 ```sh
-tidydots --dir "$REPO_DIR" install tailmix
-tidydots --dir "$REPO_DIR" restore tailmix
-sudo tailmix ts -p work up --hostname="$(hostname)-tailmix"
+sudo tailmix profiles add personal --hostname="$(hostname)"
+sudo tailmix profiles add work --hostname="$(hostname)-tailmix"
+sudo tailmix ts -p personal login
+sudo tailmix ts -p work login
 ```
 
-Complete the browser login with the work account/tailnet. The hostname flag
-repeats the non-default setting established when creating the work profile.
+Choose the corresponding personal/work account in each browser login. No subnet
+routes or exit nodes are accepted automatically. Use `tailmix routes list
+--available` and `tailmix dns routes list --available` to inspect additional
+routes, then bind only those needed.
 
-Package installation bootstraps upstream v0.1.15 with `--no-start` and installs
-Ncat (Arch's `nmap` package), Git, and Go. Restore then builds and installs
-**v0.1.15-socksfix.1**, a local patch for the upstream SOCKS-mode nil-TUN crash.
-The source revision is pinned to `5b94b5754fe081f7dfc34e2e0b9dbf7a51029152`;
-`socks-nil-tun.patch` includes the fix and its regression test. Go automatically
-fetches the upstream-required 1.27.2 toolchain when needed.
+## Pinned upstream build
 
-Builds run as the normal user and are cached, with checksums, under
-`~/.cache/tailmix/v0.1.15-socksfix.1/<architecture>`. Only the upstream binary
-installer runs through sudo. Both binaries switch together and existing
-profile state is retained. Automatic updates are disabled with a daemon flag
-to keep the patch pinned until a tested upstream release includes the fix.
+`install-patched-tailmix` retains its historical filename but now builds
+unmodified upstream **v0.1.18**, commit
+`7161022fe10aaa77165d21078602bd43e5a49acf`. This includes the Linux IPv6 route
+reconciliation and SOCKS nil-TUN fixes. The old `socks-nil-tun.patch` is no longer
+applied. Go fetches the required 1.27.3 toolchain when needed.
 
-To build or preview installation separately, run from this repository:
+Builds run as the normal user and are cached with checksums under
+`~/.cache/tailmix/v0.1.18/<architecture>`. Only the pinned upstream installer
+runs through sudo. Both binaries switch together; existing profiles are kept.
+Automatic updates remain disabled to keep the version pinned.
 
 ```sh
 Linux/tailmix/install-patched-tailmix --dry-run
 Linux/tailmix/install-patched-tailmix --build
 ```
 
-The upstream contribution checkout is `~/gits/tailmix`, branch
-`fix/socks-nil-tun`. The regression test was observed failing before the fix;
-the patched checkout passed upstream's `make check`.
+The service drop-in is copied into `/etc/systemd/system` so it is available
+before `/home` mounts. Its historical `tailscaled.conf` name replaces the former
+SOCKS configuration. Restore removes the runtime Sunshine trial override.
 
-Restore replaces the old conflict drop-in with SOCKS settings, reloads
-systemd, ensures personal Tailscale is running, and starts/restarts Tailmix
-when its service configuration needs applying. Its start command waits up to
-30 seconds for the control API before profile setup proceeds. Both services
-run together.
-The service override is copied into `/etc/systemd/system` so systemd can read
-the SOCKS settings during boot, before the separate `/home` filesystem mounts.
-The existing `tailscaled.conf` filename is retained to replace already
-deployed symlinks.
+## SSH and Herdr
 
-## SSH and databases
-
-Use the installed `work-ssh` helper with a **fully qualified work MagicDNS
-name**, as shown in `tailmix ts -p work status --json`:
+SSH connects directly through TUN; no SOCKS proxy is needed. `work-ssh` remains
+as a compatibility alias for `ssh`. Restore `ssh-agent ssh-config` to remove the
+old proxy setting. Herdr's Office PC target remains
+`ssh://a.simard%40multidev.local@antoinews-linux.tail0b6859.ts.net`.
 
 ```sh
-work-ssh USER@HOST.WORK-TAILNET.ts.net
+ssh antoinews-linux hostname
+herdr machine status antoinews-linux --json
+herdr machine reconnect antoinews-linux
 ```
 
-The helper uses Ncat's SOCKS5 transport with remote DNS resolution. Tailmix
-SOCKS mode rejects short MagicDNS names and raw canonical `100.x` peer IPs.
-Use the full work hostname so Tailmix can select the correct profile.
+Herdr retries failed connections automatically. Personal machines still require
+SSH access rules for the new personal identity.
 
-For database clients, configure SOCKS5 at `127.0.0.1:1080` with proxy-side DNS
-if supported, or forward the database through a work SSH host. For example,
-for PostgreSQL listening on that SSH host's loopback interface:
+## Moonlight
 
 ```sh
-work-ssh -N -o ExitOnForwardFailure=yes \
-  -L 127.0.0.1:15432:127.0.0.1:5432 USER@HOST.WORK-TAILNET.ts.net
+tidydots install moonlight-office -n
+tidydots restore moonlight-office -n
 ```
 
-Connect the database client to `127.0.0.1:15432`; replace the destination
-address/port when the database lives elsewhere on the SSH host's network.
+After reviewing, apply without `-n`. **Office PC (Moonlight)** launches the
+Desktop app at 1080p/60 FPS, 10 Mbps, in a window, with H.264 and absolute mouse
+input. H.264 avoids the observed Intel HEVC encoder crash on the host. Audio
+remains disabled in Sunshine. Run `moonlight-office` from a terminal for logs.
 
-For direct proxy access to advertised work subnets or corporate split DNS,
-inspect and bind the required routes with `tailmix routes list --available`,
-`tailmix dns routes list --available`, and the corresponding `bind -p work`
-commands. These policies apply inside the proxy, not to host networking.
+The launcher resolves the work hostname to an IPv4 synthetic address on each
+client. Sunshine listens on IPv4. Pair each client separately in Moonlight;
+pairing credentials are local and are not stored in this repository.
+
+For each client's **work-profile canonical IP**, allow these ports to the
+Sunshine host (`100.75.1.123`) in the work tailnet's grants and host UFW rules:
+
+- TCP: `47984`, `47989`, `47990`, `48010`
+- UDP: `47998-48000`, `48002`, `48010`
+
+On UFW, restrict these rules to `tailscale0` and that client IP. The laptop work
+IP is `100.93.35.122`; inspect `tailmix ts -p work ip -4` on the desktop before
+adding its grant and firewall rules.
+
+For Sunshine's web UI, use a localhost SSH tunnel to avoid CSRF origin rejection
+of Tailmix's synthetic address:
+
+```sh
+ssh -N -L 127.0.0.1:47990:127.0.0.1:47990 antoinews-linux
+```
+
+Open `https://localhost:47990/pin`, log in, and enter Moonlight's pairing PIN.
 
 ## RustDesk
 
-The Office PC is now `antoinews-linux.tail0b6859.ts.net` on the work tailnet.
-The **Office PC** desktop launcher owns an on-demand SSH tunnel and opens
-RustDesk at `127.0.0.1:21120`. It is available on `DESKTOP-E07VTRN` and
-`omarchbook` through the `rustdesk-office` tidydots application.
+The existing **Office PC** RustDesk launcher also connects directly through
+Tailmix, retaining its window-scoped SSH tunnel and focus handoff. It needs
+key-based SSH as `a.simard@multidev.local` and RustDesk direct-IP access on the
+host. Its permanent RustDesk password is separate from SSH authentication.
 
-With the current Hyprland configuration checked out on both the client and
-Office PC, preview the client setup:
-
-```sh
-tidydots restore rustdesk-focus-handoff -n
-tidydots restore rustdesk-office -n
-```
-
-After reviewing, run those restores without `-n`. The first retires the old
-always-on personal-tailnet handoff listener; the second installs the wrapper
-and desktop entry. The handoff script itself is part of the existing
-`hyprland` configuration. Close any manual tunnel on port 21120 before using
-the launcher.
-
-The wrapper requires key-based SSH authentication for
-`a.simard@multidev.local`, an unlocked SSH key, and the host key already trusted.
-It connects through Tailmix directly, using a dedicated SSH process independent
-of Herdr's connections. RustDesk direct IP access must be enabled on the Office
-PC; its permanent RustDesk password is separate from SSH authentication.
-
-Closing the **Office PC remote window** removes the tunnels and handoff
-listener, even if RustDesk's main window or other sessions remain open.
-Launching again focuses the existing Office PC window. If SSH disconnects,
-the launcher cleans up and displays a notification; launch Office PC again
-to reconnect. Diagnostics are in
+Closing the Office PC remote window removes its tunnels and handoff listener.
+Launching again focuses the existing window. Diagnostics are in
 `~/.local/state/rustdesk-office/session.log`.
 
-### Focus-handoff return path
-
-The launcher forwards Office PC loopback port `45973` back through SSH to a
-private Unix socket on the client. At the remote desktop's left edge,
-`Super+H` sends `focus-left` to that loopback port. The client handles it only
-while the `127.0.0.1:21120` RustDesk window is active, moving focus to the left
-monitor or, when focus cannot move there, the previous workspace.
-
-The shared remote callback port permits **one active Office PC launcher at a
-time across the desktop and laptop**. Close that window before switching
-clients. SSH rejects a conflicting return forward rather than sending focus
-events to the wrong client. No additional tailnet ACL port is needed.
+The launcher forwards remote loopback port `45973` back to a private Unix
+socket. At the remote desktop's left edge, `Super+H` moves focus left locally.
+Only one Office PC RustDesk launcher may run at a time across the two clients
+because they share that remote callback port. This handoff is specific to
+RustDesk, not the Moonlight launcher.
 
 ## Verify and manage
 
 ```sh
-tailscale status
 tailmix status
+tailmix ts -p personal status
 tailmix ts -p work status
-systemctl is-active tailscaled.service tailmixd.service
+systemctl is-active tailmixd.service
 ```
 
-Verify an existing inbound client and the Office PC RustDesk connection,
-then an actual work SSH/database connection through the proxy.
-The desktop Tailscale widget controls personal connectivity; use
-`sudo tailmix down` / `sudo tailmix up` to pause/resume work proxy access.
+Use `sudo tailmix down` / `sudo tailmix up` to pause/resume both profiles.
+Quickshell's network widget detects Tailmix and shows each profile's status,
+addresses, peers, and enable/disable control. Its main toggle pauses/resumes
+Tailmix; privileged actions prompt through Polkit. Copied peer addresses use
+full DNS names so Tailmix can resolve the correct synthetic address. Exit-node
+changes remain available through the Tailmix CLI.
 
-To stop the work proxy, use `sudo systemctl disable --now tailmixd.service`.
-For a permanent opt-out, remove the host from the `tailmix` application
-condition before restoring again.
+On machines without an available Tailmix daemon, the widget retains the regular
+Tailscale view and controls. Regular Tailscale must stay stopped while Tailmix
+owns TUN routing and DNS.

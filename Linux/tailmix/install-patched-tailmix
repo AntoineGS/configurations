@@ -2,8 +2,8 @@
 # Build as the user; elevate only the upstream binary installer.
 set -Eeuo pipefail
 
-readonly VERSION=v0.1.15-socksfix.1
-readonly REVISION=5b94b5754fe081f7dfc34e2e0b9dbf7a51029152
+readonly VERSION=v0.1.18
+readonly REVISION=7161022fe10aaa77165d21078602bd43e5a49acf
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/tailmix/$VERSION/$(uname -m)"
 readonly SCRIPT_DIR CACHE_DIR
@@ -37,7 +37,7 @@ build_package() {
       exit 1
     }
   done
-  build_id=$(cat "$SCRIPT_DIR/socks-nil-tun.patch" "$SCRIPT_DIR/install-patched-tailmix" | sha256sum)
+  build_id=$(sha256sum < "$SCRIPT_DIR/install-patched-tailmix")
   mkdir -p -- "$CACHE_DIR"
   if [[ -f $CACHE_DIR/build-id && $(cat "$CACHE_DIR/build-id") == "$build_id" ]] &&
     (cd -- "$CACHE_DIR" && sha256sum --check --status SHA256SUMS); then
@@ -46,19 +46,17 @@ build_package() {
   fi
 
   build_dir=$(mktemp -d "$CACHE_DIR/.build.XXXXXXXX")
-  git clone --quiet --depth 1 --branch v0.1.15 https://github.com/maisem/tailmix.git "$build_dir/source"
+  git clone --quiet --depth 1 --branch "$VERSION" https://github.com/maisem/tailmix.git "$build_dir/source"
   [[ $(git -C "$build_dir/source" rev-parse HEAD) == "$REVISION" ]] || {
     printf '%s\n' 'Upstream tag no longer matches the pinned revision.' >&2
     exit 1
   }
-  git -C "$build_dir/source" apply --check "$SCRIPT_DIR/socks-nil-tun.patch"
-  git -C "$build_dir/source" apply "$SCRIPT_DIR/socks-nil-tun.patch"
   mkdir -p "$build_dir/package/service"
   ldflags="-X github.com/maisem/tailmix/version.shortStamp=$VERSION"
   ldflags+=" -X github.com/maisem/tailmix/version.longStamp=$VERSION-base${REVISION:0:9}"
   (
     cd -- "$build_dir/source"
-    go test ./cmd/tailmixd -run '^TestTSNetConfigTun$' -count=1
+    go test ./hosttun ./socksproxy ./cmd/tailmixd
     go build -trimpath -ldflags "$ldflags" -o "$build_dir/package/" ./cmd/tailmix ./cmd/tailmixd
     cp systemd/tailmixd.service.in launchd/io.github.maisem.tailmixd.plist.in "$build_dir/package/service/"
     cp scripts/install.sh "$build_dir/install.sh"
@@ -74,7 +72,7 @@ case ${1:-} in
   --check) check_installation ;;
   --build) build_package ;;
   --dry-run)
-    printf 'Build %s from %s plus socks-nil-tun.patch; cache in %s.\n' "$VERSION" "$REVISION" "$CACHE_DIR"
+    printf 'Build upstream %s from %s; cache in %s.\n' "$VERSION" "$REVISION" "$CACHE_DIR"
     printf '%s\n' 'Install both binaries with sudo via the pinned upstream installer (--no-start).'
     ;;
   --apply)

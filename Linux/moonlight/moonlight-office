@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Sunshine listens on IPv4. Resolve Tailmix's per-machine synthetic address
+# instead of storing an IP allocated on another client.
+host=antoinews-linux.tail0b6859.ts.net
+address=$(getent ahostsv4 "$host" | awk '!found { address=$1; found=1 } END { print address }') || address=''
+if [[ -z $address ]]; then
+  printf 'Cannot resolve %s. Check the Tailmix work profile.\n' "$host" >&2
+  notify-send 'Office PC (Moonlight)' 'Cannot resolve the office PC. Check the Tailmix work profile.' || true
+  exit 1
+fi
+
+# Capture is required for Moonlight to forward the Win modifier. The Hyprland
+# no_shortcuts_inhibit rule keeps the clean submap's Win+Shift+Q escape local.
+exec moonlight stream "$address" Desktop --1080 --fps 60 --bitrate 10000 \
+  --display-mode windowed --video-codec H.264 --absolute-mouse --capture-system-keys always "$@"

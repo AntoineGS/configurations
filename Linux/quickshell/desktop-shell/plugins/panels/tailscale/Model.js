@@ -48,6 +48,8 @@ function parseState(raw) {
       available: envelope.available === true,
       stale: envelope.stale === true,
       error: envelope.error ? String(envelope.error) : "",
+      backend: data.backend === "tailmix" ? "tailmix" : "tailscale",
+      profiles: Array.isArray(data.profiles) ? data.profiles : [],
       backendState: String(data.backendState || "Unknown"),
       running: data.running === true,
       needsLogin: data.needsLogin === true,
@@ -61,6 +63,7 @@ function parseState(raw) {
 
 function peerAddress(peer) {
   if (!peer) return ""
+  if (peer.profileId && peer.dnsName) return cleanDnsName(peer.dnsName)
   var addresses = filterIPv4(peer.addresses || [])
   if (addresses.length > 0) return addresses[0]
   return String(peer.dnsName || peer.name || "")
