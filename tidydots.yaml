@@ -1608,6 +1608,16 @@ applications:
           linux: visudo -cf ./Linux/sudoers/90-keyball-bluetooth-restart && install -m 0440 ./Linux/sudoers/90-keyball-bluetooth-restart /etc/sudoers.d/90-keyball-bluetooth-restart
         name: sudoers
         sudo: true
+  - name: sudo-pwfeedback
+    description: Show an asterisk for each key typed at the sudo password prompt
+    when: '{{ eq .OS "linux" }}'
+    entries:
+      - check:
+          linux: sudo -n cmp -s ./Linux/sudoers/10-pwfeedback /etc/sudoers.d/10-pwfeedback
+        run:
+          linux: visudo -cf ./Linux/sudoers/10-pwfeedback && install -m 0440 ./Linux/sudoers/10-pwfeedback /etc/sudoers.d/10-pwfeedback
+        name: sudoers
+        sudo: true
   - package:
       managers:
         apt: tzupdate
