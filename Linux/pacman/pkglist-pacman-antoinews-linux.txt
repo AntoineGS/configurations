@@ -8,11 +8,16 @@ bun
 clang
 cups-pdf
 ddcutil
+dkms
 docker-compose
 dolt
 dos2unix
 dotnet-runtime-9.0
 dust
+egl-gbm
+egl-wayland
+egl-wayland2
+egl-x11
 expac
 eza
 fastfetch
