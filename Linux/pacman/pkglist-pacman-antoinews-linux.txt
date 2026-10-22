@@ -1,5 +1,4 @@
 alsa-utils
-asar
 base
 bluetui
 bolt
@@ -14,7 +13,6 @@ dolt
 dos2unix
 dotnet-runtime-9.0
 dust
-electron44
 expac
 eza
 fastfetch
