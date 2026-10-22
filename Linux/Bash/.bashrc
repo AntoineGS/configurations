@@ -10,6 +10,11 @@ esac
 
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    # On Arch, keep system tools ahead of Homebrew so AUR builds use the system perl/python
+    if [ -x /usr/bin/pacman ]; then
+        PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vx "$HOMEBREW_PREFIX/s\?bin" | paste -sd:)
+        PATH="$PATH:$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin"
+    fi
 fi
 
 # don't put duplicate lines or lines starting with space in the history.

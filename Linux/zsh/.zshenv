@@ -30,7 +30,12 @@ export ADZUNA_APP_KEY=3801f98eb7fd7d72a8e98db8afd25df9
 export PATH="$HOME/.local/share/helpers:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
-export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+# On Arch, keep system tools ahead of Homebrew so AUR builds use the system perl/python
+if [[ -x /usr/bin/pacman ]]; then
+    export PATH="$PATH:/home/linuxbrew/.linuxbrew/bin"
+else
+    export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+fi
 if (( $+commands[go] )); then
     export PATH="$PATH:$(go env GOPATH)/bin"
 fi

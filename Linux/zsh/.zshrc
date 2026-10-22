@@ -1,6 +1,9 @@
 # Include Homebrew's functions and completions before compinit on Ubuntu.
 if (( $+commands[brew] )); then
     eval "$(brew shellenv zsh)"
+    if [[ -x /usr/bin/pacman ]]; then
+        path=(${path:#$HOMEBREW_PREFIX/(s|)bin} $HOMEBREW_PREFIX/bin $HOMEBREW_PREFIX/sbin)
+    fi
 fi
 
 # Default: hide preview, dynamically show for files/directories
