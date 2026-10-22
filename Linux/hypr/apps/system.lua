@@ -21,6 +21,11 @@ hl.window_rule({
 	},
 	tag = "+floating-window",
 })
+-- Keyring unlock prompt: autologin leaves the keyring locked, so keep this visible on every workspace
+hl.window_rule({ match = { class = "^(gcr-prompter)$" }, float = true })
+hl.window_rule({ match = { class = "^(gcr-prompter)$" }, center = true })
+hl.window_rule({ match = { class = "^(gcr-prompter)$" }, pin = true })
+hl.window_rule({ match = { class = "^(gcr-prompter)$" }, stay_focused = true })
 hl.window_rule({ match = { class = "org.gnome.Calculator" }, float = true })
 hl.window_rule({ match = { class = "^([Gg]simplecal)$" }, float = true })
 -- Pin the calendar popup to top-center, just below the bar
