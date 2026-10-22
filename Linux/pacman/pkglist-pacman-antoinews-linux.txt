@@ -58,6 +58,7 @@ obs-studio
 openai-codex
 openbox
 perl-image-exiftool
+perl-test-manifest
 pinta
 playerctl
 plymouth
