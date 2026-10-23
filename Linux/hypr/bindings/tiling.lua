@@ -118,8 +118,8 @@ end)
 -- Tiling
 hl.bind("SUPER + SHIFT + H", hl.dsp.window.move({ direction = "left"  }), { description = "Move window to left workspace" })
 hl.bind("SUPER + SHIFT + L", hl.dsp.window.move({ direction = "right" }), { description = "Move window to right workspace" })
-hl.bind("SUPER + SHIFT + K", vertical_window_action("up", "m-1", true), { description = "Move window up or to previous workspace" })
-hl.bind("SUPER + SHIFT + J", vertical_window_action("down", "m+1", true), { description = "Move window down or to next workspace" })
+hl.bind("SUPER + SHIFT + K", vertical_window_action("up", "m+1", true), { description = "Move window up or to next workspace" })
+hl.bind("SUPER + SHIFT + J", vertical_window_action("down", "m-1", true), { description = "Move window down or to previous workspace" })
 hl.bind("SUPER + M",         hl.dsp.layout("swapwithmaster"),             { description = "Swap with master" })
 
 if hostname == "antoinews-linux" then
@@ -128,8 +128,8 @@ else
   hl.bind("SUPER + H", horizontal_focus_action("l", hl.dsp.focus({ direction = "left" })), { description = "Move focus left" })
 end
 hl.bind("SUPER + L", horizontal_focus_action("r", hl.dsp.focus({ direction = "right" })), { description = "Move focus right" })
-hl.bind("SUPER + K", vertical_window_action("up", "m-1", false), { description = "Focus up or previous workspace" })
-hl.bind("SUPER + J", vertical_window_action("down", "m+1", false), { description = "Focus down or next workspace" })
+hl.bind("SUPER + K", vertical_window_action("up", "m+1", false), { description = "Focus up or next workspace" })
+hl.bind("SUPER + J", vertical_window_action("down", "m-1", false), { description = "Focus down or previous workspace" })
 hl.bind("SUPER + SHIFT + ALT + H", hl.dsp.workspace.move({ monitor = "l" }), { description = "Move current workspace left" })
 hl.bind("SUPER + SHIFT + ALT + L", hl.dsp.workspace.move({ monitor = "r" }), { description = "Move current workspace right" })
 

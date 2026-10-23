@@ -122,8 +122,8 @@ hl.animation({ leaf = "fadeDim", enabled = true, speed = 5, bezier = "gentleFade
 hl.animation({ leaf = "border", enabled = true, speed = 8, bezier = "softSnap" })
 hl.animation({ leaf = "borderangle", enabled = true, speed = 30, bezier = "smoothIn" })
 
--- Workspace switching (slide effect)
-hl.animation({ leaf = "workspaces", enabled = true, speed = 5, bezier = "overshot", style = "slidevert" })
+-- Workspace switching (reversed vertical slide to match J/K navigation)
+hl.animation({ leaf = "workspaces", enabled = true, speed = 5, bezier = "overshot", style = "slidevert -100%" })
 hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 5, bezier = "overshot", style = "slidevert" })
 
 -- Layer animations
