@@ -15,9 +15,10 @@ launch = [
 admin = [
   { run = 'gsudo %*', orphan = true, for = "windows" },
 ]
-# Windows programs in the shared multidev Wine prefix, from their own folder
+# Windows programs in the shared multidev Wine prefix, from their own folder.
+# Output of the last launch goes to ~/.cache/multidev-wine.log.
 wine = [
-  { run = 'cd -- %d1 && exec "$HOME/.local/bin/multidev-wine" %s1', orphan = true, desc = "Wine (multidev)", for = "linux" },
+  { run = 'cd -- %d1 && exec "$HOME/.local/bin/multidev-wine" %s1 >"${XDG_CACHE_HOME:-$HOME/.cache}/multidev-wine.log" 2>&1', orphan = true, desc = "Wine (multidev)", for = "linux" },
 ]
 
 [open]

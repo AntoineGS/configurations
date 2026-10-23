@@ -851,7 +851,7 @@ applications:
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries: []
   - name: multidev-wine
-    description: Shared Wine prefix for MDExplorer, Superform and other multidev executables — 64-bit InterBase client in system32, 32-bit InterBase client and Delphi 2010 runtime from the O applications share in syswow64, and the multidev-wine launcher. ibclient64.dll is gitignored work data kept only in the local checkout
+    description: Shared Wine prefix for MDExplorer, Superform and other multidev executables — 64-bit InterBase client in system32, 32-bit InterBase client and Delphi 2010 runtime from the O applications share in syswow64, the WebView2 runtime for the Wails builds (updater disabled), and the multidev-wine launcher. ibclient64.dll is gitignored work data kept only in the local checkout
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:

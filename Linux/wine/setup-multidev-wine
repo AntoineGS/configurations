@@ -4,8 +4,8 @@
 # app "multidev-wine"). The launcher is multidev-wine.
 #
 # --check exit codes follow the tidydots `check_mode: status` protocol:
-#   0  set up            1  needs setup (prefix, symlink, folder or runtime DLL
-#                            missing)
+#   0  set up            1  needs setup (prefix, symlink, folder, runtime DLL or
+#                            WebView2 runtime missing)
 #   2  outdated          3  check failed (wine, the multidev checkout or the
 #                            O: applications share is absent; tidydots cannot
 #                            fix that, so --apply is blocked)
@@ -25,7 +25,12 @@ readonly APPDATA_DIR="$PREFIX/drive_c/users/$USER/AppData/Local/MDExplorer"
 # database paths without an explicit port through it.
 readonly GDS_DB_SERVICE='gds_db           3050/tcp                           #InterBase Server'
 readonly REG_SECTION='[Software\\Wine\\Drivers]'
-readonly REG_VALUE='"Graphics"="x11"'
+# WebView2 runtime for the Wails builds (mdexplorer-go). Its updater services
+# are disabled: they would start with every wine session in the prefix.
+readonly WEBVIEW2_URL='https://go.microsoft.com/fwlink/?linkid=2124701'
+readonly WEBVIEW2_CLIENT='[Software\\Wow6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}]'
+readonly WEBVIEW2_DIR="$PREFIX/drive_c/Program Files (x86)/Microsoft/EdgeWebView/Application"
+readonly -a WEBVIEW2_UPDATERS=(edgeupdate edgeupdatem)
 # 32-bit InterBase client, and the Delphi 2010 runtime packages that a Delphi
 # 2010 installation puts in SysWOW64. Headless builds produce the other
 # packages SFClient2 loads; multidev-wine puts them on WINEPATH. The 64-bit
@@ -61,18 +66,73 @@ require_tools() {
   fi
 }
 
-# True when user.reg carries Graphics=x11 under Software\Wine\Drivers.
-graphics_driver_set() {
-  [[ -f $PREFIX/user.reg ]] || return 1
+# Prints the data of a value under a section of a Wine .reg file, as stored
+# (strings keep their quotes); nothing when the file, section or value is
+# absent.
+reg_value() {
+  local file=$1 section=$2 name=$3
+  [[ -f $file ]] || return 0
   # Passed via ENVIRON, not -v: awk -v would unescape the doubled backslashes
-  # that user.reg uses in section names.
-  WANT_SECTION="$REG_SECTION" WANT_VALUE="$REG_VALUE" awk '
-    BEGIN { section = ENVIRON["WANT_SECTION"]; value = ENVIRON["WANT_VALUE"] }
+  # that .reg files use in section names.
+  WANT_SECTION="$section" WANT_NAME="\"$name\"=" awk '
+    BEGIN { section = ENVIRON["WANT_SECTION"]; name = ENVIRON["WANT_NAME"] }
     index($0, section) == 1 { in_section = 1; next }
     /^\[/ { in_section = 0 }
-    in_section && $0 == value { found = 1 }
-    END { exit found ? 0 : 1 }
-  ' "$PREFIX/user.reg"
+    in_section && index($0, name) == 1 { print substr($0, length(name) + 1); exit }
+  ' "$file"
+}
+
+# True when user.reg carries Graphics=x11 under Software\Wine\Drivers.
+graphics_driver_set() {
+  [[ $(reg_value "$PREFIX/user.reg" "$REG_SECTION" Graphics) == '"x11"' ]]
+}
+
+webview2_installed() {
+  local version
+  version=$(reg_value "$PREFIX/system.reg" "$WEBVIEW2_CLIENT" pv)
+  version=${version//\"/}
+  [[ -n $version && -f $WEBVIEW2_DIR/$version/msedgewebview2.exe ]]
+}
+
+# Prints the WebView2 updater services that are not disabled.
+enabled_webview2_updaters() {
+  local service start
+  for service in "${WEBVIEW2_UPDATERS[@]}"; do
+    start=$(reg_value "$PREFIX/system.reg" \
+      "[System\\\\ControlSet001\\\\Services\\\\$service]" Start)
+    if [[ -n $start && $start != dword:00000004 ]]; then
+      printf '%s\n' "$service"
+    fi
+  done
+}
+
+# The installer leaves MicrosoftEdgeUpdate.exe running with its output
+# inherited, so the output goes to a file: a caller reading a pipe would
+# otherwise wait for the updater to exit.
+install_webview2() {
+  local dir status=0
+  # The prefix uses the x11 driver; without a display the installer exits 8.
+  if [[ -z ${DISPLAY:-} ]]; then
+    fail 'installing the WebView2 runtime needs a graphical session (DISPLAY is unset)'
+    return 1
+  fi
+  dir=$(mktemp -d)
+  if ! curl -fsSL --retry 3 -o "$dir/webview2-installer.exe" "$WEBVIEW2_URL"; then
+    fail 'could not download the WebView2 runtime installer'
+    rm -rf -- "$dir"
+    return 1
+  fi
+  run_wine wine "$dir/webview2-installer.exe" /silent /install \
+    >"$dir/install.log" 2>&1 || status=$?
+  run_wine wine taskkill /f /im MicrosoftEdgeUpdate.exe >/dev/null 2>&1 || true
+  run_wine wineserver -w
+  if ((status != 0)) || ! webview2_installed; then
+    fail "the WebView2 runtime installer failed (exit $status):"
+    tail -n 20 -- "$dir/install.log" >&2
+    status=1
+  fi
+  rm -rf -- "$dir"
+  return "$status"
 }
 
 prefix_initialized() {
@@ -127,6 +187,16 @@ check_setup() {
     fail 'the gds_db service is not registered'
     return 1
   fi
+  if ! webview2_installed; then
+    fail 'the WebView2 runtime is not installed'
+    return 1
+  fi
+  local updaters
+  updaters=$(enabled_webview2_updaters)
+  if [[ -n $updaters ]]; then
+    fail "WebView2 updater services are enabled: ${updaters//$'\n'/ }"
+    return 2
+  fi
   if ! graphics_driver_set; then
     fail 'Graphics=x11 is not set in user.reg'
     return 2
@@ -167,6 +237,20 @@ apply_setup() {
 
   if ! grep -q '^gds_db[[:space:]]' "$SERVICES"; then
     printf '%s\r\n' "$GDS_DB_SERVICE" >> "$SERVICES"
+  fi
+
+  if ! webview2_installed; then
+    install_webview2
+  fi
+
+  local service updaters
+  updaters=$(enabled_webview2_updaters)
+  if [[ -n $updaters ]]; then
+    while IFS= read -r service; do
+      run_wine wine reg add "HKLM\\System\\CurrentControlSet\\Services\\$service" \
+        /v Start /t REG_DWORD /d 4 /f >/dev/null
+    done <<< "$updaters"
+    run_wine wineserver -w
   fi
 
   if ! graphics_driver_set; then
