@@ -77,3 +77,4 @@ dolt:
     shared-server: true
     auto-commit: "on"
     auto-push: true
+    auto-push-interval: 1ns

@@ -1,5 +1,29 @@
 # Agent Guidelines for Configurations Repository
 
+## CRITICAL: This Is a Public Repository
+
+This repository is published publicly on GitHub. **Never commit private
+details**, including:
+
+- Secrets: passwords, API keys, tokens, SSH or GPG private keys, certificates
+- Internal hostnames, IP addresses, domains, VPN/Tailscale details, and network
+  layouts that are not already public
+- Employer or client names, internal project details, customer data
+- Personal information: emails, phone numbers, addresses, account identifiers
+
+Keep such values out of tracked files: use templates with values supplied at
+install time, environment variables, or untracked local files. Check every diff
+for private details before staging. If something private is already tracked,
+stop and tell the user instead of committing over it; removing it requires
+rewriting history.
+
+## Issue Tracking
+
+Issues are tracked with beads (`bd`) on the shared Dolt server. Issue data is
+auto-committed and pushed to `refs/dolt/data` on the **private** repository
+`AntoineGS/configurations-beads`, never to this public repository. Issues may
+hold private details; code and config in this repository may not.
+
 ## Repository Overview
 
 Personal dotfiles repository managing configurations for Windows and Linux
