@@ -45,7 +45,7 @@ COMMANDS_BEFORE_SAVE="limine-reset-enroll"
 COMMANDS_AFTER_SAVE="limine-enroll-config"
 {{- else if eq .Hostname "antoinews-linux" }}
 
-MAX_SNAPSHOT_ENTRIES=5
+MAX_SNAPSHOT_ENTRIES=auto
 
 SNAPSHOT_FORMAT_CHOICE=5
 KERNEL_CMDLINE[default]+=" resume=/dev/mapper/root resume_offset=3679488"
