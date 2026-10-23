@@ -9,7 +9,7 @@ command -v hyprctl >/dev/null
 command -v jq >/dev/null
 
 # Prepare synchronously so source selection cannot race the connection watcher.
-rustdesk-wake-monitor --prepare-monitor >&2
+remote-wake-monitor --prepare-monitor >&2
 
 primary=$(monitor-connector primary)
 if ! hyprctl monitors -j | jq -e --arg primary "$primary" 'any(.[]; .name == $primary and .disabled == false)' >/dev/null; then

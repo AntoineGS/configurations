@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+usage() {
+  printf '%s\n' 'Usage: remote-wake-monitor --prepare-monitor|--watch rustdesk|sunshine' >&2
+  exit 2
+}
+
+prepare_monitor() {
+  local monitors lock_fd primary
+
+  # The picker, prep commands and connection watchers can run together. Serialize layout changes.
+  exec {lock_fd}>"${XDG_RUNTIME_DIR:?}/remote-wake-monitor.lock"
+  flock --wait 10 "$lock_fd"
+
+  primary=$(monitor-connector primary)
+  monitors=$(hyprctl monitors -j)
+  jq -e 'type == "array"' <<<"$monitors" >/dev/null
+  if ! jq -e --arg primary "$primary" 'any(.[];
+    .name == $primary and .disabled == false and .mirrorOf == "none"
+    and (.activeWorkspace.id // 0) > 0
+  )' <<<"$monitors" >/dev/null; then
+    # Use the same Single monitor preset as the QuickShell monitor panel.
+    desktop-hardware-action monitor set-layout single "$primary"
+  fi
+
+  hyprctl eval "hl.dispatch(hl.dsp.dpms({action=\"on\", monitor=\"$primary\"}))"
+}
+
+watch_connections() {
+  local connected disconnected line log_file
+
+  case $1 in
+    rustdesk)
+      # RustDesk holds one wakelock while any desktop connection is open,
+      # including restored portal sessions, and drops it after the last one closes.
+      log_file="${XDG_DATA_HOME:-$HOME/.local/share}/logs/RustDesk/server/rustdesk_rCURRENT.log"
+      connected='*] new wakelock, require display on: true'
+      disconnected='*] drop wakelock'
+      ;;
+    sunshine)
+      log_file="${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunshine.log"
+      connected='*: CLIENT CONNECTED'
+      disconnected='*: CLIENT DISCONNECTED'
+      ;;
+    *) usage ;;
+  esac
+
+  # Follow rotations, and ignore historical connections when the service starts.
+  tail --lines=0 --follow=name --retry "$log_file" | while IFS= read -r line; do
+    # shellcheck disable=SC2254 # The patterns are globs.
+    case $line in
+      $connected)
+        if ! "$0" --prepare-monitor; then
+          printf 'remote-wake-monitor: unable to prepare the primary monitor for this %s connection\n' "$1" >&2
+        fi
+        # Let the panels resync after the layout change so they stay off.
+        sleep 2
+        if ! screen-privacy on --auto; then
+          printf '%s\n' 'remote-wake-monitor: unable to hide the physical screens' >&2
+        fi
+        ;;
+      $disconnected)
+        if ! screen-privacy off --if-auto; then
+          printf '%s\n' 'remote-wake-monitor: unable to restore the physical screens' >&2
+        fi
+        ;;
+    esac
+  done
+}
+
+case ${1:-}:$# in
+  --prepare-monitor:1) prepare_monitor ;;
+  --watch:2) watch_connections "$2" ;;
+  *) usage ;;
+esac

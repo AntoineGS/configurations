@@ -720,7 +720,7 @@ applications:
       managers:
         paru: sunshine-bin
     name: sunshine
-    description: Low-latency Moonlight host using a Hyprland headless output
+    description: Low-latency Moonlight host streaming the RustDesk primary monitor
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
       - targets:
@@ -729,10 +729,14 @@ applications:
         backup: ./Linux/sunshine
         files:
           - sunshine.conf
+      - targets:
+          linux: ~/.config/systemd/user/app-dev.lizardbyte.app.Sunshine.service.d
+        name: systemd-override
+        backup: ./Linux/sunshine/app-dev.lizardbyte.app.Sunshine.service.d
       - check:
           linux: systemctl --user is-enabled --quiet app-dev.lizardbyte.app.Sunshine.service && systemctl --user is-active --quiet app-dev.lizardbyte.app.Sunshine.service
         run:
-          linux: systemctl --user enable --now app-dev.lizardbyte.app.Sunshine.service
+          linux: systemctl --user daemon-reload && systemctl --user enable --now app-dev.lizardbyte.app.Sunshine.service
         name: enable-service
   - package:
       managers:
@@ -780,27 +784,32 @@ applications:
   - package:
       managers:
         pacman: ddcutil
-    name: rustdesk-wake-monitor
-    description: Wake DP-1 for RustDesk, recover its desktop with the Single monitor layout, and power the panels off over DDC/CI while connected
+    name: remote-wake-monitor
+    description: Wake the primary monitor for RustDesk and Sunshine, recover its desktop with the Single monitor layout, and power the panels off over DDC/CI while connected
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
+      - check:
+          linux: '! systemctl --user is-active --quiet rustdesk-wake-monitor.service && ! systemctl --user is-enabled --quiet rustdesk-wake-monitor.service && test ! -e "$HOME/.config/systemd/user/rustdesk-wake-monitor.service" && test ! -L "$HOME/.config/systemd/user/rustdesk-wake-monitor.service" && test ! -L "$HOME/.local/bin/rustdesk-wake-monitor"'
+        run:
+          linux: systemctl --user disable --now rustdesk-wake-monitor.service >/dev/null 2>&1 || true; rm -f "$HOME/.config/systemd/user/rustdesk-wake-monitor.service" "$HOME/.local/bin/rustdesk-wake-monitor"; systemctl --user daemon-reload
+        name: remove-legacy-rustdesk-wake-monitor
       - targets:
           linux: ~/.local/bin
         name: script
-        backup: ./Linux/rustdesk
+        backup: ./Linux/remote-wake-monitor
         files:
-          - rustdesk-wake-monitor
+          - remote-wake-monitor
       - targets:
           linux: ~/.config/systemd/user
         name: service
-        backup: ./Linux/rustdesk
+        backup: ./Linux/remote-wake-monitor
         files:
-          - rustdesk-wake-monitor.service
+          - remote-wake-monitor@.service
       - check:
-          linux: systemctl --user is-enabled --quiet rustdesk-wake-monitor.service && systemctl --user is-active --quiet rustdesk-wake-monitor.service
+          linux: systemctl --user is-enabled --quiet remote-wake-monitor@rustdesk.service remote-wake-monitor@sunshine.service && systemctl --user is-active --quiet remote-wake-monitor@rustdesk.service remote-wake-monitor@sunshine.service
         run:
-          linux: systemctl --user daemon-reload && systemctl --user enable --now rustdesk-wake-monitor.service
-        name: enable-service
+          linux: systemctl --user daemon-reload && systemctl --user enable --now remote-wake-monitor@rustdesk.service remote-wake-monitor@sunshine.service
+        name: enable-services
   - package:
       managers:
         pacman: inotify-tools

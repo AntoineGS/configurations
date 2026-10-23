@@ -1,12 +1,12 @@
 [Unit]
-Description=Wake the RustDesk monitor on incoming desktop connections
+Description=Wake the primary monitor and hide the panels during %i remote sessions
 After=graphical-session.target
 PartOf=graphical-session.target
 ConditionHost=antoinews-linux
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/rustdesk-wake-monitor --watch
+ExecStart=%h/.local/bin/remote-wake-monitor --watch %i
 Restart=always
 RestartSec=2
 
