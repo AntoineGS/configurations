@@ -43,3 +43,4 @@ Windows/Komorebi/bridge/target/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+/Linux/mdexplorer/DBExplorer/ibclient64.dll
