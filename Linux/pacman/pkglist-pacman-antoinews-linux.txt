@@ -6,6 +6,7 @@ brightnessctl
 btop
 bun
 clang
+compsize
 cups-pdf
 ddcutil
 docker-compose
@@ -58,7 +59,6 @@ obs-studio
 openai-codex
 openbox
 perl-image-exiftool
-perl-test-manifest
 pinta
 playerctl
 plymouth

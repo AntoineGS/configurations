@@ -17,6 +17,7 @@ hyprland-preview-share-picker-git
 limine-snapper-sync
 localsend-bin
 meridian
+ninjarmm-ncplayer
 nvidia-580xx-dkms
 oh-my-zsh-git
 onedrive-abraunegg
