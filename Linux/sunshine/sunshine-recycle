@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Sunshine's wlr capture leaks a GPU buffer (~8 MB) for every screencopy that
+# never completes, so a DPMS-off captured output leaks ~1 GB per minute; each
+# capture rebuild also keeps its old buffers. remote-wake-monitor inhibits
+# hypridle during sessions to avoid DPMS off. Restart Sunshine once the last
+# client has been gone for a grace period so whatever leaked is released. A
+# reconnect within the grace period keeps the running instance.
+
+service=app-dev.lizardbyte.app.Sunshine.service
+log_file="${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunshine.log"
+grace=${SUNSHINE_RECYCLE_GRACE:-60}
+timer=''
+
+cancel_restart() {
+  [[ -z $timer ]] || kill "$timer" 2>/dev/null || true
+  timer=''
+}
+
+# Follow rotations, and ignore historical connections when the service starts.
+tail --lines=0 --follow=name --retry "$log_file" | while IFS= read -r line; do
+  case $line in
+    *': CLIENT CONNECTED')
+      cancel_restart
+      ;;
+    *': CLIENT DISCONNECTED')
+      cancel_restart
+      {
+        sleep "$grace"
+        printf 'sunshine-recycle: no client for %ss, restarting Sunshine\n' "$grace" >&2
+        systemctl --user restart "$service"
+      } &
+      timer=$!
+      ;;
+  esac
+done

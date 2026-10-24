@@ -1,0 +1,14 @@
+[Unit]
+Description=Restart Sunshine after its last client disconnects to release leaked GPU buffers
+After=graphical-session.target app-dev.lizardbyte.app.Sunshine.service
+PartOf=graphical-session.target
+ConditionHost=antoinews-linux
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/sunshine-recycle
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

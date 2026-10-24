@@ -738,6 +738,23 @@ applications:
         run:
           linux: systemctl --user daemon-reload && systemctl --user enable --now app-dev.lizardbyte.app.Sunshine.service
         name: enable-service
+      - targets:
+          linux: ~/.local/bin
+        name: recycle-script
+        backup: ./Linux/sunshine
+        files:
+          - sunshine-recycle
+      - targets:
+          linux: ~/.config/systemd/user
+        name: recycle-service
+        backup: ./Linux/sunshine
+        files:
+          - sunshine-recycle.service
+      - check:
+          linux: systemctl --user is-enabled --quiet sunshine-recycle.service && systemctl --user is-active --quiet sunshine-recycle.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now sunshine-recycle.service
+        name: enable-recycle
   - package:
       managers:
         pacman: rtkit
