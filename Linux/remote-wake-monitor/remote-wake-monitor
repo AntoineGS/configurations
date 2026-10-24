@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+readonly SUNSHINE_SERVICE=app-dev.lizardbyte.app.Sunshine.service
+readonly IDLE_INHIBITOR=sunshine-idle-inhibit.service
+
 usage() {
   printf '%s\n' 'Usage: remote-wake-monitor --prepare-monitor|--watch rustdesk|sunshine' >&2
   exit 2
@@ -27,8 +30,20 @@ prepare_monitor() {
   hyprctl eval "hl.dispatch(hl.dsp.dpms({action=\"on\", monitor=\"$primary\"}))"
 }
 
+inhibit_idle() {
+  systemctl --user is-active --quiet "$IDLE_INHIBITOR" && return 0
+  # Bind the lock to Sunshine so a crash or recycle cannot leave hypridle disabled.
+  systemd-run --user --quiet --collect --unit="$IDLE_INHIBITOR" \
+    --property=BindsTo="$SUNSHINE_SERVICE" --property=After="$SUNSHINE_SERVICE" \
+    systemd-inhibit --what=idle --who=Sunshine --why='A Moonlight client is connected' sleep infinity
+}
+
+release_idle() {
+  ! systemctl --user is-active --quiet "$IDLE_INHIBITOR" || systemctl --user stop "$IDLE_INHIBITOR"
+}
+
 watch_connections() {
-  local connected disconnected line log_file
+  local connected disconnected line log_file idle_inhibit=false
 
   case $1 in
     rustdesk)
@@ -42,6 +57,8 @@ watch_connections() {
       log_file="${XDG_CONFIG_HOME:-$HOME/.config}/sunshine/sunshine.log"
       connected='*: CLIENT CONNECTED'
       disconnected='*: CLIENT DISCONNECTED'
+      # Sunshine takes no idle lock, so hypridle would lock and DPMS off the captured output.
+      idle_inhibit=true
       ;;
     *) usage ;;
   esac
@@ -51,6 +68,9 @@ watch_connections() {
     # shellcheck disable=SC2254 # The patterns are globs.
     case $line in
       $connected)
+        if [[ $idle_inhibit == true ]] && ! inhibit_idle; then
+          printf '%s\n' 'remote-wake-monitor: unable to inhibit hypridle' >&2
+        fi
         if ! "$0" --prepare-monitor; then
           printf 'remote-wake-monitor: unable to prepare the primary monitor for this %s connection\n' "$1" >&2
         fi
@@ -63,6 +83,9 @@ watch_connections() {
       $disconnected)
         if ! screen-privacy off --if-auto; then
           printf '%s\n' 'remote-wake-monitor: unable to restore the physical screens' >&2
+        fi
+        if [[ $idle_inhibit == true ]] && ! release_idle; then
+          printf '%s\n' 'remote-wake-monitor: unable to release the hypridle inhibitor' >&2
         fi
         ;;
     esac

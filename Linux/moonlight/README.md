@@ -5,6 +5,9 @@ absolute mouse input. Hyprland's clean submap forwards remote Win shortcuts;
 Win+Shift+Q restores local bindings. Moonlight's window rule retains that escape
 even while system-key capture is enabled.
 
+While a client is connected, the host holds a `sunshine-idle-inhibit.service`
+idle lock so hypridle does not lock or power off the streamed monitor.
+
 ## Clipboard
 
 Install `moonlight-clipboard` on the office host and each client. The launcher

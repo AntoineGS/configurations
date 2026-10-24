@@ -785,7 +785,7 @@ applications:
       managers:
         pacman: ddcutil
     name: remote-wake-monitor
-    description: Wake the primary monitor for RustDesk and Sunshine, recover its desktop with the Single monitor layout, and power the panels off over DDC/CI while connected
+    description: Wake the primary monitor for RustDesk and Sunshine, recover its desktop with the Single monitor layout, power the panels off over DDC/CI while connected, and inhibit hypridle during Sunshine sessions
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'
     entries:
       - check:
