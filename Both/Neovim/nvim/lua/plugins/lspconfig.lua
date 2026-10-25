@@ -160,7 +160,7 @@ M.defaults = function()
   vim.lsp.enable "intelephense"
 
   -- Native Pascal LSP installed with cargo; independent of RAD Studio and PATH.
-  local pascal_lsp = vim.fn.expand "~/.cargo/bin/pascal-lsp"
+  local pascal_lsp = vim.fn.expand "~/gits/lint4d/target/release/pascal-lsp"
   if vim.fn.has "win32" == 1 then
     pascal_lsp = pascal_lsp .. ".exe"
   end
@@ -168,6 +168,24 @@ M.defaults = function()
     cmd = { pascal_lsp, "--stdio" },
     filetypes = { "pascal" },
     root_markers = { ".lint4d.toml", ".git" },
+    -- Logical paths are mapped per project by delphi-tools TOML overrides.
+    init_options = vim.fn.has "linux" == 1 and {
+      sourcePaths = {
+        "C:/DelphiSources/rtl/sys",
+        "C:/DelphiSources/rtl/common",
+        "C:/DelphiSources/rtl/win",
+        "C:/DelphiSources/vcl",
+        "C:/DelphiSources/db",
+        "C:/DelphiSources/db/ado",
+        "C:/DelphiSources/db/dsnap",
+        "C:/DelphiSources/db/dbx",
+        "C:/DelphiSources/db/vclctrls",
+        "C:/DelphiSources/IBX",
+        "C:/DelphiSources/internet",
+        "C:/DelphiSources/soap",
+        "C:/DelphiSources/xml",
+      },
+    } or nil,
   })
   vim.lsp.enable "pascal_lsp"
 end
