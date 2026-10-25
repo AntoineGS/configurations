@@ -22,6 +22,9 @@
   packedGitWindowSize = 1024m
 	compression = 9
 	autocrlf = false
+{{ if and (eq .OS "linux") (eq .Hostname "antoinews-linux") -}}
+	sshCommand = ssh -F /dev/null -i /home/a.simard@multidev.local/.ssh/ed25519 -o IdentitiesOnly=yes
+{{ end -}}
 [pack]
   deltaCacheSize = 2047m
   packSizeLimit = 4095m
@@ -34,3 +37,7 @@
 	wrap-max-lines = unlimited
 [rebase]
   updateRefs = true
+{{ if and (eq .OS "linux") (eq .Hostname "antoinews-linux") -}}
+[safe]
+	directory = /home/a.simard@multidev.local/gits/multidev
+{{ end -}}
