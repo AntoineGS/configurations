@@ -2616,7 +2616,7 @@ applications:
           - snapper
         sudo: true
   - name: snapper-workstation-config
-    description: Apply the tuned root retention limits; this host has no home config, so the registration stays as-is
+    description: Apply the tuned root retention limits and keep Docker data out of root snapshots; this host has no home config, so the registration stays as-is
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:
@@ -2626,6 +2626,12 @@ applications:
         backup: ./Linux/Snapper/configs
         files:
           - root
+        sudo: true
+      - check:
+          linux: '[ "$(findmnt -no FSROOT /var/lib/docker)" = /@docker ] && [ "$(findmnt -no FSROOT /var/lib/containerd)" = /@containerd ]'
+        run:
+          linux: sh ./Linux/Snapper/docker-subvolumes.sh
+        name: docker-subvolumes
         sudo: true
   - name: snapshots-enabled
     description: Enable btrfs snapshots + limine boot-menu sync on the two Arch desktops
