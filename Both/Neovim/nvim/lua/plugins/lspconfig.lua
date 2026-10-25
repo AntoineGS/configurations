@@ -3,7 +3,7 @@ local map = vim.keymap.set
 local pascal_project = require "pascal_project"
 
 -- export on_attach & capabilities
-M.on_attach = function(_, bufnr)
+M.on_attach = function(client, bufnr)
   local function opts(desc)
     return { buffer = bufnr, desc = "LSP " .. desc }
   end
@@ -19,6 +19,40 @@ M.on_attach = function(_, bufnr)
 
   map("n", "<leader>D", vim.lsp.buf.type_definition, opts "Go to type definition")
   map("n", "<leader>ra", require "nvchad.lsp.renamer", opts "NvRenamer")
+
+  if client and client.name == "sqls" then
+    require("sqls_parameters").attach(client, bufnr)
+    vim.api.nvim_buf_create_user_command(bufnr, "SqlsExplain", function(args)
+      require("sqls.commands").exec(
+        client.id,
+        "explainQuery",
+        args.smods,
+        args.range ~= 0,
+        nil,
+        args.line1,
+        args.line2,
+        bufnr
+      )
+    end, { range = true, desc = "Explain SQL without executing it" })
+    vim.api.nvim_buf_create_user_command(bufnr, "SqlsCancel", function()
+      for id, request in pairs(client.requests) do
+        if request.type == "pending" and request.method == "workspace/executeCommand" then
+          client:cancel_request(id)
+        end
+      end
+    end, { desc = "Cancel pending sqls commands" })
+
+    require("which-key").add { { "<leader>S", group = "sqls", buffer = bufnr } }
+    map("n", "<leader>Sq", "<cmd>SqlsExecuteQuery<cr>", opts "SQL execute buffer")
+    map("x", "<leader>Sq", ":SqlsExecuteQuery<cr>", opts "SQL execute selected lines")
+    map("n", "<leader>Sc", "<cmd>SqlsSwitchConnection<cr>", opts "SQL switch connection")
+    map("n", "<leader>Sl", "<cmd>SqlsShowConnections<cr>", opts "SQL list connections")
+    map("n", "<leader>St", "<cmd>SqlsShowTables<cr>", opts "SQL list tables")
+    map("n", "<leader>Se", "<cmd>SqlsExplain<cr>", opts "SQL explain buffer")
+    map("x", "<leader>Se", ":SqlsExplain<cr>", opts "SQL explain selected lines")
+    map("n", "<leader>Sx", "<cmd>SqlsCancel<cr>", opts "SQL cancel")
+    map("n", "<leader>Sk", vim.lsp.buf.signature_help, opts "SQL signature help")
+  end
 end
 
 M.capabilities = vim.lsp.protocol.make_client_capabilities()
@@ -104,7 +138,22 @@ M.defaults = function()
   if vim.fn.has "linux" == 1 then
     -- Use the local InterBase-enabled build instead of Mason's sqls.
     vim.lsp.config("sqls", {
-      cmd = { vim.fn.expand "~/gits/sqls/sqls" },
+      cmd = {
+        vim.fn.expand "~/gits/sqls/sqls",
+        "--config",
+        vim.fn.expand "~/.config/sqls/config.yml",
+      },
+      commands = {
+        executeQuery = function(command, context)
+          require("sqls_parameters").code_action(command, context)
+        end,
+        explainQuery = function(_, context)
+          require("sqls.commands").exec(context.client_id, "explainQuery")
+        end,
+      },
+      on_exit = function(_, _, client_id)
+        require("sqls_parameters").clear(client_id)
+      end,
     })
   end
   vim.lsp.enable "sqls"
@@ -125,6 +174,7 @@ end
 
 return {
   "neovim/nvim-lspconfig",
+  dependencies = { "nanotee/sqls.nvim" },
   event = "User FilePost",
   config = function()
     M.defaults()
