@@ -133,8 +133,8 @@ Launching again focuses the existing window. Diagnostics are in
 The launcher forwards remote loopback port `45973` back to a private Unix
 socket. At the remote desktop's left edge, `Super+H` moves focus left locally.
 Only one Office PC RustDesk launcher may run at a time across the two clients
-because they share that remote callback port. This handoff is specific to
-RustDesk, not the Moonlight launcher.
+because they share that remote callback port. The Moonlight launcher does the
+same through its own SSH connection and remote port `45974`.
 
 ## Verify and manage
 
