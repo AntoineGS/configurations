@@ -5,6 +5,11 @@ absolute mouse input. Hyprland's clean submap forwards remote Win shortcuts;
 Win+Shift+Q restores local bindings. Moonlight's window rule retains that escape
 even while system-key capture is enabled.
 
+At the office desktop's left edge, Win+H moves focus off the stream to the local
+monitor on the left, as with the RustDesk launcher. The launcher forwards remote
+loopback port `45974` back to a private Unix socket over a dedicated SSH
+connection, so only one client can hold the handoff at a time.
+
 While a client is connected, the host holds a `sunshine-idle-inhibit.service`
 idle lock so hypridle does not lock or power off the streamed monitor.
 

@@ -13,22 +13,53 @@ fi
 
 # Capture is required for Moonlight to forward the Win modifier. The Hyprland
 # no_shortcuts_inhibit rule keeps the clean submap's Win+Shift+Q escape local.
+handoff_helper="$HOME/.config/hypr/rustdesk-focus-handoff.sh"
+run_dir=''
 clipboard_pid=''
+listener_pid=''
+tunnel_pid=''
 moonlight_pid=''
 # Invoked by the EXIT trap.
 # shellcheck disable=SC2329
 cleanup() {
   local pid
-  for pid in "$clipboard_pid" "$moonlight_pid"; do
+  for pid in "$clipboard_pid" "$tunnel_pid" "$listener_pid" "$moonlight_pid"; do
     [[ -z $pid ]] || kill "$pid" 2>/dev/null || true
   done
-  for pid in "$clipboard_pid" "$moonlight_pid"; do
+  for pid in "$clipboard_pid" "$tunnel_pid" "$listener_pid" "$moonlight_pid"; do
     [[ -z $pid ]] || wait "$pid" 2>/dev/null || true
   done
+  [[ -z $run_dir ]] || rm -rf -- "$run_dir"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
+
+# Win+H at the office desktop's left edge calls back through remote port 45974
+# to move focus off this Moonlight window.
+start_focus_handoff() {
+  local attempt
+  [[ -x $handoff_helper && -n ${XDG_RUNTIME_DIR:-} ]] && command -v socat >/dev/null || return 1
+  run_dir=$(mktemp -d "$XDG_RUNTIME_DIR/moonlight-office.XXXXXXXX") || return 1
+  "$handoff_helper" listen "$run_dir/handoff.sock" moonlight &
+  listener_pid=$!
+  for ((attempt = 0; attempt < 50; attempt++)); do
+    [[ ! -S $run_dir/handoff.sock ]] || break
+    kill -0 "$listener_pid" 2>/dev/null || return 1
+    sleep 0.1
+  done
+  [[ -S $run_dir/handoff.sock ]] || return 1
+  # A dedicated connection owns the forward, so it closes with this launcher.
+  /usr/bin/ssh -NT -o BatchMode=yes -o ControlMaster=no -o ControlPath=none \
+    -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 \
+    -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+    -R "127.0.0.1:45974:$run_dir/handoff.sock" antoinews-linux &
+  tunnel_pid=$!
+}
+
+if ! start_focus_handoff; then
+  notify-send 'Office PC (Moonlight)' 'Focus handoff is unavailable; Win+H will not leave the stream.' || true
+fi
 
 if command -v moonlight-clipboard >/dev/null; then
   moonlight-clipboard client --host antoinews-linux &
