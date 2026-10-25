@@ -37,7 +37,7 @@ readonly -a WEBVIEW2_UPDATERS=(edgeupdate edgeupdatem)
 # InterBase client (system32/ibclient64.dll) is linked in by tidydots.
 readonly SHARE="$HOME/Shares/O-applications"
 readonly -a RUNTIME=(
-  Interbase/gds32.dll
+  'Interbase/INTERBASE 15/GDS 15/gds32.dll'
   HO/Superform/rtl140.bpl HO/Superform/vcl140.bpl HO/Superform/vclx140.bpl
   HO/Superform/vclimg140.bpl HO/Superform/VclSmp140.bpl HO/Superform/dbrtl140.bpl
   HO/Superform/vcldb140.bpl HO/Superform/adortl140.bpl HO/Superform/bdertl140.bpl
