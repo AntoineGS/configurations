@@ -35,7 +35,6 @@ wk.add {
   { "<leader>sc", "<cmd>lua Snacks.picker.command_history()<CR>", desc = "Command History" },
   { "<leader>sC", "<cmd>lua Snacks.picker.commands()<CR>", desc = "Commands" },
   { "<leader>sd", "<cmd>lua Snacks.picker.diagnostics()<CR>", desc = "Diagnostics" },
-  { "<leader>sD", "<cmd>lua Snacks.picker.diagnostics_buffer()<CR>", desc = "Buffer Diagnostics" },
   { "<leader>sh", "<cmd>lua Snacks.picker.help()<CR>", desc = "Help Pages" },
   { "<leader>sH", "<cmd>lua Snacks.picker.highlights()<CR>", desc = "Highlights" },
   { "<leader>si", "<cmd>lua Snacks.picker.icons()<CR>", desc = "Icons" },

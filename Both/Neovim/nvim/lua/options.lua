@@ -13,6 +13,8 @@ opt.foldlevelstart = 99
 o.laststatus = 3
 o.showmode = false
 o.splitkeep = "screen"
+-- Keeps the cursor off the top line so treesitter-context has room to render
+o.scrolloff = 10
 o.winborder = "single"
 
 o.clipboard = vim.env.HERDR_ENV == "1" and "" or "unnamedplus"

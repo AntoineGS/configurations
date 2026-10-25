@@ -38,8 +38,11 @@ map({ "n", "x" }, "<leader>fm", function()
 end, { desc = "general format file" })
 
 -- global lsp mappings
-map("n", "<leader>fs", vim.diagnostic.setloclist, { desc = "LSP diagnostic loclist" })
-map("n", "<leader>sG", function()
+map("n", "<leader>fd", vim.diagnostic.setloclist, { desc = "LSP diagnostic loclist" })
+map("n", "<leader>fD", function()
+  require("project_lint").run { loclist = true }
+end, { desc = "Lint project loclist" })
+map("n", "<leader>sD", function()
   require("project_lint").run()
 end, { desc = "Lint project" })
 
