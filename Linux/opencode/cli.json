@@ -7,13 +7,9 @@
     "app.exit": "ctrl+c,<leader>q",
     "session.page.up": "ctrl+u",
     "session.page.down": "ctrl+d",
-    "input.submit": "return",
-    "input.newline": "shift+return,ctrl+return,ctrl+j"
+    "input.submit": "alt+return",
+    "input.newline": "return,shift+return,ctrl+return,ctrl+j"
   },
-  "plugins": [
-    "./herdr-opencode",
-    "./cli-plugins/provider-indicator"
-  ],
   "scroll": {
     "acceleration": true
   },
@@ -21,14 +17,17 @@
     "wrap": "word"
   },
   "session": {
-    "sidebar": "auto",
+    "sidebar": "hide",
     "scrollbar": false,
     "thinking": "hide",
-    "markdown": "rendered",
     "permissions": "autoaccept"
   },
   "animations": false,
+  "plugins": [
+    "./herdr-opencode"
+  ],
   "tabs": {
-    "enabled": false
+    "layout": "vertical",
+    "mode": "off"
   }
 }
