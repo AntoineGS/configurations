@@ -33,6 +33,12 @@ return {
       },
 
       format_on_save = function(bufnr)
+        local project = vim.fs.normalize(vim.fn.expand "~/gits/tree-sitter-sql")
+        local filename = vim.fs.normalize(vim.api.nvim_buf_get_name(bufnr))
+
+        -- Skip automatic formatting for every file inside this project.
+        if filename:sub(1, #project + 1) == project .. "/" then return end
+
         -- sql has no conform formatter; without this guard lsp_fallback would
         -- hand formatting to the sqls language server on every save.
         if vim.bo[bufnr].filetype == "sql" then return end

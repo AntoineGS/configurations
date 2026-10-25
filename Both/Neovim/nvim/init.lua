@@ -3,6 +3,13 @@ vim.g.mapleader = " "
 
 vim.filetype.add { extension = { dpk = "pascal" } }
 
+-- Use the local InterBase SQL parser and queries before plugins load SQL.
+local sql_parser_root = vim.fn.expand "~/gits/tree-sitter-sql"
+local sql_parser_setup = sql_parser_root .. "/contrib/neovim/preview.lua"
+if vim.fn.filereadable(sql_parser_setup) == 1 and vim.fn.filereadable(sql_parser_root .. "/sql.so") == 1 then
+  dofile(sql_parser_setup)
+end
+
 -- load theme before plugins so treesitter has highlight groups defined
 local base46_files = { "defaults", "statusline", "syntax", "treesitter" }
 for _, file in ipairs(base46_files) do
