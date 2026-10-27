@@ -6,6 +6,7 @@ bluez-utils
 bolt
 brightnessctl
 btop
+bun
 caligula
 catch2
 ccache
@@ -56,6 +57,7 @@ intltool
 inxi
 itstool
 kdenlive
+lazarus
 lazydocker
 lazygit
 libmpdclient
@@ -82,6 +84,7 @@ plymouth
 pnpm
 power-profiles-daemon
 python-langchain
+python-openapi-spec-validator
 python-pylint
 quickshell
 rapidfuzz-cpp
