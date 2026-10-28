@@ -34,6 +34,8 @@ Item {
     var value = String(icon || "")
     if (value.length === 0) return Quickshell.iconPath("application-x-executable", true)
     if (value.indexOf("file://") === 0 || value.indexOf("image://") === 0) return value
+    // Qt's ICO reader only yields the first (usually smallest) frame; QIcon picks the best one.
+    if (value.charAt(0) === "/" && /\.ico$/i.test(value)) return "image://icon/" + value
     if (value.charAt(0) === "/") return Util.fileUrl(value)
     var found = root.iconIndex[value]
     if (found) return Util.fileUrl(found)
