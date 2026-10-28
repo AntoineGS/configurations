@@ -93,6 +93,7 @@ hl.bind("SUPER + PRINT", hl.dsp.exec_cmd("pkill hyprpicker || hyprpicker -a"), {
 
 -- Control panels
 hl.bind("SUPER + CTRL + T", hl.dsp.exec_cmd("launch-tui-large btop"), { description = "Top" })
+hl.bind("SUPER + CTRL + F", hl.dsp.exec_cmd("launch-tui-large termscp"), { description = "termscp" })
 
 -- Zoom (legacy `hyprctl keyword` rejected by Lua parser; round-trip through `hyprctl eval` + hl.config / hl.get_config)
 hl.bind(
