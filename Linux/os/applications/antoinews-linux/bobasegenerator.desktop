@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BoBaseGenerator
+Comment=
+Exec=/home/a.simard@multidev.local/.local/bin/multidev-wine BoBaseGenerator.exe
+Path=/home/a.simard@multidev.local/gits/multidev/Projects/BoBaseGenerator
+Icon=/home/a.simard@multidev.local/gits/multidev/Projects/BoBaseGenerator/BoBaseGenerator_Icon.ico
+Terminal=false
+StartupNotify=true
+StartupWMClass=bobasegenerator.exe
+Categories=Development;Database;
+Keywords=BO;BusinessObjects

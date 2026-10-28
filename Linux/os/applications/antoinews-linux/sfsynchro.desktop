@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SFSynchro
+Comment=
+Exec=/home/a.simard@multidev.local/.local/bin/multidev-wine SFSynchro2.exe
+Path=/home/a.simard@multidev.local/gits/multidev/Projects/Superform/SFSynchro2/
+Icon=/home/a.simard@multidev.local/gits/multidev/Projects/Superform/SFSynchro2/SFSynchro2_Icon.ico
+Terminal=false
+StartupNotify=true
+StartupWMClass=sfsynchro2.exe
+Categories=Development;Database;
+Keywords=database;SQL;InterBase;
