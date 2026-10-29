@@ -142,6 +142,5 @@ hl.define_submap("clean", function()
     if hostname == "DESKTOP-E07VTRN" then
       hl.bind("SUPER + L", hl.dsp.send_shortcut({ mods = "SUPER", key = "L" }), { description = "Clean mode: forward focus right" })
     end
-    hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true, description = "Clean mode: move window" })
     hl.bind("SUPER + Q", hl.dsp.submap("reset"), { description = "Clean mode: exit" })
 end)
