@@ -1,0 +1,7 @@
+[Unit]
+Description=Coding agents and the tests they run
+
+[Slice]
+# Under contention, interactive apps (default weight 100) get ~5x the CPU
+# share of agent work; when the machine is idle agents may use all of it.
+CPUWeight=20

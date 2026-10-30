@@ -118,6 +118,17 @@ applications:
         run:
           linux: ~/.config/opencode/setup-temp-cleanup.sh --apply
         name: enable-temp-cleanup-timer
+      - targets:
+          linux: ~/.config/systemd/user
+        name: agents-slice
+        backup: ./Linux/agents-slice
+        files:
+          - agents.slice
+      - check:
+          linux: test "$(systemctl --user show agents.slice --property=FragmentPath --value)" = "$HOME/.config/systemd/user/agents.slice" && test "$(systemctl --user show agents.slice --property=NeedDaemonReload --value)" = no
+        run:
+          linux: systemctl --user daemon-reload
+        name: load-agents-slice
   - name: delphi-gdb-mcp
     description: Enable the globally configured Delphi GDB MCP only in selected repositories
     when: '{{ and (eq .OS "linux") (eq .Hostname "antoinews-linux") }}'

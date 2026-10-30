@@ -78,8 +78,14 @@ alias y="yazi"
 alias lg="lazygit"
 alias gu="gitui"
 alias guw="gitui --watcher"
-alias oc="opencode"
-alias occ="opencode -c"
+oc() {
+    if [[ -e ~/.config/systemd/user/agents.slice ]]; then
+        systemd-run --user --scope --quiet --slice=agents.slice -- opencode "$@"
+    else
+        opencode "$@"
+    fi
+}
+alias occ="oc -c"
 alias clauded="claude --dangerously-skip-permissions"
 
 # Scripts
