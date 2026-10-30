@@ -88,6 +88,12 @@ set -eu
 printf '%s\n' "$@" >"$AUTH_TEST_STATE/systemctl.log"
 STUB
 
+cat >"$bin_dir/umount" <<'STUB'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >>"$AUTH_TEST_STATE/umount.log"
+STUB
+
 cat >"$bin_dir/uwsm" <<'STUB'
 #!/usr/bin/env bash
 exit 0
@@ -103,6 +109,16 @@ chmod +x -- "$bin_dir"/*
 session_user="$(id -un)"
 principal_user="${session_user%@*}"
 expected_principal="$principal_user@MULTIDEV.LOCAL"
+shares_dir="$tmp_dir/Shares"
+mounts_file="$tmp_dir/mounts"
+
+cat >"$mounts_file" <<MOUNTS
+//md-fs01.multidev.local/qa $shares_dir/Z-QA cifs rw 0 0
+//antoinews.multidev.local/Embarcadero $shares_dir/Embarcadero cifs ro 0 0
+//antoinews.multidev.local/Delphi-SDKs $shares_dir/Embarcadero/SDKs cifs ro 0 0
+//md-fs01.multidev.local/qa $tmp_dir/Shares-other/Z-QA cifs rw 0 0
+gvfsd-fuse $shares_dir/gvfs fuse.gvfsd-fuse rw 0 0
+MOUNTS
 
 run_helper() {
   env \
@@ -112,6 +128,8 @@ run_helper() {
     AUTH_TEST_ACTION="${AUTH_TEST_ACTION:-}" \
     AUTH_TEST_KINIT_STATUS="${AUTH_TEST_KINIT_STATUS:-0}" \
     OFFICE_SHARES_CACHE_DIR="$cache_dir" \
+    OFFICE_SHARES_DIR="$shares_dir" \
+    OFFICE_SHARES_MOUNTS="$mounts_file" \
     "$helper" "$@"
 }
 
@@ -120,10 +138,15 @@ run_helper() {
 touch -- "$cache_dir/krb5cc_${UID}_valid"
 run_helper || fail 'valid-ticket check failed'
 [[ ! -e "$state_dir/notify.log" ]] || fail 'valid ticket produced a notification'
+[[ ! -e "$state_dir/umount.log" ]] || fail 'valid ticket detached the shares'
 
 rm -- "$cache_dir/krb5cc_${UID}_valid"
 touch -- "$cache_dir/krb5cc_${UID}_wrong"
 run_helper || fail 'missing-ticket notification failed'
+expected_umounts="-l -- $shares_dir/Z-QA
+-l -- $shares_dir/Embarcadero/SDKs
+-l -- $shares_dir/Embarcadero"
+assert_file_equals "$expected_umounts" "$state_dir/umount.log" 'missing ticket did not detach the shares, nested first'
 expected_notification=$'--app-name=Office Shares\n--icon=dialog-password\n--urgency=critical\n--expire-time=0\n--action=authenticate=Authenticate\n--wait\n--\nDomain authentication required\nNetwork shares need a fresh Kerberos ticket.'
 assert_file_equals "$expected_notification" "$state_dir/notify.log" 'persistent notification arguments differ'
 [[ ! -e "$state_dir/systemd-run.log" ]] || fail 'dismissed notification launched authentication'

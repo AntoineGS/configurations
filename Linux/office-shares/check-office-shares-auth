@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prompt for domain authentication when no valid office-share ticket exists.
+# Prompt for domain authentication when no valid office-share ticket exists,
+# detaching the mounted shares first.
 # Minimum Bash version: 4.4
 
 set -Eeuo pipefail
@@ -11,6 +12,9 @@ principal_user="$(id -un)"
 principal_user="${principal_user%@*}"
 expected_principal="${principal_user}@${realm}"
 cache_dir="${OFFICE_SHARES_CACHE_DIR:-/tmp}"
+shares_dir="${OFFICE_SHARES_DIR:-$HOME/Shares}"
+mounts_file="${OFFICE_SHARES_MOUNTS:-/proc/self/mounts}"
+readonly unmount_timeout='15s'
 
 log() {
   printf 'check-office-shares-auth: %s\n' "$*" >&2
@@ -49,6 +53,27 @@ has_valid_cache() {
   return 1
 }
 
+# Without a ticket the kernel cannot re-authenticate a dropped SMB session, but
+# it keeps the negotiated connection around for hours. By the time a new ticket
+# exists the server has forgotten that connection, and every access hangs while
+# the session setup is retransmitted into the void. Detaching the shares lets
+# the post-authentication mount start from a fresh connection.
+unmount_shares() {
+  local target
+  local -a targets
+
+  mapfile -t targets < <(
+    awk -v root="$shares_dir/" '$3 == "cifs" && index($2, root) == 1 { print $2 }' "$mounts_file" | sort -r
+  )
+
+  # Reverse order detaches nested VM shares before their parent. umount
+  # canonicalizes the path for non-root users, which can block on a stuck share.
+  for target in "${targets[@]}"; do
+    timeout -s KILL "$unmount_timeout" umount -l -- "$target" </dev/null ||
+      log "failed to detach $target"
+  done
+}
+
 authenticate() {
   require_commands kinit systemctl || return 1
   export KRB5CCNAME="FILE:${cache_dir}/krb5cc_${UID}"
@@ -70,6 +95,8 @@ check_authentication() {
   if has_valid_cache; then
     return 0
   fi
+
+  unmount_shares
 
   action="$(notify-send \
     --app-name='Office Shares' \
