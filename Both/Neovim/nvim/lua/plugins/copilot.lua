@@ -72,6 +72,12 @@ return vim.tbl_deep_extend("force", src, {
         should_attach = function(_, bufname)
           local logger = require "copilot.logger"
 
+          local leetcode_path = vim.fs.normalize(vim.fn.stdpath "data") .. "/leetcode/"
+          if vim.startswith(vim.fs.normalize(bufname), leetcode_path) then
+            logger.debug "not attaching, buffer is in the LeetCode scratch directory"
+            return false
+          end
+
           if string.match(bufname, ".*copilot-lua\\.log") then
             logger.debug("not attaching, buffer name is " .. bufname)
             return false
