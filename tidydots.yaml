@@ -2784,11 +2784,11 @@ applications:
         when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         check_mode: status
       - check:
-          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@ubuntu-server" and .session == "default")' >/dev/null
+          linux: profiles="$(herdr machine list --json)" || exit 3; printf '%s\n' "$profiles" | jq -e 'any(.[]; .target == "ssh://a.simard%40multidev.local@ubuntuserver.tail0b6859.ts.net" and .session == "default")' >/dev/null
         run:
-          linux: herdr machine add 'ssh://a.simard%40multidev.local@ubuntu-server' --label ubuntu-server --remote-session default
-        name: machine-ubuntu-server
-        when: '{{ (eq .Hostname "antoinews-linux") }}'
+          linux: herdr machine add 'ssh://a.simard%40multidev.local@ubuntuserver.tail0b6859.ts.net' --label ubuntuserver --remote-session default
+        name: machine-ubuntuserver
+        when: '{{ and (eq .OS "linux") (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews") (eq .Hostname "DESKTOP-E07VTRN")) }}'
         check_mode: status
       - check:
           linux: herdr plugin list --json | jq -e '.result.plugins[] | select(.plugin_id == "vim-herdr-navigation" and .enabled == true and (.actions | length == 4))' >/dev/null
