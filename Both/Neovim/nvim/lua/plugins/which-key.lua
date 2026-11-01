@@ -7,6 +7,7 @@ return {
     return {
       layout = { width = { min = 20, max = 50 } },
       spec = {
+        { "<leader>l", group = "LeetCode" },
         { "gx", desc = "Open file or URL", mode = { "n", "x" } },
       },
     }
