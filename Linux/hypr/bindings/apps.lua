@@ -31,7 +31,7 @@ hl.bind(
 	),
 	{ description = "Git client" }
 )
-hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd("launch-or-focus teams-for-linux"), { description = "MS Teams" })
+hl.bind("SUPER + ALT + T", hl.dsp.exec_cmd("launch-or-focus teams-for-linux"), { description = "MS Teams" })
 hl.bind(
 	"SUPER + ALT + B",
 	hl.dsp.exec_cmd(
@@ -43,8 +43,8 @@ hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd("launch-editor"), { description = "Ed
 hl.bind("SUPER + ALT + D", hl.dsp.exec_cmd("launch-tui-large lazydocker"), { description = "Docker" })
 hl.bind(
 	"SUPER + ALT + O",
-	hl.dsp.exec_cmd([[launch-or-focus obsidian "uwsm app -- obsidian -disable-gpu --enable-wayland-ime"]]),
-	{ description = "Obsidian" }
+	hl.dsp.exec_cmd([[launch-or-focus outlook-for-linux "uwsm app -- outlook-for-linux"]]),
+	{ description = "Outlook" }
 )
 hl.bind("SUPER + ALT + SLASH", hl.dsp.exec_cmd("uwsm app -- 1password"), { description = "Passwords" })
 if hostname == "antoinews-linux" then
@@ -66,8 +66,4 @@ hl.bind(
 	hl.dsp.exec_cmd([[launch-or-focus 1password "uwsm app -- 1password"]]),
 	{ description = "1Password" }
 )
-hl.bind(
-	"SUPER + CTRL + P",
-	hl.dsp.exec_cmd("uwsm app -- 1password --quick-access"),
-	{ description = "1Password Quick Access" }
-)
+hl.bind("SUPER + ALT + M", hl.dsp.exec_cmd([[launch-or-focus org.wails.mdexplorergo "uwsm-app -- mdexplorer-go"]]), { description = "MDExplorer Go" })

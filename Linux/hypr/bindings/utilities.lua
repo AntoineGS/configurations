@@ -132,3 +132,8 @@ hl.bind(
 	{ description = "Clipboard history" }
 )
 hl.bind("SUPER + PERIOD", hl.dsp.exec_cmd("desktop-shell toggle desktop.emojis '{}'"), { description = "Emoji picker" })
+hl.bind(
+	"SUPER + CTRL + P",
+	hl.dsp.exec_cmd("uwsm app -- 1password --quick-access"),
+	{ description = "1Password Quick Access" }
+)
