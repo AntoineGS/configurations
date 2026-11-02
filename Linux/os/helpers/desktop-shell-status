@@ -204,8 +204,9 @@ codex_status() {
   write_result codex "$result"
 }
 
-# Compact Claude text is "<session>%/<reset> <weekly>%/<reset>"; the tooltip
-# lists every window the collector reports, model-scoped ones included.
+# Compact Claude text is "<session>%/<reset> <weekly>%/<reset>", or just the
+# weekly part while Anthropic reports no 5-hour window; the tooltip lists every
+# window the collector reports, model-scoped ones (which carry a title) included.
 claude_status() {
   local collector="$SCRIPT_DIR/desktop-agent-usage-claude"
   local source
@@ -245,15 +246,15 @@ claude_status() {
     elif (.limits | type) != "array" then error("Claude limits are missing")
     else
       ([.limits[] | select(valid_limit)]) as $limits
-      | ($limits | map(select(.label | test("5-hour|session"; "i"))) | first) as $session
-      | ($limits | map(select(.label | test("7-day|week"; "i"))) | first) as $weekly
-      | if $session == null or $weekly == null then
+      | ($limits | map(select(.title == null)) | map(select(.label | test("5-hour|session"; "i"))) | first) as $session
+      | ($limits | map(select(.title == null)) | map(select(.label | test("7-day|week"; "i"))) | first) as $weekly
+      | if $weekly == null then
           error(
             if (.usageStatusText | type) == "string" and .usageStatusText != "" then .usageStatusText
-            else "Claude session or weekly limit is missing" end)
+            else "Claude weekly limit is missing" end)
         else
           {
-            text: ([$session, $weekly] | map(compact) | join(" ")),
+            text: ([$session, $weekly] | map(select(. != null) | compact) | join(" ")),
             tooltip: ($limits | map("\(.title // .label): \(used_percent)% used, resets in \(countdown(.resetsAt))") | join("\n")),
             class: "muted"
           }
