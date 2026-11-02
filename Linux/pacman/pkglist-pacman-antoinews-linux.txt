@@ -9,7 +9,6 @@ clang
 compsize
 cups-pdf
 ddcutil
-dmd
 docker-compose
 dolt
 dos2unix
