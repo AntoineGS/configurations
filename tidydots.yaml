@@ -911,7 +911,7 @@ applications:
         files:
           - ibclient64.dll
   - name: mdexplorer
-    description: MDExplorer in the multidev Wine prefix — database aliases, settings, MariaDB client and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout). Database aliases and favorites are gitignored work data kept only in the local checkout
+    description: MDExplorer in the multidev Wine prefix — database aliases, settings, MariaDB client and favorites (MDExplorer.exe itself is not tracked; build it from the multidev checkout). Database aliases and favorites are gitignored work data kept only in the local checkout. Also links mdexplorer-go's settings.json
     when: '{{ eq .Hostname "antoinews-linux" }}'
     entries:
       - targets:
@@ -936,6 +936,12 @@ applications:
         backup: ./Linux/mdexplorer/appdata
         files:
           - MDExplorer_Favorites.json
+      - targets:
+          linux: ~/.config/mdexplorer-go
+        name: go-settings
+        backup: ./Linux/mdexplorer-go
+        files:
+          - settings.json
   - name: superform
     description: Superform (SFClient2) in the multidev Wine prefix — launcher and desktop entry (SFClient2.exe and its packages come from the headless Delphi build of the multidev checkout)
     when: '{{ eq .Hostname "antoinews-linux" }}'
