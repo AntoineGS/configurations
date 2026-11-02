@@ -24,7 +24,11 @@ return {
     lang = "golang",
     injector = {
       golang = {
-        before = { "package main" },
+        before = {
+          "//go:build ignore",
+          "",
+          "package main",
+        },
         after = {
           "func main() {",
           "\t// TODO: Call your solution with local test inputs.",
