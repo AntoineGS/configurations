@@ -9,6 +9,7 @@ return {
     { "<leader>lR", "<cmd>Leet random<CR>", desc = "Random problem" },
     { "<leader>lr", "<cmd>Leet run<CR>", desc = "Run test cases" },
     { "<leader>ls", "<cmd>Leet submit<CR>", desc = "Submit solution" },
+    { "<leader>li", "<cmd>Leet inject<CR>", desc = "Inject helper code" },
     { "<leader>lc", "<cmd>Leet console<CR>", desc = "Open console" },
     { "<leader>lv", "<cmd>Leet desc<CR>", desc = "Toggle description" },
     { "<leader>lp", "<cmd>Leet lc<CR>", desc = "Resume last problem" },
@@ -21,6 +22,16 @@ return {
   },
   opts = {
     lang = "golang",
+    injector = {
+      golang = {
+        before = { "package main" },
+        after = {
+          "func main() {",
+          "\t// TODO: Call your solution with local test inputs.",
+          "}",
+        },
+      },
+    },
     picker = { provider = "snacks-picker" },
     plugins = { non_standalone = true },
   },
