@@ -2022,9 +2022,9 @@ applications:
           - thresholds.conf
         sudo: true
       - check:
-          linux: systemctl is-enabled --quiet earlyoom.service && systemctl is-active --quiet earlyoom.service && test "$(stat -c %.6Y /etc/systemd/system/earlyoom.service.d/thresholds.conf | tr -d .)" -lt "$(date -d "$(systemctl show earlyoom.service -p ActiveEnterTimestamp --value --timestamp=us+utc)" +%s%6N)"
+          linux: test -r /etc/systemd/system/earlyoom.service.d/thresholds.conf && systemctl is-enabled --quiet earlyoom.service && systemctl is-active --quiet earlyoom.service && test "$(stat -c %.6Y /etc/systemd/system/earlyoom.service.d/thresholds.conf | tr -d .)" -lt "$(date -d "$(systemctl show earlyoom.service -p ActiveEnterTimestamp --value --timestamp=us+utc)" +%s%6N)"
         run:
-          linux: systemctl daemon-reload && systemctl enable earlyoom.service && systemctl restart earlyoom.service
+          linux: chmod 755 /etc/systemd/system/earlyoom.service.d && chmod 644 /etc/systemd/system/earlyoom.service.d/thresholds.conf && systemctl daemon-reload && systemctl enable earlyoom.service && systemctl restart earlyoom.service
         name: enable-service
         sudo: true
       - targets:
