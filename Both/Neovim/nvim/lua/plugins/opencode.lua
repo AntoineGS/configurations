@@ -11,6 +11,21 @@ local terminal_opts = {
   win = {
     position = "right",
     enter = false,
+    on_buf = function(win)
+      -- Leave terminal input and reuse the normal-mode smart-splits mappings.
+      for key, direction in pairs { h = "left", j = "down", k = "up", l = "right" } do
+        local lhs = "<C-" .. key .. ">"
+        vim.keymap.set("t", lhs, "<C-\\><C-n>" .. lhs, {
+          buffer = win.buf,
+          remap = true,
+          desc = "Switch window " .. direction,
+        })
+      end
+      vim.keymap.set("t", "<C-w>", "<C-\\><C-n><C-w>", {
+        buffer = win.buf,
+        desc = "Window commands from OpenCode",
+      })
+    end,
   },
 }
 

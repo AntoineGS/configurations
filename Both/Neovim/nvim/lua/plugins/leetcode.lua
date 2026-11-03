@@ -37,6 +37,13 @@ return {
       },
     },
     picker = { provider = "snacks-picker" },
+    hooks = {
+      question_enter = {
+        function(question)
+          require("configs.leetcode_images").attach(question)
+        end,
+      },
+    },
     plugins = { non_standalone = true },
   },
 }
