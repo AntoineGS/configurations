@@ -2006,6 +2006,76 @@ applications:
           linux: systemctl daemon-reload && systemctl enable --now units-backup.timer
         name: enable-backup-timer
         sudo: true
+  - package:
+      managers:
+        pacman: earlyoom
+    name: earlyoom
+    description: Kill the largest process when RAM runs low, before swap thrashing freezes the machine, and show a critical notification
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/system/earlyoom.service.d
+        name: thresholds
+        method: copy
+        backup: ./Linux/earlyoom/earlyoom.service.d
+        files:
+          - thresholds.conf
+        sudo: true
+      - check:
+          linux: systemctl is-enabled --quiet earlyoom.service && systemctl is-active --quiet earlyoom.service && test "$(stat -c %.6Y /etc/systemd/system/earlyoom.service.d/thresholds.conf | tr -d .)" -lt "$(date -d "$(systemctl show earlyoom.service -p ActiveEnterTimestamp --value --timestamp=us+utc)" +%s%6N)"
+        run:
+          linux: systemctl daemon-reload && systemctl enable earlyoom.service && systemctl restart earlyoom.service
+        name: enable-service
+        sudo: true
+      - targets:
+          linux: ~/.local/bin
+        name: notify-script
+        backup: ./Linux/earlyoom
+        files:
+          - earlyoom-notify
+      - targets:
+          linux: ~/.config/systemd/user
+        name: notify-service
+        backup: ./Linux/earlyoom
+        files:
+          - earlyoom-notify.service
+      - check:
+          linux: systemctl --user is-enabled --quiet earlyoom-notify.service && systemctl --user is-active --quiet earlyoom-notify.service
+        run:
+          linux: systemctl --user daemon-reload && systemctl --user enable --now earlyoom-notify.service
+        name: enable-notify-service
+  - name: crash-forensics
+    description: Flush the journal to disk every 30s and enable SysRq REISUB/OOM-kill so hard freezes leave evidence
+    when: '{{ and (eq .OS "linux") (not .IsWSL) (or (eq .Hostname "omarchbook") (eq .Hostname "antoinews-linux") (eq .Hostname "DESKTOP-E07VTRN")) }}'
+    entries:
+      - targets:
+          linux: /etc/systemd/journald.conf.d
+        name: journald-sync
+        method: copy
+        backup: ./Linux/systemd/journald.conf.d
+        files:
+          - sync-interval.conf
+        sudo: true
+      - check:
+          linux: test "$(stat -c %.6Y /etc/systemd/journald.conf.d/sync-interval.conf | tr -d .)" -lt "$(date -d "$(systemctl show systemd-journald.service -p ActiveEnterTimestamp --value --timestamp=us+utc)" +%s%6N)"
+        run:
+          linux: systemctl restart systemd-journald.service
+        name: reload-journald
+        sudo: true
+      - targets:
+          linux: /etc/sysctl.d
+        name: sysrq
+        method: copy
+        backup: ./Linux/sysctl
+        files:
+          - 90-sysrq.conf
+        sudo: true
+      - check:
+          linux: test "$(cat /proc/sys/kernel/sysrq)" = 244
+        run:
+          linux: sysctl -p /etc/sysctl.d/90-sysrq.conf
+        name: apply-sysrq
+        sudo: true
   - name: enable-laptop-services
     description: Enable services tied to this laptop's hardware (thermal, wifi)
     when: '{{ eq .Hostname "omarchbook" }}'

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Forward earlyoom's system-bus alert (-n) as a critical desktop notification.
+# systembus-notify does the same but always sends normal urgency.
+set -euo pipefail
+
+dbus-monitor --system "type='signal',interface='net.nuetzlich.SystemNotifications',member='Notify'" 2>/dev/null |
+  while IFS= read -r line; do
+    case $line in
+      signal\ *member=Notify*)
+        in_notify=1
+        args=()
+        ;;
+      signal\ *)
+        in_notify=0
+        ;;
+      '   string "'*)
+        [[ ${in_notify:-0} == 1 ]] || continue
+        value=${line#   string \"}
+        args+=("${value%\"}")
+        if ((${#args[@]} == 2)); then
+          notify-send -u critical -a earlyoom -i dialog-warning "${args[0]}" "${args[1]}" || true
+          in_notify=0
+        fi
+        ;;
+    esac
+  done
