@@ -19,6 +19,7 @@ doctest
 dolt
 dotnet-runtime-9.0
 dust
+earlyoom
 electron
 expac
 fastfetch
