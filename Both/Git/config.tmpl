@@ -23,7 +23,7 @@
 	compression = 9
 	autocrlf = false
 {{ if and (eq .OS "linux") (eq .Hostname "antoinews-linux") -}}
-	sshCommand = ssh -F /dev/null -i /home/a.simard@multidev.local/.ssh/ed25519 -o IdentitiesOnly=yes
+	sshCommand = ssh -F /dev/null -i /home/a.simard@multidev.local/.ssh/id_ed25519 -o IdentitiesOnly=yes
 {{ end -}}
 [pack]
   deltaCacheSize = 2047m
